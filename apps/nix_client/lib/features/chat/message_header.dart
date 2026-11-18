@@ -15,83 +15,96 @@ class MessageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
     final accent = context.accentColor;
+    final accentText = context.accentTextColor;
 
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: const BoxDecoration(
-        color: NixColors.surfaceSidebar,
-        border: Border(bottom: BorderSide(color: NixColors.surfaceBorder, width: 1)),
-      ),
-      child: Row(
-        children: [
-          Icon(channel.icon, color: accent, size: 20),
-          const SizedBox(width: 8),
-          Text(
-            channel.name,
-            style: const TextStyle(
-              color: NixColors.textPrimary,
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-            ),
-          ),
-          if (channel.topic.isNotEmpty) ...[
-            const SizedBox(width: 12),
-            Container(width: 1, height: 16, color: NixColors.surfaceBorder),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                channel.topic,
-                style: const TextStyle(color: NixColors.textMuted, fontSize: 12),
-                overflow: TextOverflow.ellipsis,
+    return InkWell(
+      key: const Key('message_header_bar'),
+      onTap: () => nixState.toggleConversationInfoPanel(),
+      child: Container(
+        height: 52,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: NixColors.surfaceSidebar,
+          border: Border(bottom: BorderSide(color: NixColors.surfaceBorder, width: 1)),
+        ),
+        child: Row(
+          children: [
+            Icon(channel.icon, color: accentText, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              channel.name,
+              style: TextStyle(
+                color: NixColors.textPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
               ),
             ),
-          ] else ...[
-            const Spacer(),
-          ],
-          // Badges de Criptografia & Rota (Living AMOLED dinâmico)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: accent.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.lock, size: 11, color: accent),
-                const SizedBox(width: 4),
-                Text(
-                  'E2EE DOUBLE RATCHET',
-                  style: TextStyle(color: accent, fontSize: 10, fontWeight: FontWeight.bold),
+            if (channel.topic.isNotEmpty) ...[
+              const SizedBox(width: 12),
+              Container(width: 1, height: 16, color: NixColors.surfaceBorder),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  channel.topic,
+                  style: TextStyle(color: NixColors.textMuted, fontSize: 12),
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
+              ),
+            ] else ...[
+              const Spacer(),
+            ],
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: accent.withValues(alpha: 0.35)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lock, size: 11, color: accentText),
+                  const SizedBox(width: 4),
+                  Text(
+                    'E2EE DOUBLE RATCHET',
+                    style: TextStyle(color: accentText, fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 6),
-          // Botão Configurações Avançadas do Canal / Grupo
-          IconButton(
-            icon: const Icon(
-              Icons.tune_rounded,
-              size: 19,
-              color: NixColors.textSecondary,
+            const SizedBox(width: 6),
+            IconButton(
+              key: const Key('channel_info_panel_button'),
+              icon: Icon(
+                Icons.view_sidebar_outlined,
+                size: 19,
+                color: nixState.isConversationInfoOpen ? accentText : NixColors.textSecondary,
+              ),
+              tooltip: 'Informações & Mídia Compartilhada',
+              onPressed: () => nixState.toggleConversationInfoPanel(),
             ),
-            tooltip: 'Configurações do Canal & Permissões',
-            onPressed: () => ChannelSettingsDialog.show(context, channel),
-          ),
-          const SizedBox(width: 2),
-          // Botão Alternar Painel de Membros
-          IconButton(
-            icon: Icon(
-              Icons.people_alt_rounded,
-              size: 20,
-              color: nixState.isMembersPanelOpen ? accent : NixColors.textSecondary,
+            IconButton(
+              key: const Key('channel_settings_button'),
+              icon: Icon(
+                Icons.tune_rounded,
+                size: 19,
+                color: NixColors.textSecondary,
+              ),
+              tooltip: 'Configurações do Canal & Permissões',
+              onPressed: () => ChannelSettingsDialog.show(context, channel),
             ),
-            tooltip: 'Lista de Membros e Chaves',
-            onPressed: () => nixState.toggleMembersPanel(),
-          ),
-        ],
+            IconButton(
+              key: const Key('channel_members_button'),
+              icon: Icon(
+                Icons.people_alt_rounded,
+                size: 20,
+                color: nixState.isMembersPanelOpen ? accentText : NixColors.textSecondary,
+              ),
+              tooltip: 'Lista de Membros e Chaves',
+              onPressed: () => nixState.toggleMembersPanel(),
+            ),
+          ],
+        ),
       ),
     );
   }

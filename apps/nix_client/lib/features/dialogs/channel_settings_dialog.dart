@@ -5,6 +5,7 @@ import '../../core/models/channel.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
+import '../profile/qr_code_painter.dart';
 
 enum _SettingsTab {
   identity,
@@ -22,7 +23,7 @@ class ChannelSettingsDialog extends StatefulWidget {
   static Future<void> show(BuildContext context, Channel channel) {
     return showDialog<void>(
       context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.8),
+      barrierColor: Colors.black.withValues(alpha: 0.72),
       builder: (_) => ChannelSettingsDialog(channel: channel),
     );
   }
@@ -42,24 +43,28 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
   late ChannelPermissions _perms;
   late List<String> _admins;
   late List<String> _moderators;
+  late List<String> _mutedMembers;
   late List<String> _bannedMembers;
   late List<String> _auditLogs;
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.channel.name);
-    _topicController = TextEditingController(text: widget.channel.topic);
-    _descController = TextEditingController(text: widget.channel.description);
+    final c = widget.channel;
+    _nameController = TextEditingController(text: c.name);
+    _topicController = TextEditingController(text: c.topic);
+    _descController = TextEditingController(text: c.description);
+    final code = c.inviteCode ?? c.id;
     _inviteLinkController = TextEditingController(
-      text: 'nix://onion/v3/gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion/c/${widget.channel.id}',
+      text: 'nix://onion/v3/gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion/c/$code',
     );
 
-    _perms = widget.channel.permissions;
-    _admins = List<String>.from(widget.channel.admins);
-    _moderators = List<String>.from(widget.channel.moderators);
-    _bannedMembers = List<String>.from(widget.channel.bannedMembers);
-    _auditLogs = List<String>.from(widget.channel.auditLogs);
+    _perms = c.permissions;
+    _admins = List<String>.from(c.admins);
+    _moderators = List<String>.from(c.moderators);
+    _mutedMembers = List<String>.from(c.mutedMembers);
+    _bannedMembers = List<String>.from(c.bannedMembers);
+    _auditLogs = List<String>.from(c.auditLogs);
   }
 
   @override
@@ -79,9 +84,10 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
       permissions: _perms,
       admins: _admins,
       moderators: _moderators,
+      mutedMembers: _mutedMembers,
       bannedMembers: _bannedMembers,
       auditLogs: [
-        '${DateTime.now().toIso8601String().substring(11, 19)}: Configurações do canal atualizadas pelo administrador.',
+        '${DateTime.now().toIso8601String().substring(11, 19)}: Configurações de #${_nameController.text.trim()} atualizadas.',
         ..._auditLogs,
       ],
     );
@@ -93,33 +99,57 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
         behavior: SnackBarBehavior.floating,
         content: Text(
           'Configurações de #${updated.name} salvas com sucesso!',
-          style: const TextStyle(color: NixColors.textPrimary),
+          style: TextStyle(color: NixColors.textPrimary),
         ),
       ),
     );
+  }
+
+  void _runMemberAction(NixState state, String fingerprint, String action) {
+    state.applyAdminAction(
+      widget.channel.copyWith(
+        admins: _admins,
+        moderators: _moderators,
+        mutedMembers: _mutedMembers,
+        bannedMembers: _bannedMembers,
+        auditLogs: _auditLogs,
+      ),
+      targetFingerprint: fingerprint,
+      action: action,
+    );
+    final allChannels = state.spaces.expand((s) => s.channels);
+    final current = allChannels.firstWhere(
+      (c) => c.id == widget.channel.id,
+      orElse: () => widget.channel,
+    );
+    setState(() {
+      _admins = List<String>.from(current.admins);
+      _moderators = List<String>.from(current.moderators);
+      _mutedMembers = List<String>.from(current.mutedMembers);
+      _bannedMembers = List<String>.from(current.bannedMembers);
+      _auditLogs = List<String>.from(current.auditLogs);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
     final accent = context.accentColor;
+    final accentText = context.accentTextColor;
 
     return Center(
       child: Material(
         color: Colors.transparent,
         child: Container(
-          width: 720,
-          height: 600,
+          width: 760,
+          height: 620,
           decoration: BoxDecoration(
             color: NixColors.background,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: accent.withValues(alpha: 0.35),
-              width: 1,
-            ),
+            border: Border.all(color: accent.withValues(alpha: 0.4)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.9),
+                color: Colors.black.withValues(alpha: 0.65),
                 blurRadius: 36,
                 offset: const Offset(0, 16),
               ),
@@ -127,29 +157,30 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
           ),
           child: Column(
             children: [
-              // Header
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: NixColors.surfaceCard,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                   border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
                 ),
                 child: Row(
                   children: [
-                    Icon(widget.channel.icon, color: accent, size: 20),
+                    Icon(widget.channel.icon, color: accentText, size: 20),
                     const SizedBox(width: 10),
-                    Text(
-                      'Configurações Avançadas · #${widget.channel.name}',
-                      style: const TextStyle(
-                        color: NixColors.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                    Expanded(
+                      child: Text(
+                        'Configurações Avançadas · #${widget.channel.name}',
+                        style: TextStyle(
+                          color: NixColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const Spacer(),
                     IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 20, color: NixColors.textMuted),
+                      icon: Icon(Icons.close_rounded, size: 20, color: NixColors.textMuted),
                       tooltip: 'Fechar (Esc)',
                       onPressed: () => Navigator.of(context).pop(),
                     ),
@@ -157,14 +188,12 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
                 ),
               ),
 
-              // Corpo Principal: Navegação de Categorias + Conteúdo da Aba
               Expanded(
                 child: Row(
                   children: [
-                    // Coluna de Abas
                     Container(
-                      width: 200,
-                      decoration: const BoxDecoration(
+                      width: 210,
+                      decoration: BoxDecoration(
                         color: NixColors.surfaceSidebar,
                         border: Border(right: BorderSide(color: NixColors.surfaceBorder)),
                       ),
@@ -173,56 +202,59 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
                         children: [
                           _buildTabItem(
                             tab: _SettingsTab.identity,
-                            label: 'Identidade e Acesso',
+                            label: 'Identidade, Links & QR',
                             icon: Icons.vpn_key_outlined,
                             accent: accent,
+                            accentText: accentText,
                           ),
                           _buildTabItem(
                             tab: _SettingsTab.permissions,
                             label: 'Permissões de Mensagens',
                             icon: Icons.chat_bubble_outline_rounded,
                             accent: accent,
+                            accentText: accentText,
                           ),
                           _buildTabItem(
                             tab: _SettingsTab.contentProtection,
                             label: 'Proteção de Conteúdo',
                             icon: Icons.shield_outlined,
                             accent: accent,
+                            accentText: accentText,
                           ),
                           _buildTabItem(
                             tab: _SettingsTab.admin,
-                            label: 'Administração & Logs',
+                            label: 'Membros, Admin & Logs',
                             icon: Icons.admin_panel_settings_outlined,
                             accent: accent,
+                            accentText: accentText,
                           ),
                           _buildTabItem(
                             tab: _SettingsTab.security,
-                            label: 'Segurança & Anti-Spam',
+                            label: 'Limites & Anti-Spam',
                             icon: Icons.security_rounded,
                             accent: accent,
+                            accentText: accentText,
                           ),
                         ],
                       ),
                     ),
 
-                    // Conteúdo da Categoria Ativa
                     Expanded(
                       child: Container(
                         padding: const EdgeInsets.all(24),
                         color: NixColors.background,
-                        child: _buildActiveTabContent(accent),
+                        child: _buildActiveTabContent(nixState, accent, accentText),
                       ),
                     ),
                   ],
                 ),
               ),
 
-              // Footer com Ações
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: NixColors.surfaceCard,
-                  borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
                   border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
                 ),
                 child: Row(
@@ -230,25 +262,20 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
                   children: [
                     TextButton(
                       onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Cancelar', style: TextStyle(color: NixColors.textSecondary)),
+                      child: Text('Cancelar', style: TextStyle(color: NixColors.textSecondary)),
                     ),
                     const SizedBox(width: 12),
-                    ElevatedButton(
+                    ElevatedButton.icon(
+                      key: const Key('save_channel_settings_button'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: accent,
-                        foregroundColor: Colors.black,
+                        foregroundColor: context.onAccentColor,
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
                       onPressed: () => _save(nixState),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.save_rounded, size: 16),
-                          SizedBox(width: 6),
-                          Text('Salvar Alterações', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ],
-                      ),
+                      icon: const Icon(Icons.save_rounded, size: 16),
+                      label: const Text('Salvar Alterações', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
@@ -265,6 +292,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
     required String label,
     required IconData icon,
     required Color accent,
+    required Color accentText,
   }) {
     final isSelected = _activeTab == tab;
     return InkWell(
@@ -272,7 +300,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? accent.withValues(alpha: 0.12) : Colors.transparent,
+          color: isSelected ? accent.withValues(alpha: 0.14) : Colors.transparent,
           border: Border(
             left: BorderSide(
               color: isSelected ? accent : Colors.transparent,
@@ -282,7 +310,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
         ),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: isSelected ? accent : NixColors.textMuted),
+            Icon(icon, size: 18, color: isSelected ? accentText : NixColors.textMuted),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -300,7 +328,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
     );
   }
 
-  Widget _buildActiveTabContent(Color accent) {
+  Widget _buildActiveTabContent(NixState state, Color accent, Color accentText) {
     switch (_activeTab) {
       case _SettingsTab.identity:
         return _buildIdentityTab(accent);
@@ -309,7 +337,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
       case _SettingsTab.contentProtection:
         return _buildContentProtectionTab(accent);
       case _SettingsTab.admin:
-        return _buildAdminTab(accent);
+        return _buildAdminTab(state, accent, accentText);
       case _SettingsTab.security:
         return _buildSecurityTab(accent);
     }
@@ -327,7 +355,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
         _buildTextField('Descrição Detalhada', _descController, maxLines: 3),
         const SizedBox(height: 20),
 
-        _buildSectionTitle('ACESSO & CONVITES'),
+        _buildSectionTitle('ACESSO, LINK & QR CODE ONION V3'),
         const SizedBox(height: 12),
         _buildSwitchTile(
           'Canal Público na Rede Nix',
@@ -345,23 +373,50 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
         ),
         const SizedBox(height: 12),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: _buildTextField('Link de Convite Onion v3', _inviteLinkController, readOnly: true),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: NixColors.surfaceBorder),
+              ),
+              child: CustomPaint(
+                size: const Size(82, 82),
+                painter: NixQrCodePainter(
+                  data: _inviteLinkController.text,
+                  foregroundColor: const Color(0xFF17191E),
+                  backgroundColor: Colors.white,
+                ),
+              ),
             ),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.copy_rounded, color: NixColors.textSecondary),
-              tooltip: 'Copiar Link',
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: _inviteLinkController.text));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Link de convite Onion copiado!'),
-                    behavior: SnackBarBehavior.floating,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildTextField('Link de Convite Onion v3', _inviteLinkController, readOnly: true),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        icon: Icon(Icons.copy_rounded, size: 14, color: NixColors.textPrimary),
+                        label: Text('Copiar Link', style: TextStyle(fontSize: 11.5, color: NixColors.textPrimary)),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: _inviteLinkController.text));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Link de convite Onion copiado!'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                   ),
-                );
-              },
+                ],
+              ),
             ),
           ],
         ),
@@ -372,7 +427,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
   Widget _buildPermissionsTab(Color accent) {
     return ListView(
       children: [
-        _buildSectionTitle('PERMISSÕES DE MENSAGENS E CONTEÚDO'),
+        _buildSectionTitle('PERMISSÕES GRANULARES DE MENSAGENS'),
         const SizedBox(height: 12),
         _buildSwitchTile(
           'Enviar Mensagens de Texto',
@@ -386,6 +441,13 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
           'Permitir upload de fotografias e figuras.',
           _perms.allowImages,
           (v) => setState(() => _perms = _perms.copyWith(allowImages: v)),
+          accent,
+        ),
+        _buildSwitchTile(
+          'Enviar Vídeos',
+          'Permitir envio de clipes e transmissões gravadas.',
+          _perms.allowVideos,
+          (v) => setState(() => _perms = _perms.copyWith(allowVideos: v)),
           accent,
         ),
         _buildSwitchTile(
@@ -411,7 +473,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
         ),
         _buildSwitchTile(
           'Permitir Encaminhamento de Mensagens',
-          'Membros podem encaminhar mensagens deste canal para outros destinos.',
+          'Membros podem encaminhar mensagens deste canal.',
           _perms.allowForwarding,
           (v) => setState(() => _perms = _perms.copyWith(allowForwarding: v)),
           accent,
@@ -448,21 +510,28 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
         const SizedBox(height: 12),
         _buildSwitchTile(
           'Restringir Encaminhamento & Cópia',
-          'Desativa ações de exportar e encaminhar dados confidenciais do canal.',
+          'Desativa ações de exportar e copiar dados confidenciais do canal.',
           _perms.restrictExport,
           (v) => setState(() => _perms = _perms.copyWith(restrictExport: v)),
           accent,
         ),
         _buildSwitchTile(
           'Bloquear Salvamento Local de Mídias',
-          'Mídias só podem ser visualizadas na memória volátil, sem persistência em disco.',
+          'Mídias são visualizadas apenas em memória volátil, sem gravação em disco.',
           _perms.restrictMediaSaving,
           (v) => setState(() => _perms = _perms.copyWith(restrictMediaSaving: v)),
           accent,
         ),
         _buildSwitchTile(
+          'Proteger Pré-visualizações de Links e Mídias',
+          'Evita busca automática de metadados externos para links publicados.',
+          _perms.protectPreviews,
+          (v) => setState(() => _perms = _perms.copyWith(protectPreviews: v)),
+          accent,
+        ),
+        _buildSwitchTile(
           'Proteção Contra Capturas de Tela (FLAG_SECURE)',
-          'No Android, ativa FLAG_SECURE impedindo screenshots e visualização em alternador de apps.',
+          'No Android, solicita FLAG_SECURE ao gerenciador de janelas do sistema.',
           _perms.requestScreenshotProtection,
           (v) => setState(() => _perms = _perms.copyWith(requestScreenshotProtection: v)),
           accent,
@@ -475,16 +544,16 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: NixColors.surfaceBorder),
           ),
-          child: const Row(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(Icons.info_outline_rounded, size: 16, color: NixColors.textMuted),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Nota de Segurança Multiplataforma:\n'
-                  '• Android: FLAG_SECURE garante proteção física pelo gerenciador de janelas do sistema operacional.\n'
-                  '• Desktop (Linux/Windows/macOS): Proteção técnica absoluta contra gravação de tela não é viável sob X11/Wayland sem permissões de kernel; o Nix ofusca a janela ao perder foco.',
+                  'Nota Técnica de Proteção Multiplataforma:\n'
+                  '• Android: FLAG_SECURE impede capturas/gravações via sistema na maioria dos aparelhos.\n'
+                  '• Desktop (Linux/Windows/macOS): Nenhum app de usuário bloqueia totalmente capturas de tela externas ou foto física do monitor; tratamos isso como mitigação auxiliar, não garantia absoluta.',
                   style: TextStyle(color: NixColors.textMuted, fontSize: 11, height: 1.4),
                 ),
               ),
@@ -497,19 +566,20 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
         DropdownButtonFormField<int>(
           value: _perms.ephemeralRetentionMinutes,
           dropdownColor: NixColors.surfaceCard,
+          style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
           decoration: InputDecoration(
             labelText: 'Tempo de Retenção Automática',
-            labelStyle: const TextStyle(color: NixColors.textMuted),
+            labelStyle: TextStyle(color: NixColors.textMuted),
             filled: true,
             fillColor: NixColors.surfaceCard,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           ),
-          items: const [
-            DropdownMenuItem(value: 0, child: Text('Permanente (Sem auto-destruição)', style: TextStyle(color: Colors.white))),
-            DropdownMenuItem(value: 5, child: Text('5 minutos', style: TextStyle(color: Colors.white))),
-            DropdownMenuItem(value: 60, child: Text('1 hora', style: TextStyle(color: Colors.white))),
-            DropdownMenuItem(value: 1440, child: Text('24 horas (1 dia)', style: TextStyle(color: Colors.white))),
-            DropdownMenuItem(value: 10080, child: Text('7 dias (Padrão Relay)', style: TextStyle(color: Colors.white))),
+          items: [
+            DropdownMenuItem(value: 0, child: Text('Permanente (Sem auto-destruição)', style: TextStyle(color: NixColors.textPrimary))),
+            DropdownMenuItem(value: 5, child: Text('5 minutos', style: TextStyle(color: NixColors.textPrimary))),
+            DropdownMenuItem(value: 60, child: Text('1 hora', style: TextStyle(color: NixColors.textPrimary))),
+            DropdownMenuItem(value: 1440, child: Text('24 horas (1 dia)', style: TextStyle(color: NixColors.textPrimary))),
+            DropdownMenuItem(value: 10080, child: Text('7 dias (Padrão Relay)', style: TextStyle(color: NixColors.textPrimary))),
           ],
           onChanged: (val) {
             if (val != null) {
@@ -521,56 +591,119 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
     );
   }
 
-  Widget _buildAdminTab(Color accent) {
+  Widget _buildAdminTab(NixState state, Color accent, Color accentText) {
+    final members = state.members;
     return ListView(
       children: [
-        _buildSectionTitle('ADMINISTRADORES E MODERADORES'),
+        _buildSectionTitle('GESTÃO DE MEMBROS & CARGOS'),
+        const SizedBox(height: 8),
+        ...members.map((m) {
+          final fp = m.fingerprint;
+          final isAdmin = _admins.contains(fp);
+          final isMod = _moderators.contains(fp);
+          final isMuted = _mutedMembers.contains(fp);
+          final isBanned = _bannedMembers.contains(fp);
+          return Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: NixColors.surfaceCard,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: NixColors.surfaceBorder),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        m.name,
+                        style: TextStyle(
+                          color: NixColors.textPrimary,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '$fp · ${isBanned ? 'Banido' : (isMuted ? 'Silenciado' : (isAdmin ? 'Admin' : (isMod ? 'Mod' : 'Membro')))}',
+                        style: TextStyle(color: NixColors.textMuted, fontSize: 10.5),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: isAdmin ? 'Remover Admin' : 'Promover Admin',
+                  icon: Icon(
+                    Icons.admin_panel_settings_rounded,
+                    size: 16,
+                    color: isAdmin ? accentText : NixColors.textMuted,
+                  ),
+                  onPressed: () => _runMemberAction(state, fp, 'toggle_admin'),
+                ),
+                IconButton(
+                  tooltip: isMod ? 'Remover Moderador' : 'Promover Moderador',
+                  icon: Icon(
+                    Icons.gavel_rounded,
+                    size: 16,
+                    color: isMod ? accentText : NixColors.textMuted,
+                  ),
+                  onPressed: () => _runMemberAction(state, fp, 'toggle_mod'),
+                ),
+                IconButton(
+                  tooltip: isMuted ? 'Dessilenciar' : 'Silenciar Membro',
+                  icon: Icon(
+                    isMuted ? Icons.volume_off_rounded : Icons.volume_up_outlined,
+                    size: 16,
+                    color: isMuted ? NixColors.accentWarning : NixColors.textMuted,
+                  ),
+                  onPressed: () => _runMemberAction(state, fp, 'toggle_mute'),
+                ),
+                IconButton(
+                  tooltip: isBanned ? 'Banido' : 'Banir Membro',
+                  icon: Icon(
+                    Icons.block_rounded,
+                    size: 16,
+                    color: isBanned ? NixColors.accentDanger : NixColors.textMuted,
+                  ),
+                  onPressed: () => _runMemberAction(state, fp, 'ban'),
+                ),
+              ],
+            ),
+          );
+        }),
+        const SizedBox(height: 16),
+        _buildSectionTitle('LOGS DE AUDITORIA LOCAL'),
         const SizedBox(height: 8),
         Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: NixColors.surfaceCard,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: NixColors.surfaceBorder),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Dono do Canal: ${widget.channel.ownerFingerprint}', style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Text('Administradores (${_admins.length}): ${_admins.join(', ')}', style: const TextStyle(color: NixColors.textSecondary, fontSize: 12)),
-              const SizedBox(height: 4),
-              Text('Moderadores (${_moderators.length}): ${_moderators.join(', ')}', style: const TextStyle(color: NixColors.textSecondary, fontSize: 12)),
-              const SizedBox(height: 4),
-              Text('Membros Banidos (${_bannedMembers.length}): ${_bannedMembers.isEmpty ? 'Nenhum' : _bannedMembers.join(', ')}', style: const TextStyle(color: NixColors.textMuted, fontSize: 12)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-        _buildSectionTitle('LOGS DE AUDITORIA CRIPTOGRÁFICA'),
-        const SizedBox(height: 8),
-        Container(
-          height: 180,
+          height: 140,
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: NixColors.background,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: NixColors.surfaceBorder),
           ),
-          child: ListView.separated(
-            itemCount: _auditLogs.length,
-            separatorBuilder: (_, __) => const Divider(height: 8, color: NixColors.surfaceBorder),
-            itemBuilder: (ctx, idx) {
-              return Text(
-                _auditLogs[idx],
-                style: const TextStyle(
-                  color: NixColors.textSecondary,
-                  fontSize: 11,
-                  fontFamily: 'monospace',
+          child: _auditLogs.isEmpty
+              ? Center(
+                  child: Text(
+                    'Nenhum evento registrado neste canal.',
+                    style: TextStyle(color: NixColors.textMuted, fontSize: 11),
+                  ),
+                )
+              : ListView.separated(
+                  itemCount: _auditLogs.length,
+                  separatorBuilder: (_, __) => Divider(height: 8, color: NixColors.surfaceBorder),
+                  itemBuilder: (ctx, idx) {
+                    return Text(
+                      _auditLogs[idx],
+                      style: TextStyle(
+                        color: NixColors.textSecondary,
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
       ],
     );
@@ -579,24 +712,25 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
   Widget _buildSecurityTab(Color accent) {
     return ListView(
       children: [
-        _buildSectionTitle('SEGURANÇA E COMBATE A SPAM'),
+        _buildSectionTitle('SEGURANÇA, LIMITES E ANTI-SPAM'),
         const SizedBox(height: 12),
         DropdownButtonFormField<int>(
           value: _perms.slowModeSeconds,
           dropdownColor: NixColors.surfaceCard,
+          style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
           decoration: InputDecoration(
             labelText: 'Modo Lento (Slow Mode) - Intervalo entre Mensagens',
-            labelStyle: const TextStyle(color: NixColors.textMuted),
+            labelStyle: TextStyle(color: NixColors.textMuted),
             filled: true,
             fillColor: NixColors.surfaceCard,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           ),
-          items: const [
-            DropdownMenuItem(value: 0, child: Text('Desativado (Tempo real)', style: TextStyle(color: Colors.white))),
-            DropdownMenuItem(value: 5, child: Text('5 segundos', style: TextStyle(color: Colors.white))),
-            DropdownMenuItem(value: 15, child: Text('15 segundos', style: TextStyle(color: Colors.white))),
-            DropdownMenuItem(value: 30, child: Text('30 segundos', style: TextStyle(color: Colors.white))),
-            DropdownMenuItem(value: 60, child: Text('1 minuto', style: TextStyle(color: Colors.white))),
+          items: [
+            DropdownMenuItem(value: 0, child: Text('Desativado (Tempo real)', style: TextStyle(color: NixColors.textPrimary))),
+            DropdownMenuItem(value: 5, child: Text('5 segundos', style: TextStyle(color: NixColors.textPrimary))),
+            DropdownMenuItem(value: 15, child: Text('15 segundos', style: TextStyle(color: NixColors.textPrimary))),
+            DropdownMenuItem(value: 30, child: Text('30 segundos', style: TextStyle(color: NixColors.textPrimary))),
+            DropdownMenuItem(value: 60, child: Text('1 minuto', style: TextStyle(color: NixColors.textPrimary))),
           ],
           onChanged: (val) {
             if (val != null) {
@@ -608,21 +742,45 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
         DropdownButtonFormField<int>(
           value: _perms.maxFileSizeMb,
           dropdownColor: NixColors.surfaceCard,
+          style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
           decoration: InputDecoration(
             labelText: 'Tamanho Máximo Permitido por Arquivo',
-            labelStyle: const TextStyle(color: NixColors.textMuted),
+            labelStyle: TextStyle(color: NixColors.textMuted),
             filled: true,
             fillColor: NixColors.surfaceCard,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           ),
-          items: const [
-            DropdownMenuItem(value: 10, child: Text('10 MB (Máxima rapidez sobre Tor)', style: TextStyle(color: Colors.white))),
-            DropdownMenuItem(value: 50, child: Text('50 MB (Recomendado)', style: TextStyle(color: Colors.white))),
-            DropdownMenuItem(value: 100, child: Text('100 MB (Limite máximo)', style: TextStyle(color: Colors.white))),
+          items: [
+            DropdownMenuItem(value: 10, child: Text('10 MB (Máxima rapidez sobre Tor)', style: TextStyle(color: NixColors.textPrimary))),
+            DropdownMenuItem(value: 50, child: Text('50 MB (Recomendado)', style: TextStyle(color: NixColors.textPrimary))),
+            DropdownMenuItem(value: 100, child: Text('100 MB (Limite máximo)', style: TextStyle(color: NixColors.textPrimary))),
           ],
           onChanged: (val) {
             if (val != null) {
               setState(() => _perms = _perms.copyWith(maxFileSizeMb: val));
+            }
+          },
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<int>(
+          value: _perms.inviteExpiryDays,
+          dropdownColor: NixColors.surfaceCard,
+          style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
+          decoration: InputDecoration(
+            labelText: 'Expiração Automática de Convites',
+            labelStyle: TextStyle(color: NixColors.textMuted),
+            filled: true,
+            fillColor: NixColors.surfaceCard,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          items: [
+            DropdownMenuItem(value: 1, child: Text('24 horas', style: TextStyle(color: NixColors.textPrimary))),
+            DropdownMenuItem(value: 7, child: Text('7 dias (Padrão Relay)', style: TextStyle(color: NixColors.textPrimary))),
+            DropdownMenuItem(value: 30, child: Text('30 dias', style: TextStyle(color: NixColors.textPrimary))),
+          ],
+          onChanged: (val) {
+            if (val != null) {
+              setState(() => _perms = _perms.copyWith(inviteExpiryDays: val));
             }
           },
         ),
@@ -633,7 +791,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
   Widget _buildSectionTitle(String title) {
     return Text(
       title,
-      style: const TextStyle(
+      style: TextStyle(
         color: NixColors.textMuted,
         fontSize: 11,
         fontWeight: FontWeight.bold,
@@ -653,22 +811,22 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
       controller: controller,
       maxLines: maxLines,
       readOnly: readOnly,
-      style: const TextStyle(color: NixColors.textPrimary, fontSize: 13),
+      style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: NixColors.textMuted, fontSize: 12),
+        labelStyle: TextStyle(color: NixColors.textMuted, fontSize: 12),
         prefixText: prefixText,
-        prefixStyle: const TextStyle(color: NixColors.textMuted),
+        prefixStyle: TextStyle(color: NixColors.textMuted),
         filled: true,
         fillColor: NixColors.surfaceCard,
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: NixColors.surfaceBorder),
+          borderSide: BorderSide(color: NixColors.surfaceBorder),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: NixColors.surfaceBorder),
+          borderSide: BorderSide(color: NixColors.surfaceBorder),
         ),
       ),
     );
@@ -689,8 +847,8 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
         border: Border.all(color: NixColors.surfaceBorder),
       ),
       child: SwitchListTile(
-        title: Text(title, style: const TextStyle(color: NixColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-        subtitle: Text(subtitle, style: const TextStyle(color: NixColors.textMuted, fontSize: 11)),
+        title: Text(title, style: TextStyle(color: NixColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+        subtitle: Text(subtitle, style: TextStyle(color: NixColors.textMuted, fontSize: 11)),
         value: value,
         activeColor: accent,
         onChanged: onChanged,

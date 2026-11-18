@@ -10,9 +10,9 @@ class MoneroP2pOrder {
   final String traderName;
   final String traderPublicId;
   final NixTrustLevel trustLevel;
-  final double reputationScore; // ex: 99.4%
+  final double reputationScore;
   final int completedTrades;
-  final MoneroP2pSide side; // buy ou sell
+  final MoneroP2pSide side;
   final String fiatCurrency; // 'BRL', 'USD', 'EUR'
   final double pricePerXmr;
   final double minFiatLimit;
@@ -21,6 +21,10 @@ class MoneroP2pOrder {
   final bool isOnline;
   final int avgResponseMinutes;
   final String signedManifestHash;
+  final String? signatureHex;
+  final String? nonceHex;
+  final DateTime? expiresAt;
+  final bool isSignatureVerified;
   final String notes;
 
   const MoneroP2pOrder({
@@ -39,8 +43,14 @@ class MoneroP2pOrder {
     this.isOnline = true,
     this.avgResponseMinutes = 4,
     required this.signedManifestHash,
+    this.signatureHex,
+    this.nonceHex,
+    this.expiresAt,
+    this.isSignatureVerified = true,
     this.notes = 'Liberação P2P imediata após confirmação na blockchain Monero.',
   });
+
+  bool get isExpired => expiresAt != null && DateTime.now().isAfter(expiresAt!);
 
   String get fiatSymbol {
     switch (fiatCurrency) {
