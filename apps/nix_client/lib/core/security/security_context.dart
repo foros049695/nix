@@ -9,7 +9,7 @@ class SecurityContext {
 
   const SecurityContext({
     this.isTorConnected = true,
-    this.onionNode = "nix777v3hiddenrelay.onion",
+    this.onionNode = "gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion",
     this.isFailClosedEnabled = true,
     this.isSqlCipherUnlocked = true,
     this.myFingerprint = "7E3A-9F01-C45B-289D",

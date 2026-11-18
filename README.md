@@ -16,8 +16,8 @@ Os pacotes binários oficiais estão prontos para distribuição e homologados n
 
 | Plataforma | Pacote | Tamanho | SHA-256 Checksum |
 |---|---|---|---|
-| **Linux Desktop (x86_64)** | [`dist/nix-desktop-linux-x64.tar.gz`](dist/nix-desktop-linux-x64.tar.gz) | 19 MB | `d0fb3131cab52dfddea2b4c1b5304d310a741d34a6e62741e573a2a3892de628` |
-| **Android APK (Release)** | [`dist/nix-client-v0.2.0.apk`](dist/nix-client-v0.2.0.apk) | 32 MB | `60aeded4530041fc5735a074d3c63b11408ff14da1cdf396bc013dd37dedd142` |
+| **Linux Desktop (x86_64)** | [`dist/nix-desktop-linux-x64.tar.gz`](dist/nix-desktop-linux-x64.tar.gz) | 19 MB | `dbc631bbcf25d24c1d5fa4dd59ddff561a50fe5f04e329cbc53b274e44561966` |
+| **Android APK (Release)** | [`dist/nix-client-v0.2.0.apk`](dist/nix-client-v0.2.0.apk) | 32 MB | `a808ca6f739aaf10c84b0399def2eac8448ca7f7f515bb069f0702ed41121fdf` |
 
 - **Documentação de Auditoria:** [`docs/AUDIT_REPORT_V2.md`](docs/AUDIT_REPORT_V2.md)
 - **Guia de Implantação Onion v3:** [`docs/DEPLOYMENT_ONION_V3.md`](docs/DEPLOYMENT_ONION_V3.md)

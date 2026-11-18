@@ -40,6 +40,7 @@ O presente relatório consolida a auditoria técnica, arquitetural e funcional d
 - **Retenção e TTL:** Tempo de vida padrão de 7 dias (10.080 minutos) para envelopes em trânsito.
 - **Expurgo por Histerese:** Algoritmo de descarte progressivo que prioriza descarte de envelopes expirados ou consumidos sem deixar rastros em disco.
 - **Isolamento de Recursos:** Suporte a execução em containers unprivileged com restrições cgroups e isolamento de rede virtual.
+- **Endereço Onion v3 Ativo:** `gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion` (SOCKS5 Proxy em `127.0.0.1:9050`).
 
 ---
 
@@ -157,14 +158,14 @@ Todas as 7 suítes de testes automatizados foram executadas e validadas com **10
 - **Binário gerado:** `build/linux/x64/release/bundle/nix_client`
 - **Pacote de Distribuição:** `dist/nix-desktop-linux-x64.tar.gz`
 - **Tamanho:** 19 MB
-- **SHA-256:** `d0fb3131cab52dfddea2b4c1b5304d310a741d34a6e62741e573a2a3892de628`
+- **SHA-256:** `dbc631bbcf25d24c1d5fa4dd59ddff561a50fe5f04e329cbc53b274e44561966`
 
 ### Android APK (arm64-v8a / armeabi-v7a / x86_64)
 - **Comando:** `flutter build apk --release`
 - **Binário gerado:** `build/app/outputs/flutter-apk/app-release.apk`
 - **Pacote de Distribuição:** `dist/nix-client-v0.2.0.apk`
 - **Tamanho:** 32 MB
-- **SHA-256:** `60aeded4530041fc5735a074d3c63b11408ff14da1cdf396bc013dd37dedd142`
+- **SHA-256:** `a808ca6f739aaf10c84b0399def2eac8448ca7f7f515bb069f0702ed41121fdf`
 
 ---
 

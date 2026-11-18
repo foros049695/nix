@@ -81,7 +81,7 @@ class NixState extends ChangeNotifier {
   Timer? _callTimer;
 
   // Estado Tor Onion
-  final String _onionAddress = 'nix6v3j7r8e2sovrq9m4l1kc82h4p9w0z.onion';
+  final String _onionAddress = 'gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion';
   final bool _isTorRunning = true;
 
   NixState() {

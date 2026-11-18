@@ -52,7 +52,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
     _topicController = TextEditingController(text: widget.channel.topic);
     _descController = TextEditingController(text: widget.channel.description);
     _inviteLinkController = TextEditingController(
-      text: 'nix://onion/v3/7e3a9f01c45b289d.onion/c/${widget.channel.id}',
+      text: 'nix://onion/v3/gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion/c/${widget.channel.id}',
     );
 
     _perms = widget.channel.permissions;
