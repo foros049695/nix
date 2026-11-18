@@ -4,6 +4,35 @@
 
 ---
 
+## [0.4.1-dev] - 2026-11-18
+
+### Responsividade, Interação & Design System V4.1
+- **Painéis de Chat Redimensionáveis (Splitters Interativos)**:
+  - Adicionado `PanelResizeDivider` com cursor `col-resize`, feedback visual luminoso ao hover/arraste e duplo clique para restauração das larguras padrão.
+  - Implementada persistência reativa e restrições elásticas de largura: Spaces Dock (mínimo 64px, padrão 78px, máximo 110px) e Channels Sidebar (mínimo 220px, padrão 288px, máximo 480px).
+- **Pastas & Filtros com Rolagem Horizontal Suave**:
+  - Implementada barra de filtros e pastas rolável com física `BouncingScrollPhysics` e layout adaptativo (`effectiveWidth`), prevenindo cortes nas bordas da lista de conversas.
+  - Suporte completo a navegação por mouse, trackpad e toque.
+- **Sincronização Reativa Universal do Avatar do Usuário (`NixUserAvatar`)**:
+  - Unificação da identidade visual do usuário em toda a interface (Spaces Dock topo e rodapé, Channels Sidebar rodapé, Card ID e Profile Overlay).
+  - Suporte dinâmico aos modos `local_file` (com pan e zoom personalizados), `monogram` (iniciais), `sentinel` (escudo protetor) e `none` (silhueta anônima).
+- **Modal de Escolha de Foto de Perfil com Alto Contraste & Seletor Nativo**:
+  - Redesenho da interface do modal eliminando textos brancos sobrepostos em temas claros (`Light Yellow`), assegurando contraste WCAG 2.2 AA.
+  - Seletor nativo desktop integrado com suporte a preview circular em tempo real e remoção/sanitização de metadados.
+- **Compositor Completo em Mensagens Salvas e Chats Privados**:
+  - Integração do botão de anexos nativo (`chat_attach_button`) suportando imagens, vídeos, áudios, documentos e arquivos compactados.
+  - Bandeja de pré-visualização horizontal com ícones semânticos, remoção individual por chip e envio protegido.
+  - Alinhamento dimensional e vertical do botão de temporizador efêmero (ícone 20px, target 36x36px) e gatilho de gravação de voz.
+- **Mercado Monero P2P Responsivo & Adaptativo**:
+  - Layout adaptativo via `LayoutBuilder`: em telas estreitas (< 740px), cabeçalho e filtros reorganizam-se em múltiplas linhas sem corte dos botões Comprar/Vender/Fiat.
+  - Cartões de anúncio adaptativos em larguras restritas (< 640px) com empilhamento vertical do trader, preço/limites, método de pagamento e botão "Negociar".
+- **Design Tokens de Raios de Arredondamento (`NixTokens`)**:
+  - Padronização formal dos tokens de curvatura interna: painéis (16px), cartões e listas (14px), mensagens (16px), modais (20px), inputs (12px), botões compactos (10px) e avatares circulares.
+- **Protótipos de Desenvolvimento V4.1**:
+  - Compilados protótipos de teste de desenvolvimento: Linux Desktop x64 (`nix-desktop-linux-x64-v0.4.1-dev.tar.gz`) e Android APK (`nix-client-v0.4.1-dev.apk`).
+
+---
+
 ## [0.4.0-dev] - 2026-11-18
 
 ### Identidade Visual, Marca & Design System V4

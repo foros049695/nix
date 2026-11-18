@@ -20,146 +20,194 @@ class MoneroP2pView extends StatelessWidget {
     final accent = context.accentColor;
     final accentText = context.accentTextColor;
 
-    return Container(
-      color: NixColors.background,
-      child: Column(
-        children: [
-          Container(
-            height: 54,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: BoxDecoration(
-              color: NixColors.surfaceElevated,
-              border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.currency_exchange_rounded, size: 18, color: accentText),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'MERCADO MONERO P2P DESCENTRALIZADO (NON-CUSTODIAL)',
-                        style: TextStyle(
-                          color: NixColors.textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.5,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        'Assinaturas Ed25519 verificadas · Anti-replay por nonce · Zero custódia e sem KYC',
-                        style: TextStyle(color: NixColors.textMuted, fontSize: 10.5),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                ElevatedButton.icon(
-                  key: const Key('create_monero_order_button'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: accent,
-                    foregroundColor: context.onAccentColor,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                  onPressed: () => _showCreateOrderDialog(context, nixState),
-                  icon: const Icon(Icons.add_rounded, size: 16),
-                  label: const Text('Criar Anúncio', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                ),
-              ],
-            ),
-          ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 740;
 
-          // Banner de Segurança Non-Custodial & Anti-Fraude
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            decoration: BoxDecoration(
-              color: NixColors.surfaceCard,
-              border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.shield_outlined, size: 15, color: NixColors.accentGreen),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Aviso Non-Custodial & Anti-Fraude: O Nix apenas exibe ordens assinadas e abre negociação E2EE. Nunca transfira XMR ou fiat para endereços fora do canal criptografado verificado nem ignore alertas de assinatura.',
-                    style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
-                  ),
+        return Container(
+          color: NixColors.background,
+          child: Column(
+            children: [
+              // Cabeçalho Responsivo do Mercado P2P
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: NixColors.surfaceElevated,
+                  border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
                 ),
-              ],
-            ),
-          ),
-
-          // Filtros: Comprar / Vender, Moedas Fiat e Método de Pagamento
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            decoration: BoxDecoration(
-              color: NixColors.surfaceSidebar,
-              border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: NixColors.surfaceCard,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: NixColors.surfaceBorder),
-                      ),
-                      child: Row(
+                child: isNarrow
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _sideButton(
-                            context: context,
-                            title: 'Comprar XMR',
-                            isSelected: nixState.moneroSelectedSide == MoneroP2pSide.sell,
-                            onTap: () => nixState.setMoneroSide(MoneroP2pSide.sell),
+                          Row(
+                            children: [
+                              Icon(Icons.currency_exchange_rounded, size: 18, color: accentText),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'MERCADO MONERO P2P (NON-CUSTODIAL)',
+                                  style: TextStyle(
+                                    color: NixColors.textPrimary,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.5,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              ElevatedButton.icon(
+                                key: const Key('create_monero_order_button'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: accent,
+                                  foregroundColor: context.onAccentColor,
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  shape: RoundedRectangleBorder(borderRadius: NixTokens.borderButtonCompact),
+                                ),
+                                onPressed: () => _showCreateOrderDialog(context, nixState),
+                                icon: const Icon(Icons.add_rounded, size: 15),
+                                label: const Text('Anúncio', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              ),
+                            ],
                           ),
-                          _sideButton(
-                            context: context,
-                            title: 'Vender XMR',
-                            isSelected: nixState.moneroSelectedSide == MoneroP2pSide.buy,
-                            onTap: () => nixState.setMoneroSide(MoneroP2pSide.buy),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Assinaturas Ed25519 · Anti-replay por nonce · Zero custódia e sem KYC',
+                            style: TextStyle(color: NixColors.textMuted, fontSize: 10),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          Icon(Icons.currency_exchange_rounded, size: 18, color: accentText),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'MERCADO MONERO P2P DESCENTRALIZADO (NON-CUSTODIAL)',
+                                  style: TextStyle(
+                                    color: NixColors.textPrimary,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.5,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  'Assinaturas Ed25519 verificadas · Anti-replay por nonce · Zero custódia e sem KYC',
+                                  style: TextStyle(color: NixColors.textMuted, fontSize: 10.5),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            key: const Key('create_monero_order_button'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: accent,
+                              foregroundColor: context.onAccentColor,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: NixTokens.borderButtonCompact),
+                            ),
+                            onPressed: () => _showCreateOrderDialog(context, nixState),
+                            icon: const Icon(Icons.add_rounded, size: 16),
+                            label: const Text('Criar Anúncio', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: NixColors.surfaceCard,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: NixColors.surfaceBorder),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: nixState.moneroSelectedFiat,
-                          dropdownColor: NixColors.surfaceElevatedHigh,
-                          style: TextStyle(
-                            color: NixColors.textPrimary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          items: const [
-                            DropdownMenuItem(value: 'BRL', child: Text('BRL (R\$)')),
-                            DropdownMenuItem(value: 'USD', child: Text('USD (\$)')),
-                            DropdownMenuItem(value: 'EUR', child: Text('EUR (€)')),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) nixState.setMoneroFiat(v);
-                          },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
+              ),
+
+              // Banner de Segurança Non-Custodial & Anti-Fraude
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                decoration: BoxDecoration(
+                  color: NixColors.surfaceCard,
+                  border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.shield_outlined, size: 15, color: NixColors.accentGreen),
+                    const SizedBox(width: 8),
                     Expanded(
-                      child: TextField(
+                      child: Text(
+                        'Aviso Non-Custodial & Anti-Fraude: O Nix apenas exibe ordens assinadas e abre negociação E2EE. Nunca transfira XMR ou fiat para endereços fora do canal criptografado verificado nem ignore alertas de assinatura.',
+                        style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Filtros Responsivos: Comprar / Vender, Moedas Fiat e Método de Pagamento
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: BoxDecoration(
+                  color: NixColors.surfaceSidebar,
+                  border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
+                ),
+                child: Column(
+                  children: [
+                    if (isNarrow) ...[
+                      Row(
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              color: NixColors.surfaceCard,
+                              borderRadius: NixTokens.borderButtonCompact,
+                              border: Border.all(color: NixColors.surfaceBorder),
+                            ),
+                            child: Row(
+                              children: [
+                                _sideButton(
+                                  context: context,
+                                  title: 'Comprar XMR',
+                                  isSelected: nixState.moneroSelectedSide == MoneroP2pSide.sell,
+                                  onTap: () => nixState.setMoneroSide(MoneroP2pSide.sell),
+                                ),
+                                _sideButton(
+                                  context: context,
+                                  title: 'Vender XMR',
+                                  isSelected: nixState.moneroSelectedSide == MoneroP2pSide.buy,
+                                  onTap: () => nixState.setMoneroSide(MoneroP2pSide.buy),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: NixColors.surfaceCard,
+                              borderRadius: NixTokens.borderButtonCompact,
+                              border: Border.all(color: NixColors.surfaceBorder),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: nixState.moneroSelectedFiat,
+                                dropdownColor: NixColors.surfaceElevatedHigh,
+                                style: TextStyle(
+                                  color: NixColors.textPrimary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                items: const [
+                                  DropdownMenuItem(value: 'BRL', child: Text('BRL (R\$)')),
+                                  DropdownMenuItem(value: 'USD', child: Text('USD (\$)')),
+                                  DropdownMenuItem(value: 'EUR', child: Text('EUR (€)')),
+                                ],
+                                onChanged: (v) {
+                                  if (v != null) nixState.setMoneroFiat(v);
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
                         onChanged: nixState.setMoneroSearchQuery,
                         style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5),
                         decoration: InputDecoration(
@@ -167,54 +215,141 @@ class MoneroP2pView extends StatelessWidget {
                           prefixIcon: Icon(Icons.search, size: 16, color: NixColors.textMuted),
                           isDense: true,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(
+                            borderRadius: NixTokens.borderInput,
+                            borderSide: BorderSide(color: NixColors.surfaceBorder),
+                          ),
                         ),
+                      ),
+                    ] else ...[
+                      Row(
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              color: NixColors.surfaceCard,
+                              borderRadius: NixTokens.borderButtonCompact,
+                              border: Border.all(color: NixColors.surfaceBorder),
+                            ),
+                            child: Row(
+                              children: [
+                                _sideButton(
+                                  context: context,
+                                  title: 'Comprar XMR',
+                                  isSelected: nixState.moneroSelectedSide == MoneroP2pSide.sell,
+                                  onTap: () => nixState.setMoneroSide(MoneroP2pSide.sell),
+                                ),
+                                _sideButton(
+                                  context: context,
+                                  title: 'Vender XMR',
+                                  isSelected: nixState.moneroSelectedSide == MoneroP2pSide.buy,
+                                  onTap: () => nixState.setMoneroSide(MoneroP2pSide.buy),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: NixColors.surfaceCard,
+                              borderRadius: NixTokens.borderButtonCompact,
+                              border: Border.all(color: NixColors.surfaceBorder),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: nixState.moneroSelectedFiat,
+                                dropdownColor: NixColors.surfaceElevatedHigh,
+                                style: TextStyle(
+                                  color: NixColors.textPrimary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                items: const [
+                                  DropdownMenuItem(value: 'BRL', child: Text('BRL (R\$)')),
+                                  DropdownMenuItem(value: 'USD', child: Text('USD (\$)')),
+                                  DropdownMenuItem(value: 'EUR', child: Text('EUR (€)')),
+                                ],
+                                onChanged: (v) {
+                                  if (v != null) nixState.setMoneroFiat(v);
+                                },
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              onChanged: nixState.setMoneroSearchQuery,
+                              style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5),
+                              decoration: InputDecoration(
+                                hintText: 'Filtrar por método de pagamento, trader ou notas...',
+                                prefixIcon: Icon(Icons.search, size: 16, color: NixColors.textMuted),
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                border: OutlineInputBorder(
+                                  borderRadius: NixTokens.borderInput,
+                                  borderSide: BorderSide(color: NixColors.surfaceBorder),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      child: Row(
+                        children: [
+                          _paymentMethodChip(context, nixState, 'Todos'),
+                          _paymentMethodChip(context, nixState, 'PIX'),
+                          _paymentMethodChip(context, nixState, 'Dinheiro'),
+                          _paymentMethodChip(context, nixState, 'SEPA'),
+                          _paymentMethodChip(context, nixState, 'Wise'),
+                          _paymentMethodChip(context, nixState, 'TED'),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _paymentMethodChip(context, nixState, 'Todos'),
-                      _paymentMethodChip(context, nixState, 'PIX'),
-                      _paymentMethodChip(context, nixState, 'Dinheiro'),
-                      _paymentMethodChip(context, nixState, 'SEPA'),
-                      _paymentMethodChip(context, nixState, 'Wise'),
-                      _paymentMethodChip(context, nixState, 'TED'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
 
-          Expanded(
-            child: orders.isEmpty
-                ? Center(
-                    child: Text(
-                      'Nenhuma oferta encontrada para os filtros selecionados.',
-                      style: TextStyle(color: NixColors.textMuted, fontSize: 13),
-                    ),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.all(20),
-                    itemCount: orders.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (context, idx) {
-                      final order = orders[idx];
-                      final valid = nixState.verifyMoneroOrder(order);
-                      return _MoneroOrderCard(
-                        order: order,
-                        isCryptographicallyValid: valid,
-                        onTrade: valid ? () => nixState.openTradeWithOrder(order) : null,
-                      );
-                    },
-                  ),
+              // Lista de Ofertas ou Estado Vazio
+              Expanded(
+                child: orders.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.search_off_rounded, size: 40, color: NixColors.textMuted),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Nenhuma oferta encontrada para os filtros selecionados.',
+                              style: TextStyle(color: NixColors.textSecondary, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(20),
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: orders.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, idx) {
+                          final order = orders[idx];
+                          final valid = nixState.verifyMoneroOrder(order);
+                          return _MoneroOrderCard(
+                            order: order,
+                            isCryptographicallyValid: valid,
+                            onTrade: valid ? () => nixState.openTradeWithOrder(order) : null,
+                          );
+                        },
+                      ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -449,154 +584,295 @@ class _MoneroOrderCard extends StatelessWidget {
             ? 'Expirada'
             : 'Expira em ${order.expiresAt!.difference(DateTime.now()).inHours.clamp(1, 999)}h');
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: NixColors.surfaceCard,
-        borderRadius: NixTokens.borderMd,
-        border: Border.all(
-          color: isCryptographicallyValid
-              ? NixColors.surfaceBorder
-              : NixColors.accentDanger.withValues(alpha: 0.6),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            flex: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+    return LayoutBuilder(
+      builder: (context, cardConstraints) {
+        final isCompact = cardConstraints.maxWidth < 640;
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: NixColors.surfaceCard,
+            borderRadius: NixTokens.borderCard,
+            border: Border.all(
+              color: isCryptographicallyValid
+                  ? NixColors.surfaceBorderStrong
+                  : NixColors.accentDanger.withValues(alpha: 0.6),
+            ),
+          ),
+          child: isCompact
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: order.isOnline ? NixColors.accentGreen : NixColors.textMuted,
-                      ),
+                    // Top: Trader info & trust badges
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: order.isOnline ? NixColors.accentGreen : NixColors.textMuted,
+                          ),
+                        ),
+                        Text(
+                          order.traderName,
+                          style: TextStyle(
+                            color: NixColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        _orderTrustIndicator(order.trustLevel),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: (isCryptographicallyValid ? NixColors.accentGreen : NixColors.accentDanger)
+                                .withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: (isCryptographicallyValid ? NixColors.accentGreen : NixColors.accentDanger)
+                                  .withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: Text(
+                            isCryptographicallyValid
+                                ? 'Ed25519 OK · $expLabel'
+                                : 'ALERTA: ASSINATURA / EXPIRAÇÃO',
+                            style: TextStyle(
+                              color: isCryptographicallyValid ? NixColors.accentGreen : NixColors.accentDanger,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 4),
                     Text(
-                      order.traderName,
-                      style: TextStyle(
-                        color: NixColors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
+                      '${order.reputationScore}% avaliação · ${order.completedTrades} ordens concluídas · resposta ~${order.avgResponseMinutes}m'
+                      '${order.nonceHex != null ? ' · nonce ${order.nonceHex}' : ''}',
+                      style: TextStyle(color: NixColors.textMuted, fontSize: 11),
+                    ),
+                    if (order.notes.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        order.notes,
+                        style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Divider(height: 1, color: NixColors.surfaceBorder),
+                    const SizedBox(height: 10),
+
+                    // Bottom Row: Price/Limits on left, Method/Button on right
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('PREÇO UNITÁRIO', style: NixTokens.labelUppercase()),
+                            const SizedBox(height: 2),
+                            Text(
+                              order.formattedPrice,
+                              style: TextStyle(
+                                color: NixColors.textPrimary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'LIMITES: ${order.formattedLimits}',
+                              style: TextStyle(color: NixColors.textSecondary, fontSize: 11.5),
+                            ),
+                          ],
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: NixColors.surfaceActive,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: NixColors.surfaceBorder),
+                              ),
+                              child: Text(
+                                order.paymentMethod,
+                                style: TextStyle(
+                                  color: NixColors.textPrimary,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ElevatedButton.icon(
+                              key: Key('trade_button_${order.id}'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: accent,
+                                foregroundColor: context.onAccentColor,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                shape: RoundedRectangleBorder(borderRadius: NixTokens.borderButtonCompact),
+                              ),
+                              onPressed: onTrade,
+                              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14),
+                              label: Text(
+                                isCryptographicallyValid ? 'Negociar' : 'Bloqueado',
+                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: order.isOnline ? NixColors.accentGreen : NixColors.textMuted,
+                                ),
+                              ),
+                              Text(
+                                order.traderName,
+                                style: TextStyle(
+                                  color: NixColors.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              _orderTrustIndicator(order.trustLevel),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: (isCryptographicallyValid ? NixColors.accentGreen : NixColors.accentDanger)
+                                      .withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: (isCryptographicallyValid ? NixColors.accentGreen : NixColors.accentDanger)
+                                        .withValues(alpha: 0.4),
+                                  ),
+                                ),
+                                child: Text(
+                                  isCryptographicallyValid
+                                      ? 'Ed25519 OK · $expLabel'
+                                      : 'ALERTA: ASSINATURA / EXPIRAÇÃO',
+                                  style: TextStyle(
+                                    color: isCryptographicallyValid ? NixColors.accentGreen : NixColors.accentDanger,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${order.reputationScore}% avaliação · ${order.completedTrades} ordens concluídas · resposta ~${order.avgResponseMinutes}m'
+                            '${order.nonceHex != null ? ' · nonce ${order.nonceHex}' : ''}',
+                            style: TextStyle(color: NixColors.textMuted, fontSize: 11),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            order.notes,
+                            style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                          ),
+                        ],
                       ),
                     ),
-                    _orderTrustIndicator(order.trustLevel),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: (isCryptographicallyValid ? NixColors.accentGreen : NixColors.accentDanger)
-                            .withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(
-                          color: (isCryptographicallyValid ? NixColors.accentGreen : NixColors.accentDanger)
-                              .withValues(alpha: 0.4),
-                        ),
+                    const SizedBox(width: 16),
+
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('PREÇO UNITÁRIO', style: NixTokens.labelUppercase()),
+                          const SizedBox(height: 2),
+                          Text(
+                            order.formattedPrice,
+                            style: TextStyle(
+                              color: NixColors.textPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text('LIMITES', style: NixTokens.labelUppercase()),
+                          const SizedBox(height: 2),
+                          Text(
+                            order.formattedLimits,
+                            style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                          ),
+                        ],
                       ),
-                      child: Text(
-                        isCryptographicallyValid
-                            ? 'Ed25519 OK · $expLabel'
-                            : 'ALERTA: ASSINATURA / EXPIRAÇÃO',
-                        style: TextStyle(
-                          color: isCryptographicallyValid ? NixColors.accentGreen : NixColors.accentDanger,
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.bold,
+                    ),
+                    const SizedBox(width: 16),
+
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: NixColors.surfaceActive,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: NixColors.surfaceBorder),
+                          ),
+                          child: Text(
+                            order.paymentMethod,
+                            style: TextStyle(
+                              color: NixColors.textPrimary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          key: Key('trade_button_${order.id}'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: accent,
+                            foregroundColor: context.onAccentColor,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: NixTokens.borderButtonCompact),
+                          ),
+                          onPressed: onTrade,
+                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14),
+                          label: Text(
+                            isCryptographicallyValid ? 'Negociar' : 'Bloqueado',
+                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '${order.reputationScore}% avaliação · ${order.completedTrades} ordens concluídas · resposta ~${order.avgResponseMinutes}m'
-                  '${order.nonceHex != null ? ' · nonce ${order.nonceHex}' : ''}',
-                  style: TextStyle(color: NixColors.textMuted, fontSize: 11),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  order.notes,
-                  style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-
-          Expanded(
-            flex: 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('PREÇO UNITÁRIO', style: NixTokens.labelUppercase()),
-                const SizedBox(height: 2),
-                Text(
-                  order.formattedPrice,
-                  style: TextStyle(
-                    color: NixColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text('LIMITES', style: NixTokens.labelUppercase()),
-                const SizedBox(height: 2),
-                Text(
-                  order.formattedLimits,
-                  style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: NixColors.surfaceActive,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: NixColors.surfaceBorder),
-                ),
-                child: Text(
-                  order.paymentMethod,
-                  style: TextStyle(
-                    color: NixColors.textPrimary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton.icon(
-                key: Key('trade_button_${order.id}'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: context.onAccentColor,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                ),
-                onPressed: onTrade,
-                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14),
-                label: Text(
-                  isCryptographicallyValid ? 'Negociar' : 'Bloqueado',
-                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

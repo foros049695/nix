@@ -8,14 +8,18 @@ import '../../state/nix_state.dart';
 import '../dialogs/create_space_dialog.dart';
 import '../dialogs/manage_folders_dialog.dart';
 import '../offline/share_app_offline_dialog.dart';
+import '../profile/nix_user_avatar.dart';
 
 /// Área 1 — Barra vertical compacta de Pastas & Organização (Estilo Telegram Desktop).
 class SpacesDock extends StatelessWidget {
-  const SpacesDock({super.key});
+  final double? width;
+
+  const SpacesDock({super.key, this.width});
 
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
+    final effectiveWidth = width ?? nixState.dockWidth;
     final folders = nixState.folders;
     final folderedIds = folders.expand((f) => f.spaceIds).toSet();
     final standaloneSpaces =
@@ -26,7 +30,7 @@ class SpacesDock extends StatelessWidget {
     final allUnread = totalUnreadSpaces + totalUnreadDms;
 
     return Container(
-      width: 78,
+      width: effectiveWidth,
       decoration: BoxDecoration(
         color: NixColors.surfaceDock,
         border: Border(
@@ -336,12 +340,9 @@ class _NixBrandProfileTriggerState extends State<_NixBrandProfileTrigger> {
                     ]
                   : null,
             ),
-            child: Image.asset(
-              context.brandLogoAsset128,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => Center(
-                child: Icon(Icons.shield_moon_outlined, color: context.accentTextColor, size: 22),
-              ),
+            child: const NixUserAvatar(
+              size: 40,
+              showBorder: false,
             ),
           ),
         ),

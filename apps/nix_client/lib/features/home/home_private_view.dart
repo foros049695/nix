@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import '../chat/chat_input_bar.dart';
 import '../chat/message_bubble.dart';
 import '../profile/card_id_widget.dart';
 import '../profile/peer_card_id_dialog.dart';
@@ -23,22 +24,12 @@ class HomePrivateView extends StatefulWidget {
 }
 
 class _HomePrivateViewState extends State<HomePrivateView> {
-  final TextEditingController _dmInputController = TextEditingController();
   final ScrollController _dmScrollController = ScrollController();
 
   @override
   void dispose() {
-    _dmInputController.dispose();
     _dmScrollController.dispose();
     super.dispose();
-  }
-
-  void _sendDm(NixState state) {
-    final text = _dmInputController.text;
-    if (text.trim().isNotEmpty) {
-      state.sendDirectMessage(text);
-      _dmInputController.clear();
-    }
   }
 
   @override
@@ -64,8 +55,8 @@ class _HomePrivateViewState extends State<HomePrivateView> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             // Faixa central-direita livre: nunca cobre o nome/avatar (esquerda) nem Recusar/Aceitar (direita)
-            final double maxSafeLeft = (constraints.maxWidth - 315 - 235).clamp(250.0, 560.0);
-            final double safeLeft = (constraints.maxWidth * 0.38).clamp(250.0, maxSafeLeft);
+            final double maxSafeLeft = (constraints.maxWidth - 295 - 260).clamp(200.0, 560.0);
+            final double safeLeft = (constraints.maxWidth * 0.32).clamp(200.0, maxSafeLeft);
 
             return Container(
               color: NixColors.background,
@@ -462,11 +453,6 @@ class _HomePrivateViewState extends State<HomePrivateView> {
   // ================= ABA CONVERSA PRIVADA SELECIONADA =================
   Widget _buildDirectChatStage(NixState state, DirectMessageThread dm) {
     final pinnedMsgs = dm.messages.where((m) => m.isPinned).toList();
-    final replying = state.replyingToMessage;
-    final editing = state.editingMessage;
-    if (editing != null && _dmInputController.text.isEmpty) {
-      _dmInputController.text = editing.text;
-    }
 
     return Column(
       key: ValueKey('stage_dm_${dm.id}'),
@@ -616,84 +602,11 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                 ),
         ),
 
-        // Banner Responder / Editar
-        if (replying != null || editing != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            decoration: BoxDecoration(
-              color: NixColors.surfaceCard,
-              border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  editing != null ? Icons.edit_outlined : Icons.reply_rounded,
-                  size: 16,
-                  color: context.accentTextColor,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    editing != null
-                        ? 'Editando: ${editing.text}'
-                        : 'Respondendo a ${replying!.senderName}: ${replying.text}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: NixColors.textSecondary, fontSize: 11.5),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.close_rounded, size: 15, color: NixColors.textMuted),
-                  onPressed: () {
-                    if (editing != null) {
-                      state.cancelEditMessage();
-                      _dmInputController.clear();
-                    } else {
-                      state.cancelReply();
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-
-        // Barra de Input DM
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: NixColors.surfaceElevated,
-            border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _dmInputController,
-                  style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: dm.isSavedMessages
-                        ? 'Escrever nota privada em Mensagens Salvas...'
-                        : 'Mensagem cifrada para ${dm.peerName}...',
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  ),
-                  onSubmitted: (_) => _sendDm(state),
-                ),
-              ),
-              const SizedBox(width: 10),
-              IconButton(
-                style: IconButton.styleFrom(
-                  backgroundColor: context.accentColor,
-                  foregroundColor: context.onAccentColor,
-                ),
-                icon: Icon(
-                  editing != null ? Icons.check_rounded : Icons.arrow_upward_rounded,
-                  size: 18,
-                ),
-                onPressed: () => _sendDm(state),
-              ),
-            ],
-          ),
+        // Compositor Completo para DMs e Mensagens Salvas (Anexos, Emojis, Áudio, Temporizador)
+        ChatInputBar(
+          channelName: dm.isSavedMessages ? 'Mensagens Salvas' : dm.peerName,
+          isDirectMessage: true,
+          onSendCustom: (text, attachments) => state.sendDirectMessage(text, attachments: attachments),
         ),
       ],
     );
@@ -972,7 +885,7 @@ class _FloatingPeerCardIdPreview extends StatelessWidget {
       color: Colors.transparent,
       elevation: 24,
       child: Container(
-        width: 310,
+        width: 290,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           gradient: NixTokens.amoledMetalGradient,

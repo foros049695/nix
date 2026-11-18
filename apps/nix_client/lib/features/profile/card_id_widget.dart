@@ -219,6 +219,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   const SizedBox(width: 18),
                                   // Foto de Perfil com Edição/Remoção e Suporte a Imagem Local
                                   InkWell(
+                                    key: const Key('card_id_avatar_edit_button'),
                                     onTap: () => _showAvatarEditorModal(context, nixState),
                                     borderRadius: BorderRadius.circular(44),
                                     child: Stack(
@@ -614,10 +615,23 @@ class _CardIdWidgetState extends State<CardIdWidget> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
           final currentStyle = state.userProfile.avatarStyle;
+          final accent = context.accentColor;
           return AlertDialog(
-            title: const Text('Imagem de Perfil do Card ID'),
+            backgroundColor: NixColors.surfaceElevatedHigh,
+            shape: RoundedRectangleBorder(
+              borderRadius: NixTokens.borderModal,
+              side: BorderSide(color: NixColors.surfaceBorderStrong),
+            ),
+            title: Text(
+              'Imagem de Perfil do Card ID',
+              style: TextStyle(
+                color: NixColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             content: SizedBox(
-              width: 430,
+              width: 440,
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -625,7 +639,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                   children: [
                     Text(
                       'Selecione PNG, JPEG ou WebP do dispositivo. Os metadados EXIF/IPTC são removidos automaticamente antes do armazenamento local.',
-                      style: TextStyle(color: NixColors.textMuted, fontSize: 12),
+                      style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
                     ),
                     const SizedBox(height: 14),
                     _avatarOptionTile(
@@ -658,11 +672,11 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: NixColors.surfaceElevated,
+                        color: NixColors.surfaceCard,
                         borderRadius: NixTokens.borderSm,
                         border: Border.all(
                           color: currentStyle == 'local_file'
-                              ? context.accentColor
+                              ? accent
                               : NixColors.surfaceBorderStrong,
                         ),
                       ),
@@ -686,6 +700,10 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                               ),
                               const SizedBox(width: 8),
                               OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: NixColors.textPrimary,
+                                  side: BorderSide(color: NixColors.surfaceBorderStrong),
+                                ),
                                 onPressed: () async {
                                   final picked = await LocalImageHelper.pickImageNativeDesktop();
                                   if (picked != null) {
@@ -712,7 +730,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   height: 64,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    border: Border.all(color: context.accentColor, width: 1.5),
+                                    border: Border.all(color: accent, width: 2.0),
                                   ),
                                   clipBehavior: Clip.antiAlias,
                                   child: Transform.translate(
@@ -730,12 +748,13 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                     children: [
                                       Text(
                                         'Recorte & Enquadramento (${cropScale.toStringAsFixed(1)}x)',
-                                        style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
+                                        style: TextStyle(color: NixColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w600),
                                       ),
                                       Slider(
                                         value: cropScale,
                                         min: 1.0,
                                         max: 2.4,
+                                        activeColor: accent,
                                         onChanged: (v) => setModalState(() => cropScale = v),
                                       ),
                                       Row(
@@ -746,6 +765,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                               value: offsetX,
                                               min: -1.0,
                                               max: 1.0,
+                                              activeColor: accent,
                                               onChanged: (v) => setModalState(() => offsetX = v),
                                             ),
                                           ),
@@ -755,6 +775,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                               value: offsetY,
                                               min: -1.0,
                                               max: 1.0,
+                                              activeColor: accent,
                                               onChanged: (v) => setModalState(() => offsetY = v),
                                             ),
                                           ),
@@ -775,6 +796,10 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                           Row(
                             children: [
                               ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: accent,
+                                  foregroundColor: context.onAccentColor,
+                                ),
                                 onPressed: () async {
                                   final raw = pathCtrl.text.trim();
                                   if (!LocalImageHelper.isSupportedExtension(raw)) {
@@ -803,7 +828,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   }
                                 },
                                 icon: const Icon(Icons.check_rounded, size: 15),
-                                label: const Text('Aplicar & Sanitizar EXIF', style: TextStyle(fontSize: 11.5)),
+                                label: const Text('Aplicar & Sanitizar EXIF', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                               ),
                               if (state.userProfile.customAvatarPath != null) ...[
                                 const SizedBox(width: 8),
@@ -842,7 +867,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: Text('Fechar', style: TextStyle(color: NixColors.textSecondary)),
+                child: Text('Fechar', style: TextStyle(color: NixColors.textSecondary, fontSize: 12.5, fontWeight: FontWeight.w600)),
               ),
             ],
           );
@@ -873,10 +898,10 @@ class _CardIdWidgetState extends State<CardIdWidget> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? NixColors.surfaceActive : NixColors.surfaceCard,
+          color: isSelected ? ctx.accentColor.withValues(alpha: 0.14) : NixColors.surfaceCard,
           borderRadius: NixTokens.borderSm,
           border: Border.all(
-            color: isSelected ? Colors.white38 : NixColors.surfaceBorder,
+            color: isSelected ? ctx.accentColor : NixColors.surfaceBorder,
           ),
         ),
         child: Row(
@@ -884,15 +909,15 @@ class _CardIdWidgetState extends State<CardIdWidget> {
             Icon(
               isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
               size: 16,
-              color: isSelected ? Colors.white : NixColors.textMuted,
+              color: isSelected ? ctx.accentTextColor : NixColors.textMuted,
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600)),
-                  Text(subtitle, style: TextStyle(color: NixColors.textMuted, fontSize: 11)),
+                  Text(title, style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                  Text(subtitle, style: TextStyle(color: NixColors.textSecondary, fontSize: 11)),
                 ],
               ),
             ),

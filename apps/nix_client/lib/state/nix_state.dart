@@ -1135,6 +1135,39 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
+  double get dockWidth => _settings.dockWidth;
+  double get sidebarWidth => _settings.sidebarWidth;
+
+  void updateDockWidth(double width) {
+    final clamped = width.clamp(64.0, 110.0);
+    if ((clamped - _settings.dockWidth).abs() > 0.5) {
+      _settings = _settings.copyWith(dockWidth: clamped);
+      _persistState();
+      notifyListeners();
+    }
+  }
+
+  void updateSidebarWidth(double width) {
+    final clamped = width.clamp(220.0, 480.0);
+    if ((clamped - _settings.sidebarWidth).abs() > 0.5) {
+      _settings = _settings.copyWith(sidebarWidth: clamped);
+      _persistState();
+      notifyListeners();
+    }
+  }
+
+  void resetDockWidth() {
+    _settings = _settings.copyWith(dockWidth: 78.0);
+    _persistState();
+    notifyListeners();
+  }
+
+  void resetSidebarWidth() {
+    _settings = _settings.copyWith(sidebarWidth: 288.0);
+    _persistState();
+    notifyListeners();
+  }
+
   void toggleWindowMaximized() {
     _isWindowMaximized = !_isWindowMaximized;
     notifyListeners();

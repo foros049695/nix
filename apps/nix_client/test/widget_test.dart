@@ -396,4 +396,235 @@ void main() {
     expect(find.byKey(const Key('share_app_offline_dialog')), findsOneWidget);
     expect(find.text('Compartilhar Nix Offline'), findsOneWidget);
   });
+
+  testWidgets('8. V4.1 Resizable Chat Panels with Draggable Dividers & Reset',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final state = NixState();
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: state,
+        child: const NixApp(skipSplash: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final dockDividerFinder = find.byKey(const Key('dock_resize_divider'));
+    final sidebarDividerFinder = find.byKey(const Key('sidebar_resize_divider'));
+    expect(dockDividerFinder, findsOneWidget);
+    expect(sidebarDividerFinder, findsOneWidget);
+
+    final initialDockWidth = state.dockWidth;
+    final initialSidebarWidth = state.sidebarWidth;
+    expect(initialDockWidth, 78.0);
+    expect(initialSidebarWidth, 288.0);
+
+    // Arrastar divisor da sidebar para a direita (+50px)
+    await tester.drag(sidebarDividerFinder, const Offset(50, 0));
+    await tester.pumpAndSettle();
+    expect(state.sidebarWidth, greaterThan(initialSidebarWidth));
+
+    // Duplo clique para restaurar tamanho padrão
+    await tester.tap(sidebarDividerFinder);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(sidebarDividerFinder);
+    await tester.pumpAndSettle();
+    expect(state.sidebarWidth, 288.0);
+  });
+
+  testWidgets('9. V4.1 Horizontal Filter & Folder Scrolling in Channels Sidebar',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1000, 700);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final state = NixState();
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: state,
+        child: const NixApp(skipSplash: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Todos'), findsOneWidget);
+    expect(find.text('Não lidos'), findsOneWidget);
+    expect(find.text('Fixados'), findsOneWidget);
+    expect(find.text('Canais'), findsOneWidget);
+
+    // Rola horizontalmente os chips de filtro sem erro de overflow
+    final filterRow = find.byType(SingleChildScrollView).first;
+    await tester.drag(filterRow, const Offset(-40, 0));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('10. V4.1 Universal Avatar Synchronization across Dock, Sidebar & Card ID',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final state = NixState();
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: state,
+        child: const NixApp(skipSplash: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Estado inicial: emblema padrão
+    expect(state.userProfile.avatarStyle, 'nyx_emblem');
+
+    // Altera para monograma tipográfico
+    state.updateProfile(avatarStyle: 'monogram', displayName: 'Augusto Nix');
+    await tester.pumpAndSettle();
+
+    expect(state.userProfile.avatarStyle, 'monogram');
+    // Verifica que as iniciais aparecem reativamente no avatar
+    expect(find.text('AU'), findsAtLeastNWidgets(1));
+
+    // Altera para selo sentinela
+    state.updateProfile(avatarStyle: 'sentinel');
+    await tester.pumpAndSettle();
+    expect(state.userProfile.avatarStyle, 'sentinel');
+    expect(find.byIcon(Icons.security_rounded), findsAtLeastNWidgets(1));
+
+    // Altera para anônimo (silhueta)
+    state.updateProfile(avatarStyle: 'none');
+    await tester.pumpAndSettle();
+    expect(state.userProfile.avatarStyle, 'none');
+    expect(find.byIcon(Icons.person_outline_rounded), findsAtLeastNWidgets(1));
+  });
+
+  testWidgets('11. V4.1 Mensagens Salvas Full Composer with Attachments, Preview Tray & Aligned Timer',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final state = NixState();
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: state,
+        child: const NixApp(skipSplash: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Navega para Mensagens Salvas
+    await tester.tap(find.byKey(const Key('dock_home_private_button')));
+    await tester.pumpAndSettle();
+
+    final savedFinder = find.byKey(const Key('home_tile_saved_messages'));
+    if (savedFinder.evaluate().isNotEmpty) {
+      await tester.tap(savedFinder);
+      await tester.pumpAndSettle();
+    } else {
+      state.openSavedMessages();
+      await tester.pumpAndSettle();
+    }
+
+    // Compositor completo presente em Mensagens Salvas
+    expect(find.byKey(const Key('chat_attach_button')), findsOneWidget);
+    expect(find.byKey(const Key('chat_timer_button')), findsOneWidget);
+    expect(find.byKey(const Key('emoji_picker_toggle_button')), findsOneWidget);
+    expect(find.byKey(const Key('chat_message_input')), findsOneWidget);
+    expect(find.byKey(const Key('voice_record_button')), findsOneWidget);
+    expect(find.byKey(const Key('chat_send_button')), findsOneWidget);
+
+    // Clica no botão de anexo (simulado em teste)
+    await tester.tap(find.byKey(const Key('chat_attach_button')));
+    await tester.pumpAndSettle();
+
+    // Bandeja de anexo exibe o arquivo selecionado com botão de remover
+    expect(find.text('documento_seguro.pdf'), findsOneWidget);
+    expect(find.byKey(const Key('remove_attachment_0')), findsOneWidget);
+
+    // Digita texto da nota privada e envia
+    await tester.enterText(find.byKey(const Key('chat_message_input')), 'Nota confidencial no cofre');
+    await tester.tap(find.byKey(const Key('chat_send_button')));
+    await tester.pumpAndSettle();
+
+    // Mensagem foi salva com anexo no armazenamento privado
+    final savedDm = state.directMessages.firstWhere((d) => d.isSavedMessages);
+    expect(savedDm.messages.any((m) => m.text == 'Nota confidencial no cofre' && m.attachments.contains('documento_seguro.pdf')), isTrue);
+  });
+
+  testWidgets('12. V4.1 Avatar Picker Modal Contrast & Preview in Light Yellow Theme',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final state = NixState();
+    state.updateThemeMode(NixThemeMode.lightYellow);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: state,
+        child: const NixApp(skipSplash: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(NixColors.background, const Color(0xFFFFFFFF));
+
+    // Abre Card ID e modal de avatar
+    await tester.tap(find.byKey(const Key('nix_brand_profile_trigger')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('card_id_avatar_edit_button')));
+    await tester.pumpAndSettle();
+
+    // Modal aberto com fundo escuro/elevado e textos contrastantes (sem Colors.white em texto normal)
+    expect(find.text('Imagem de Perfil do Card ID'), findsOneWidget);
+    expect(find.text('Emblema Vetorizado Nix (Oficial)'), findsOneWidget);
+    expect(find.text('Monograma Tipográfico Metálico'), findsOneWidget);
+    expect(find.text('Procurar'), findsOneWidget);
+    expect(find.text('Fechar'), findsOneWidget);
+
+    // Fecha o modal
+    await tester.tap(find.text('Fechar'));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('13. V4.1 Monero P2P Responsive Layout on Narrow & Wide Dimensions',
+      (WidgetTester tester) async {
+    // 1. Visão ampla (1280px)
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final state = NixState();
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: state,
+        child: const NixApp(skipSplash: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('dock_home_private_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('home_nav_monero')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Comprar XMR'), findsOneWidget);
+    expect(find.text('Vender XMR'), findsOneWidget);
+    expect(find.text('Criar Anúncio'), findsOneWidget);
+    expect(find.text('Negociar'), findsAtLeastNWidgets(1));
+
+    // 2. Redimensiona para janela estreita (680px)
+    tester.view.physicalSize = const Size(680, 700);
+    await tester.pumpAndSettle();
+
+    // Controles adaptam-se sem qualquer overflow
+    expect(find.text('Comprar XMR'), findsOneWidget);
+    expect(find.text('Vender XMR'), findsOneWidget);
+    expect(find.text('Negociar'), findsAtLeastNWidgets(1));
+  });
 }

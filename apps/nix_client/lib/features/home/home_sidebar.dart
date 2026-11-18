@@ -7,10 +7,13 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../offline/share_app_offline_dialog.dart';
+import '../profile/nix_user_avatar.dart';
 
 /// Área 2 — Lista de Conversas Compacta (Mensagens Salvas, Privadas, Fixadas, Pesquisa e Módulos Externos).
 class HomeSidebar extends StatelessWidget {
-  const HomeSidebar({super.key});
+  final double? width;
+
+  const HomeSidebar({super.key, this.width});
 
   @override
   Widget build(BuildContext context) {
@@ -18,9 +21,10 @@ class HomeSidebar extends StatelessWidget {
     final activeTab = nixState.homeSubTab;
     final selectedDm = nixState.selectedDm;
     final filteredDms = nixState.filteredDirectMessages;
+    final effectiveWidth = width ?? nixState.sidebarWidth;
 
     return Container(
-      width: 288,
+      width: effectiveWidth,
       decoration: BoxDecoration(
         color: NixColors.surfaceSidebar,
         border: Border(right: BorderSide(color: NixColors.surfaceBorder, width: 1)),
@@ -291,28 +295,10 @@ class HomeSidebar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          InkWell(
+          NixUserAvatar(
+            size: 32,
+            showBorder: true,
             onTap: () => state.openProfileOverlay(),
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              width: 32,
-              height: 32,
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: NixColors.surfaceElevated,
-                shape: BoxShape.circle,
-                border: Border.all(color: NixColors.surfaceBorderStrong),
-              ),
-              child: Image.asset(
-                context.brandLogoAsset128,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Icon(
-                  Icons.person_outline,
-                  color: NixColors.textPrimary,
-                  size: 16,
-                ),
-              ),
-            ),
           ),
           const SizedBox(width: 8),
           Expanded(

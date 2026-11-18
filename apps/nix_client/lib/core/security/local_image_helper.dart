@@ -4,15 +4,84 @@ import 'dart:typed_data';
 /// Utilitário local para seleção, validação e remoção de metadados (EXIF/chunks) de imagens
 /// (PNG, JPEG, WebP) para Avatar e Capas Culturais do Card ID.
 class LocalImageHelper {
-  static const List<String> supportedExtensions = ['png', 'jpg', 'jpeg', 'webp'];
+  static const List<String> supportedExtensions = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
+  static const List<String> supportedMediaExtensions = [
+    'png', 'jpg', 'jpeg', 'webp', 'gif',
+    'mp4', 'mkv', 'webm',
+    'mp3', 'ogg', 'wav', 'flac',
+    'pdf', 'txt', 'docx', 'md', 'json', 'tar', 'gz', 'zip'
+  ];
 
   static bool isSupportedExtension(String path) {
     final lower = path.trim().toLowerCase();
     return supportedExtensions.any((ext) => lower.endsWith('.$ext'));
   }
 
+  /// Formata tamanho em bytes para leitura humana (ex: 2.4 MB)
+  static String formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  /// Retorna o nome base do arquivo
+  static String getFileName(String path) {
+    return path.split(Platform.pathSeparator).last;
+  }
+
+  /// Invoca seletor nativo para qualquer anexo (imagens, áudio, vídeos, documentos).
+  static Future<List<String>> pickAttachmentsNativeDesktop() async {
+    if (Platform.environment['FLUTTER_TEST'] == 'true') {
+      return ['documento_seguro.pdf'];
+    }
+    if (!Platform.isLinux) return [];
+    try {
+      final res = await Process.run(
+        'zenity',
+        [
+          '--file-selection',
+          '--multiple',
+          '--separator=|',
+          '--title=Selecionar Arquivos / Anexos (Criptografia E2EE Nix)',
+          '--file-filter=Todos os Arquivos Suportados | *.png *.jpg *.jpeg *.webp *.gif *.mp4 *.mp3 *.ogg *.wav *.pdf *.txt *.docx *.zip',
+        ],
+      );
+      if (res.exitCode == 0) {
+        final out = res.stdout.toString().trim();
+        if (out.isNotEmpty) {
+          return out.split('|').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final res = await Process.run(
+        'kdialog',
+        [
+          '--getopenfilename',
+          '--multiple',
+          '--separate-output',
+          Platform.environment['HOME'] ?? '.',
+          '*.png *.jpg *.jpeg *.webp *.gif *.mp4 *.mp3 *.ogg *.wav *.pdf *.txt *.docx|Arquivos Suportados',
+        ],
+      );
+      if (res.exitCode == 0) {
+        final out = res.stdout.toString().trim();
+        if (out.isNotEmpty) {
+          return out.split('\n').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+        }
+      }
+    } catch (_) {}
+
+    return [];
+  }
+
   /// Invoca seletor de arquivos nativo no Desktop (Linux `zenity`/`kdialog`) quando disponível.
   static Future<String?> pickImageNativeDesktop() async {
+    if (Platform.environment['FLUTTER_TEST'] == 'true') {
+      return '/tmp/nix_test_avatar.png';
+    }
     if (!Platform.isLinux) return null;
     try {
       final res = await Process.run(

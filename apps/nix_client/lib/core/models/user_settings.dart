@@ -68,6 +68,8 @@ class UserSettings {
   final double windowHeight;
   final double? windowOffsetX;
   final double? windowOffsetY;
+  final double dockWidth;
+  final double sidebarWidth;
 
   // 5.1 Notificações e sons
   final bool messageNotifications;
@@ -133,6 +135,8 @@ class UserSettings {
     this.windowHeight = 720.0,
     this.windowOffsetX,
     this.windowOffsetY,
+    this.dockWidth = 78.0,
+    this.sidebarWidth = 288.0,
     this.messageNotifications = true,
     this.callNotifications = true,
     this.systemAlerts = true,
@@ -227,6 +231,8 @@ class UserSettings {
     double? windowHeight,
     double? windowOffsetX,
     double? windowOffsetY,
+    double? dockWidth,
+    double? sidebarWidth,
     bool? messageNotifications,
     bool? callNotifications,
     bool? systemAlerts,
@@ -278,6 +284,8 @@ class UserSettings {
       windowHeight: windowHeight ?? this.windowHeight,
       windowOffsetX: windowOffsetX ?? this.windowOffsetX,
       windowOffsetY: windowOffsetY ?? this.windowOffsetY,
+      dockWidth: dockWidth ?? this.dockWidth,
+      sidebarWidth: sidebarWidth ?? this.sidebarWidth,
       messageNotifications: messageNotifications ?? this.messageNotifications,
       callNotifications: callNotifications ?? this.callNotifications,
       systemAlerts: systemAlerts ?? this.systemAlerts,
@@ -331,6 +339,8 @@ class UserSettings {
         'windowHeight': windowHeight,
         'windowOffsetX': windowOffsetX,
         'windowOffsetY': windowOffsetY,
+        'dockWidth': dockWidth,
+        'sidebarWidth': sidebarWidth,
         'cardIdVisibility': cardIdVisibility,
         'compactChatMode': compactChatMode,
         'fontScale': fontScale,
@@ -369,6 +379,8 @@ class UserSettings {
       windowHeight: (json['windowHeight'] as num?)?.toDouble() ?? 720.0,
       windowOffsetX: (json['windowOffsetX'] as num?)?.toDouble(),
       windowOffsetY: (json['windowOffsetY'] as num?)?.toDouble(),
+      dockWidth: (json['dockWidth'] as num?)?.toDouble() ?? 78.0,
+      sidebarWidth: (json['sidebarWidth'] as num?)?.toDouble() ?? 288.0,
       cardIdVisibility: (json['cardIdVisibility'] as String?) ?? 'Apenas Contatos Verificados',
       compactChatMode: (json['compactChatMode'] as bool?) ?? false,
       fontScale: (json['fontScale'] as num?)?.toDouble() ?? 1.0,

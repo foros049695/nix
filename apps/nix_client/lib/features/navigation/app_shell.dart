@@ -18,6 +18,7 @@ import '../monero_p2p/monero_p2p_view.dart';
 import '../profile/profile_overlay.dart';
 import '../publications/publication_room_view.dart';
 import 'channels_sidebar.dart';
+import 'panel_resize_divider.dart';
 import 'resizable_window_frame.dart';
 import 'spaces_dock.dart';
 import 'window_title_bar.dart';
@@ -62,16 +63,36 @@ class AppShell extends StatelessWidget {
                         Expanded(
                           child: Row(
                             children: [
-                              // Área 1: Barra vertical compacta de Pastas & Organização
-                              const SpacesDock(),
+                              // Área 1: Barra vertical compacta de Pastas & Organização (redimensionável)
+                              SpacesDock(width: nixState.dockWidth),
 
-                              // Área 2: Lista de Conversas & Navegação Principal
+                              // Divisor Redimensionável 1: Entre Dock e Sidebar
+                              PanelResizeDivider(
+                                key: const Key('dock_resize_divider'),
+                                onDeltaDrag: (delta) => nixState.updateDockWidth(nixState.dockWidth + delta),
+                                onDoubleTapReset: () => nixState.resetDockWidth(),
+                                tooltip: 'Redimensionar Pastas (Duplo clique para 78px)',
+                              ),
+
+                              // Área 2: Lista de Conversas & Navegação Principal (redimensionável)
                               if (activeArea == NixActiveArea.homePrivate ||
                                   activeArea == NixActiveArea.github ||
                                   activeArea == NixActiveArea.moneroP2p)
-                                const HomeSidebar()
+                                HomeSidebar(width: nixState.sidebarWidth)
                               else if (activeArea == NixActiveArea.spaces)
-                                const ChannelsSidebar(),
+                                ChannelsSidebar(width: nixState.sidebarWidth),
+
+                              // Divisor Redimensionável 2: Entre Sidebar e Conversa Ativa
+                              if (activeArea == NixActiveArea.homePrivate ||
+                                  activeArea == NixActiveArea.github ||
+                                  activeArea == NixActiveArea.moneroP2p ||
+                                  activeArea == NixActiveArea.spaces)
+                                PanelResizeDivider(
+                                  key: const Key('sidebar_resize_divider'),
+                                  onDeltaDrag: (delta) => nixState.updateSidebarWidth(nixState.sidebarWidth + delta),
+                                  onDoubleTapReset: () => nixState.resetSidebarWidth(),
+                                  tooltip: 'Redimensionar Conversas (Duplo clique para 288px)',
+                                ),
 
                               // Área 3: Conversa Ativa / Palco Principal
                               Expanded(

@@ -13,14 +13,29 @@ class NixTokens {
   static const double spaceXxl = 32.0;
   static const double spaceHuge = 48.0;
 
-  // Raios de Borda Consistentes
+  // Raios de Borda Consistentes (V4.1)
   static const double radiusXs = 4.0;
-  static const double radiusSm = 8.0;
-  static const double radiusMd = 12.0;
-  static const double radiusLg = 16.0;
-  static const double radiusXl = 22.0;
+  static const double radiusButtonCompact = 10.0;
+  static const double radiusInput = 12.0;
+  static const double radiusCard = 14.0;
+  static const double radiusPanel = 16.0;
+  static const double radiusMessage = 16.0;
+  static const double radiusModal = 20.0;
   static const double radiusCardId = 18.0;
   static const double radiusPill = 999.0;
+
+  // Aliases compatíveis
+  static const double radiusSm = 10.0;
+  static const double radiusMd = 14.0;
+  static const double radiusLg = 16.0;
+  static const double radiusXl = 20.0;
+
+  static final BorderRadius borderButtonCompact = BorderRadius.circular(radiusButtonCompact);
+  static final BorderRadius borderInput = BorderRadius.circular(radiusInput);
+  static final BorderRadius borderCard = BorderRadius.circular(radiusCard);
+  static final BorderRadius borderPanel = BorderRadius.circular(radiusPanel);
+  static final BorderRadius borderMessage = BorderRadius.circular(radiusMessage);
+  static final BorderRadius borderModal = BorderRadius.circular(radiusModal);
 
   static final BorderRadius borderSm = BorderRadius.circular(radiusSm);
   static final BorderRadius borderMd = BorderRadius.circular(radiusMd);

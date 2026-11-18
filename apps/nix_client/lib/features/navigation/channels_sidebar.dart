@@ -7,10 +7,13 @@ import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../calls/active_call_bar.dart';
 import '../dialogs/create_channel_dialog.dart';
+import '../profile/nix_user_avatar.dart';
 
 /// Área 2 (Conversas / Grupos / Canais estilo Telegram Desktop).
 class ChannelsSidebar extends StatelessWidget {
-  const ChannelsSidebar({super.key});
+  final double? width;
+
+  const ChannelsSidebar({super.key, this.width});
 
   @override
   Widget build(BuildContext context) {
@@ -18,6 +21,7 @@ class ChannelsSidebar extends StatelessWidget {
     final space = nixState.currentSpace;
     final visibleSpaces = nixState.visibleSpacesForFolder;
     final query = nixState.conversationSearchQuery.trim().toLowerCase();
+    final effectiveWidth = width ?? nixState.sidebarWidth;
 
     final Map<String, List<Channel>> categorized = {};
     for (final ch in space.channels) {
@@ -40,7 +44,7 @@ class ChannelsSidebar extends StatelessWidget {
     }
 
     return Container(
-      width: 288,
+      width: effectiveWidth,
       decoration: BoxDecoration(
         color: NixColors.surfaceSidebar,
         border: Border(
@@ -77,6 +81,7 @@ class ChannelsSidebar extends StatelessWidget {
                 const SizedBox(height: 8),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
                   child: Row(
                     children: [
                       _chip(context, nixState, ConversationFilter.all, 'Todos'),
@@ -96,10 +101,11 @@ class ChannelsSidebar extends StatelessWidget {
           // Seletor rápido de espaços da pasta ativa + atalho para Mensagens Salvas
           if (visibleSpaces.length > 1)
             SizedBox(
-              height: 36,
+              height: 38,
               child: ListView(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                 children: visibleSpaces.map((sp) {
                   final active = sp.id == space.id;
                   return Padding(
@@ -525,26 +531,10 @@ class _UserProfileBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          InkWell(
+          NixUserAvatar(
+            size: 32,
+            showBorder: true,
             onTap: () => nixState.openProfileOverlay(),
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              width: 32,
-              height: 32,
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: NixColors.surfaceCard,
-                shape: BoxShape.circle,
-                border: Border.all(color: NixColors.surfaceBorderStrong, width: 1),
-              ),
-              child: Image.asset(
-                context.brandLogoAsset128,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Center(
-                  child: Icon(Icons.person_outline, size: 16, color: NixColors.textPrimary),
-                ),
-              ),
-            ),
           ),
           const SizedBox(width: 8),
           Expanded(
