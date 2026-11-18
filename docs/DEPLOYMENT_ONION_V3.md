@@ -30,15 +30,18 @@ O **Nix Relay** é um serviço postal assíncrono projetado para receber, armaze
 
 ## 3. INSTALAÇÃO E CONFIGURAÇÃO DO DAEMON TOR
 
-### Passo 3.1: Instalar o pacote oficial do Tor Project
+### Passo 3.1: Instalar o daemon Tor
+No Debian 13 (Trixie) / Ubuntu recente, o pacote oficial `tor` já vem diretamente nos repositórios principais (evite instalar `deb.torproject.org-keyring` se não tiver habilitado o repositório externo `deb.torproject.org`):
+
+```bash
+sudo apt update && sudo apt install -y tor torsocks
+```
+
+*(Opcional)* Caso queira adicionar explicitamente o repositório upstream do Tor Project para sua suíte Debian compatível:
 ```bash
 sudo apt update && sudo apt install -y apt-transport-https gnupg curl
-
-# Adiciona o repositório oficial do Tor Project
 curl -fsSL https://deb.torproject.org/torproject.org/A3C4F0F979CAA22CDBA8F512EE8CBC9E886DDD89.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/torproject.gpg
-
 echo "deb [signed-by=/etc/apt/trusted.gpg.d/torproject.gpg] https://deb.torproject.org/torproject.org $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/tor.list
-
 sudo apt update && sudo apt install -y tor deb.torproject.org-keyring
 ```
 
@@ -94,65 +97,54 @@ sudo cat /var/lib/tor/nix_relay_service/hostname
 No repositório do Projeto Nix:
 ```bash
 cd services/nix_relay
-# Se for a implementação em Go:
-go build -ldflags="-s -w" -o /opt/nix/bin/nix_relay ./cmd/relay
-# Se for em Rust:
-# cargo build --release && cp target/release/nix_relay /opt/nix/bin/nix_relay
+go build -ldflags="-s -w" -o bin/nix_relay ./cmd/relay
 ```
 
-### Passo 4.2: Arquivo de Configuração do Relay (`/etc/nix/relay.conf`)
-```ini
-[relay]
-bind_address = "127.0.0.1"
-bind_port = 8443
-onion_hostname_file = "/var/lib/tor/nix_relay_service/hostname"
+### Passo 4.2: Arquivo de Configuração do Relay (`/etc/nix_relay/relay.yaml`)
+Baseado em `services/nix_relay/configs/relay.example.yaml`:
+```yaml
+server:
+  host: "127.0.0.1"
+  port: 8080
+  onion_service_host: ""
 
-[storage]
-data_dir = "/var/lib/nix/mailbox"
-max_mailbox_size_mb = 10240
-envelope_ttl_days = 7
-purge_interval_minutes = 60
+storage:
+  base_dir: "/var/lib/nix_relay/data"
+  max_attachment_size_bytes: 52428800
+  max_in_flight_per_quota_token: 524288000
+  base_ttl_seconds: 604800
 
-[network]
-max_simultaneous_connections = 2048
-max_envelope_size_kb = 1024
-rate_limit_requests_per_minute = 120
-fail_closed = true
+pruning:
+  check_interval_seconds: 60
+  light_threshold_percent: 75
+  severe_threshold_percent: 85
+  critical_threshold_percent: 92
 ```
 
 ---
 
 ## 5. GERENCIAMENTO COMO SERVIÇO SYSTEMD
 
-Crie o arquivo `/etc/systemd/system/nix-relay.service`:
+Instale o arquivo de referência [`services/nix_relay/deploy/nix-relay.service`](../services/nix_relay/deploy/nix-relay.service) em `/etc/systemd/system/nix-relay.service`:
 
 ```ini
 [Unit]
-Description=Nix Network Onion v3 Asynchronous Relay
+Description=Nix Relay - Blind Store-and-Forward Node (Tor Onion v3)
 After=network.target tor.service
-Requires=tor.service
+Wants=tor.service
 
 [Service]
 Type=simple
 User=nixrelay
 Group=nixrelay
-ExecStart=/opt/nix/bin/nix_relay --config /etc/nix/relay.conf
-Restart=always
+ExecStart=/usr/local/bin/nix-relay -config /etc/nix_relay/relay.yaml
+Restart=on-failure
 RestartSec=5s
-
-# Hardening e Sandbox no Systemd
+NoNewPrivileges=yes
+PrivateTmp=yes
 ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-ProtectKernelTunables=true
-ProtectControlGroups=true
-RestrictRealtime=true
-RestrictNamespaces=true
-MemoryDenyWriteExecute=true
-ReadWritePaths=/var/lib/nix/mailbox
-
-[Install]
-WantedBy=multi-user.target
+ProtectHome=yes
+ReadWritePaths=/var/lib/nix_relay
 ```
 
 Ative e inicie o serviço:

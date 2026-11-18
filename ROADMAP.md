@@ -172,7 +172,7 @@ flowchart LR
 | **Fase 8** | Nix Media & Index | `docs/MEDIA.md`, `INDEX.md` | `U-U`, `C-U` |
 ---
 
-## 🏁 Marco Atual: Protótipo v0.2.0 (Living AMOLED & Starwire)
+## 🏁 Marco Anterior: Protótipo v0.2.0 (Living AMOLED & Starwire)
 
 - [x] **Design System Nix Living AMOLED:** Fundo `#000000` AMOLED absoluto, paletas reativas dinâmicas (`context.accentColor`), superfícies elevadas e contraste refinado.
 - [x] **Card ID & Passaporte Cultural:** Abertura universal por clique, hover isolado exclusivamente no peer com lockout anti-reabertura no `X`, posicionamento lateral não-obstrutivo e destaques culturais.
@@ -180,6 +180,18 @@ flowchart LR
 - [x] **Ações de Mensagens Completas:** Menu de contexto desktop/mobile, cópia segura UTF-8, encaminhamento com seletor de destino (`ForwardMessageDialog`), deleção local/geral e reações com emojis toggleable.
 - [x] **Configurações Avançadas de Canal:** Painel multi-categoria com permissões de mensagens, segurança anti-spam (slow mode), expurgo efêmero e suporte a `FLAG_SECURE` contra screenshots.
 - [x] **Catálogo Starwire Integrado:** Ingestão de 4.188 repositórios sob licença CC0-1.0 com métricas de crescimento semanal, busca instantânea e salvamento de 1 clique no Acervo Cultural.
-- [x] **Compilação e Homologação de Protótipos:**
-  - Pacotes experimentais gerados para validação interna e testes locais em Linux e Android.
-  - 100% dos testes unitários e de integração aprovados (7/7 suites verdes).
+
+## 🚀 Marco Atual: Protótipo Experimental v0.4.0-dev (V4 Telegram Layout & Yellow)
+
+- [x] **Identidade Visual & Emblema Vetorizado Transparente:** Pipeline em `scripts/brand/process_logo.py` gerando variantes transparentes (`ink`, `light`, `medallion`), splash, desktop e ícones Android.
+- [x] **Design System V4:** Dois temas oficiais (**Nix Dark Yellow** `#08090B`/`#17191E`/`#292C33`/`#FFC928` padrão inicial e **Nix Light Yellow** `#FFFFFF`/`#F6F7F9`/`#E9EBEF`/`#FFC928`), variação **AMOLED** `#000000`, modo **Sistema** e seletor reativo de cor de destaque.
+- [x] **Layout 3 Áreas & Janela Desktop Redimensionável:** Dock esquerdo com pastas personalizáveis e drag-and-drop (sem apagar chats), lista de conversas com filtros/busca e **Mensagens Salvas**, além de bordas redimensionáveis (mínimo `720x500`, início não maximizado).
+- [x] **Card ID Limpo & Privacidade:** Remoção de QR duplicado e status "Assistindo", fallback determinístico `NX-XXXX`, upload local (PNG/JPEG/WebP) com recorte e sanitização EXIF/chunks, correção de hover sem flickering em Solicitações e bloqueio real por `Visibilidade do Card ID`.
+- [x] **Mensageria, Starwire Analytics, Monero P2P e Share Offline:** Edição/resposta/fixação/multi-seleção/encaminhamento, `ConversationInfoPanel` clicando no cabeçalho, gráficos Starwire com dados reais, proteção fail-closed para download ZIP, verificação Ed25519 + expiração no P2P Monero e modal `Compartilhar Nix Offline` estilo Briar.
+- [x] **Módulos Criptográficos, Transporte & Relay Go:**
+  - `modules/core_crypto`: `Ed25519`, `X25519`, `XChaCha20-Poly1305`, `Argon2id`, `X3DH`, `DoubleRatchet`, `SignedRecord` & `ReplayGuard` (5/5 testes unitários).
+  - `modules/transport`: política *fail-closed* para `.onion` v3, conector `SOCKS5` sem vazamento de DNS (`ATYP 0x03`), `TorControlClient` e `RelayClient` (4/4 testes unitários).
+  - `services/nix_relay`: API Store-and-Forward em Go com TTL base de 7 dias e `AutoPruner` em 4 bandas com histerese (2/2 suítes Go aprovadas + smoke test do binário).
+- [x] **Validação Multiplataforma de Protótipos (Não Lançamento Oficial):**
+  - 7/7 testes de widgets Flutter (`flutter test`), 5/5 `core_crypto`, 4/4 `transport`, 2/2 pacotes Go `nix_relay`.
+  - Protótipos compilados localmente em Linux x86_64 e Android APK (assinatura `debug` para desenvolvimento local).
