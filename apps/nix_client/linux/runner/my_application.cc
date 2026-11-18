@@ -47,10 +47,11 @@ static void my_application_activate(GApplication* application) {
     gtk_window_set_title(window, "Nix");
   }
 
-  // Start in non-maximized windowed mode with standardized dimensions (1152x720)
-  // and minimum size constraints (800x540) to reduce screen resolution exposure.
+  // Start in non-maximized resizable windowed mode with minimum bounds (720x500)
+  // compatible with desktop window managers (can be manually maximized).
+  gtk_window_set_resizable(window, TRUE);
   gtk_window_set_default_size(window, 1152, 720);
-  gtk_widget_set_size_request(GTK_WIDGET(window), 800, 540);
+  gtk_widget_set_size_request(GTK_WIDGET(window), 720, 500);
   gtk_window_unmaximize(window);
   gtk_window_set_position(window, GTK_WIN_POS_CENTER);
   gtk_widget_show(GTK_WIDGET(window));
