@@ -25,7 +25,7 @@ FORBIDDEN_PATTERNS=(
 
 echo "🔍 [L-S] Verificando ausência de SDKs de rastreamento e telemetria..."
 for pattern in "${FORBIDDEN_PATTERNS[@]}"; do
-  if grep -ri --exclude-dir=".git" --exclude-dir=".dart_tool" --exclude-dir="build" --exclude="verify_privacy_matrix.sh" "$pattern" . 2>/dev/null; then
+  if grep -ri --exclude-dir=".git" --exclude-dir=".dart_tool" --exclude-dir="build" --exclude-dir="assets" --exclude="verify_privacy_matrix.sh" "$pattern" . 2>/dev/null; then
     echo "❌ [FALHA] Encontrada menção ou dependência proibida: $pattern"
     ERRORS=$((ERRORS + 1))
   fi

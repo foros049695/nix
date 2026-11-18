@@ -1,224 +1,275 @@
 # 🏴‍☠️ PROJETO NIX
 
-> **Comunicação, conhecimento e mídia com privacidade verificável, resiliência off-grid e soberania digital.**
+> **Comunicação inviolável, publicação de conhecimento imutável e transações financeiras soberanas com privacidade verificável por padrão.**
 
 [![Licença: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Status: Protótipo Experimental](https://img.shields.io/badge/Status-Protótipo%20Experimental-FFA000.svg)](ROADMAP.md)
-[![Design: V4 Dark & Light Yellow](https://img.shields.io/badge/Design-Nix%20Yellow%20V4-FFC928.svg)](docs/AUDIT_REPORT_V4.md)
-[![Tor: Fail-Closed](https://img.shields.io/badge/Network-Tor%20Onion%20v3-purple.svg)](docs/DEPLOYMENT_ONION_V3.md)
+[![Status: Pre-Alpha em Refatoração P0](https://img.shields.io/badge/Status-Pre--Alpha%20%7C%20Refatora%C3%A7%C3%A3o%20P0-FFC928.svg)](ROADMAP.md)
+[![Design: Nix Yellow V4.1](https://img.shields.io/badge/Design-Nix%20Yellow%20V4.1-FFC928.svg)](docs/AUDIT_REPORT_V4.md)
+[![Transporte: Tor Onion v3 Fail-Closed](https://img.shields.io/badge/Network-Tor%20Fail--Closed-purple.svg)](docs/DEPLOYMENT_ONION_V3.md)
 [![Criptografia: XMR Only](https://img.shields.io/badge/Finan%C3%A7as-Monero%20(XMR)-FF6600.svg)](docs/WALLET.md)
 
 ---
 
-## 🧪 Estado do Projeto e Compilação de Protótipos Locais
+## 🧭 Sumário Executivo & Transparência Técnica
 
-> ⚠️ **Aviso de Desenvolvimento:** O Nix está em fase de **prototipagem experimental e desenvolvimento ativo (pre-alpha)**. Os pacotes e binários gerados são estritamente para testes locais, validação de arquitetura e homologação técnica interna. **Não disponibilizamos lançamentos oficiais para usuários finais.**
+O **Nix** é um ecossistema modular, auto-hospedável e de código aberto projetado para assegurar comunicação confidencial, publicação descentralizada de conhecimento, acervo local de mídia e transações financeiras não custodiais exclusivamente em Monero (XMR).
 
-Para compilar e executar os protótipos de desenvolvimento localmente a partir do código-fonte:
+> ⚠️ **Aviso de Engenharia:** O Nix encontra-se atualmente em **fase pre-alpha de desenvolvimento ativo e homologação arquitetural**. A auditoria técnica formal realizada em Novembro de 2026 identificou que, embora o protótipo apresente uma interface gráfica rica e módulos isolados, a **mensageria fim a fim e a camada de transporte estão em fase de refatoração crítica (Marcos P0)**. Nenhum binário atual deve ser considerado pronto para uso em ambientes de risco elevado antes da conclusão dos gates criptográficos e de rede.
 
-```bash
-# 1. Executar protótipo Linux Desktop
-cd apps/nix_client
-flutter run -d linux
+---
 
-# 2. Compilar protótipo para Linux Desktop
-flutter build linux --release
+## 🎨 Identidade Visual & Design System V4.1
 
-# 3. Compilar APK de teste para Android
-flutter build apk --release
+O Projeto Nix adota uma linguagem visual de **alto contraste, ergonomia adaptativa e discrição operacional**, inspirada na estética de terminais técnicos e no visual de painéis compactos do Telegram Desktop.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        PALETAS DE CORES OFICIAIS                       │
+├────────────────────────────────────────────────────────────────────────┤
+│  DARK YELLOW (Padrão Noturno / Baixa Emissão de Luz):                  │
+│  - Background:      #08090B (Preto Profundo / AMOLED)                  │
+│  - Surface Card:    #17191E (Superfície Primária de Painéis)           │
+│  - Surface Elev:    #292C33 (Cards Elevados e Modais)                  │
+│  - Accent Amber:    #FFC928 (Dourado Técnico de Alto Contraste)        │
+│  - Text Primary:    #FFFFFF (Legibilidade Máxima WCAG 2.2 AAA)         │
+│                                                                        │
+│  LIGHT YELLOW (Modo Diurno / Alto Contraste Solar):                    │
+│  - Background:      #FDFBF7 (Branco Quente Orgânico)                   │
+│  - Surface Card:    #F4F0E6 (Linho Técnico Suave)                      │
+│  - Accent Amber:    #B8860B (Dark Goldenrod com Contraste AA)          │
+│  - Text Primary:    #1A1710 (Preto Carvão para Leitura)                │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Relatório de Auditoria Técnica V4:** [`docs/AUDIT_REPORT_V4.md`](docs/AUDIT_REPORT_V4.md) (histórico anterior: [`docs/AUDIT_REPORT_V2.md`](docs/AUDIT_REPORT_V2.md))
-- **Histórico de Alterações:** [`CHANGELOG.md`](CHANGELOG.md)
-- **Guia de Implantação Tor Onion v3:** [`docs/DEPLOYMENT_ONION_V3.md`](docs/DEPLOYMENT_ONION_V3.md)
+### Tokens de Ergonomia e Painéis Interativos
+* **Splitters Redimensionáveis (`PanelResizeDivider`):** Divisão horizontal flexível entre o *Spaces Dock* (64px–110px) e a *Channels Sidebar* (220px–480px) com persistência de largura e reset por duplo clique.
+* **Tokens de Curvatura (`NixTokens`):** Painéis internos (16px), cards e listas (14px), balões de chat (16px), inputs (12px) e botões compactos (10px).
+* **Avatar Universal Reativo (`NixUserAvatar`):** Identidade visual unificada com modos `local_file`, `monogram`, `sentinel` e `none`.
 
 ---
 
-## 📌 Sumário Executivo
+## 🧱 Arquitetura Geral do Sistema (C4 Containers)
 
-O **Nix** é um ecossistema modular, auto-hospedável e de código aberto projetado para assegurar comunicação inviolável, publicação de conhecimento verificável, catálogo local de mídia e transações financeiras não custodiais exclusivamente em Monero (XMR).
+O Nix opera no modelo **local-first**: todo o código, chaves privadas e mensagens residem no dispositivo do usuário em banco de dados cifrado. A VPS do relay atua unicamente como um buffer opaco e cego de armazenamento temporário.
 
-O projeto é guiado por um objetivo prático inicial: **atender confiavelmente 50 usuários simultâneos** em uma infraestrutura mínima de **2 vCPU, 2 GB RAM e 40 GB NVMe** (orçamento de US$ 5–10/mês), com cliente Flutter multi-plataforma (mobile/desktop), relay leve em Go ou Rust, persistência local cifrada em SQLCipher, suporte a rádio off-grid (LoRa, Reticulum) e interoperabilidade com ATAK-CIV via Cursor-on-Target (CoT).
+```mermaid
+flowchart TB
+  subgraph Dispositivo["Limite do Dispositivo Local"]
+    APP["Cliente Nix (Flutter Multiplataforma)"]
+    VAULT["Cofre de Chaves do SO (Keystore / Keychain / Secret Service)"]
+    DB[("Banco Local Cifrado (SQLCipher + FTS5)")]
+    TOR_LOCAL["Daemon Tor Local (Proxy SOCKS5 127.0.0.1:9050)"]
+
+    APP --> VAULT
+    APP --> DB
+    APP --> TOR_LOCAL
+  end
+
+  subgraph RedeTor["Rede de Transporte Tor Onion v3 (Fail-Closed)"]
+    CIRCUIT["Circuitos Criptografados Onion (.onion)"]
+  end
+
+  subgraph ServidorRelay["VPS do Relay Voluntário (Debian 13)"]
+    TOR_SRV["Tor Onion Service (Hidden Service Port 80/443)"]
+    RELAY_APP["API nix_relay (Go HTTP + Capabilities Auth)"]
+    PG[("PostgreSQL 17 (Envelopes Efêmeros + AutoPruner 7d)")]
+    ADMIN["Listener Admin / Métricas Local (127.0.0.1:9091)"]
+
+    TOR_SRV --> RELAY_APP
+    RELAY_APP --> PG
+    ADMIN -.-> RELAY_APP
+  end
+
+  subgraph ServicosExternos["Ecossistema Descentralizado"]
+    PEER["Outro Cliente Nix (Conexão Direta Onion-to-Onion)"]
+    ARCHIVE["Réplicas Voluntárias do Archive (CAS Imutável)"]
+    XMR["Daemon Monero P2P (Processo Isolado - Seed B)"]
+  end
+
+  TOR_LOCAL <--> CIRCUIT
+  CIRCUIT <--> TOR_SRV
+  CIRCUIT <--> PEER
+  APP -.-> ARCHIVE
+  APP -.-> XMR
+```
 
 ---
 
-## 🏛️ Princípios de Engenharia
+## 🔒 Política de Transporte Tor & Isolamento Fail-Closed
 
-1. **Criptografia Consolidada:** Utilização de bibliotecas mantidas e protocolos padronizados (Double Ratchet, XChaCha20-Poly1305, Ed25519, Argon2id). Sem criptografia proprietária ou improvisada.
-2. **Privacidade por Padrão:** Zero coleta de número de telefone, SMS, e-mail, CPF ou agenda de contatos para criar identidade.
-3. **Compartimentação Estrita:** Chaves, identificadores e bancos de dados separados entre mensageria, publicação (Archive), catálogo de mídia e finanças.
-4. **Armazenamento com Limpeza Dinâmica:** O relay é um buffer efêmero com TTL base de 7 dias e expurgo progressivo por histerese.
-5. **Transporte sem Regressão Silenciosa:** Se a rede Tor falhar, o cliente entra em *fail-closed* e **jamais** estabelece conexão IP direta desprotegida no perfil privado.
-6. **Realismo Off-Grid:** Rádio (LoRa) dedicado estritamente a textos curtos, alertas e telemetria essencial em Protobuf (< 240 bytes). Áudio, vídeo e arquivos usam transporte IP.
-7. **Finanças Exclusivamente em Monero (XMR):** Processo isolado e **Seed B** independente, garantindo que nenhuma chave financeira se misture ao mensageiro.
-8. **Matriz de Privacidade Verificável:** Avaliação contínua dos 21 critérios derivados de *The Hated One* (Account, Usage e Service).
-
----
-
-## 🧱 Arquitetura Modular
+O princípio fundamental de transporte do Nix é o **Fail-Closed**: nenhum dado privado trafega pela rede se o circuito Tor estiver indisponível. Conexões diretas via IP clearnet são terminantemente bloqueadas no perfil de segurança padrão.
 
 ```mermaid
 flowchart TD
-    UI[Cliente Flutter: Mobile & Desktop]
-    Policy[Política de Transporte & Permissões]
-    Msg[Messenger: Identidade & SQLCipher]
-    Arc[Archive: Editor & Objetos Canônicos]
-    Med[Media: Catálogo Local Cifrado]
-    Idx[Index: Pesquisa & Manifests Magnets]
-    Wallet[Wallet: Processo & Seed B XMR Isolados]
-    
-    Tor[Tor Integrado / Onion v3]
-    Local[Wi-Fi Local / Bluetooth Consentidos]
-    Radio[BLE para LoRa / Adaptador Reticulum]
-    
-    Relay[Relay Go / Rust: Caixas Opacas]
-    TTL[Storage S3/MinIO: AutoPruner com Histerese]
-    Replicas[Archive: Réplicas Voluntárias Opt-in]
-    XMR[Daemon Monero: Roteamento Próprio]
-    Maps[MapLibre / MBTiles / ATAK CoT UDP:4242]
-    
-    UI --> Msg
-    UI --> Arc
-    UI --> Med
-    UI --> Idx
-    UI --> Wallet
-    UI --> Maps
-    
-    Msg --> Policy
-    Arc --> Policy
-    Idx --> Policy
-    
-    Policy --> Tor
-    Policy --> Local
-    Policy --> Radio
-    
-    Tor <--> Relay
-    Relay --> TTL
-    Arc --> Replicas
-    Wallet --> XMR
-```
-
-### Divisão de Responsabilidades
-
-| Componente | Diretório | Função Primária |
-|---|---|---|
-| **Cliente Nix** | `apps/nix_client/` | App Flutter para Android, Linux, Windows, macOS e iOS com UI tática/escura. |
-| **Relay Nix** | `services/nix_relay/` | Servidor Go/Rust assíncrono para caixas de mensagens temporárias e WebSocket. |
-| **Criptografia** | `modules/core_crypto/` | Implementação de primitives criptográficas, envelopes e derivação de chaves. |
-| **Transporte** | `modules/transport/` | Camadas de rede: Onion Services Tor, SOCKS5 e socket local. |
-| **Off-Grid** | `modules/offgrid/` | Adaptadores BLE para Meshtastic, Reticulum (RNode), mapas MBTiles e CoT. |
-| **Archive** | `modules/archive/` | Editor Markdown, objetos canônicos JSON v1, CIDs e grafo de refutações. |
-| **Wallet** | `modules/wallet/` | Bindings Monero, isolamento de Seed B, criação de transações e mural P2P. |
-| **Media & Index** | `modules/media/`, `modules/index/` | Catálogos locais, sanitização de metadados e pesquisa de manifests. |
-| **Protocolo** | `proto/` | Definições de mensagens serializadas via Protocol Buffers v3. |
-| **Documentação** | `docs/` | Matriz com 23 especificações técnicas completas e registros de decisão (ADRs). |
-
----
-
-## 🗂️ Estrutura do Repositório
-
-```text
-.
-├── .github/                  # CI/CD Workflows, templates de issues e PR
-├── .vscode/                  # Configurações otimizadas para VS Code (Dart, Go, Rust)
-├── apps/
-│   └── nix_client/           # Aplicação Flutter multi-plataforma
-├── services/
-│   └── nix_relay/            # Servidor Relay em Go (alta concorrência, baixo consumo)
-├── modules/                  # Módulos especializados com limites rígidos de isolamento
-│   ├── core_crypto/          # Primitivas criptográficas e limites de memória
-│   ├── transport/            # Gerenciador de conexões Tor e P2P
-│   ├── offgrid/              # LoRa, Reticulum e ponte ATAK CoT
-│   ├── archive/              # Publicações canônicas, claims e refutações
-│   ├── wallet/               # Carteira Monero e mural P2P de ofertas
-│   ├── media/                # Catálogo local de mídia
-│   └── index/                # Pesquisa de fontes e magnets
-├── proto/                    # Esquemas Protocol Buffers versionados (v1)
-├── docs/                     # Matriz completa de documentação técnica
-│   ├── ARCHITECTURE.md       # Arquitetura e fluxos de dados
-│   ├── SECURITY.md           # Modelo de ameaças e postura criptográfica
-│   ├── PRIVACY_MATRIX.md     # Matriz The Hated One (21 critérios verificáveis)
-│   ├── INFRASTRUCTURE.md     # Setup de VPS, firewall e Prometheus
-│   ├── RETENTION.md          # Histerese do AutoPruner e TTL
-│   ├── WALLET.md             # Isolamento estrito de sementes e RPC Monero
-│   └── adr/                  # Architecture Decision Records
-├── scripts/                  # Scripts de verificação, setup e CI
-├── ROADMAP.md                # Roadmap detalhado em 10 fases (0 a 9)
-├── CONTRIBUTING.md           # Guia de contribuição para a comunidade
-└── LICENSE                   # GNU General Public License v3.0
+  REQ["Disparo de Ação de Rede (Envio, Sync ou Download)"] --> POL{"Perfil de Rede Ativo"}
+  
+  POL -- "Perfil Privado (Padrão)" --> PROXY["Conectar via SOCKS5 (127.0.0.1:9050)"]
+  POL -- "Perfil LAN / Descoberta Local" --> WARN["Exibir Alerta de Exposição Local (RF / Wi-Fi)"]
+  
+  PROXY --> CHECK{"Daemon Tor Operacional?"}
+  CHECK -- "Sim" --> ONION["Encapsular Requisição em Onion v3 (.onion)"]
+  CHECK -- "Não" --> BLOCK["BLOQUEIO FAIL-CLOSED (Conexão Abortada)"]
+  
+  BLOCK --> NOTIF["Notificar Usuário: Sem Conexão Tor"]
+  ONION --> RELAY_SEND["Transmitir para Relay / Peer"]
 ```
 
 ---
 
-## ⚙️ Ambiente de Desenvolvimento & VS Code
+## 📬 Ciclo de Vida da Mensageria E2EE & Buffer Efêmero
 
-O projeto está configurado para uma experiência de desenvolvimento unificada no **VS Code**:
+As mensagens são protegidas por criptografia de ponta a ponta (Double Ratchet + X3DH + XChaCha20-Poly1305) com commits transacionais no dispositivo e expurgo automático no relay.
 
-1. **Abra o workspace:**
-   ```bash
-   code nix.code-workspace
-   ```
-2. **Extensões recomendadas:**
-   Ao abrir, o VS Code solicitará a instalação das extensões listadas em `.vscode/extensions.json` (Flutter, Go, Rust Analyzer, Protobuf, GitLens, Mermaid).
-3. **Tarefas pré-configuradas (`Ctrl+Shift+P` -> `Tasks: Run Task`):**
-   - `Client: Run Flutter (Debug)`
-   - `Relay: Run Local Server (Go)`
-   - `Test: Run All Tests`
-   - `Lint: Verify Code & Privacy Rules`
-   - `Proto: Compile Schemas`
-   - `Security: Verify Privacy Matrix`
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Alice as Alice (Cliente A)
+  participant DB_A as SQLCipher Local (A)
+  participant Relay as Relay Nix (PostgreSQL)
+  participant DB_B as SQLCipher Local (B)
+  actor Bob as Bob (Cliente B)
+
+  Note over Alice,DB_A: 1. Gravação Atômica Pré-Envio
+  Alice->>DB_A: Iniciar Transação (Outbox + Estado Candidato Ratchet)
+  DB_A-->>Alice: Commit Confirmado
+  
+  Note over Alice,Relay: 2. Transmissão Cifrada via Tor
+  Alice->>Relay: POST /api/v1/envelopes (Payload Cifrado + Capability Token)
+  Relay->>Relay: Validar Cota Atômica e Gravar com TTL 7 Dias
+  Relay-->>Alice: HTTP 202 Accepted (Envelope Armazenado)
+  
+  Note over Bob,Relay: 3. Recepção & Validação
+  Bob->>Relay: GET /api/v1/envelopes (Autenticado por Capability)
+  Relay-->>Bob: Retornar Envelopes Cifrados
+  
+  Note over Bob,DB_B: 4. Autenticação AEAD & Commit Pré-ACK
+  Bob->>Bob: Validar AEAD em Cópia Candidata de Estado
+  alt Mensagem Autêntica
+    Bob->>DB_B: Gravar Mensagem + Avançar Ratchet + Salvar Dedup
+    DB_B-->>Bob: Commit Confirmado
+    Bob->>Relay: POST /api/v1/envelopes/ack (Confirmar Recebimento)
+    Relay->>Relay: Marcar Envelope como Tombstone / Limpeza Imediata
+  else Mensagem Adulterada / Forjada
+    Bob->>Bob: Rejeitar Mensagem e Descartar Estado Candidato (Sem Corrupção)
+  end
+```
 
 ---
 
-## 🚀 Como Começar
+## 🔑 Modelo de Identidade Compartimentada (Seed A vs Seed B)
+
+Para mitigar correlação financeira e vazamento cruzado de privacidade, o Nix impõe a separação criptográfica absoluta entre a identidade de comunicação e a carteira financeira.
+
+```mermaid
+flowchart LR
+  subgraph SeedA["Identidade de Comunicação (Seed A)"]
+    direction TB
+    ID_KEY["Chave Mestra Ed25519 (Identidade & Assinaturas de Rede)"]
+    DH_KEY["Chaves Efêmeras X25519 (Double Ratchet & Prekeys X3DH)"]
+    ARCH_KEY["Persona Editorial Archive (Assinatura de Publicações)"]
+    
+    ID_KEY --- DH_KEY
+    ID_KEY --- ARCH_KEY
+  end
+
+  subgraph Barreira["Fronteira Estrita de Isolamento"]
+    WALL["Isolamento de Processo & Memória Zeroizada"]
+  end
+
+  subgraph SeedB["Soberania Financeira (Seed B)"]
+    direction TB
+    XMR_VIEW["Chave de Visualização Privada Monero (Audit / Saldo)"]
+    XMR_SPEND["Chave de Gasto Privada Monero (Transações P2P)"]
+    
+    XMR_VIEW --- XMR_SPEND
+  end
+
+  SeedA -. "Zero Compartilhamento de Chaves" .- Barreira
+  Barreira -. "Zero Custódia pelo Mensageiro" .- SeedB
+```
+
+---
+
+## 📊 Matriz de Maturidade dos Componentes (Auditoria 2026)
+
+A auditoria técnica formal classificou os 62 requisitos do ecossistema de acordo com evidências demonstráveis em laboratório:
+
+| Estado | Quantidade | Descrição Operacional |
+|---|---:|---|
+| `PARTIAL` | **29** | Capacidade parcialmente implementada; possui partes funcionais locais mas requer fechamento de contrato ou persistência. |
+| `MISSING` | **16** | Especificação ou interface proposta sem implementação operacional de retaguarda. |
+| `UI_ONLY` | **9** | Interface gráfica construída no Flutter operando sobre `MockData` sem conexão aos módulos de produção. |
+| `BROKEN` | **6** | Código funcionalmente falho reproduzido por testes e probes (ex: corrupção de ratchet, SOCKS stream listen). |
+| `UNVERIFIED`| **2** | Testes de integração distribuída e capacidade de carga que dependem de infraestrutura operacional ativa. |
+| `IMPLEMENTED`| **0** | Nenhuma capacidade distribuída de ponta a ponta é dada como pronta antes dos gates formais. |
+
+### Prioridades em Andamento no Roadmap
+1. **Marcos P0 (Fundação Crítica):**
+   * **P0-0:** Base reproduzível, CI integrada no GitHub Actions, estado de segurança honesto e correção do manifesto Android.
+   * **P0-1:** Fechamento de ADR criptográfico, canonicalização e eliminação de mutação indevida de ratchet em falhas de decifração.
+   * **P0-2:** Persistência em banco local SQLCipher com cofre nativo do SO e chaves raw.
+   * **P0-3:** Transporte Tor real com leitor SOCKS único e TLS nativo para endpoints HTTPS.
+   * **P0-4:** Relay Go com adapter PostgreSQL, autenticação via capabilities, quotas persistentes e métricas isoladas.
+   * **P0-5:** Demonstração integrada de dois clientes operando com mensagens privadas via Tor.
+   * **P0-6:** Operação recuperável com backup criptografado de metadados e scripts de restauração.
+2. **Marcos P1:** Anexos reais em chunks E2EE, QR Code interoperável padronizado, grupos distribuídos com *Sender Keys*, Archive imutável e Media & Index com busca FTS5.
+3. **Marcos P2:** Descoberta Starwire com downloads conscientes, mercado Monero P2P não custodial e distribuição offline autenticada de APK.
+
+---
+
+## 🛠️ Compilação e Execução de Protótipos Locais
 
 ### Pré-requisitos
-- **Git** (`>= 2.30`)
-- **Go** (`>= 1.22`) ou **Rust** (`>= 1.75`)
-- **Flutter SDK** (`>= 3.22`)
-- **Protobuf Compiler** (`protoc`)
+* **Flutter SDK:** 3.27.x ou superior / Dart 3.6.x
+* **Go:** 1.22 ou 1.23 (para desenvolvimento do relay)
+* **Docker & Docker Compose:** para execução do banco PostgreSQL em testes locais
 
-### Configuração Inicial
+### 1. Execução do Cliente Desktop (Linux)
 ```bash
-# Clone o repositório
-git clone https://github.com/foros049695/nix.git
-cd nix
+cd apps/nix_client
+flutter pub get
+flutter run -d linux
+```
 
-# Execute o script de verificação do ambiente
-./scripts/setup_dev.sh
+### 2. Execução dos Testes Automatizados de Todos os Módulos
+```bash
+# Testes do Core Criptográfico
+cd modules/core_crypto
+dart test
 
-# Verifique o cumprimento das regras da Matriz de Privacidade
+# Testes de Transporte e SOCKS
+cd ../transport
+dart test
+
+# Testes do Relay Go com Detecção de Race Conditions
+cd ../../services/nix_relay
+go test -v -race ./...
+
+# Testes de Interface e Widgets do Cliente
+cd ../../apps/nix_client
+flutter test
+```
+
+### 3. Portão de Privacidade Estática
+```bash
+chmod +x scripts/verify_privacy_matrix.sh
 ./scripts/verify_privacy_matrix.sh
 ```
 
 ---
 
-## 🛡️ Matriz de Privacidade (The Hated One)
+## 📚 Documentação Técnica de Referência
 
-O Nix avalia sistematicamente sete eixos de proteção em três contextos operacionais:
-
-| Eixo | Account (Conta) | Usage (Uso) | Service (Serviço) |
-|---|---|---|---|
-| **Linkability** | `L-A` Duas personas sem vínculos | `L-U` Tor padrão, sem saída direta | `L-S` Zero SDKs de rastreamento |
-| **Identifiability** | `I-A` Sem telefone, email ou CPF | `I-U` Falha fechada em queda de proxy | `I-S` Zero PII em discos e logs |
-| **Nonrepudiation** | `N-A` Denoability criptográfica | `N-U` Protocolo off-the-record | `N-S` Histórico purgado pós-TTL |
-| **Detectability** | `D-A` Sem cadastro civil | `D-U` Tor ativo por padrão | `D-S` Métricas apenas agregadas |
-| **Data Disclosure** | `DD-A` SQLCipher + Argon2id | `DD-U` E2EE ponta a ponta | `DD-S` Código auditável, retenção mínima |
-| **Unawareness** | `U-A` Chaves com finalidade única | `U-U` Avisos de exposição explícitos | `U-S` Sem terceiros proprietários |
-| **Noncompliance** | `C-A` Sem retenção indevida | `C-U` Revogação instantânea | `C-S` Resposta a incidentes |
-
-Veja os detalhes e procedimentos de teste em [`docs/PRIVACY_MATRIX.md`](docs/PRIVACY_MATRIX.md).
+* [`docs/AUDIT_REPORT_V4.md`](docs/AUDIT_REPORT_V4.md) — Relatório detalhado da Auditoria Técnica V4.
+* [`docs/PRIVACY.md`](docs/PRIVACY.md) — Declaração pública de privacidade e limites operacionais.
+* [`docs/PRIVACY_MATRIX.md`](docs/PRIVACY_MATRIX.md) — Matriz dos 21 critérios de privacidade (*The Hated One*).
+* [`SECURITY.md`](SECURITY.md) — Política de divulgação responsável de vulnerabilidades e modelo de ameaças.
+* [`ROADMAP.md`](ROADMAP.md) — Cronograma técnico detalhado de dependências e marcos de engenharia.
+* [`docs/adr/`](docs/adr/) — Registros formais de decisões de arquitetura (ADRs).
+* [`database/`](database/) — Schemas SQL, migrações e scripts de backup do banco local e do relay.
 
 ---
 
-## 🤝 Como Contribuir
+## ⚖️ Licença
 
-Contribuições de código aberto são muito bem-vindas! Por favor, leia nosso guia [`CONTRIBUTING.md`](CONTRIBUTING.md) antes de enviar Pull Requests.
-
-> **Regra de Ouro:** Nenhuma contribuição que adicione identificação civil, telemetria oculta, desative o Tor sem aviso explícito ou enfraqueça a separação de chaves será aceita.
-
----
-
-## 📄 Licença
-
-Distribuído sob a licença **GNU General Public License v3.0 (GPLv3)**. Veja [`LICENSE`](LICENSE) para mais detalhes.
+O Projeto Nix é distribuído sob os termos da licença **GNU General Public License v3.0 (GPL-3.0)**. Consulte o arquivo [`LICENSE`](LICENSE) para obter o texto completo da licença.

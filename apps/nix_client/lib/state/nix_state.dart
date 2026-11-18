@@ -89,7 +89,7 @@ class NixState extends ChangeNotifier {
   UserSettings _settings = const UserSettings();
 
   CallState _callState = const CallState();
-  final SecurityContext _securityContext = const SecurityContext(myPersona: 'NX-7E3A');
+  SecurityContext _securityContext = const SecurityContext(myPersona: 'NX-7E3A');
 
   NixActiveArea _activeArea = NixActiveArea.spaces;
   HomeSubTab _homeSubTab = HomeSubTab.cardId;
@@ -144,8 +144,8 @@ class NixState extends ChangeNotifier {
 
   // Estado Tor Onion
   final String _onionAddress = 'gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion';
-  bool _isTorRunning = true;
-  String _torDiagnosticDetail = 'Daemon Tor Onion v3 ativo · SOCKS5 127.0.0.1:9050';
+  bool _isTorRunning = false;
+  String _torDiagnosticDetail = 'Tor aguardando conexão SOCKS5 em 127.0.0.1:9050';
 
   NixState() {
     _spaces = MockData.getInitialSpaces();
@@ -339,6 +339,10 @@ class NixState extends ChangeNotifier {
       _isTorRunning = true;
       _torDiagnosticDetail =
           'Proxy SOCKS5 (127.0.0.1:9050) conectado · Endpoint: $_onionAddress';
+      _securityContext = _securityContext.copyWith(
+        isTorConnected: true,
+        status: SecuritySubsystemState.ready,
+      );
       notifyListeners();
       return true;
     } catch (_) {
@@ -346,6 +350,10 @@ class NixState extends ChangeNotifier {
       _torDiagnosticDetail = isTorFailClosed
           ? 'Tor indisponível — Fail-Closed ATIVO (Fallback IP direto bloqueado)'
           : 'Tor indisponível em 127.0.0.1:9050';
+      _securityContext = _securityContext.copyWith(
+        isTorConnected: false,
+        status: SecuritySubsystemState.failed,
+      );
       notifyListeners();
       return false;
     }
