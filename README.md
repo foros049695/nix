@@ -157,7 +157,7 @@ O projeto está configurado para uma experiência de desenvolvimento unificada n
 ### Configuração Inicial
 ```bash
 # Clone o repositório
-git clone https://github.com/SEU_USUARIO/nix.git
+git clone https://github.com/foros049695/nix.git
 cd nix
 
 # Execute o script de verificação do ambiente
