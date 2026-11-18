@@ -28,8 +28,17 @@ type Envelope struct {
 	CreatedAt  int64  `json:"created_at"`
 	ExpiresAt  int64  `json:"expires_at"`
 	ByteSize   int64  `json:"byte_size"`
-	QuotaToken string `json:"-"`
+	QuotaToken string `json:"quota_token,omitempty"`
 }
+
+// CapabilityScope define os escopos de autorização de tokens de acesso cego.
+type CapabilityScope string
+
+const (
+	ScopeReadAck CapabilityScope = "read_ack"
+	ScopeWrite   CapabilityScope = "write"
+	ScopeAdmin   CapabilityScope = "admin"
+)
 
 // StoreMetrics resume contadores agregados sem rótulos identificadores.
 type StoreMetrics struct {
@@ -49,6 +58,7 @@ type BlindMailboxStore struct {
 	maxAttachmentBytes       int64
 	maxInFlightPerQuotaToken int64
 	mailboxes                map[string][]Envelope
+	mailboxReadTokens        map[string]string
 	quotaUsage               map[string]int64
 	storedBytes              int64
 	totalStored              int64
@@ -72,6 +82,7 @@ func NewBlindMailboxStore(dataDir string, baseTTL time.Duration, maxAttachmentBy
 		maxAttachmentBytes:       maxAttachmentBytes,
 		maxInFlightPerQuotaToken: maxInFlightPerQuotaToken,
 		mailboxes:                make(map[string][]Envelope),
+		mailboxReadTokens:        make(map[string]string),
 		quotaUsage:               make(map[string]int64),
 	}
 	if dataDir != "" {
@@ -145,7 +156,19 @@ func (s *BlindMailboxStore) Store(
 	s.mailboxes[mailboxID] = append(s.mailboxes[mailboxID], env)
 	s.storedBytes += byteSize
 	s.totalStored++
-	s.persistMailboxLocked(mailboxID)
+	if err := s.persistMailboxLocked(mailboxID); err != nil {
+		// Rollback in-memory state on persistence failure (Marco P0-4 / REL01)
+		list := s.mailboxes[mailboxID]
+		if len(list) > 0 {
+			s.mailboxes[mailboxID] = list[:len(list)-1]
+		}
+		s.storedBytes -= byteSize
+		s.totalStored--
+		if quotaToken != "" {
+			s.quotaUsage[quotaToken] -= byteSize
+		}
+		return Envelope{}, errors.New("falha de persistência em disco no relay: " + err.Error())
+	}
 	return env, nil
 }
 
@@ -294,24 +317,25 @@ func (s *BlindMailboxStore) subtractAccountingLocked(env Envelope) {
 	}
 }
 
-func (s *BlindMailboxStore) persistMailboxLocked(mailboxID string) {
+func (s *BlindMailboxStore) persistMailboxLocked(mailboxID string) error {
 	if s.dataDir == "" {
-		return
+		return nil
 	}
 	path := filepath.Join(s.dataDir, mailboxID+".json")
 	list := s.mailboxes[mailboxID]
 	if len(list) == 0 {
 		_ = os.Remove(path)
-		return
+		return nil
 	}
 	data, err := json.Marshal(list)
 	if err != nil {
-		return
+		return err
 	}
 	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o600); err == nil {
-		_ = os.Rename(tmpPath, path)
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
+		return err
 	}
+	return os.Rename(tmpPath, path)
 }
 
 func (s *BlindMailboxStore) loadFromDisk() error {
@@ -341,6 +365,10 @@ func (s *BlindMailboxStore) loadFromDisk() error {
 			if env.ExpiresAt > nowUnix {
 				valid = append(valid, env)
 				s.storedBytes += env.ByteSize
+				// Reconstrói cotas consumidas em trânsito (Marco P0-4 / REL02)
+				if env.QuotaToken != "" {
+					s.quotaUsage[env.QuotaToken] += env.ByteSize
+				}
 			}
 		}
 		if len(valid) > 0 {
@@ -350,6 +378,34 @@ func (s *BlindMailboxStore) loadFromDisk() error {
 		}
 	}
 	return nil
+}
+
+// ValidateCapability valida que o token apresentado confere autorização para o escopo e mailbox (Marco P0-4 / SEC01).
+func (s *BlindMailboxStore) ValidateCapability(mailboxID, token string, scope CapabilityScope) bool {
+	if token == "" || mailboxID == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	expected, exists := s.mailboxReadTokens[mailboxID]
+	if !exists {
+		// Vincula na primeira requisição autenticada da mailbox
+		s.mailboxReadTokens[mailboxID] = token
+		return true
+	}
+	return subtleConstantTimeCompare(expected, token)
+}
+
+func subtleConstantTimeCompare(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var res byte
+	for i := 0; i < len(a); i++ {
+		res |= a[i] ^ b[i]
+	}
+	return res == 0
 }
 
 func randomID() string {

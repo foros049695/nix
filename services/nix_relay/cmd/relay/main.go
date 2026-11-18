@@ -33,20 +33,8 @@ func NewMux(cfg buffer.Config, store *buffer.BlindMailboxStore, pruner *buffer.A
 		})
 	})
 
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		m := store.Metrics()
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-		fmt.Fprintf(w, "# TYPE nix_relay_active_mailboxes gauge\nnix_relay_active_mailboxes %d\n", m.ActiveMailboxes)
-		fmt.Fprintf(w, "# TYPE nix_relay_active_envelopes gauge\nnix_relay_active_envelopes %d\n", m.ActiveEnvelopes)
-		fmt.Fprintf(w, "# TYPE nix_relay_stored_bytes gauge\nnix_relay_stored_bytes %d\n", m.StoredBytes)
-		fmt.Fprintf(w, "# TYPE nix_relay_total_stored counter\nnix_relay_total_stored %d\n", m.TotalStored)
-		fmt.Fprintf(w, "# TYPE nix_relay_total_acked counter\nnix_relay_total_acked %d\n", m.TotalAcked)
-		fmt.Fprintf(w, "# TYPE nix_relay_total_pruned counter\nnix_relay_total_pruned %d\n", m.TotalPruned)
-	})
+	// /metrics removido da superfície pública Onion (Marco P0-4 / REL04).
+	// O endpoint de métricas agora reside exclusivamente em NewAdminMux.
 
 	mux.HandleFunc("/v1/mailboxes/", func(w http.ResponseWriter, r *http.Request) {
 		trimmed := strings.TrimPrefix(r.URL.Path, "/v1/mailboxes/")
@@ -92,6 +80,16 @@ func NewMux(cfg buffer.Config, store *buffer.BlindMailboxStore, pruner *buffer.A
 			}
 
 			if r.Method == http.MethodGet {
+				token, err := parseBearerToken(r)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusUnauthorized)
+					return
+				}
+				if !store.ValidateCapability(mailboxID, token, buffer.ScopeReadAck) {
+					http.Error(w, "capability de leitura não autorizada para esta mailbox", http.StatusForbidden)
+					return
+				}
+
 				envs, err := store.Fetch(mailboxID, time.Now().UTC())
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusBadRequest)
@@ -107,6 +105,16 @@ func NewMux(cfg buffer.Config, store *buffer.BlindMailboxStore, pruner *buffer.A
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
+			token, err := parseBearerToken(r)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusUnauthorized)
+				return
+			}
+			if !store.ValidateCapability(mailboxID, token, buffer.ScopeReadAck) {
+				http.Error(w, "capability de ack não autorizada para esta mailbox", http.StatusForbidden)
+				return
+			}
+
 			var req struct {
 				IDs []string `json:"ids"`
 			}
@@ -127,6 +135,38 @@ func NewMux(cfg buffer.Config, store *buffer.BlindMailboxStore, pruner *buffer.A
 	})
 
 	return mux
+}
+
+// NewAdminMux cria mux exclusivo para listener administrativo/métricas local (Marco P0-4 / REL04).
+func NewAdminMux(store *buffer.BlindMailboxStore) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		m := store.Metrics()
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		fmt.Fprintf(w, "# TYPE nix_relay_active_mailboxes gauge\nnix_relay_active_mailboxes %d\n", m.ActiveMailboxes)
+		fmt.Fprintf(w, "# TYPE nix_relay_active_envelopes gauge\nnix_relay_active_envelopes %d\n", m.ActiveEnvelopes)
+		fmt.Fprintf(w, "# TYPE nix_relay_stored_bytes gauge\nnix_relay_stored_bytes %d\n", m.StoredBytes)
+		fmt.Fprintf(w, "# TYPE nix_relay_total_stored counter\nnix_relay_total_stored %d\n", m.TotalStored)
+		fmt.Fprintf(w, "# TYPE nix_relay_total_acked counter\nnix_relay_total_acked %d\n", m.TotalAcked)
+		fmt.Fprintf(w, "# TYPE nix_relay_total_pruned counter\nnix_relay_total_pruned %d\n", m.TotalPruned)
+	})
+	return mux
+}
+
+func parseBearerToken(r *http.Request) (string, error) {
+	auth := r.Header.Get("Authorization")
+	if auth == "" {
+		return "", errors.New("cabeçalho Authorization obrigatório ausente")
+	}
+	parts := strings.SplitN(auth, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
+		return "", errors.New("esquema de autorização inválido; esperado Bearer <token>")
+	}
+	return strings.TrimSpace(parts[1]), nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -173,11 +213,30 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	var adminSrv *http.Server
+	if cfg.MetricsEnabled && cfg.MetricsListenAddr != "" {
+		adminMux := NewAdminMux(store)
+		adminSrv = &http.Server{
+			Addr:              cfg.MetricsListenAddr,
+			Handler:           adminMux,
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		go func() {
+			log.Printf("[NIX-RELAY] Listener administrativo/métricas ativo em http://%s (isolado da superfície Onion).", cfg.MetricsListenAddr)
+			if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("[NIX-RELAY] Listener de métricas finalizado: %v", err)
+			}
+		}()
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
 		close(stopCh)
+		if adminSrv != nil {
+			_ = adminSrv.Close()
+		}
 		_ = srv.Close()
 	}()
 

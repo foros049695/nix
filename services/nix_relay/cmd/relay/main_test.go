@@ -27,6 +27,9 @@ func TestRelayHTTPStoreFetchAckAndHealthz(t *testing.T) {
 	srv := httptest.NewServer(NewMux(cfg, store, pruner))
 	defer srv.Close()
 
+	adminSrv := httptest.NewServer(NewAdminMux(store))
+	defer adminSrv.Close()
+
 	// 1. /healthz
 	resp, err := http.Get(srv.URL + "/healthz")
 	if err != nil {
@@ -57,12 +60,28 @@ func TestRelayHTTPStoreFetchAckAndHealthz(t *testing.T) {
 		t.Fatalf("invalid store response: %v / id=%s", err, storeOut.ID)
 	}
 
-	// 3. Fetch GET /v1/mailboxes/{id}/envelopes
-	getRes, err := http.Get(srv.URL + "/v1/mailboxes/mbox_test_1/envelopes")
+	// 3. Fetch GET sem autenticação DEVE retornar 401 Unauthorized (Marco P0-4 / SEC01)
+	unauthGetReq, _ := http.NewRequest(http.MethodGet, srv.URL+"/v1/mailboxes/mbox_test_1/envelopes", nil)
+	unauthGetRes, err := http.DefaultClient.Do(unauthGetReq)
+	if err != nil {
+		t.Fatalf("unauth fetch failed: %v", err)
+	}
+	unauthGetRes.Body.Close()
+	if unauthGetRes.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 on unauthenticated fetch, got %d", unauthGetRes.StatusCode)
+	}
+
+	// 4. Fetch GET autenticado com capability token
+	authGetReq, _ := http.NewRequest(http.MethodGet, srv.URL+"/v1/mailboxes/mbox_test_1/envelopes", nil)
+	authGetReq.Header.Set("Authorization", "Bearer my_secret_token_123")
+	getRes, err := http.DefaultClient.Do(authGetReq)
 	if err != nil {
 		t.Fatalf("fetch GET failed: %v", err)
 	}
 	defer getRes.Body.Close()
+	if getRes.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on authenticated fetch, got %d", getRes.StatusCode)
+	}
 	var fetchOut struct {
 		Envelopes []buffer.Envelope `json:"envelopes"`
 	}
@@ -73,13 +92,44 @@ func TestRelayHTTPStoreFetchAckAndHealthz(t *testing.T) {
 		t.Fatalf("unexpected envelopes: %+v", fetchOut.Envelopes)
 	}
 
-	// 4. Ack POST /v1/mailboxes/{id}/ack
+	// 5. Ack POST sem autenticação DEVE retornar 401 Unauthorized (Marco P0-4 / SEC01)
 	ackBody, _ := json.Marshal(map[string]any{"ids": []string{storeOut.ID}})
-	ackRes, err := http.Post(srv.URL+"/v1/mailboxes/mbox_test_1/ack", "application/json", bytes.NewReader(ackBody))
+	unauthAckReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/mailboxes/mbox_test_1/ack", bytes.NewReader(ackBody))
+	unauthAckReq.Header.Set("Content-Type", "application/json")
+	unauthAckRes, err := http.DefaultClient.Do(unauthAckReq)
+	if err != nil {
+		t.Fatalf("unauth ack failed: %v", err)
+	}
+	unauthAckRes.Body.Close()
+	if unauthAckRes.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 on unauthenticated ack, got %d", unauthAckRes.StatusCode)
+	}
+
+	// 6. Ack POST com token errado DEVE retornar 403 Forbidden
+	wrongAckReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/mailboxes/mbox_test_1/ack", bytes.NewReader(ackBody))
+	wrongAckReq.Header.Set("Content-Type", "application/json")
+	wrongAckReq.Header.Set("Authorization", "Bearer wrong_token")
+	wrongAckRes, err := http.DefaultClient.Do(wrongAckReq)
+	if err != nil {
+		t.Fatalf("wrong token ack failed: %v", err)
+	}
+	wrongAckRes.Body.Close()
+	if wrongAckRes.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 on wrong token ack, got %d", wrongAckRes.StatusCode)
+	}
+
+	// 7. Ack POST autenticado com token legítimo
+	authAckReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/mailboxes/mbox_test_1/ack", bytes.NewReader(ackBody))
+	authAckReq.Header.Set("Content-Type", "application/json")
+	authAckReq.Header.Set("Authorization", "Bearer my_secret_token_123")
+	ackRes, err := http.DefaultClient.Do(authAckReq)
 	if err != nil {
 		t.Fatalf("ack POST failed: %v", err)
 	}
 	defer ackRes.Body.Close()
+	if ackRes.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on authorized ack, got %d", ackRes.StatusCode)
+	}
 	var ackOut struct {
 		Deleted int `json:"deleted"`
 	}
@@ -87,12 +137,25 @@ func TestRelayHTTPStoreFetchAckAndHealthz(t *testing.T) {
 		t.Fatalf("expected deleted=1, got %d (err=%v)", ackOut.Deleted, err)
 	}
 
-	// 5. /metrics sem rótulos pessoais
-	metRes, err := http.Get(srv.URL + "/metrics")
+	// 8. /metrics na superfície pública NewMux DEVE retornar 404 (isolamento do Onion)
+	onionMetricsRes, err := http.Get(srv.URL + "/metrics")
 	if err != nil {
-		t.Fatalf("metrics GET failed: %v", err)
+		t.Fatalf("metrics onion request failed: %v", err)
+	}
+	onionMetricsRes.Body.Close()
+	if onionMetricsRes.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 on public onion /metrics, got %d", onionMetricsRes.StatusCode)
+	}
+
+	// 9. /metrics no adminSrv DEVE retornar 200 OK com métricas sem identificadores pessoais
+	metRes, err := http.Get(adminSrv.URL + "/metrics")
+	if err != nil {
+		t.Fatalf("admin metrics GET failed: %v", err)
 	}
 	defer metRes.Body.Close()
+	if metRes.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on admin /metrics, got %d", metRes.StatusCode)
+	}
 	var buf bytes.Buffer
 	_, _ = buf.ReadFrom(metRes.Body)
 	if !strings.Contains(buf.String(), "nix_relay_total_acked 1") {
