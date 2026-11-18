@@ -6,10 +6,11 @@ class Message {
   final bool isMe;
   final String text;
   final DateTime timestamp;
-  final int ephemeralSeconds; // 0 = sem auto-destruição
+  final int ephemeralSeconds;
   final int remainingSeconds;
   final bool isVerified;
   final List<String> attachments;
+  final Map<String, int> reactions;
 
   const Message({
     required this.id,
@@ -23,7 +24,27 @@ class Message {
     this.remainingSeconds = 0,
     this.isVerified = true,
     this.attachments = const [],
+    this.reactions = const {},
   });
 
   bool get isEphemeral => ephemeralSeconds > 0;
+
+  Message copyWith({
+    Map<String, int>? reactions,
+  }) {
+    return Message(
+      id: id,
+      channelId: channelId,
+      senderName: senderName,
+      senderFingerprint: senderFingerprint,
+      isMe: isMe,
+      text: text,
+      timestamp: timestamp,
+      ephemeralSeconds: ephemeralSeconds,
+      remainingSeconds: remainingSeconds,
+      isVerified: isVerified,
+      attachments: attachments,
+      reactions: reactions ?? this.reactions,
+    );
+  }
 }

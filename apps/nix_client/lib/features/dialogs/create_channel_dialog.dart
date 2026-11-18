@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/channel.dart';
 import '../../core/theme/nix_colors.dart';
+import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 
 class CreateChannelDialog extends StatefulWidget {
@@ -22,7 +23,7 @@ class _CreateChannelDialogState extends State<CreateChannelDialog> {
   @override
   void initState() {
     super.initState();
-    _selectedCategory = widget.defaultCategory ?? '💬 TÓPICOS DE TEXTO';
+    _selectedCategory = widget.defaultCategory ?? 'COMUNIDADE';
   }
 
   @override
@@ -39,62 +40,59 @@ class _CreateChannelDialogState extends State<CreateChannelDialog> {
     return AlertDialog(
       title: const Text('Criar Nova Sala / Tópico'),
       content: SizedBox(
-        width: 440,
+        width: 450,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'TIPO DE SALA',
-                style: TextStyle(color: NixColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
-              ),
+              Text('TIPO DE SALA', style: NixTokens.labelUppercase()),
               const SizedBox(height: 8),
               _buildTypeOption(
                 type: ChannelType.text,
-                title: 'Sala de Texto / Tópico',
-                subtitle: 'Troca de mensagens E2EE, mídias e arquivos temporários.',
-                icon: Icons.tag,
-                categoryDefault: '💬 TÓPICOS DE TEXTO',
+                title: 'Sala de Texto Padrão',
+                subtitle: 'Conversas E2EE em fluxo contínuo, mídias e arquivos temporários.',
+                icon: Icons.tag_rounded,
+                categoryDefault: 'COMUNIDADE',
+              ),
+              const SizedBox(height: 6),
+              _buildTypeOption(
+                type: ChannelType.forum,
+                title: 'Fórum / Tópicos Interativos',
+                subtitle: 'Grade de cartões com imagens 2x2 e chat lateral dividido (Split-Chat).',
+                icon: Icons.forum_outlined,
+                categoryDefault: 'TÓPICOS INTERATIVOS',
               ),
               const SizedBox(height: 6),
               _buildTypeOption(
                 type: ChannelType.voice,
-                title: 'Sala de Call & Áudio',
-                subtitle: 'Comunicação por voz criptografada fim a fim via Onion v3.',
-                icon: Icons.volume_up_rounded,
-                categoryDefault: '🔊 SALAS DE VOZ & CALL',
+                title: 'Sala de Call & Voz',
+                subtitle: 'Comunicação por áudio criptografada fim a fim via Onion v3.',
+                icon: Icons.volume_up_outlined,
+                categoryDefault: 'CHATS DE VOZ',
               ),
               const SizedBox(height: 6),
               _buildTypeOption(
                 type: ChannelType.publication,
                 title: 'Sala de Publicação (Nix Archive)',
                 subtitle: 'Artigos canônicos Markdown, afirmações (claims) e refutações.',
-                icon: Icons.auto_stories_rounded,
-                categoryDefault: '📜 NIX ARCHIVE (PUBLICAÇÕES)',
+                icon: Icons.menu_book_outlined,
+                categoryDefault: 'NIX ARCHIVE',
               ),
               const SizedBox(height: 16),
-              const Text(
-                'NOME DA SALA',
-                style: TextStyle(color: NixColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
-              ),
+              Text('NOME DA SALA', style: NixTokens.labelUppercase()),
               const SizedBox(height: 6),
               TextField(
                 controller: _nameController,
                 decoration: InputDecoration(
-                  hintText: _selectedType == ChannelType.voice ? 'ex: Call Tática 01' : 'ex: desenvolvimento-core',
-                  prefixIcon: Icon(
-                    _selectedType == ChannelType.text ? Icons.tag : (_selectedType == ChannelType.voice ? Icons.volume_up : Icons.auto_stories),
-                    size: 18,
-                    color: NixColors.textSecondary,
-                  ),
+                  hintText: _selectedType == ChannelType.voice
+                      ? 'ex: Voz 3 · Alinhamento'
+                      : 'ex: analises-e-achados',
+                  prefixIcon: const Icon(Icons.tag_rounded, size: 18, color: NixColors.textSecondary),
                 ),
               ),
               const SizedBox(height: 14),
-              const Text(
-                'TÓPICO / DESCRIÇÃO (OPCIONAL)',
-                style: TextStyle(color: NixColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
-              ),
+              Text('TÓPICO / DESCRIÇÃO (OPCIONAL)', style: NixTokens.labelUppercase()),
               const SizedBox(height: 6),
               TextField(
                 controller: _topicController,
@@ -114,9 +112,9 @@ class _CreateChannelDialogState extends State<CreateChannelDialog> {
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: NixColors.accentGreen,
+            backgroundColor: Colors.white,
             foregroundColor: Colors.black,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(borderRadius: NixTokens.borderSm),
           ),
           onPressed: () {
             if (_nameController.text.trim().isNotEmpty) {
@@ -151,20 +149,20 @@ class _CreateChannelDialogState extends State<CreateChannelDialog> {
           _selectedCategory = categoryDefault;
         });
       },
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: NixTokens.borderSm,
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: isSelected ? NixColors.surfaceCardHover : NixColors.surfaceCard,
-          borderRadius: BorderRadius.circular(8),
+          color: isSelected ? NixColors.surfaceActive : NixColors.surfaceSidebar,
+          borderRadius: NixTokens.borderSm,
           border: Border.all(
-            color: isSelected ? NixColors.accentGreen : NixColors.surfaceBorder,
-            width: isSelected ? 1.5 : 1,
+            color: isSelected ? Colors.white : NixColors.surfaceBorder,
+            width: isSelected ? 1.4 : 1,
           ),
         ),
         child: Row(
           children: [
-            Icon(icon, color: isSelected ? NixColors.accentGreen : NixColors.textSecondary, size: 24),
+            Icon(icon, color: isSelected ? Colors.white : NixColors.textSecondary, size: 22),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -175,7 +173,7 @@ class _CreateChannelDialogState extends State<CreateChannelDialog> {
                     style: TextStyle(
                       color: isSelected ? Colors.white : NixColors.textPrimary,
                       fontWeight: FontWeight.w600,
-                      fontSize: 14,
+                      fontSize: 13.5,
                     ),
                   ),
                   const SizedBox(height: 2),

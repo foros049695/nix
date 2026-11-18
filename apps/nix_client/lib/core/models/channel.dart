@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import '../theme/nix_colors.dart';
 
 enum ChannelType {
-  text,        // Sala de texto / tópico de discussão
-  voice,       // Sala de voz / call tática
-  publication, // Sala do Nix Archive (artigos canônicos e evidências)
-  announcement // Tópico de comunicados somente leitura
+  text,         // Sala de texto padrão
+  forum,        // Área de tópicos interativos (cards com imagens + chat em split-view)
+  voice,        // Sala de voz / call E2EE
+  publication,  // Sala do Nix Archive (artigos canônicos e evidências)
+  announcement, // Canal de comunicados
 }
 
 class Channel {
@@ -15,7 +17,7 @@ class Channel {
   final ChannelType type;
   final int unreadCount;
   final bool isEncrypted;
-  final String category; // ex: "TÓPICOS DE TEXTO", "SALAS DE VOZ", "ARQUIVO"
+  final String category;
 
   const Channel({
     required this.id,
@@ -31,26 +33,18 @@ class Channel {
   IconData get icon {
     switch (type) {
       case ChannelType.text:
-        return Icons.tag;
+        return Icons.tag_rounded;
+      case ChannelType.forum:
+        return Icons.forum_outlined;
       case ChannelType.voice:
-        return Icons.volume_up_rounded;
+        return Icons.volume_up_outlined;
       case ChannelType.publication:
-        return Icons.auto_stories_rounded;
+        return Icons.menu_book_outlined;
       case ChannelType.announcement:
-        return Icons.campaign_rounded;
+        return Icons.campaign_outlined;
     }
   }
 
-  Color get iconColor {
-    switch (type) {
-      case ChannelType.text:
-        return const Color(0xFF9CA3AF);
-      case ChannelType.voice:
-        return const Color(0xFF10B981);
-      case ChannelType.publication:
-        return const Color(0xFFF59E0B);
-      case ChannelType.announcement:
-        return const Color(0xFF00B0FF);
-    }
-  }
+  // Ícones monocromáticos consistentes
+  Color get iconColor => NixColors.iconSecondary;
 }

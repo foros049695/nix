@@ -9,6 +9,7 @@
 | **Perda ou Apreensão do Dispositivo** | Dispositivo físico em posse de adversário. | Banco local SQLCipher com chave AES-256 cifrada via Argon2id; Duress PIN opcional. | Se o aparelho estiver desbloqueado ou houver spyware residente, os dados podem ser acessados. |
 | **Substituição de Chave (MITM de Identidade)** | Adversário injetando chave pública falsa durante troca inicial. | Verificação de identidade fora de banda via QR Code ou fingerprint seguro; alerta de alteração. | Requer ação deliberada do usuário para comparar os códigos. |
 | **Tempestade de Rádio (DDoS em LoRa)** | Atacante saturando a frequência RF com mensagens falsas. | Filtro estrito de protocolo Protobuf, limites de airtime e deduplicação de mensagens. | O meio físico RF permanece sujeito a jamming ativo de sinal. |
+| **Fingerprinting de Resolução e Dispositivo** | Conteúdo remoto ou embed tentando identificar o usuário pelas dimensões exatas da tela e DPR. | Inicialização em janela não maximizada padronizada (`1152x720`), discretização de viewport em múltiplos de 64px (`WindowPrivacyGuard`) e bloqueio de embeds remotos. | Protege contra scripts/conteúdos renderizados internamente; não impede que processos locais com acesso ao servidor gráfico (X11/Wayland) consultem o monitor físico. |
 
 ---
 

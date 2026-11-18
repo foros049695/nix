@@ -17,24 +17,23 @@ class ActiveCallBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: const BoxDecoration(
-        color: Color(0xFF14241C),
+        color: NixColors.surfaceCard,
         border: Border(
-          top: BorderSide(color: Color(0xFF1B3D2B), width: 1),
+          top: BorderSide(color: NixColors.surfaceBorderStrong, width: 1),
           bottom: BorderSide(color: NixColors.surfaceBorder, width: 1),
         ),
       ),
       child: Row(
         children: [
-          // Ícone pulsante de voz
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: NixColors.accentGreen.withOpacity(0.2),
+              color: Colors.white.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.graphic_eq_rounded,
-              color: NixColors.accentGreen,
+              color: Colors.white,
               size: 16,
             ),
           ),
@@ -49,7 +48,7 @@ class ActiveCallBar extends StatelessWidget {
                     Text(
                       'Voz Conectada',
                       style: TextStyle(
-                        color: NixColors.accentGreen,
+                        color: Colors.white,
                         fontWeight: FontWeight.bold,
                         fontSize: 11,
                       ),
@@ -69,9 +68,8 @@ class ActiveCallBar extends StatelessWidget {
               ],
             ),
           ),
-          // Botão Desconectar
           IconButton(
-            icon: const Icon(Icons.call_end_rounded, color: NixColors.accentDanger, size: 18),
+            icon: const Icon(Icons.call_end_rounded, color: Colors.white, size: 18),
             tooltip: 'Desconectar da Call',
             onPressed: () => nixState.leaveCall(),
           ),

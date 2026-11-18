@@ -40,14 +40,19 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "nix_client");
+    gtk_header_bar_set_title(header_bar, "Nix");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
-    gtk_window_set_title(window, "nix_client");
+    gtk_window_set_title(window, "Nix");
   }
 
-  gtk_window_set_default_size(window, 1280, 720);
+  // Start in non-maximized windowed mode with standardized dimensions (1152x720)
+  // and minimum size constraints (800x540) to reduce screen resolution exposure.
+  gtk_window_set_default_size(window, 1152, 720);
+  gtk_widget_set_size_request(GTK_WIDGET(window), 800, 540);
+  gtk_window_unmaximize(window);
+  gtk_window_set_position(window, GTK_WIN_POS_CENTER);
   gtk_widget_show(GTK_WIDGET(window));
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();

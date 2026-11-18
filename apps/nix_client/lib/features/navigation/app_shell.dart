@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../core/theme/nix_colors.dart';
 import '../../core/models/channel.dart';
+import '../../core/security/window_privacy_guard.dart';
+import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
-import 'spaces_dock.dart';
-import 'channels_sidebar.dart';
-import '../chat/chat_view.dart';
 import '../calls/call_room_view.dart';
-import '../publications/publication_room_view.dart';
+import '../chat/chat_view.dart';
+import '../explore/explore_spaces_view.dart';
+import '../forum/forum_channel_view.dart';
+import '../home/home_private_view.dart';
+import '../home/home_sidebar.dart';
 import '../members/members_panel.dart';
+import '../profile/profile_overlay.dart';
+import '../publications/publication_room_view.dart';
+import 'channels_sidebar.dart';
+import 'spaces_dock.dart';
+import 'window_title_bar.dart';
 
 class AppShell extends StatelessWidget {
   const AppShell({super.key});
@@ -16,91 +23,150 @@ class AppShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
+    final settings = nixState.settings;
     final currentChannel = nixState.currentChannel;
+    final activeArea = nixState.activeArea;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isDesktop = constraints.maxWidth >= 850;
+    final rawMq = MediaQuery.of(context);
+    final sanitizedMq = WindowPrivacyGuard.sanitizedMediaQuery(
+      rawMq,
+      quantizeDimensions: settings.quantizeViewportDimensions,
+      reducedMotion: settings.reducedMotion,
+    );
 
-        if (isDesktop) {
-          // ================= DESKTOP LAYOUT (3 COLUNAS) =================
-          return Scaffold(
-            body: Row(
-              children: [
-                // 1. Dock de Espaços (Extrema Esquerda)
-                const SpacesDock(),
+    return MediaQuery(
+      data: sanitizedMq,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isDesktop = constraints.maxWidth >= 820;
 
-                // 2. Barra Lateral de Canais & Categorias
-                const ChannelsSidebar(),
+          final Widget shellScaffold = isDesktop
+              ? Scaffold(
+                  backgroundColor: NixColors.background,
+                  body: Column(
+                    children: [
+                      const WindowTitleBar(),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            // 1. Dock de Espaços, Pastas, Home e Explorar
+                            const SpacesDock(),
 
-                // 3. Área Central Principal (Chat, Call ou Arquivo)
-                Expanded(
-                  child: _buildMainContent(currentChannel),
-                ),
+                            // 2. Barra Lateral Secundária (Home Privada ou Canais do Espaço)
+                            if (activeArea == NixActiveArea.homePrivate)
+                              const HomeSidebar()
+                            else if (activeArea == NixActiveArea.spaces)
+                              const ChannelsSidebar(),
 
-                // 4. Painel Lateral de Membros (Se aberto)
-                if (nixState.isMembersPanelOpen)
-                  const MembersPanel(),
-              ],
-            ),
-          );
-        } else {
-          // ================= ANDROID / MOBILE LAYOUT =================
-          return Scaffold(
-            appBar: AppBar(
-              title: Row(
-                children: [
-                  Icon(currentChannel.icon, size: 18, color: currentChannel.iconColor),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      currentChannel.name,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis,
+                            // 3. Palco Principal
+                            Expanded(
+                              child: _buildActiveStage(activeArea, currentChannel),
+                            ),
+
+                            // 4. Painel de Membros (Quando aberto em um Espaço)
+                            if (activeArea == NixActiveArea.spaces && nixState.isMembersPanelOpen)
+                              const MembersPanel(),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : Scaffold(
+                  backgroundColor: NixColors.background,
+                  appBar: AppBar(
+                    title: Row(
+                      children: [
+                        Icon(
+                          activeArea == NixActiveArea.explore
+                              ? Icons.explore_outlined
+                              : (activeArea == NixActiveArea.homePrivate
+                                  ? Icons.badge_outlined
+                                  : currentChannel.icon),
+                          size: 18,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            activeArea == NixActiveArea.explore
+                                ? 'Explorar Comunidades'
+                                : (activeArea == NixActiveArea.homePrivate
+                                    ? 'Conversas Privadas & Card ID'
+                                    : currentChannel.name),
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      IconButton(
+                        icon: const Icon(Icons.badge_outlined),
+                        tooltip: 'Abrir Card ID & Perfil',
+                        onPressed: () => nixState.openProfileOverlay(),
+                      ),
+                      if (activeArea == NixActiveArea.spaces)
+                        IconButton(
+                          icon: const Icon(Icons.people_outline_rounded),
+                          tooltip: 'Participantes',
+                          onPressed: () {
+                            showModalBottomSheet(
+                              context: context,
+                              backgroundColor: NixColors.surfaceSidebar,
+                              builder: (_) => const SizedBox(
+                                height: 400,
+                                child: MembersPanel(),
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                  drawer: Drawer(
+                    width: 324,
+                    backgroundColor: NixColors.surfaceSidebar,
+                    child: SafeArea(
+                      child: Row(
+                        children: [
+                          const SpacesDock(),
+                          Expanded(
+                            child: activeArea == NixActiveArea.homePrivate
+                                ? const HomeSidebar()
+                                : const ChannelsSidebar(),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.people_outline_rounded),
-                  tooltip: 'Participantes',
-                  onPressed: () {
-                    showModalBottomSheet(
-                      context: context,
-                      backgroundColor: NixColors.surfaceSidebar,
-                      builder: (ctx) => const SizedBox(
-                        height: 400,
-                        child: MembersPanel(),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-            drawer: Drawer(
-              backgroundColor: NixColors.surfaceSidebar,
-              child: const SafeArea(
-                child: Row(
-                  children: [
-                    SpacesDock(),
-                    Expanded(child: ChannelsSidebar()),
-                  ],
-                ),
-              ),
-            ),
-            body: _buildMainContent(currentChannel),
+                  body: _buildActiveStage(activeArea, currentChannel),
+                );
+
+          return Stack(
+            children: [
+              shellScaffold,
+              if (nixState.isProfileOverlayOpen) const ProfileOverlay(),
+            ],
           );
-        }
-      },
+        },
+      ),
     );
   }
 
-  Widget _buildMainContent(Channel channel) {
+  Widget _buildActiveStage(NixActiveArea activeArea, Channel channel) {
+    if (activeArea == NixActiveArea.homePrivate) {
+      return const HomePrivateView();
+    }
+    if (activeArea == NixActiveArea.explore) {
+      return const ExploreSpacesView();
+    }
+
     switch (channel.type) {
       case ChannelType.text:
       case ChannelType.announcement:
         return ChatView(key: ValueKey(channel.id), channel: channel);
+      case ChannelType.forum:
+        return ForumChannelView(key: ValueKey(channel.id), channel: channel);
       case ChannelType.voice:
         return CallRoomView(key: ValueKey(channel.id), channel: channel);
       case ChannelType.publication:
