@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/message.dart';
 import '../../core/theme/nix_colors.dart';
-import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 
 class MessageBubble extends StatelessWidget {

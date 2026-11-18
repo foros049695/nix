@@ -23,10 +23,14 @@ class NixApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fontScale = context.select<NixState, double>((s) => s.settings.fontScale);
+    final palette = context.select<NixState, dynamic>((s) => s.currentPalette);
 
     return MaterialApp(
       title: 'Nix',
-      theme: NixTheme.buildTheme(fontScale: fontScale),
+      theme: NixTheme.buildTheme(
+        palette: palette,
+        fontScale: fontScale,
+      ),
       home: NixSplashWrapper(
         skipSplash: skipSplash,
         child: const AppShell(),

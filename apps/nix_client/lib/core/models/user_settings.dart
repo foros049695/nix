@@ -1,10 +1,14 @@
+import '../theme/nix_palette.dart';
+
 enum SettingsCategory {
+  appearance,    // 5.0 Aparência: Paleta de Cores Living AMOLED
   notifications, // 5.1 Notificações e sons
-  privacy,       // 5.2 Privacidade e segurança
+  privacy,       // 5.2 Privacidade e segurança & Card ID Visibility
   chats,         // 5.3 Configurações dos chats
   audio,         // 5.4 Som e microfone
-  connections,   // 5.5 Conexões e integrações
-  survival,      // 5.6 Sobrevivência e privacidade
+  connections,   // 5.5 Conexões e integrações (Tor Onion v3)
+  devices,       // 5.6 Dispositivos e Compartimentalização
+  survival,      // 5.7 Sobrevivência e Anti-Fingerprinting
 }
 
 class IntegrationConnector {
@@ -36,7 +40,30 @@ class IntegrationConnector {
   }
 }
 
+class AuthorizedDevice {
+  final String id;
+  final String deviceName;
+  final String clientVersion;
+  final String lastSeenLabel;
+  final bool isCurrent;
+  final String fingerprint;
+
+  const AuthorizedDevice({
+    required this.id,
+    required this.deviceName,
+    required this.clientVersion,
+    required this.lastSeenLabel,
+    required this.isCurrent,
+    required this.fingerprint,
+  });
+}
+
 class UserSettings {
+  // 5.0 Aparência — Living AMOLED & Paleta
+  final NixPaletteType paletteType;
+  final int? customPaletteColor;
+  final bool floatingWindowMode;
+
   // 5.1 Notificações e sons
   final bool messageNotifications;
   final bool callNotifications;
@@ -49,6 +76,7 @@ class UserSettings {
 
   // 5.2 Privacidade e segurança
   final String profileVisibility; // 'Apenas Contatos Verificados', 'Público via QR', 'Oculto'
+  final String cardIdVisibility;  // 'Público', 'Apenas Contatos Verificados', 'Oculto'
   final bool allowPublicIdSharing;
   final String communicationPermission; // 'Somente Pares Verificados', 'Qualquer ID c/ PoW'
   final List<String> blockedUserIds;
@@ -80,15 +108,21 @@ class UserSettings {
   final bool autoReconnect;
   final List<IntegrationConnector> connectors;
 
-  // 5.6 Sobrevivência e privacidade & Anti-Fingerprinting (Seção 7)
+  // 5.6 Dispositivos e Compartimentalização
+  final List<AuthorizedDevice> devices;
+
+  // 5.7 Sobrevivência e privacidade & Anti-Fingerprinting
   final bool persistWindowGeometry;
-  final bool quantizeViewportDimensions; // Discretiza dimensões reportadas (ex: 1152x720)
+  final bool quantizeViewportDimensions;
   final bool blockRemoteEmbeds;
   final bool reducedMotion;
   final bool duressPinConfigured;
-  final bool atakBridgeEnabled; // 127.0.0.1:4242/UDP sob consentimento
+  final bool atakBridgeEnabled;
 
   const UserSettings({
+    this.paletteType = NixPaletteType.original,
+    this.customPaletteColor,
+    this.floatingWindowMode = true,
     this.messageNotifications = true,
     this.callNotifications = true,
     this.systemAlerts = true,
@@ -98,6 +132,7 @@ class UserSettings {
     this.showMessagePreview = false,
     this.desktopNotifications = true,
     this.profileVisibility = 'Apenas Contatos Verificados',
+    this.cardIdVisibility = 'Apenas Contatos Verificados',
     this.allowPublicIdSharing = true,
     this.communicationPermission = 'Somente Pares Verificados',
     this.blockedUserIds = const ['NIX-9900-SPAM-BOT1'],
@@ -147,6 +182,24 @@ class UserSettings {
         routesViaTor: true,
       ),
     ],
+    this.devices = const [
+      AuthorizedDevice(
+        id: 'dev_current',
+        deviceName: 'Linux Desktop (Esta Sessão)',
+        clientVersion: 'Nix Client v0.2.0-amoled',
+        lastSeenLabel: 'Hoje, 03:40',
+        isCurrent: true,
+        fingerprint: 'ED25-992A-44B1-02E3',
+      ),
+      AuthorizedDevice(
+        id: 'dev_mobile',
+        deviceName: 'Android Mobile (Tor TransProxy)',
+        clientVersion: 'Nix Mobile v0.2.0',
+        lastSeenLabel: '18 Nov 2026, 01:15',
+        isCurrent: false,
+        fingerprint: '77F1-30A8-C129-B582',
+      ),
+    ],
     this.persistWindowGeometry = false,
     this.quantizeViewportDimensions = true,
     this.blockRemoteEmbeds = true,
@@ -156,6 +209,9 @@ class UserSettings {
   });
 
   UserSettings copyWith({
+    NixPaletteType? paletteType,
+    int? customPaletteColor,
+    bool? floatingWindowMode,
     bool? messageNotifications,
     bool? callNotifications,
     bool? systemAlerts,
@@ -165,6 +221,7 @@ class UserSettings {
     bool? showMessagePreview,
     bool? desktopNotifications,
     String? profileVisibility,
+    String? cardIdVisibility,
     bool? allowPublicIdSharing,
     String? communicationPermission,
     List<String>? blockedUserIds,
@@ -189,6 +246,7 @@ class UserSettings {
     bool? hideSensitiveNetworkInfo,
     bool? autoReconnect,
     List<IntegrationConnector>? connectors,
+    List<AuthorizedDevice>? devices,
     bool? persistWindowGeometry,
     bool? quantizeViewportDimensions,
     bool? blockRemoteEmbeds,
@@ -197,6 +255,9 @@ class UserSettings {
     bool? atakBridgeEnabled,
   }) {
     return UserSettings(
+      paletteType: paletteType ?? this.paletteType,
+      customPaletteColor: customPaletteColor ?? this.customPaletteColor,
+      floatingWindowMode: floatingWindowMode ?? this.floatingWindowMode,
       messageNotifications: messageNotifications ?? this.messageNotifications,
       callNotifications: callNotifications ?? this.callNotifications,
       systemAlerts: systemAlerts ?? this.systemAlerts,
@@ -206,6 +267,7 @@ class UserSettings {
       showMessagePreview: showMessagePreview ?? this.showMessagePreview,
       desktopNotifications: desktopNotifications ?? this.desktopNotifications,
       profileVisibility: profileVisibility ?? this.profileVisibility,
+      cardIdVisibility: cardIdVisibility ?? this.cardIdVisibility,
       allowPublicIdSharing: allowPublicIdSharing ?? this.allowPublicIdSharing,
       communicationPermission: communicationPermission ?? this.communicationPermission,
       blockedUserIds: blockedUserIds ?? this.blockedUserIds,
@@ -230,6 +292,7 @@ class UserSettings {
       hideSensitiveNetworkInfo: hideSensitiveNetworkInfo ?? this.hideSensitiveNetworkInfo,
       autoReconnect: autoReconnect ?? this.autoReconnect,
       connectors: connectors ?? this.connectors,
+      devices: devices ?? this.devices,
       persistWindowGeometry: persistWindowGeometry ?? this.persistWindowGeometry,
       quantizeViewportDimensions: quantizeViewportDimensions ?? this.quantizeViewportDimensions,
       blockRemoteEmbeds: blockRemoteEmbeds ?? this.blockRemoteEmbeds,

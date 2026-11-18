@@ -85,7 +85,7 @@ class _MemberTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Avatar com badge de online
+          // Avatar com badge de status
           Stack(
             children: [
               Container(
@@ -139,11 +139,7 @@ class _MemberTile extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (member.isVerified)
-                      const Tooltip(
-                        message: 'Fingerprint verificado fora de banda',
-                        child: Icon(Icons.verified, size: 12, color: NixColors.accentGreen),
-                      ),
+                    _memberTrustBadge(member.trustLevel, member.hasCryptographicShield),
                   ],
                 ),
                 Text(
@@ -159,6 +155,37 @@ class _MemberTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _memberTrustBadge(NixTrustLevel level, bool hasShield) {
+    Color dotColor = NixColors.trustLevel3Green;
+    int dots = 3;
+    if (level == NixTrustLevel.level1Red) {
+      dotColor = NixColors.trustLevel1Red;
+      dots = 1;
+    } else if (level == NixTrustLevel.level2Yellow) {
+      dotColor = NixColors.trustLevel2Yellow;
+      dots = 2;
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ...List.generate(
+          dots,
+          (i) => Container(
+            width: 4.5,
+            height: 4.5,
+            margin: EdgeInsets.only(left: i > 0 ? 2 : 0),
+            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+          ),
+        ),
+        if (hasShield) ...[
+          const SizedBox(width: 3),
+          Icon(Icons.shield, size: 10, color: dotColor),
+        ],
+      ],
     );
   }
 }

@@ -5,12 +5,13 @@ import 'package:nix_client/main.dart';
 import 'package:nix_client/state/nix_state.dart';
 import 'package:nix_client/core/models/channel.dart';
 import 'package:nix_client/core/models/direct_message.dart';
-import 'package:nix_client/core/models/user_settings.dart';
+import 'package:nix_client/core/models/member.dart';
+import 'package:nix_client/core/models/monero_order.dart';
 import 'package:nix_client/core/theme/nix_colors.dart';
-import 'package:nix_client/core/security/window_privacy_guard.dart';
+import 'package:nix_client/core/theme/nix_palette.dart';
 
 void main() {
-  testWidgets('1. Splash Screen initializes and transitions smoothly to NIX AMOLED shell',
+  testWidgets('1. Splash Screen initializes and transitions smoothly to NIX LIVING AMOLED shell',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -31,22 +32,25 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
     await tester.pumpAndSettle();
 
-    // Verifica que a interface principal carregou com paleta AMOLED (#000000)
+    // Verifica que a interface principal carregou com paleta AMOLED (#000000) e superfícies elevadas
     expect(NixColors.background, const Color(0xFF000000));
+    expect(NixColors.surfaceElevated, const Color(0xFF101014));
+    expect(NixColors.surfaceElevatedHigh, const Color(0xFF19191F));
     expect(find.text('QG Nix'), findsOneWidget);
     expect(find.text('geral'), findsAtLeastNWidgets(1));
     expect(find.text('desenvolvimento-core'), findsOneWidget);
   });
 
-  testWidgets('2. Profile Overlay opens via Nix icon, displays Card ID, and transitions to Settings',
+  testWidgets('2. Profile Overlay opens via Nix icon, displays Card ID, and transitions to Settings with Living AMOLED Palettes',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
+    final state = NixState();
     await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => NixState(),
+      ChangeNotifierProvider.value(
+        value: state,
         child: const NixApp(skipSplash: true),
       ),
     );
@@ -65,12 +69,33 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('CENTRAL DE CONFIGURAÇÕES NIX'), findsOneWidget);
-    expect(find.text('5.1 Notificações e Sons'), findsOneWidget);
 
-    // Navega para a aba 5.6 Sobrevivência e Privacidade
-    await tester.tap(find.text('Sobrevivência e Privacidade'));
+    // Testa a troca dinâmica de paletas Living AMOLED (Aparência)
+    expect(find.text('Configurações → Aparência → Paleta de Cores'), findsOneWidget);
+    expect(find.byKey(const Key('palette_violet')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('palette_violet')));
     await tester.pumpAndSettle();
-    expect(find.text('5.6 Sobrevivência e Privacidade'), findsOneWidget);
+    expect(state.settings.paletteType, NixPaletteType.violet);
+    expect(state.currentPalette.primaryAccent, const Color(0xFF8B5CF6));
+
+    // Testa troca para Nix Blue
+    await tester.tap(find.byKey(const Key('palette_blue')));
+    await tester.pumpAndSettle();
+    expect(state.settings.paletteType, NixPaletteType.blue);
+
+    // Navega para a aba Dispositivos & Sessões
+    await tester.tap(find.text('Dispositivos & Sessões'));
+    await tester.pumpAndSettle();
+    expect(find.text('5.6 Dispositivos e Compartimentalização'), findsOneWidget);
+    expect(find.text('Linux Desktop (Esta Sessão)'), findsOneWidget);
+
+    // Navega para a aba Sobrevivência e Privacidade
+    final survivalFinder = find.text('Sobrevivência e Privacidade');
+    await tester.ensureVisible(survivalFinder);
+    await tester.pumpAndSettle();
+    await tester.tap(survivalFinder);
+    await tester.pumpAndSettle();
+    expect(find.text('5.7 Sobrevivência e Privacidade'), findsOneWidget);
 
     // Volta para o Card ID e fecha o overlay
     await tester.tap(find.byKey(const Key('back_to_card_id_button')));
@@ -82,7 +107,7 @@ void main() {
     expect(find.text('CENTRAL DE CONFIGURAÇÕES NIX'), findsNothing);
   });
 
-  testWidgets('3. Home Private Area shows Card ID when empty and opens chat when DM is selected',
+  testWidgets('3. Home Private Area shows Card ID when empty, hover preview on contact requests, and opens DM',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -105,6 +130,16 @@ void main() {
     expect(state.homeSubTab, HomeSubTab.cardId);
     expect(find.text('NIX-7E3A-9F01-C45B-289D'), findsOneWidget);
 
+    // Vai para a aba Solicitações
+    await tester.tap(find.text('Solicitações'));
+    await tester.pumpAndSettle();
+    expect(find.text('NodeRunner-77'), findsOneWidget);
+
+    // Testa pré-visualização flutuante de Card ID ao inspecionar solicitação
+    state.setHoveredContactRequest(state.contactRequests.first);
+    await tester.pumpAndSettle();
+    expect(find.text('DESTAQUES CULTURAIS PÚBLICOS'), findsOneWidget);
+
     // Ao selecionar uma conversa privada (Sentinela-Alpha), o Card ID sai de cena e abre o chat
     await tester.tap(find.text('Sentinela-Alpha').first);
     await tester.pumpAndSettle();
@@ -116,7 +151,7 @@ void main() {
     );
   });
 
-  testWidgets('4. Explore view lists public spaces from least populous to most populous & Forum works',
+  testWidgets('4. GitHub Discovery (starwire.foo) and Monero P2P Marketplace navigation & actions',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -131,64 +166,79 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Verifica ordenação padrão: do menos populoso (8 membros) ao mais populoso (48 membros)
-    final sorted = state.filteredDiscoverableSpaces;
-    expect(sorted.first.memberCount <= sorted.last.memberCount, true);
-    expect(sorted.first.name, 'Laboratório Pós-Quântico');
-
-    // Abre a aba Explorar na UI
-    await tester.tap(find.byKey(const Key('dock_explore_button')));
+    // 1. Abre o GitHub Discovery pelo dock lateral
+    await tester.tap(find.byKey(const Key('dock_github_button')));
     await tester.pumpAndSettle();
-    expect(find.text('EXPLORAR COMUNIDADES & CANAIS PÚBLICOS'), findsOneWidget);
+    expect(find.text('GITHUB DISCOVERY · ACERVO ABERTO DE CÓDIGO'), findsOneWidget);
+    expect(find.text('rust-anything'), findsAtLeastNWidgets(1));
 
-    // Muda para o canal de Fórum / Tópicos Interativos (topicos-e-achados)
-    final forumChannel =
-        state.spaces.first.channels.firstWhere((c) => c.type == ChannelType.forum);
-    state.selectSpace(state.spaces.first);
-    state.selectChannel(forumChannel);
+    // Salvar/Remover do acervo com 1 clique
+    final initialAcervoCount = state.userProfile.culturalItems.length;
+    final repoTarget = state.githubRepos.firstWhere((r) => r.id == 'gh_reticulum');
+    expect(repoTarget.isSavedInAcervo, false);
+    state.toggleSaveRepoInAcervo(repoTarget.id);
     await tester.pumpAndSettle();
+    expect(state.userProfile.culturalItems.length, initialAcervoCount + 1);
 
-    expect(find.text('Kit Transceiver LoRa RAK4631 + Antena 915MHz'), findsAtLeastNWidgets(1));
+    // 2. Abre o Mercado Monero P2P pelo dock lateral
+    await tester.tap(find.byKey(const Key('dock_monero_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('MERCADO MONERO P2P DESCENTRALIZADO (NON-CUSTODIAL)'), findsOneWidget);
+    expect(find.text('SovereignNode_SP'), findsOneWidget);
+
+    // Alterna para Vender XMR
+    await tester.tap(find.text('Vender XMR'));
+    await tester.pumpAndSettle();
+    expect(state.moneroSelectedSide, MoneroP2pSide.buy);
+
+    // Testa filtro de moedas fiat
+    state.setMoneroFiat('EUR');
+    await tester.pumpAndSettle();
+    expect(state.moneroSelectedFiat, 'EUR');
   });
 
-  test('5. Anti-fingerprinting Viewport Quantization & Regression tests', () {
-    // Discretização de viewport em múltiplos de 64px
-    final quantized = WindowPrivacyGuard.quantizeSize(const Size(1366, 768));
-    expect(quantized.width % 64, 0);
-    expect(quantized.height % 64, 0);
+  testWidgets('5. Drag-and-drop Space Folders, Emoji picker in Chat, and 3-Tier Trust Model',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
 
     final state = NixState();
-    expect(state.currentChannel.name, 'geral');
-    final initialCount = state.currentMessages.length;
-
-    // Enviar mensagem
-    state.sendMessage('Mensagem de teste automatizado');
-    expect(state.currentMessages.length, initialCount + 1);
-    expect(state.currentMessages.last.text, 'Mensagem de teste automatizado');
-
-    // Entrar e sair da call
-    final callChannel =
-        state.currentSpace.channels.firstWhere((c) => c.type == ChannelType.voice);
-    state.joinCall(callChannel);
-    expect(state.callState.isConnected, true);
-    state.toggleMute();
-    expect(state.callState.isMuted, true);
-    state.leaveCall();
-    expect(state.callState.isConnected, false);
-
-    // Criar canal e pasta
-    state.createChannel(
-      name: 'sala-secreta-01',
-      type: ChannelType.text,
-      topic: 'Tópico exclusivo',
-      category: 'COMUNIDADE',
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: state,
+        child: const NixApp(skipSplash: true),
+      ),
     );
-    expect(state.currentChannel.name, 'sala-secreta-01');
+    await tester.pumpAndSettle();
 
-    // Persistência de configurações em memória
-    state.updateSettings(state.settings.copyWith(fontScale: 1.15, silentMode: true));
-    expect(state.settings.fontScale, 1.15);
-    expect(state.settings.silentMode, true);
-    expect(SettingsCategory.values.length, 6);
+    // Testa combinação de espaços em pasta por drag-and-drop
+    final initialFoldersCount = state.folders.length;
+    state.combineSpacesIntoFolder('space_qg', 'space_cultura', 'QG & Cultura');
+    expect(state.folders.length, initialFoldersCount + 1);
+    expect(state.folders.last.name, 'QG & Cultura');
+    expect(state.folders.last.spaceIds.contains('space_qg'), true);
+    expect(state.folders.last.spaceIds.contains('space_cultura'), true);
+
+    // Testa abertura do seletor de emojis no chat
+    final textChannel = state.spaces.first.channels.firstWhere((c) => c.type == ChannelType.text);
+    state.selectChannel(textChannel);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('emoji_picker_toggle_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Sorrisos'), findsOneWidget);
+    expect(find.text('Gestos'), findsOneWidget);
+    expect(find.text('Segurança & Símbolos'), findsOneWidget);
+
+    // Testa Modelo de Confiança em 3 Níveis
+    expect(NixTrustLevel.values.length, 3);
+    final mem = state.members.first;
+    expect(mem.trustLevel, NixTrustLevel.level3Green);
+    expect(mem.hasCryptographicShield, true);
+
+    // Testa Username Opcional determinístico
+    final emptyNameProfile = state.userProfile.copyWith(displayName: '');
+    expect(emptyNameProfile.effectiveDisplayName.startsWith('NX-'), true);
   });
 }

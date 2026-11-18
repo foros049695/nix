@@ -109,9 +109,9 @@ class NixTokens {
         height: 1.4,
       );
 
-  static TextStyle monoCode([double scale = 1.0]) => TextStyle(
-        color: NixColors.textSecondary,
-        fontSize: 12 * scale,
+  static TextStyle monoCode({double? size, double scale = 1.0, Color? color}) => TextStyle(
+        color: color ?? NixColors.textSecondary,
+        fontSize: size ?? (12 * scale),
         fontFamily: 'monospace',
         letterSpacing: 0.5,
       );

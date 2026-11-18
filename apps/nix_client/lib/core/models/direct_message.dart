@@ -1,12 +1,15 @@
 import 'message.dart';
+import 'member.dart';
 
 enum HomeSubTab {
-  cardId,       // Estado inicial vazio da Home -> preenchido pelo CARD ID
-  friends,      // Amigos verificados
-  requests,     // Solicitações de contato
-  transactions, // Transações Monero (XMR) isoladas
-  updates,      // Atualizações do ecossistema Nix
-  directChat,   // Conversa privada selecionada (Card ID sai de cena e abre-se o chat)
+  cardId,          // Estado inicial vazio da Home -> preenchido pelo CARD ID
+  friends,         // Amigos verificados
+  requests,        // Solicitações de contato (com hover preview de Card ID)
+  moneroP2p,       // Monero Non-Custodial P2P Marketplace (Trocador style)
+  githubDiscovery, // Descoberta de Repositórios GitHub (starwire style)
+  transactions,    // Histórico de transações XMR da carteira
+  updates,         // Atualizações do ecossistema Nix
+  directChat,      // Conversa privada selecionada (Card ID sai de cena e abre-se o chat)
 }
 
 class DirectMessageThread {
@@ -16,6 +19,7 @@ class DirectMessageThread {
   final String statusText;
   final bool isOnline;
   final bool isVerified;
+  final NixTrustLevel trustLevel;
   final int unreadCount;
   final List<Message> messages;
 
@@ -26,6 +30,7 @@ class DirectMessageThread {
     required this.statusText,
     this.isOnline = true,
     this.isVerified = true,
+    this.trustLevel = NixTrustLevel.level3Green,
     this.unreadCount = 0,
     required this.messages,
   });
@@ -36,14 +41,18 @@ class DirectMessageThread {
   DirectMessageThread copyWith({
     int? unreadCount,
     List<Message>? messages,
+    NixTrustLevel? trustLevel,
+    bool? isOnline,
+    bool? isVerified,
   }) {
     return DirectMessageThread(
       id: id,
       peerName: peerName,
       peerPublicId: peerPublicId,
       statusText: statusText,
-      isOnline: isOnline,
-      isVerified: isVerified,
+      isOnline: isOnline ?? this.isOnline,
+      isVerified: isVerified ?? this.isVerified,
+      trustLevel: trustLevel ?? this.trustLevel,
       unreadCount: unreadCount ?? this.unreadCount,
       messages: messages ?? this.messages,
     );
@@ -57,6 +66,9 @@ class ContactRequest {
   final String note;
   final DateTime timestamp;
   final bool isIncoming;
+  final NixTrustLevel trustLevel;
+  final String bio;
+  final List<String> culturalHighlights;
 
   const ContactRequest({
     required this.id,
@@ -65,6 +77,9 @@ class ContactRequest {
     required this.note,
     required this.timestamp,
     this.isIncoming = true,
+    this.trustLevel = NixTrustLevel.level1Red,
+    this.bio = 'Membro da rede Tor Onion com interesse em criptografia e privacidade.',
+    this.culturalHighlights = const ['Ghost Dog', 'Mobile Suit Gundam Hathaway', '12 Angry Men'],
   });
 }
 

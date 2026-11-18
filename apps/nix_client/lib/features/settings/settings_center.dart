@@ -5,9 +5,10 @@ import 'package:provider/provider.dart';
 import '../../core/models/user_settings.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
+import '../../core/theme/nix_palette.dart';
 import '../../state/nix_state.dart';
 
-/// Central de Configurações Modular (Seção 5 — 5.1 a 5.6).
+/// Central de Configurações Modular (V2 — Aparência Living AMOLED, Privacidade, Dispositivos e Módulos).
 class SettingsCenter extends StatefulWidget {
   final VoidCallback? onBackToCardId;
   final VoidCallback? onClose;
@@ -29,11 +30,13 @@ class _SettingsCenterState extends State<SettingsCenter> {
   bool _isRunningNetDiag = false;
   String _netDiagResult = 'Circuito Onion v3 estável · 3 saltos verificados · 0 vazamentos DNS/UDP.';
   final TextEditingController _blockIdController = TextEditingController();
+  final TextEditingController _newDeviceNameController = TextEditingController();
 
   @override
   void dispose() {
     _micTimer?.cancel();
     _blockIdController.dispose();
+    _newDeviceNameController.dispose();
     super.dispose();
   }
 
@@ -69,6 +72,70 @@ class _SettingsCenterState extends State<SettingsCenter> {
         });
       }
     });
+  }
+
+  void _showAddDeviceDialog(NixState state) {
+    _newDeviceNameController.text = 'Android Phone (Tor)';
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: NixColors.surfaceElevatedHigh,
+        title: const Text('Vincular Novo Dispositivo', style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Escaneie o código efêmero com o app Nix no seu segundo dispositivo para autorizar uma nova chave de sessão sem passar chaves privadas mestre pela rede.',
+              style: TextStyle(color: NixColors.textMuted, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: Container(
+                width: 140,
+                height: 140,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Center(
+                  child: Icon(Icons.qr_code_2_rounded, size: 120, color: Colors.black),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _newDeviceNameController,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: const InputDecoration(
+                labelText: 'Identificador do Dispositivo',
+                hintText: 'ex: Tablet Segura LoRa',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar', style: TextStyle(color: NixColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              state.authorizeDevice(
+                _newDeviceNameController.text,
+                'NX-${Random().nextInt(8999) + 1000}-${Random().nextInt(8999) + 1000}',
+              );
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Novo dispositivo autorizado com sucesso.')),
+              );
+            },
+            child: const Text('Confirmar Vinculação'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -186,9 +253,23 @@ class _SettingsCenterState extends State<SettingsCenter> {
         color: NixColors.surfaceSidebar,
         border: Border(right: BorderSide(color: NixColors.surfaceBorder)),
       ),
-      child: ListView(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-        children: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Text('APARÊNCIA & PERSONALIZAÇÃO', style: NixTokens.labelUppercase()),
+          ),
+          _navItem(
+            nixState: nixState,
+            category: SettingsCategory.appearance,
+            icon: Icons.palette_outlined,
+            label: 'Aparência Living AMOLED',
+            isSelected: activeCat == SettingsCategory.appearance,
+          ),
+          const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             child: Text('MÓDULOS DO SISTEMA', style: NixTokens.labelUppercase()),
@@ -228,6 +309,13 @@ class _SettingsCenterState extends State<SettingsCenter> {
             label: 'Conexões e Integrações',
             isSelected: activeCat == SettingsCategory.connections,
           ),
+          _navItem(
+            nixState: nixState,
+            category: SettingsCategory.devices,
+            icon: Icons.devices_outlined,
+            label: 'Dispositivos & Sessões',
+            isSelected: activeCat == SettingsCategory.devices,
+          ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
             child: Divider(height: 1, color: NixColors.surfaceBorder),
@@ -241,16 +329,19 @@ class _SettingsCenterState extends State<SettingsCenter> {
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildHorizontalCategorySelector(NixState nixState, SettingsCategory activeCat) {
     final items = [
+      (SettingsCategory.appearance, Icons.palette_outlined, 'Aparência'),
       (SettingsCategory.notifications, Icons.notifications_none_rounded, 'Notificações'),
       (SettingsCategory.privacy, Icons.lock_outline_rounded, 'Privacidade'),
       (SettingsCategory.chats, Icons.chat_bubble_outline_rounded, 'Chats'),
       (SettingsCategory.audio, Icons.mic_none_rounded, 'Som e Mic'),
       (SettingsCategory.connections, Icons.hub_outlined, 'Conexões'),
+      (SettingsCategory.devices, Icons.devices_outlined, 'Dispositivos'),
       (SettingsCategory.survival, Icons.shield_outlined, 'Sobrevivência'),
     ];
 
@@ -342,6 +433,8 @@ class _SettingsCenterState extends State<SettingsCenter> {
         key: ValueKey(category),
         padding: const EdgeInsets.all(24),
         children: [
+          if (category == SettingsCategory.appearance)
+            _buildAppearanceSection(nixState, settings),
           if (category == SettingsCategory.notifications)
             _buildNotificationsSection(nixState, settings),
           if (category == SettingsCategory.privacy)
@@ -352,9 +445,251 @@ class _SettingsCenterState extends State<SettingsCenter> {
             _buildAudioSection(nixState, settings),
           if (category == SettingsCategory.connections)
             _buildConnectionsSection(nixState, settings),
+          if (category == SettingsCategory.devices)
+            _buildDevicesSection(nixState, settings),
           if (category == SettingsCategory.survival)
             _buildSurvivalPrivacySection(nixState, settings),
         ],
+      ),
+    );
+  }
+
+  // ================= 5.0 APARÊNCIA — LIVING AMOLED & PALETAS =================
+  Widget _buildAppearanceSection(NixState state, UserSettings s) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          'Configurações → Aparência → Paleta de Cores',
+          'Direção visual NIX LIVING AMOLED: Preto absoluto (#000000), superfícies elevadas (#101014 / #19191F) e acentos de cor selecionáveis sem quebrar garantias de segurança.',
+        ),
+        Text('TEMAS DE COR NIX LIVING AMOLED', style: NixTokens.labelUppercase()),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            _paletteCard(
+              state: state,
+              type: NixPaletteType.original,
+              palette: NixPalette.original,
+              isSelected: s.paletteType == NixPaletteType.original,
+            ),
+            _paletteCard(
+              state: state,
+              type: NixPaletteType.violet,
+              palette: NixPalette.violet,
+              isSelected: s.paletteType == NixPaletteType.violet,
+            ),
+            _paletteCard(
+              state: state,
+              type: NixPaletteType.blue,
+              palette: NixPalette.blue,
+              isSelected: s.paletteType == NixPaletteType.blue,
+            ),
+            _paletteCard(
+              state: state,
+              type: NixPaletteType.crimson,
+              palette: NixPalette.crimson,
+              isSelected: s.paletteType == NixPaletteType.crimson,
+            ),
+            _paletteCard(
+              state: state,
+              type: NixPaletteType.amber,
+              palette: NixPalette.amber,
+              isSelected: s.paletteType == NixPaletteType.amber,
+            ),
+            _paletteCard(
+              state: state,
+              type: NixPaletteType.rose,
+              palette: NixPalette.rose,
+              isSelected: s.paletteType == NixPaletteType.rose,
+            ),
+            _customPaletteCard(state, s),
+          ],
+        ),
+        const SizedBox(height: 24),
+        Text('COMPORTAMENTO DA JANELA & RESPONSIVIDADE', style: NixTokens.labelUppercase()),
+        const SizedBox(height: 8),
+        _switchTile(
+          title: 'Janela Flutuante & Redimensionável',
+          subtitle: 'Permite redimensionar a janela pelas bordas e cantos do mouse no desktop com limites mínimos de segurança (800×540).',
+          value: s.floatingWindowMode,
+          onChanged: (v) => state.toggleFloatingWindowMode(v),
+        ),
+        const SizedBox(height: 8),
+        _sliderCard(
+          title: 'Escala Geral da Interface & Fontes (${(s.fontScale * 100).round()}%)',
+          value: s.fontScale,
+          min: 0.85,
+          max: 1.25,
+          onChanged: (v) => state.updateSettings(s.copyWith(fontScale: v)),
+        ),
+      ],
+    );
+  }
+
+  Widget _paletteCard({
+    required NixState state,
+    required NixPaletteType type,
+    required NixPalette palette,
+    required bool isSelected,
+  }) {
+    return InkWell(
+      key: Key('palette_${type.name}'),
+      onTap: () => state.updatePalette(type),
+      borderRadius: NixTokens.borderMd,
+      child: Container(
+        width: 150,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected ? NixColors.surfaceElevatedHigh : NixColors.surfaceCard,
+          borderRadius: NixTokens.borderMd,
+          border: Border.all(
+            color: isSelected ? palette.primaryAccent : NixColors.surfaceBorder,
+            width: isSelected ? 1.5 : 1.0,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: palette.glowColor,
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: palette.primaryAccent,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white24, width: 1),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    palette.name,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : NixColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Container(
+              height: 24,
+              decoration: BoxDecoration(
+                color: NixColors.background,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: NixColors.surfaceBorder),
+              ),
+              child: Row(
+                children: [
+                  Container(width: 24, color: palette.primaryAccent.withOpacity(0.15)),
+                  const SizedBox(width: 6),
+                  Container(
+                    width: 32,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: palette.primaryAccent,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _customPaletteCard(NixState state, UserSettings s) {
+    final isSelected = s.paletteType == NixPaletteType.custom;
+    final customColor = s.customPaletteColor != null ? Color(s.customPaletteColor!) : const Color(0xFF10B981);
+
+    return InkWell(
+      key: const Key('palette_custom'),
+      onTap: () {
+        // Alterna entre cores personalizadas populares ao clicar
+        final colors = [
+          const Color(0xFF10B981), // Esmeralda
+          const Color(0xFF06B6D4), // Ciano
+          const Color(0xFFEC4899), // Magenta
+          const Color(0xFFEAB308), // Ouro
+          const Color(0xFF6366F1), // Índigo
+        ];
+        final nextIdx = (colors.indexOf(customColor) + 1) % colors.length;
+        state.updatePalette(NixPaletteType.custom, colors[nextIdx].value);
+      },
+      borderRadius: NixTokens.borderMd,
+      child: Container(
+        width: 150,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected ? NixColors.surfaceElevatedHigh : NixColors.surfaceCard,
+          borderRadius: NixTokens.borderMd,
+          border: Border.all(
+            color: isSelected ? customColor : NixColors.surfaceBorder,
+            width: isSelected ? 1.5 : 1.0,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: customColor.withOpacity(0.25),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: customColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white24, width: 1),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Personalizado',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Clique p/ alternar matiz',
+              style: TextStyle(color: NixColors.textMuted, fontSize: 10),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -435,6 +770,13 @@ class _SettingsCenterState extends State<SettingsCenter> {
           value: s.profileVisibility,
           options: const ['Apenas Contatos Verificados', 'Público via QR', 'Oculto'],
           onChanged: (v) => state.updateSettings(s.copyWith(profileVisibility: v)),
+        ),
+        _dropdownCard(
+          title: 'Visibilidade do Card ID em Solicitações & Hover',
+          subtitle: 'Controla a exibição do Card ID flutuante quando outros usuários visualizam suas solicitações.',
+          value: s.cardIdVisibility,
+          options: const ['Público', 'Apenas Contatos Verificados', 'Oculto'],
+          onChanged: (v) => state.updateCardIdVisibility(v),
         ),
         _dropdownCard(
           title: 'Permissões de Comunicação',
@@ -598,33 +940,27 @@ class _SettingsCenterState extends State<SettingsCenter> {
         const SizedBox(height: 8),
         _switchTile(
           title: 'Pressionar Enter para Enviar Mensagem',
-          subtitle: 'Quando ativado, Enter envia e Shift+Enter insere quebra de linha.',
+          subtitle: 'Envia mensagem com Enter e insere quebra de linha com Shift+Enter.',
           value: s.enterToSend,
           onChanged: (v) => state.updateSettings(s.copyWith(enterToSend: v)),
         ),
         _switchTile(
-          title: 'Download Automático de Anexos Cifrados',
-          subtitle: 'Desativado por padrão para economizar banda em circuitos Tor.',
+          title: 'Download Automático de Mídia Cifrada',
+          subtitle: 'Desativado por padrão para economizar largura de banda em conexões Tor ou rádio LoRa.',
           value: s.autoDownloadMedia,
           onChanged: (v) => state.updateSettings(s.copyWith(autoDownloadMedia: v)),
         ),
         _switchTile(
-          title: 'Reprodução Automática de Mídia',
-          subtitle: 'Iniciar reprodução de áudio/vídeo apenas mediante clique explícito.',
-          value: s.autoPlayMedia,
-          onChanged: (v) => state.updateSettings(s.copyWith(autoPlayMedia: v)),
-        ),
-        _switchTile(
-          title: 'Confirmações de Entrega e Leitura',
-          subtitle: 'Enviar recibos de leitura criptografados aos contatos verificados.',
+          title: 'Recibos de Leitura (Read Receipts)',
+          subtitle: 'Desativado por padrão para proteger contra análise de presença e disponibilidade.',
           value: s.sendReadReceipts,
           onChanged: (v) => state.updateSettings(s.copyWith(sendReadReceipts: v)),
         ),
         _dropdownCard(
-          title: 'Política de Retenção Base (TTL Relay & Local)',
-          subtitle: 'Prazo máximo antes do expurgo automático de envelopes.',
+          title: 'Retenção Padrão de Mensagens (TTL Local)',
+          subtitle: 'Período antes do expurgo permanente pelo AutoPruner local.',
           value: '${s.defaultRetentionDays} dias',
-          options: const ['1 dias', '4 dias', '7 dias'],
+          options: const ['1 dias', '3 dias', '7 dias', '14 dias', '30 dias'],
           onChanged: (v) {
             final days = int.tryParse(v.split(' ').first) ?? 7;
             state.updateSettings(s.copyWith(defaultRetentionDays: days));
@@ -641,44 +977,57 @@ class _SettingsCenterState extends State<SettingsCenter> {
       children: [
         _sectionHeader(
           '5.4 Som e Microfone',
-          'Configure dispositivos de áudio, níveis de ganho e teste de captação local.',
+          'Ajuste dispositivos de áudio, supressão de ruído e faça teste de eco em sandbox local.',
         ),
         _dropdownCard(
           title: 'Dispositivo de Entrada (Microfone)',
-          subtitle: 'Interface de captura utilizada nas salas de Call E2EE.',
+          subtitle: 'Dispositivo de captura isolado no subsistema PipeWire/PulseAudio.',
           value: s.inputDevice,
           options: const [
             'Microfone Padrão ALSA/PipeWire (Isolado)',
-            'Headset Externo USB (Mono)',
-            'Entrada Virtual Loopback',
+            'Headset USB Segura (Hardware Mute)',
+            'Entrada de Linha Analógica',
           ],
           onChanged: (v) => state.updateSettings(s.copyWith(inputDevice: v)),
         ),
+        _dropdownCard(
+          title: 'Dispositivo de Saída (Alto-falantes / Fones)',
+          subtitle: 'Roteamento estéreo isolado para reprodução sem vazamentos.',
+          value: s.outputDevice,
+          options: const [
+            'Saída Estéreo Digital (PipeWire)',
+            'Fones de Ouvido Cabeados P3/P2',
+            'Saída HDMI / DisplayPort',
+          ],
+          onChanged: (v) => state.updateSettings(s.copyWith(outputDevice: v)),
+        ),
+        const SizedBox(height: 8),
         _sliderCard(
-          title: 'Volume de Entrada (${(s.inputVolume * 100).round()}%)',
+          title: 'Volume de Entrada / Ganho (${(s.inputVolume * 100).round()}%)',
           value: s.inputVolume,
           onChanged: (v) => state.updateSettings(s.copyWith(inputVolume: v)),
         ),
         const SizedBox(height: 8),
-        _dropdownCard(
-          title: 'Dispositivo de Saída (Áudio)',
-          subtitle: 'Destino de reprodução para chamadas e alertas.',
-          value: s.outputDevice,
-          options: const [
-            'Saída Estéreo Digital (PipeWire)',
-            'Fones de Ouvido Analógicos',
-            'Monitor HDMI Audio',
-          ],
-          onChanged: (v) => state.updateSettings(s.copyWith(outputDevice: v)),
-        ),
         _sliderCard(
           title: 'Volume de Saída (${(s.outputVolume * 100).round()}%)',
           value: s.outputVolume,
           onChanged: (v) => state.updateSettings(s.copyWith(outputVolume: v)),
         ),
+        const SizedBox(height: 8),
+        _switchTile(
+          title: 'Supressão Ativa de Ruído de Fundo',
+          subtitle: 'Filtro espectral RNNoise para eliminar estalos e ruídos de ventoinha.',
+          value: s.noiseSuppression,
+          onChanged: (v) => state.updateSettings(s.copyWith(noiseSuppression: v)),
+        ),
+        _switchTile(
+          title: 'Cancelamento Acústico de Eco',
+          subtitle: 'Impede realimentação ao usar microfone e caixas de som no mesmo ambiente.',
+          value: s.echoCancellation,
+          onChanged: (v) => state.updateSettings(s.copyWith(echoCancellation: v)),
+        ),
         const SizedBox(height: 12),
-
-        // Teste Interativo de Microfone com Indicador de Captação
+        // Teste de Microfone em Tempo Real
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -692,22 +1041,16 @@ class _SettingsCenterState extends State<SettingsCenter> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Teste de Microfone & Indicador de Captação',
-                    style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
+                  const Text('TESTE DE CAPTURA DE VOZ EM TEMPO REAL',
+                      style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                      backgroundColor: _isTestingMic ? Colors.white : Colors.transparent,
-                      foregroundColor: _isTestingMic ? Colors.black : Colors.white,
+                      foregroundColor: Colors.white,
                       side: const BorderSide(color: NixColors.surfaceBorderStrong),
                     ),
                     onPressed: _toggleMicTest,
-                    icon: Icon(_isTestingMic ? Icons.stop_rounded : Icons.mic_rounded, size: 15),
-                    label: Text(
-                      _isTestingMic ? 'Parar Teste' : 'Testar Microfone',
-                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                    ),
+                    icon: Icon(_isTestingMic ? Icons.stop_rounded : Icons.play_arrow_rounded, size: 16),
+                    label: Text(_isTestingMic ? 'Parar Teste' : 'Iniciar Teste', style: const TextStyle(fontSize: 11)),
                   ),
                 ],
               ),
@@ -715,40 +1058,23 @@ class _SettingsCenterState extends State<SettingsCenter> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
-                  value: _isTestingMic ? _micLevel : 0.04,
-                  minHeight: 10,
-                  backgroundColor: NixColors.surfaceSidebar,
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                  value: _micLevel,
+                  backgroundColor: NixColors.surfaceActive,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    _micLevel > 0.8 ? NixColors.accentDanger : Colors.white,
+                  ),
+                  minHeight: 8,
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
                 _isTestingMic
-                    ? 'Captando sinal local em buffer de memória volátil (${(_micLevel * 100).round()} dB rel)...'
-                    : 'Clique em "Testar Microfone" para verificar o nível de entrada.',
-                style: const TextStyle(color: NixColors.textMuted, fontSize: 11),
+                    ? 'Fale no microfone. O medidor responde em tempo real sem transmitir áudio para a rede.'
+                    : 'Pressione "Iniciar Teste" para calibrar o ganho do microfone localmente.',
+                style: const TextStyle(color: NixColors.textMuted, fontSize: 11.5),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 10),
-        _switchTile(
-          title: 'Supressão de Ruído Local',
-          subtitle: 'Filtra ruído de fundo estático no cliente antes da codificação Opus.',
-          value: s.noiseSuppression,
-          onChanged: (v) => state.updateSettings(s.copyWith(noiseSuppression: v)),
-        ),
-        _switchTile(
-          title: 'Cancelamento Acústico de Eco',
-          subtitle: 'Evita realimentação de áudio durante chamadas em grupo.',
-          value: s.echoCancellation,
-          onChanged: (v) => state.updateSettings(s.copyWith(echoCancellation: v)),
-        ),
-        _switchTile(
-          title: 'Permissão de Acesso ao Microfone',
-          subtitle: 'Autorização geral da aplicação para abrir o dispositivo de captura.',
-          value: s.micPermissionGranted,
-          onChanged: (v) => state.updateSettings(s.copyWith(micPermissionGranted: v)),
         ),
       ],
     );
@@ -761,35 +1087,35 @@ class _SettingsCenterState extends State<SettingsCenter> {
       children: [
         _sectionHeader(
           '5.5 Conexões e Integrações',
-          'Inspecione o perfil de transporte, diagnósticos de rede e conectores externos em sandbox.',
+          'Controle de transporte em rede Onion, política Fail-Closed e conectores externos isolados.',
         ),
         _dropdownCard(
-          title: 'Perfil de Transporte Ativo',
-          subtitle: 'No perfil privado padrão, quedas do Tor jamais autorizam fallback para IP direto.',
+          title: 'Perfil de Transporte de Rede',
+          subtitle: 'Define o roteamento primário dos envelopes cifrados.',
           value: s.transportProfile,
           options: const [
             'Tor Onion v3 (Fail-Closed)',
-            'Rede Local LAN/BLE (Consentido)',
-            'Off-Grid LoRa / Reticulum',
+            'Rede Local LAN/BLE',
+            'Off-Grid LoRa',
           ],
           onChanged: (v) => state.updateSettings(s.copyWith(transportProfile: v)),
         ),
         _switchTile(
-          title: 'Ocultar Identificadores Sensíveis de Rede na UI',
-          subtitle: 'Mascarar endereços .onion completos e portas locais contra captura visual de tela.',
+          title: 'Ocultar Informações Sensíveis de Rede',
+          subtitle: 'Não expor IP local, interfaces ou rotas nas telas de diagnóstico.',
           value: s.hideSensitiveNetworkInfo,
           onChanged: (v) => state.updateSettings(s.copyWith(hideSensitiveNetworkInfo: v)),
         ),
         _switchTile(
-          title: 'Reconexão Automática Resiliente (Backoff)',
-          subtitle: 'Retoma sessões assíncronas automaticamente respeitando o perfil de transporte.',
+          title: 'Reconexão Automática do Circuito Tor',
+          subtitle: 'Gera novo circuito de 3 saltos imediatamente se o nó de saída falhar.',
           value: s.autoReconnect,
           onChanged: (v) => state.updateSettings(s.copyWith(autoReconnect: v)),
         ),
-        const SizedBox(height: 10),
-        // Painel de Diagnóstico de Conectividade
+        const SizedBox(height: 14),
+        // Diagnóstico de Conectividade
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: NixColors.surfaceCard,
             borderRadius: NixTokens.borderSm,
@@ -801,48 +1127,44 @@ class _SettingsCenterState extends State<SettingsCenter> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Estado da Conexão & Diagnóstico',
-                          style: TextStyle(
-                              color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                      Text(
-                        s.hideSensitiveNetworkInfo
-                            ? 'Relay: nix777••••••.onion (Ocultado por privacidade)'
-                            : 'Relay: ${state.securityContext.onionNode}',
-                        style: NixTokens.monoCode(),
-                      ),
-                    ],
-                  ),
+                  const Text('DIAGNÓSTICO DO CIRCUITO ONION V3',
+                      style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white,
                       side: const BorderSide(color: NixColors.surfaceBorderStrong),
                     ),
                     onPressed: _isRunningNetDiag ? null : _runConnectivityDiagnostic,
-                    icon: const Icon(Icons.network_check_rounded, size: 15),
-                    label: Text(
-                      _isRunningNetDiag ? 'Testando...' : 'Testar Conectividade',
-                      style: const TextStyle(fontSize: 11.5),
-                    ),
+                    icon: _isRunningNetDiag
+                        ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.refresh_rounded, size: 14),
+                    label: const Text('Executar Teste', style: TextStyle(fontSize: 11)),
                   ),
                 ],
               ),
               const SizedBox(height: 10),
-              Text(
-                _netDiagResult,
-                style: const TextStyle(color: NixColors.textSecondary, fontSize: 11.5),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: NixColors.background,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: NixColors.surfaceBorder),
+                ),
+                child: Text(
+                  _netDiagResult,
+                  style: NixTokens.monoCode(size: 11.5, color: NixColors.textSecondary),
+                ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 18),
-        Text('INTEGRAÇÕES E CONECTORES EM SANDBOX', style: NixTokens.labelUppercase()),
+        const SizedBox(height: 16),
+        Text('CONECTORES EXTERNOS (SANDBOX ISOLADO)', style: NixTokens.labelUppercase()),
         const SizedBox(height: 8),
-        ...s.connectors.map((conn) => Container(
+        ...s.connectors.map((c) => Container(
               margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: NixColors.surfaceCard,
                 borderRadius: NixTokens.borderSm,
@@ -856,34 +1178,33 @@ class _SettingsCenterState extends State<SettingsCenter> {
                       children: [
                         Row(
                           children: [
-                            Text(conn.name,
+                            Text(c.name,
                                 style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600)),
+                                    color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
                             const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: NixColors.surfaceActive,
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(3),
                               ),
                               child: Text(
-                                conn.scopeLabel,
-                                style: const TextStyle(color: NixColors.textSecondary, fontSize: 9.5),
+                                c.scopeLabel,
+                                style: const TextStyle(color: NixColors.textSecondary, fontSize: 10),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 3),
-                        Text(conn.description,
+                        const SizedBox(height: 4),
+                        Text(c.description,
                             style: const TextStyle(color: NixColors.textMuted, fontSize: 11.5)),
                       ],
                     ),
                   ),
+                  const SizedBox(width: 12),
                   Switch(
-                    value: conn.isEnabled,
-                    onChanged: (_) => state.toggleConnector(conn.id),
+                    value: c.isEnabled,
+                    onChanged: (_) => state.toggleConnector(c.id),
                   ),
                 ],
               ),
@@ -892,13 +1213,156 @@ class _SettingsCenterState extends State<SettingsCenter> {
     );
   }
 
-  // ================= 5.6 SOBREVIVÊNCIA E PRIVACIDADE =================
+  // ================= 5.6 DISPOSITIVOS E COMPARTIMENTALIZAÇÃO =================
+  Widget _buildDevicesSection(NixState state, UserSettings s) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          '5.6 Dispositivos e Compartimentalização',
+          'Gerencie sessões autorizadas, dispositivos vinculados por QR Code efêmero e execute rotação de chaves criptográficas sob demanda.',
+        ),
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            Text('DISPOSITIVOS AUTORIZADOS (${s.devices.length})', style: NixTokens.labelUppercase()),
+            ElevatedButton.icon(
+              onPressed: () => _showAddDeviceDialog(state),
+              icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
+              label: const Text('Vincular Dispositivo', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...s.devices.map((dev) => Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: NixColors.surfaceCard,
+                borderRadius: NixTokens.borderSm,
+                border: Border.all(
+                  color: dev.isCurrent ? Colors.white38 : NixColors.surfaceBorder,
+                  width: dev.isCurrent ? 1.2 : 1.0,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: dev.isCurrent ? Colors.white12 : NixColors.surfaceActive,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      dev.isCurrent ? Icons.laptop_chromebook_rounded : Icons.phone_android_rounded,
+                      size: 20,
+                      color: dev.isCurrent ? Colors.white : NixColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                dev.deviceName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (dev.isCurrent) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: NixColors.accentGreen.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: NixColors.accentGreen.withOpacity(0.4)),
+                                ),
+                                child: const Text(
+                                  'ESTA SESSÃO',
+                                  style: TextStyle(
+                                    color: NixColors.accentGreen,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${dev.clientVersion} · Chave de Sessão: ${dev.fingerprint}',
+                          style: NixTokens.monoCode(size: 11, color: NixColors.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!dev.isCurrent)
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: NixColors.accentDanger,
+                        side: const BorderSide(color: Colors.redAccent, width: 0.8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      ),
+                      onPressed: () {
+                        state.revokeDevice(dev.id);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Sessão "${dev.deviceName}" revogada e chaves rotacionadas.'),
+                          ),
+                        );
+                      },
+                      child: const Text('Revogar Sessão', style: TextStyle(fontSize: 11)),
+                    ),
+                ],
+              ),
+            )),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: NixColors.surfaceSidebar,
+            borderRadius: NixTokens.borderSm,
+            border: Border.all(color: NixColors.surfaceBorderStrong),
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.security_rounded, size: 16, color: NixColors.accentGreen),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Arquitetura de Isolamento de Sessão: Cada dispositivo opera sua própria cadeia de chaves Double Ratchet. Revogar uma sessão invalida imediatamente o envio de envelopes cifrados para aquele endpoint sem comprometer a identidade local mestra.',
+                  style: TextStyle(color: NixColors.textMuted, fontSize: 11, height: 1.35),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ================= 5.7 SOBREVIVÊNCIA E PRIVACIDADE =================
   Widget _buildSurvivalPrivacySection(NixState state, UserSettings s) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeader(
-          '5.6 Sobrevivência e Privacidade',
+          '5.7 Sobrevivência e Privacidade',
           'Central unificada de resiliência operacional, proteção antifingerprinting, rádio off-grid e limites auditáveis do ecossistema Nix.',
         ),
 
@@ -966,16 +1430,34 @@ class _SettingsCenterState extends State<SettingsCenter> {
         const SizedBox(height: 12),
 
         _survivalModuleCard(
+          title: 'Design System NIX LIVING AMOLED & Paleta Personalizada',
+          status: 'IMPLEMENTADO',
+          description:
+              'Visual AMOLED com superfícies elevadas (#101014/#19191F), acentos selecionáveis em tempo real (Violet, Blue, Crimson, Amber, Rose, Custom) e persistência.',
+        ),
+        _survivalModuleCard(
           title: 'Identidade Local Soberana & Card ID Público',
           status: 'IMPLEMENTADO',
           description:
-              'Criação e gestão de perfil local sem telefone, SMS, e-mail, CPF ou upload de agenda (Critério I-A). QR Code expõe unicamente o identificador público.',
+              'Criação e gestão de perfil local sem telefone, SMS, e-mail, CPF ou upload de agenda. QR Code limpo sem ruído e avatar local sanitizado.',
         ),
         _survivalModuleCard(
           title: 'Proteção de Viewport & Isolamento de Embeds',
           status: 'IMPLEMENTADO',
           description:
               'Inicialização em janela 1152×720 não maximizada, limites mínimos 800×540 e discretização de métricas MediaQuery para sub-árvores.',
+        ),
+        _survivalModuleCard(
+          title: 'Aba GitHub Discovery (Inspirada no starwire.foo)',
+          status: 'IMPLEMENTADO',
+          description:
+              'Descoberta de projetos abertos de agentes, sistemas e criptografia, com busca, filtros de linguagens e salvamento no Acervo cultural.',
+        ),
+        _survivalModuleCard(
+          title: 'Monero Non-Custodial P2P Marketplace',
+          status: 'IMPLEMENTADO',
+          description:
+              'Descoberta P2P descentralizada inspirada no Trocador.app com filtros fiat (BRL, USD, EUR), métodos de pagamento e negociação direta E2EE.',
         ),
         _survivalModuleCard(
           title: 'Relay AutoPruner com Histerese (75% / 85% / 92%)',
@@ -1000,12 +1482,6 @@ class _SettingsCenterState extends State<SettingsCenter> {
           status: 'PLANEJADO (FASE 5)',
           description:
               'Adaptadores de hardware para RAK4631/Heltec, mapas offline MBTiles/MapLibre e ponte local UDP 127.0.0.1:4242 sob consentimento explícito.',
-        ),
-        _survivalModuleCard(
-          title: 'Carteira Não-Custodial Monero (XMR) & Processo Seed B Isolado',
-          status: 'PLANEJADO (FASE 6)',
-          description:
-              'Subprocesso isolado para geração e assinatura de transações XMR em stagenet/mainnet sem compartilhamento de memória com o mensageiro.',
         ),
         _survivalModuleCard(
           title: 'Handshake Híbrido Pós-Quântico (PQXDH / ML-KEM-768)',

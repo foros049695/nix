@@ -52,26 +52,87 @@ class SpacesDock extends StatelessWidget {
             child: Divider(color: NixColors.surfaceBorder, height: 1),
           ),
 
-          // 3. Lista de Espaços Soltos + Pastas de Grupos (Folders 2x2 / Expansíveis)
+          // 3. Lista de Espaços Soltos + Pastas de Grupos com suporte a Drag-and-Drop
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 2),
               children: [
-                // Espaços individuais
+                // Espaços individuais com Draggable & DragTarget para agrupamento em pastas
                 ...standaloneSpaces.map((space) {
                   final isSelected = nixState.activeArea == NixActiveArea.spaces &&
                       space.id == nixState.currentSpace.id;
+
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: _SpaceItem(
-                      space: space,
-                      isSelected: isSelected,
-                      onTap: () => nixState.selectSpace(space),
+                    child: DragTarget<String>(
+                      onWillAcceptWithDetails: (details) => details.data != space.id,
+                      onAcceptWithDetails: (details) {
+                        nixState.combineSpacesIntoFolder(details.data, space.id);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Nova pasta de espaços criada por agrupamento.'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      builder: (context, candidateData, rejectedData) {
+                        final isHoveredDrop = candidateData.isNotEmpty;
+                        return Draggable<String>(
+                          data: space.id,
+                          feedback: Material(
+                            color: Colors.transparent,
+                            child: Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: NixColors.surfaceActive,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Colors.white, width: 2),
+                                boxShadow: const [
+                                  BoxShadow(color: Colors.black87, blurRadius: 12),
+                                ],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  space.initials,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          childWhenDragging: Opacity(
+                            opacity: 0.25,
+                            child: _SpaceItem(
+                              space: space,
+                              isSelected: isSelected,
+                              onTap: () {},
+                            ),
+                          ),
+                          child: AnimatedContainer(
+                            duration: NixTokens.motionFast,
+                            decoration: isHoveredDrop
+                                ? BoxDecoration(
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(color: Colors.white, width: 2),
+                                  )
+                                : null,
+                            child: _SpaceItem(
+                              space: space,
+                              isSelected: isSelected,
+                              onTap: () => nixState.selectSpace(space),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   );
                 }),
 
-                // Pastas de Grupos (Estilo Discord / Android Folders — Imagem 7)
+                // Pastas de Grupos com DragTarget para aceitar novos espaços
                 ...folders.map((folder) {
                   final folderSpaces = nixState.spaces
                       .where((s) => folder.spaceIds.contains(s.id))
@@ -79,14 +140,38 @@ class SpacesDock extends StatelessWidget {
                   if (folderSpaces.isEmpty) return const SizedBox.shrink();
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: _SpaceFolderWidget(
-                      folder: folder,
-                      spaces: folderSpaces,
-                      currentSpaceId: nixState.activeArea == NixActiveArea.spaces
-                          ? nixState.currentSpace.id
-                          : '',
-                      onToggleExpand: () => nixState.toggleFolderExpanded(folder.id),
-                      onSelectSpace: (sp) => nixState.selectSpace(sp),
+                    child: DragTarget<String>(
+                      onWillAcceptWithDetails: (details) => !folder.spaceIds.contains(details.data),
+                      onAcceptWithDetails: (details) {
+                        nixState.addSpaceToFolder(details.data, folder.id);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Espaço adicionado à pasta "${folder.name}".'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      builder: (context, candidateData, rejectedData) {
+                        final isHoveredDrop = candidateData.isNotEmpty;
+                        return AnimatedContainer(
+                          duration: NixTokens.motionFast,
+                          decoration: isHoveredDrop
+                              ? BoxDecoration(
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(color: Colors.white, width: 2),
+                                )
+                              : null,
+                          child: _SpaceFolderWidget(
+                            folder: folder,
+                            spaces: folderSpaces,
+                            currentSpaceId: nixState.activeArea == NixActiveArea.spaces
+                                ? nixState.currentSpace.id
+                                : '',
+                            onToggleExpand: () => nixState.toggleFolderExpanded(folder.id),
+                            onSelectSpace: (sp) => nixState.selectSpace(sp),
+                          ),
+                        );
+                      },
                     ),
                   );
                 }),
@@ -99,11 +184,31 @@ class SpacesDock extends StatelessWidget {
             child: Divider(color: NixColors.surfaceBorder, height: 1),
           ),
 
-          // 4. Botão Unir Grupos em Pasta
+          // 4. Botão GitHub Discovery (starwire.foo)
+          _DockNavButton(
+            key: const Key('dock_github_button'),
+            icon: Icons.code_rounded,
+            tooltip: 'GitHub Discovery & Repositórios (starwire.foo)',
+            isSelected: nixState.activeArea == NixActiveArea.github,
+            onTap: () => nixState.openGithubDiscoveryArea(),
+          ),
+          const SizedBox(height: 8),
+
+          // 5. Botão Monero Non-Custodial P2P Marketplace (Trocador.app)
+          _DockNavButton(
+            key: const Key('dock_monero_button'),
+            icon: Icons.currency_exchange_rounded,
+            tooltip: 'Mercado Monero P2P Descentralizado (Trocador)',
+            isSelected: nixState.activeArea == NixActiveArea.moneroP2p,
+            onTap: () => nixState.openMoneroP2pArea(),
+          ),
+          const SizedBox(height: 8),
+
+          // 6. Botão Unir Grupos em Pasta
           _DockActionButton(
             key: const Key('dock_manage_folders_button'),
             icon: Icons.create_new_folder_outlined,
-            tooltip: 'Unir Grupos em Pasta',
+            tooltip: 'Gerenciar / Unir Grupos em Pastas',
             onTap: () {
               showDialog(
                 context: context,
@@ -113,7 +218,7 @@ class SpacesDock extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
-          // 5. Botão Adicionar Espaço
+          // 7. Botão Adicionar Espaço
           _DockActionButton(
             key: const Key('dock_add_space_button'),
             icon: Icons.add_rounded,
@@ -127,7 +232,7 @@ class SpacesDock extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
-          // 6. Botão Explorar Comunidades Públicas (Do menos populoso ao mais populoso)
+          // 8. Botão Explorar Comunidades Públicas (Do menos populoso ao mais populoso)
           _DockNavButton(
             key: const Key('dock_explore_button'),
             icon: Icons.explore_outlined,
@@ -142,7 +247,7 @@ class SpacesDock extends StatelessWidget {
   }
 }
 
-/// Ponto de acesso ao perfil a partir do ícone oficial do Nix (Seção 3).
+/// Ponto de acesso ao perfil a partir do ícone oficial do Nix.
 class _NixBrandProfileTrigger extends StatefulWidget {
   final bool isOverlayOpen;
   final VoidCallback onTap;
@@ -197,20 +302,36 @@ class _NixBrandProfileTriggerState extends State<_NixBrandProfileTrigger> {
                         : NixColors.surfaceBorderStrong,
                     width: widget.isOverlayOpen ? 1.8 : 1.2,
                   ),
+                  boxShadow: _hovered
+                      ? const [
+                          BoxShadow(
+                            color: Colors.white24,
+                            blurRadius: 8,
+                            spreadRadius: 1,
+                          )
+                        ]
+                      : null,
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: Image.asset(
-                  'assets/images/nix_logo_128.png',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Center(
-                    child: Text(
-                      'NX',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 15,
-                      ),
-                    ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(
+                    widget.isOverlayOpen || _hovered ? 14 : 24,
+                  ),
+                  child: Image.asset(
+                    'assets/images/nix_emblem_isolated.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Image.asset(
+                        'assets/images/nix_logo_128.png',
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Center(
+                          child: Icon(
+                            Icons.shield_moon_outlined,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -222,7 +343,7 @@ class _NixBrandProfileTriggerState extends State<_NixBrandProfileTrigger> {
   }
 }
 
-class _SpaceItem extends StatelessWidget {
+class _SpaceItem extends StatefulWidget {
   final Space space;
   final bool isSelected;
   final VoidCallback onTap;
@@ -234,82 +355,96 @@ class _SpaceItem extends StatelessWidget {
   });
 
   @override
+  State<_SpaceItem> createState() => _SpaceItemState();
+}
+
+class _SpaceItemState extends State<_SpaceItem> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        AnimatedContainer(
-          duration: NixTokens.motionFast,
-          width: 4,
-          height: isSelected ? 34 : 0,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.horizontal(right: Radius.circular(4)),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Tooltip(
-          message: '${space.name} (${space.memberCount} membros)',
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(isSelected ? 14 : 24),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                AnimatedContainer(
-                  duration: NixTokens.motionFast,
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: isSelected ? Colors.white : NixColors.surfaceCard,
-                    borderRadius: BorderRadius.circular(isSelected ? 14 : 24),
-                    border: Border.all(
-                      color: isSelected ? Colors.white : NixColors.surfaceBorderStrong,
-                      width: 1,
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      space.initials,
-                      style: TextStyle(
-                        color: isSelected ? Colors.black : Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
+    final active = widget.isSelected;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: NixTokens.motionFast,
+              width: 4,
+              height: active ? 36 : (_hovered ? 18 : (widget.space.unreadCount > 0 ? 8 : 0)),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.horizontal(right: Radius.circular(4)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Tooltip(
+              message: '${widget.space.name} (${widget.space.categoryTag})',
+              child: AnimatedContainer(
+                duration: NixTokens.motionFast,
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: active
+                      ? Colors.white
+                      : (_hovered ? NixColors.surfaceCardHover : NixColors.surfaceCard),
+                  borderRadius: BorderRadius.circular(active || _hovered ? 16 : 24),
+                  border: Border.all(
+                    color: active ? Colors.white : NixColors.surfaceBorderStrong,
+                    width: active ? 1.5 : 1.0,
                   ),
                 ),
-                if (space.unreadCount > 0)
-                  Positioned(
-                    right: -2,
-                    bottom: -2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: NixColors.surfaceDock, width: 2),
-                      ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Center(
                       child: Text(
-                        '${space.unreadCount}',
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w900,
+                        widget.space.initials,
+                        style: TextStyle(
+                          color: active ? Colors.black : NixColors.textPrimary,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                          letterSpacing: 0.5,
                         ),
                       ),
                     ),
-                  ),
-              ],
+                    if (widget.space.unreadCount > 0)
+                      Positioned(
+                        right: -3,
+                        bottom: -3,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: NixColors.surfaceDock, width: 2),
+                          ),
+                          child: Text(
+                            '${widget.space.unreadCount}',
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
 
-/// Pasta de Grupos no Dock (Grade 2x2 quando fechada, Pílula Vertical quando aberta — Imagem 7).
+/// Pasta de Grupos no Dock (Grade 2x2 quando fechada, Pílula Vertical quando aberta).
 class _SpaceFolderWidget extends StatelessWidget {
   final SpaceFolder folder;
   final List<Space> spaces;
@@ -433,7 +568,7 @@ class _SpaceFolderWidget extends StatelessWidget {
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: NixColors.surfaceBorderStrong),
                           ),
-                          // Grade 2x2 de miniaturas (igual à Imagem 7)
+                          // Grade 2x2 de miniaturas
                           child: GridView.builder(
                             physics: const NeverScrollableScrollPhysics(),
                             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -494,7 +629,7 @@ class _SpaceFolderWidget extends StatelessWidget {
   }
 }
 
-class _DockNavButton extends StatelessWidget {
+class _DockNavButton extends StatefulWidget {
   final IconData icon;
   final String tooltip;
   final bool isSelected;
@@ -511,75 +646,92 @@ class _DockNavButton extends StatelessWidget {
   });
 
   @override
+  State<_DockNavButton> createState() => _DockNavButtonState();
+}
+
+class _DockNavButtonState extends State<_DockNavButton> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        AnimatedContainer(
-          duration: NixTokens.motionFast,
-          width: 4,
-          height: isSelected ? 32 : 0,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.horizontal(right: Radius.circular(4)),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Tooltip(
-          message: tooltip,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(isSelected ? 14 : 24),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                AnimatedContainer(
-                  duration: NixTokens.motionFast,
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: isSelected ? Colors.white : NixColors.surfaceCard,
-                    borderRadius: BorderRadius.circular(isSelected ? 14 : 24),
-                    border: Border.all(
-                      color: isSelected ? Colors.white : NixColors.surfaceBorderStrong,
-                    ),
-                  ),
-                  child: Icon(
-                    icon,
-                    color: isSelected ? Colors.black : Colors.white,
-                    size: 20,
+    final active = widget.isSelected;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: NixTokens.motionFast,
+              width: 4,
+              height: active ? 36 : (_hovered ? 18 : 0),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.horizontal(right: Radius.circular(4)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Tooltip(
+              message: widget.tooltip,
+              child: AnimatedContainer(
+                duration: NixTokens.motionFast,
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: active
+                      ? Colors.white
+                      : (_hovered ? NixColors.surfaceCardHover : NixColors.surfaceCard),
+                  borderRadius: BorderRadius.circular(active || _hovered ? 16 : 24),
+                  border: Border.all(
+                    color: active ? Colors.white : NixColors.surfaceBorderStrong,
+                    width: active ? 1.5 : 1.0,
                   ),
                 ),
-                if (badgeCount > 0)
-                  Positioned(
-                    right: -2,
-                    bottom: -2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: NixColors.surfaceDock, width: 2),
-                      ),
-                      child: Text(
-                        '$badgeCount',
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w900,
-                        ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Center(
+                      child: Icon(
+                        widget.icon,
+                        color: active ? Colors.black : Colors.white,
+                        size: 22,
                       ),
                     ),
-                  ),
-              ],
+                    if (widget.badgeCount > 0)
+                      Positioned(
+                        right: -3,
+                        bottom: -3,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: NixColors.surfaceDock, width: 2),
+                          ),
+                          child: Text(
+                            '${widget.badgeCount}',
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
 
-class _DockActionButton extends StatelessWidget {
+class _DockActionButton extends StatefulWidget {
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
@@ -592,21 +744,44 @@ class _DockActionButton extends StatelessWidget {
   });
 
   @override
+  State<_DockActionButton> createState() => _DockActionButtonState();
+}
+
+class _DockActionButtonState extends State<_DockActionButton> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
-        child: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: NixColors.surfaceCard,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: NixColors.surfaceBorderStrong),
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Tooltip(
+        message: widget.tooltip,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: Row(
+            children: [
+              const SizedBox(width: 12),
+              AnimatedContainer(
+                duration: NixTokens.motionFast,
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: _hovered ? NixColors.surfaceActive : NixColors.surfaceCard,
+                  borderRadius: BorderRadius.circular(_hovered ? 16 : 24),
+                  border: Border.all(
+                    color: _hovered ? Colors.white : NixColors.surfaceBorderStrong,
+                    width: 1.0,
+                  ),
+                ),
+                child: Icon(
+                  widget.icon,
+                  color: _hovered ? Colors.white : NixColors.textSecondary,
+                  size: 20,
+                ),
+              ),
+            ],
           ),
-          child: Icon(icon, color: NixColors.textSecondary, size: 19),
         ),
       ),
     );

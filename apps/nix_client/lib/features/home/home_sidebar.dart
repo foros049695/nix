@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/direct_message.dart';
+import '../../core/models/member.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 
-/// Barra lateral da Área Inicial de Conversas Privadas (Estilo Discord Home — Imagem 4).
+/// Barra lateral da Área Inicial de Conversas Privadas (Estilo Discord Home).
 class HomeSidebar extends StatefulWidget {
   const HomeSidebar({super.key});
 
@@ -35,7 +36,7 @@ class _HomeSidebarState extends State<HomeSidebar> {
       ),
       child: Column(
         children: [
-          // Topo: Busca rápida ("Find or start a conversation")
+          // Topo: Busca rápida
           Container(
             height: 52,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -59,7 +60,7 @@ class _HomeSidebarState extends State<HomeSidebar> {
             ),
           ),
 
-          // Abas Superiores: Card ID, Friends, Requests, Transações, Updates + Lista de DMs
+          // Abas Superiores: Card ID, Friends, Requests, Transações, Updates, Monero P2P, GitHub
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
@@ -67,32 +68,44 @@ class _HomeSidebarState extends State<HomeSidebar> {
                 _navTile(
                   icon: Icons.badge_outlined,
                   label: 'Card ID (Identidade)',
-                  isSelected: activeTab == HomeSubTab.cardId,
+                  isSelected: nixState.activeArea == NixActiveArea.homePrivate && activeTab == HomeSubTab.cardId,
                   onTap: () => nixState.selectHomeSubTab(HomeSubTab.cardId),
                 ),
                 _navTile(
                   icon: Icons.people_outline_rounded,
                   label: 'Amigos',
-                  isSelected: activeTab == HomeSubTab.friends,
+                  isSelected: nixState.activeArea == NixActiveArea.homePrivate && activeTab == HomeSubTab.friends,
                   onTap: () => nixState.selectHomeSubTab(HomeSubTab.friends),
                 ),
                 _navTile(
                   icon: Icons.mark_email_unread_outlined,
                   label: 'Solicitações',
                   badgeCount: nixState.contactRequests.length,
-                  isSelected: activeTab == HomeSubTab.requests,
+                  isSelected: nixState.activeArea == NixActiveArea.homePrivate && activeTab == HomeSubTab.requests,
                   onTap: () => nixState.selectHomeSubTab(HomeSubTab.requests),
+                ),
+                _navTile(
+                  icon: Icons.currency_exchange_rounded,
+                  label: 'Mercado Monero P2P',
+                  isSelected: nixState.activeArea == NixActiveArea.moneroP2p,
+                  onTap: () => nixState.openMoneroP2pArea(),
+                ),
+                _navTile(
+                  icon: Icons.code_rounded,
+                  label: 'GitHub Discovery',
+                  isSelected: nixState.activeArea == NixActiveArea.github,
+                  onTap: () => nixState.openGithubDiscoveryArea(),
                 ),
                 _navTile(
                   icon: Icons.account_balance_wallet_outlined,
                   label: 'Transações (XMR)',
-                  isSelected: activeTab == HomeSubTab.transactions,
+                  isSelected: nixState.activeArea == NixActiveArea.homePrivate && activeTab == HomeSubTab.transactions,
                   onTap: () => nixState.selectHomeSubTab(HomeSubTab.transactions),
                 ),
                 _navTile(
                   icon: Icons.bolt_outlined,
                   label: 'Atualizações',
-                  isSelected: activeTab == HomeSubTab.updates,
+                  isSelected: nixState.activeArea == NixActiveArea.homePrivate && activeTab == HomeSubTab.updates,
                   onTap: () => nixState.selectHomeSubTab(HomeSubTab.updates),
                 ),
 
@@ -111,8 +124,9 @@ class _HomeSidebarState extends State<HomeSidebar> {
 
                 // Lista de Conversas Privadas
                 ...filteredDms.map((dm) {
-                  final isSelected =
-                      activeTab == HomeSubTab.directChat && selectedDm?.id == dm.id;
+                  final isSelected = nixState.activeArea == NixActiveArea.homePrivate &&
+                      activeTab == HomeSubTab.directChat &&
+                      selectedDm?.id == dm.id;
                   return Container(
                     margin: const EdgeInsets.only(bottom: 2),
                     decoration: BoxDecoration(
@@ -155,7 +169,7 @@ class _HomeSidebarState extends State<HomeSidebar> {
                               width: 8,
                               height: 8,
                               decoration: BoxDecoration(
-                                color: dm.isOnline ? Colors.white : NixColors.textDim,
+                                color: _getTrustColor(dm.trustLevel),
                                 shape: BoxShape.circle,
                                 border: Border.all(color: NixColors.surfaceSidebar, width: 1.5),
                               ),
@@ -201,84 +215,33 @@ class _HomeSidebarState extends State<HomeSidebar> {
             ),
           ),
 
-          // Rodapé de Perfil do Usuário (Com botão rápido para Configurações)
-          Container(
-            height: 54,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: const BoxDecoration(
-              color: NixColors.surfaceDock,
-              border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
-            ),
-            child: Row(
-              children: [
-                InkWell(
-                  onTap: () => nixState.openProfileOverlay(),
-                  borderRadius: BorderRadius.circular(18),
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: NixColors.surfaceCard,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white38),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Image.asset(
-                      'assets/images/nix_logo_128.png',
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          const Icon(Icons.person, size: 16, color: Colors.white),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: InkWell(
-                    onTap: () => nixState.openProfileOverlay(),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          nixState.userProfile.displayName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const Text(
-                          'Invisível · Onion',
-                          style: TextStyle(color: NixColors.textMuted, fontSize: 10),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.settings_outlined, size: 18, color: NixColors.textSecondary),
-                  tooltip: 'Configurações do Sistema',
-                  onPressed: () => nixState.openProfileOverlay(startInSettings: true),
-                ),
-              ],
-            ),
-          ),
+          // Rodapé do Usuário (Identidade Local Rápida)
+          _buildUserFooter(nixState),
         ],
       ),
     );
+  }
+
+  Color _getTrustColor(NixTrustLevel level) {
+    switch (level) {
+      case NixTrustLevel.level1Red:
+        return NixColors.trustLevel1Red;
+      case NixTrustLevel.level2Yellow:
+        return NixColors.trustLevel2Yellow;
+      case NixTrustLevel.level3Green:
+        return NixColors.trustLevel3Green;
+    }
   }
 
   Widget _navTile({
     required IconData icon,
     required String label,
     required bool isSelected,
-    required VoidCallback onTap,
     int badgeCount = 0,
+    required VoidCallback onTap,
   }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 3),
+      margin: const EdgeInsets.only(bottom: 2),
       decoration: BoxDecoration(
         color: isSelected ? NixColors.surfaceActive : Colors.transparent,
         borderRadius: NixTokens.borderSm,
@@ -287,22 +250,24 @@ class _HomeSidebarState extends State<HomeSidebar> {
       child: ListTile(
         dense: true,
         visualDensity: const VisualDensity(vertical: -2),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+        onTap: onTap,
         leading: Icon(
           icon,
           size: 18,
-          color: isSelected ? Colors.white : NixColors.iconSecondary,
+          color: isSelected ? NixColors.textPrimary : NixColors.iconSecondary,
         ),
         title: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.white : NixColors.textSecondary,
-            fontSize: 13,
+            color: isSelected ? NixColors.textPrimary : NixColors.textSecondary,
+            fontSize: 12.5,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
           ),
         ),
         trailing: badgeCount > 0
             ? Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(10),
@@ -317,7 +282,98 @@ class _HomeSidebarState extends State<HomeSidebar> {
                 ),
               )
             : null,
-        onTap: onTap,
+      ),
+    );
+  }
+
+  Widget _buildUserFooter(NixState state) {
+    final profile = state.userProfile;
+    final effectiveName = profile.effectiveDisplayName;
+
+    return Container(
+      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: const BoxDecoration(
+        color: NixColors.surfaceDock,
+        border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
+      ),
+      child: Row(
+        children: [
+          // Avatar do Titular
+          InkWell(
+            onTap: () => state.openProfileOverlay(),
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: NixColors.surfaceActive,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white24),
+              ),
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/images/nix_logo_128.png',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.person_outline,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Nome do Titular e ID Público Reduzido
+          Expanded(
+            child: InkWell(
+              onTap: () => state.openProfileOverlay(),
+              borderRadius: BorderRadius.circular(4),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    effectiveName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    profile.publicId.length > 18
+                        ? '${profile.publicId.substring(0, 18)}...'
+                        : profile.publicId,
+                    style: NixTokens.monoCode(size: 9.5),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Botão Microfone Rápido
+          IconButton(
+            icon: Icon(
+              state.callState.isMuted ? Icons.mic_off : Icons.mic_none,
+              size: 16,
+              color: state.callState.isMuted ? NixColors.textMuted : NixColors.textSecondary,
+            ),
+            tooltip: state.callState.isMuted ? 'Desmutar' : 'Mutar',
+            onPressed: () => state.toggleMute(),
+          ),
+
+          // Botão Engrenagem de Configurações
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, size: 16, color: NixColors.textSecondary),
+            tooltip: 'Configurações',
+            onPressed: () => state.openProfileOverlay(startInSettings: true),
+          ),
+        ],
       ),
     );
   }

@@ -1,31 +1,78 @@
 import 'package:flutter/material.dart';
 import 'theme/nix_colors.dart';
 import 'theme/nix_tokens.dart';
+import 'theme/nix_palette.dart';
+
+@immutable
+class NixThemeExtension extends ThemeExtension<NixThemeExtension> {
+  final NixPalette palette;
+  final Color surfaceElevated;
+  final Color surfaceElevatedHigh;
+
+  const NixThemeExtension({
+    required this.palette,
+    required this.surfaceElevated,
+    required this.surfaceElevatedHigh,
+  });
+
+  @override
+  NixThemeExtension copyWith({
+    NixPalette? palette,
+    Color? surfaceElevated,
+    Color? surfaceElevatedHigh,
+  }) {
+    return NixThemeExtension(
+      palette: palette ?? this.palette,
+      surfaceElevated: surfaceElevated ?? this.surfaceElevated,
+      surfaceElevatedHigh: surfaceElevatedHigh ?? this.surfaceElevatedHigh,
+    );
+  }
+
+  @override
+  NixThemeExtension lerp(ThemeExtension<NixThemeExtension>? other, double t) {
+    if (other is! NixThemeExtension) return this;
+    return NixThemeExtension(
+      palette: t < 0.5 ? palette : other.palette,
+      surfaceElevated: Color.lerp(surfaceElevated, other.surfaceElevated, t) ?? surfaceElevated,
+      surfaceElevatedHigh: Color.lerp(surfaceElevatedHigh, other.surfaceElevatedHigh, t) ?? surfaceElevatedHigh,
+    );
+  }
+}
 
 class NixTheme {
-  static ThemeData get amoledMonochromeTheme => buildTheme(fontScale: 1.0);
+  static ThemeData get amoledMonochromeTheme => buildTheme();
 
-  // Mantido como alias para compatibilidade com testes existentes
+  // Mantido para compatibilidade com código existente
   static ThemeData get tacticalDarkTheme => amoledMonochromeTheme;
 
-  static ThemeData buildTheme({double fontScale = 1.0}) {
+  static ThemeData buildTheme({
+    NixPalette palette = NixPalette.original,
+    double fontScale = 1.0,
+  }) {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
       scaffoldBackgroundColor: NixColors.background,
-      primaryColor: NixColors.textPrimary,
+      primaryColor: palette.primaryAccent,
       canvasColor: NixColors.surfaceSidebar,
       cardColor: NixColors.surfaceCard,
       dividerColor: NixColors.surfaceDivider,
-      splashColor: Colors.white10,
+      splashColor: palette.glowColor,
       highlightColor: Colors.white10,
       hoverColor: NixColors.surfaceCardHover,
-      colorScheme: const ColorScheme.dark(
-        primary: NixColors.textPrimary,
+      extensions: [
+        NixThemeExtension(
+          palette: palette,
+          surfaceElevated: NixColors.surfaceElevated,
+          surfaceElevatedHigh: NixColors.surfaceElevatedHigh,
+        ),
+      ],
+      colorScheme: ColorScheme.dark(
+        primary: palette.primaryAccent,
         onPrimary: Colors.black,
-        secondary: NixColors.accentSecondary,
+        secondary: palette.secondaryAccent,
         onSecondary: Colors.black,
-        tertiary: NixColors.accentSubtle,
+        tertiary: palette.subtleAccent,
         surface: NixColors.surfaceCard,
         onSurface: NixColors.textPrimary,
         error: NixColors.accentDanger,
@@ -79,7 +126,7 @@ class NixTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: NixTokens.borderSm,
-          borderSide: const BorderSide(color: NixColors.textPrimary, width: 1.2),
+          borderSide: BorderSide(color: palette.primaryAccent, width: 1.2),
         ),
       ),
       switchTheme: SwitchThemeData(
@@ -88,25 +135,42 @@ class NixTheme {
           return NixColors.textSecondary;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return NixColors.textPrimary;
+          if (states.contains(WidgetState.selected)) return palette.primaryAccent;
           return NixColors.surfaceActive;
         }),
         trackOutlineColor: WidgetStateProperty.all(NixColors.surfaceBorderStrong),
       ),
-      sliderTheme: const SliderThemeData(
-        activeTrackColor: NixColors.textPrimary,
+      sliderTheme: SliderThemeData(
+        activeTrackColor: palette.primaryAccent,
         inactiveTrackColor: NixColors.surfaceActive,
-        thumbColor: NixColors.textPrimary,
-        overlayColor: Colors.white12,
+        thumbColor: palette.primaryAccent,
+        overlayColor: palette.glowColor,
       ),
-      tooltipTheme: TooltipThemeData(
-        decoration: BoxDecoration(
-          color: const Color(0xFF181818),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: NixColors.surfaceBorderStrong),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: palette.primaryAccent,
+          foregroundColor: Colors.black,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: NixTokens.borderSm),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          textStyle: TextStyle(
+            fontSize: 13 * fontScale,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.2,
+          ),
         ),
-        textStyle: const TextStyle(color: Colors.white, fontSize: 11.5),
-        waitDuration: const Duration(milliseconds: 350),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: NixColors.textPrimary,
+          side: const BorderSide(color: NixColors.surfaceBorderStrong),
+          shape: RoundedRectangleBorder(borderRadius: NixTokens.borderSm),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          textStyle: TextStyle(
+            fontSize: 13 * fontScale,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     );
   }

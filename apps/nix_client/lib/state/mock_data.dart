@@ -7,19 +7,21 @@ import '../core/models/forum_post.dart';
 import '../core/models/cultural_item.dart';
 import '../core/models/user_profile.dart';
 import '../core/models/direct_message.dart';
+import '../core/models/monero_order.dart';
+import '../core/models/github_repo.dart';
 
 class MockData {
   static UserProfile getInitialUserProfile() {
-    return const UserProfile(
+    return UserProfile(
       publicId: 'NIX-7E3A-9F01-C45B-289D',
       displayName: 'GUS',
       bio: 'Arquitetura descentralizada, criptografia aplicada, cinema clássico e acervo cultural privado.',
-      currentActivity: 'Assistindo: Mobile Suit Gundam Hathaway',
+      currentActivity: '', // Status redundante removido da exibição visual principal do Card ID
       memberSinceYear: '26',
       avatarStyle: 'nyx_emblem',
       culturalItems: [
         // Filmes
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_1',
           title: 'Mobile Suit Gundam Hathaway',
           creatorOrYear: '2021 · Murase',
@@ -28,8 +30,9 @@ class MockData {
           monogram: 'MH',
           toneShade: 52,
           isFeatured: true,
+          isPublicInCardId: true,
         ),
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_2',
           title: 'Ghost Dog: The Way of the Samurai',
           creatorOrYear: '1999 · Jarmusch',
@@ -37,8 +40,9 @@ class MockData {
           rating: '9.4',
           monogram: 'GD',
           toneShade: 36,
+          isPublicInCardId: true,
         ),
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_3',
           title: '12 Angry Men',
           creatorOrYear: '1957 · Lumet',
@@ -46,8 +50,9 @@ class MockData {
           rating: '9.8',
           monogram: '12',
           toneShade: 48,
+          isPublicInCardId: true,
         ),
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_4',
           title: 'Black Lizard',
           creatorOrYear: '1968 · Fukasaku',
@@ -55,9 +60,10 @@ class MockData {
           rating: '9.1',
           monogram: 'BL',
           toneShade: 30,
+          isPublicInCardId: true,
         ),
         // Álbuns Musicais (Discos de Vinil)
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_m1',
           title: 'RZA — Ghost Dog OST',
           creatorOrYear: 'Vinil 33 RPM · 1999',
@@ -65,8 +71,9 @@ class MockData {
           rating: '9.7',
           monogram: 'RZ',
           toneShade: 65,
+          isPublicInCardId: true,
         ),
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_m2',
           title: 'Ryuichi Sakamoto — Async',
           creatorOrYear: 'Vinil Duplo · 2017',
@@ -74,8 +81,9 @@ class MockData {
           rating: '9.8',
           monogram: 'RS',
           toneShade: 80,
+          isPublicInCardId: true,
         ),
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_m3',
           title: 'Miles Davis — Kind of Blue',
           creatorOrYear: 'Edição Mono · 1959',
@@ -83,8 +91,9 @@ class MockData {
           rating: '9.9',
           monogram: 'MD',
           toneShade: 55,
+          isPublicInCardId: true,
         ),
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_m4',
           title: 'Yoko Kanno — Cowboy Bebop',
           creatorOrYear: 'LP Pressing · 1998',
@@ -92,9 +101,10 @@ class MockData {
           rating: '9.8',
           monogram: 'YK',
           toneShade: 72,
+          isPublicInCardId: true,
         ),
         // Séries & Animes
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_s1',
           title: 'Great Teacher Onizuka (GTO)',
           creatorOrYear: '1999 · Pierrot',
@@ -102,8 +112,9 @@ class MockData {
           rating: '9.5',
           monogram: 'GT',
           toneShade: 44,
+          isPublicInCardId: true,
         ),
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_s2',
           title: 'Galaxy Express 999',
           creatorOrYear: '1978 · Matsumoto',
@@ -111,8 +122,9 @@ class MockData {
           rating: '9.4',
           monogram: '99',
           toneShade: 38,
+          isPublicInCardId: true,
         ),
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_s3',
           title: 'Mr. Robot',
           creatorOrYear: '2015 · Esmail',
@@ -120,8 +132,9 @@ class MockData {
           rating: '9.5',
           monogram: 'MR',
           toneShade: 28,
+          isPublicInCardId: true,
         ),
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_s4',
           title: 'True Detective (S1)',
           creatorOrYear: '2014 · Pizzolatto',
@@ -129,9 +142,10 @@ class MockData {
           rating: '9.7',
           monogram: 'TD',
           toneShade: 40,
+          isPublicInCardId: true,
         ),
         // Mangás & Livros
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_b1',
           title: 'Sousou no Frieren ~Zensou~',
           creatorOrYear: '2024 · Kanehito Yamada',
@@ -140,8 +154,9 @@ class MockData {
           monogram: 'FR',
           toneShade: 70,
           isFeatured: true,
+          isPublicInCardId: true,
         ),
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_b2',
           title: 'Ad Astra: Scipio to Hannibal',
           creatorOrYear: 'Mihachi Kagano',
@@ -149,8 +164,9 @@ class MockData {
           rating: '9.3',
           monogram: 'AA',
           toneShade: 50,
+          isPublicInCardId: true,
         ),
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_b3',
           title: 'The Fall of Rome',
           creatorOrYear: 'R. A. Lafferty',
@@ -158,8 +174,9 @@ class MockData {
           rating: '9.5',
           monogram: 'FR',
           toneShade: 46,
+          isPublicInCardId: true,
         ),
-        CulturalItem(
+        const CulturalItem(
           id: 'cult_b4',
           title: 'Cryptography Engineering',
           creatorOrYear: 'Ferguson, Schneier & Kohno',
@@ -167,6 +184,38 @@ class MockData {
           rating: '9.9',
           monogram: 'CE',
           toneShade: 60,
+          isPublicInCardId: true,
+        ),
+        // Repositórios GitHub Salvos no Acervo
+        CulturalItem(
+          id: 'repo_rust_anything',
+          title: 'rust-anything',
+          creatorOrYear: 'Rust · rust-anything',
+          category: CulturalCategory.github,
+          rating: '14.2k',
+          monogram: 'RA',
+          toneShade: 75,
+          isPublicInCardId: true,
+          repositoryUrl: 'https://github.com/rust-anything/rust-anything',
+          starsCount: 14200,
+          language: 'Rust',
+          license: 'Apache-2.0',
+          updatedDate: DateTime.now().subtract(const Duration(hours: 12)),
+        ),
+        CulturalItem(
+          id: 'repo_nix_crypto',
+          title: 'nix-crypto-core',
+          creatorOrYear: 'Go · projetonix',
+          category: CulturalCategory.github,
+          rating: '3.8k',
+          monogram: 'NX',
+          toneShade: 82,
+          isPublicInCardId: true,
+          repositoryUrl: 'https://github.com/foros049695/nix',
+          starsCount: 3840,
+          language: 'Go',
+          license: 'MIT',
+          updatedDate: DateTime.now().subtract(const Duration(days: 2)),
         ),
       ],
     );
@@ -207,10 +256,18 @@ class MockData {
             unreadCount: 2,
           ),
           Channel(
-            id: 'ch_dev',
+            id: 'ch_dev_core',
             spaceId: 'space_qg',
             name: 'desenvolvimento-core',
-            topic: 'Discussões de código Go, Flutter, SQLCipher e módulos.',
+            topic: 'Implementação de primitives de criptografia, roteamento Onion e Protocol Buffers.',
+            type: ChannelType.text,
+            category: 'COMUNIDADE',
+          ),
+          Channel(
+            id: 'ch_avisos',
+            spaceId: 'space_qg',
+            name: 'avisos-oficiais',
+            topic: 'Comunicações canônicas assinadas e releases.',
             type: ChannelType.text,
             category: 'COMUNIDADE',
           ),
@@ -218,32 +275,24 @@ class MockData {
             id: 'ch_forum_achados',
             spaceId: 'space_qg',
             name: 'topicos-e-achados',
-            topic: 'Fórum interativo de análises, equipamentos, declarações e reviews com chat lateral.',
+            topic: 'Tópicos interativos com fotos, especificações técnicas e reviews de hardware.',
             type: ChannelType.forum,
             category: 'TÓPICOS INTERATIVOS',
             unreadCount: 4,
           ),
           Channel(
-            id: 'ch_anuncios',
-            spaceId: 'space_qg',
-            name: 'avisos-oficiais',
-            topic: 'Comunicados de segurança e marcos de release.',
-            type: ChannelType.announcement,
-            category: 'COMUNIDADE',
-          ),
-          Channel(
-            id: 'ch_call_geral',
+            id: 'ch_voz_geral',
             spaceId: 'space_qg',
             name: 'Call Geral Segura',
-            topic: 'Sala de áudio criptografada fim a fim via Onion v3.',
+            topic: 'Sala de áudio segura com criptografia fim-a-fim.',
             type: ChannelType.voice,
             category: 'CHATS DE VOZ',
           ),
           Channel(
-            id: 'ch_call_briefing',
+            id: 'ch_voz_alinhamento',
             spaceId: 'space_qg',
             name: 'Voz 2 · Alinhamento',
-            topic: 'Canal de voz reservado para revisão técnica.',
+            topic: 'Sala secundária de conferência.',
             type: ChannelType.voice,
             category: 'CHATS DE VOZ',
           ),
@@ -251,7 +300,7 @@ class MockData {
             id: 'ch_pub_dossies',
             spaceId: 'space_qg',
             name: 'Dossiês Canônicos',
-            topic: 'Artigos canônicos versionados com hash CID e claims auditáveis.',
+            topic: 'Publicações canônicas assinadas pelo Nix Archive.',
             type: ChannelType.publication,
             category: 'NIX ARCHIVE',
           ),
@@ -259,7 +308,7 @@ class MockData {
             id: 'ch_pub_specs',
             spaceId: 'space_qg',
             name: 'Especificações de Cripto',
-            topic: 'Documentos do protocolo Double Ratchet, PQXDH e retenção.',
+            topic: 'Artigos técnicos e análises de criptografia aplicada.',
             type: ChannelType.publication,
             category: 'NIX ARCHIVE',
           ),
@@ -271,7 +320,7 @@ class MockData {
         initials: 'RF',
         description: 'Coordenação técnica de nós de rádio LoRa, Reticulum e mapas offline MBTiles.',
         iconEmoji: 'RF',
-        unreadCount: 5,
+        unreadCount: 6,
         memberCount: 19,
         onlineCount: 7,
         isPublic: true,
@@ -280,22 +329,22 @@ class MockData {
           Channel(
             id: 'ch_lora_sync',
             spaceId: 'space_offgrid',
-            name: 'frequencia-915mhz',
-            topic: 'Pacotes serializados em radio.proto (< 240 bytes). Sem mídia.',
+            name: 'sincronia-lora',
+            topic: 'Frequências 915MHz e modulação spread spectrum.',
             type: ChannelType.text,
             category: 'COMUNIDADE',
-            unreadCount: 5,
+            unreadCount: 6,
           ),
           Channel(
-            id: 'ch_call_radio',
+            id: 'ch_reticulum_nodes',
             spaceId: 'space_offgrid',
-            name: 'Conferência de Rádio IP',
-            topic: 'Canal de voz sob transporte IP.',
-            type: ChannelType.voice,
-            category: 'CHATS DE VOZ',
+            name: 'topologia-reticulum',
+            topic: 'Anúncios de interfaces e nós repetidores.',
+            type: ChannelType.text,
+            category: 'COMUNIDADE',
           ),
           Channel(
-            id: 'ch_pub_manuals',
+            id: 'ch_pub_manuais_rf',
             spaceId: 'space_offgrid',
             name: 'Manuais de Antena e Firmware',
             topic: 'Guias de montagem de RAK4631 e nós Reticulum.',
@@ -398,9 +447,9 @@ class MockData {
       ),
       const Space(
         id: 'pub_selfhost',
-        name: 'Auto-Hospedagem Enxuta',
+        name: 'Soberania & Self-Hosting',
         initials: 'SH',
-        description: 'Operadores de VPS de 2 vCPU / 2 GB RAM com Alpine Linux, nftables e MinIO.',
+        description: 'Sistemas Linux bare-metal, discos LUKS cifrados e micro-servidores silenciosos.',
         memberCount: 27,
         onlineCount: 9,
         isPublic: true,
@@ -533,7 +582,7 @@ class MockData {
             'Edição com Obi original preservado, capa gatefold de gramatura pesada e encarte técnico completo.',
         images: const [
           ForumImageSpec(label: 'CAPA GATEFOLD', subtitle: 'Com Obi Original', code: 'LP-01'),
-          ForumImageSpec(label: 'DISCO 180G PRETO', subtitle: 'Zero Ruído deFundo', code: 'LP-02'),
+          ForumImageSpec(label: 'DISCO 180G PRETO', subtitle: 'Zero Ruído de Fundo', code: 'LP-02'),
           ForumImageSpec(label: 'ENCARTE TÉCNICO', subtitle: '4 Páginas', code: 'LP-03'),
           ForumImageSpec(label: 'SELO CENTRAL', subtitle: 'Primeira Tiragem', code: 'LP-04'),
         ],
@@ -553,6 +602,7 @@ class MockData {
         statusText: 'Online · Circuito Onion Verificado',
         isOnline: true,
         isVerified: true,
+        trustLevel: NixTrustLevel.level3Green,
         unreadCount: 1,
         messages: [
           Message(
@@ -574,6 +624,7 @@ class MockData {
         statusText: 'Auditando schemas Protobuf',
         isOnline: true,
         isVerified: true,
+        trustLevel: NixTrustLevel.level2Yellow,
         unreadCount: 0,
         messages: [
           Message(
@@ -594,6 +645,7 @@ class MockData {
         statusText: 'Sincronizando réplica opt-in',
         isOnline: false,
         isVerified: true,
+        trustLevel: NixTrustLevel.level3Green,
         unreadCount: 0,
         messages: [
           Message(
@@ -620,6 +672,9 @@ class MockData {
         note: 'Operador de relay parceiro. Solicitação de verificação de chave X3DH.',
         timestamp: now.subtract(const Duration(hours: 4)),
         isIncoming: true,
+        trustLevel: NixTrustLevel.level1Red,
+        bio: 'Operador de nó de relay com alta disponibilidade via Tor v3 e conexão simétrica.',
+        culturalHighlights: const ['Mr. Robot', 'Ghost Dog', 'Cryptography Engineering'],
       ),
       ContactRequest(
         id: 'req_2',
@@ -628,6 +683,9 @@ class MockData {
         note: 'Comunidade Acervo & Cinema — troca de catálogos locais.',
         timestamp: now.subtract(const Duration(days: 1)),
         isIncoming: true,
+        trustLevel: NixTrustLevel.level2Yellow,
+        bio: 'Pesquisador de literatura clássica, mangás históricos e cinema noir.',
+        culturalHighlights: const ['Ad Astra', '12 Angry Men', 'Black Lizard'],
       ),
     ];
   }
@@ -648,10 +706,19 @@ class MockData {
         id: 'tx_02',
         title: 'Liquidação P2P #882 — Kit LoRa RAK4631',
         amountXmr: '+0.3200 XMR',
-        subaddressPreview: '84c1...99b0 (Subendereço #15)',
-        timestamp: now.subtract(const Duration(hours: 18)),
-        confirmations: 540,
+        subaddressPreview: '84b1...99e0 (Subendereço #08)',
+        timestamp: now.subtract(const Duration(days: 4)),
+        confirmations: 2890,
         isIncoming: true,
+      ),
+      XmrTransactionRecord(
+        id: 'tx_03',
+        title: 'Doação de Financiamento ao Nix Core Relay',
+        amountXmr: '-0.1000 XMR',
+        subaddressPreview: '822c...31fa (Subendereço #01)',
+        timestamp: now.subtract(const Duration(days: 12)),
+        confirmations: 8640,
+        isIncoming: false,
       ),
     ];
   }
@@ -659,28 +726,32 @@ class MockData {
   static List<SystemUpdateRecord> getInitialSystemUpdates() {
     return const [
       SystemUpdateRecord(
-        id: 'upd_1',
-        version: 'v0.2.0 — NIX AMOLED Design System',
-        title: 'Identidade Monocromática, Card ID Metálico & Fórum Interativo',
-        summary: 'Transição integral para o padrão visual AMOLED (#000000), Card ID em metal escovado, Passaporte Cultural e proteção antifingerprinting.',
-        dateLabel: '18 Nov 2026',
+        id: 'up_020',
+        version: 'v0.2.0-amoled',
+        title: 'Nix Living AMOLED, Tor Onion e P2P Monero',
+        summary:
+            'Interface refinada Living AMOLED (#000000 e superfícies #101014/#19191F), seletor de paletas, pastas drag-and-drop, descoberta GitHub e mercado Monero P2P descentralizado.',
+        dateLabel: 'Hoje · 18 Nov 2026',
         highlights: [
-          'Paleta monocromática AMOLED absoluta (#000000 a #121212) sem ruído visual.',
-          'Card ID interativo com QR Code público, biografia e Passaporte Cultural (Filmes, Séries, Animes, Mangás, Livros e Vinis).',
-          'Pastas de grupos no dock lateral, aba Explorar (ordenada por população) e canais de Tópicos com Split-Chat.',
-          'Central de Configurações com 6 módulos persistentes, incluindo Sobrevivência e Privacidade.',
+          'Design System NIX LIVING AMOLED com paletas temáticas dinâmicas',
+          'Aba GitHub Discovery inspirada no starwire.foo e salvamento no Acervo',
+          'Mercado P2P Monero não custodial com filtros FIAT e mensagens privadas E2EE',
+          'Pastas de espaços por drag-and-drop na barra de navegação',
+          'Seletor completo de emojis com categorias e inserção direta no chat',
+          'Modelo de Confiança Nix em 3 Níveis (Nível 1 Vermelho, Nível 2 Amarelo, Nível 3 Verde)',
         ],
       ),
       SystemUpdateRecord(
-        id: 'upd_0',
-        version: 'v0.1.0 — Fundação & Matriz de Privacidade',
-        title: 'Especificação Inicial, Relay AutoPruner e Schemas Protobuf',
-        summary: 'Estabelecimento dos 21 critérios verificáveis da Matriz The Hated One e estrutura de isolamento de sementes.',
-        dateLabel: '17 Nov 2026',
+        id: 'up_010',
+        version: 'v0.1.0-alpha',
+        title: 'Release Inicial do Cliente Nix Soberano',
+        summary:
+            'Primeiro build funcional com criptografia Double Ratchet, suporte a salas de áudio e painel de identidade soberana.',
+        dateLabel: '14 Nov 2026',
         highlights: [
-          'Política de transporte Fail-Closed sobre Tor Onion v3.',
-          'AutoPruner dinâmico com histerese em 75%, 85% e 92% de ocupação.',
-          'Isolamento estrito entre Seed A (Mensageiro) e Seed B (Monero XMR).',
+          'Handshake X3DH e envelopes XChaCha20-Poly1305',
+          'Zero identificação civil (sem telefone, email ou SMS)',
+          'Fail-closed em redes Tor e quantização de viewport',
         ],
       ),
     ];
@@ -696,10 +767,9 @@ class MockData {
           senderName: 'Sentinela-Alpha',
           senderFingerprint: 'A1B2-C3D4-E5F6-001A',
           isMe: false,
-          text: 'Bem-vindos ao Nix. Interface atualizada para o padrão monocromático NIX AMOLED com roteamento Onion v3.',
-          timestamp: now.subtract(const Duration(minutes: 25)),
-          isVerified: true,
-          reactions: const {'⚡': 3, '🛡️': 2},
+          text: 'Bem-vindos ao Nix. Interface atualizada para o padrão NIX LIVING AMOLED com superfícies elevadas e suporte a Tor v3.',
+          timestamp: now.subtract(const Duration(minutes: 50)),
+          reactions: const {'✨': 3, '🛡️': 2},
         ),
         Message(
           id: 'msg_2',
@@ -707,9 +777,8 @@ class MockData {
           senderName: 'CipherGhost',
           senderFingerprint: 'F891-72A0-B3E4-998C',
           isMe: false,
-          text: 'O novo Card ID em metal preto e os tópicos com split-chat ficaram extremamente limpos e rápidos.',
-          timestamp: now.subtract(const Duration(minutes: 18)),
-          isVerified: true,
+          text: 'O Card ID em metal preto reluzente e o Acervo com repositórios GitHub e vinis ficaram impecáveis.',
+          timestamp: now.subtract(const Duration(minutes: 42)),
         ),
         Message(
           id: 'msg_3',
@@ -717,35 +786,42 @@ class MockData {
           senderName: 'GUS',
           senderFingerprint: '7E3A-9F01-C45B-289D',
           isMe: true,
-          text: 'Excelente. Toda a estética foi refinada para máxima discrição, mantendo nossas garantias criptográficas.',
-          timestamp: now.subtract(const Duration(minutes: 5)),
-          isVerified: true,
-          ephemeralSeconds: 300,
-          remainingSeconds: 240,
+          text: 'Excelente. Toda a estética foi refinada com fluidez, mantendo nossas garantias criptográficas e zero metadados.',
+          timestamp: now.subtract(const Duration(minutes: 30)),
+          ephemeralSeconds: 240,
         ),
       ],
-      'ch_dev': [
+      'ch_dev_core': [
         Message(
-          id: 'msg_dev_1',
-          channelId: 'ch_dev',
-          senderName: 'GoRelayDev',
-          senderFingerprint: '1290-CC78-45FA-00E1',
+          id: 'msg_core_1',
+          channelId: 'ch_dev_core',
+          senderName: 'CipherGhost',
+          senderFingerprint: 'F891-72A0-B3E4-998C',
           isMe: false,
-          text: 'O AutoPruner com histerese (75%, 85%, 92%) está operando abaixo de 120 MB de RSS.',
-          timestamp: now.subtract(const Duration(minutes: 40)),
-          isVerified: true,
+          text: 'A camada de envelopes XChaCha20-Poly1305 foi integrada diretamente aos schemas proto/message.proto.',
+          timestamp: now.subtract(const Duration(hours: 1)),
         ),
       ],
-      'ch_anuncios': [
+      'ch_avisos': [
         Message(
-          id: 'msg_anun_1',
-          channelId: 'ch_anuncios',
-          senderName: 'Coordenação Nix',
-          senderFingerprint: '0000-A111-B222-C333',
+          id: 'msg_aviso_1',
+          channelId: 'ch_avisos',
+          senderName: 'Sentinela-Alpha',
+          senderFingerprint: 'A1B2-C3D4-E5F6-001A',
           isMe: false,
-          text: '[MARCO DE SEGURANÇA]: A Matriz de Privacidade foi validada nos portões estáticos L-S, I-S e I-A.',
-          timestamp: now.subtract(const Duration(hours: 2)),
-          isVerified: true,
+          text: 'CANÔNICO: A versão 0.2.0 Living AMOLED já está disponível para testes desktop e mobile.',
+          timestamp: now.subtract(const Duration(hours: 4)),
+        ),
+      ],
+      'ch_lora_sync': [
+        Message(
+          id: 'msg_lora_1',
+          channelId: 'ch_lora_sync',
+          senderName: 'Eduardo.Op',
+          senderFingerprint: '445D-119A-B882-3C0F',
+          isMe: false,
+          text: 'Gateway LoRa ativo em 915.2MHz com modulação SF10. Sincronizando blocos off-grid com sucesso.',
+          timestamp: now.subtract(const Duration(minutes: 10)),
         ),
       ],
       'ch_mural_p2p': [
@@ -773,6 +849,8 @@ class MockData {
         isVerified: true,
         fingerprint: '7E3A-9F01-C45B-289D',
         isOnline: true,
+        trustLevel: NixTrustLevel.level3Green,
+        hasCryptographicShield: true,
       ),
       Member(
         id: 'mem_2',
@@ -783,6 +861,8 @@ class MockData {
         fingerprint: 'A1B2-C3D4-E5F6-001A',
         isOnline: true,
         isSpeaking: true,
+        trustLevel: NixTrustLevel.level3Green,
+        hasCryptographicShield: true,
       ),
       Member(
         id: 'mem_3',
@@ -792,6 +872,8 @@ class MockData {
         isVerified: true,
         fingerprint: 'F891-72A0-B3E4-998C',
         isOnline: true,
+        trustLevel: NixTrustLevel.level2Yellow,
+        hasCryptographicShield: true,
       ),
       Member(
         id: 'mem_4',
@@ -801,6 +883,8 @@ class MockData {
         isVerified: true,
         fingerprint: '445D-119A-B882-3C0F',
         isOnline: false,
+        trustLevel: NixTrustLevel.level1Red,
+        hasCryptographicShield: false,
       ),
     ];
   }
@@ -851,5 +935,219 @@ Combinação do acordo clássico **X25519** com o algoritmo KEM padronizado **ML
         ),
       ],
     };
+  }
+
+  static List<MoneroP2pOrder> getInitialMoneroOrders() {
+    return const [
+      // Venda de XMR (Usuário compra XMR)
+      MoneroP2pOrder(
+        id: 'ord_xmr_01',
+        traderName: 'SovereignNode_SP',
+        traderPublicId: 'NIX-4411-90FA-B821',
+        trustLevel: NixTrustLevel.level3Green,
+        reputationScore: 99.8,
+        completedTrades: 194,
+        side: MoneroP2pSide.sell,
+        fiatCurrency: 'BRL',
+        pricePerXmr: 845.50,
+        minFiatLimit: 150.00,
+        maxFiatLimit: 5000.00,
+        paymentMethod: 'PIX Instantâneo',
+        isOnline: true,
+        avgResponseMinutes: 2,
+        signedManifestHash: '8f7a99b2c3114de9',
+        notes: 'Chave PIX aleatória informada após abertura de canal cifrado. Liberação em 1 bloco.',
+      ),
+      MoneroP2pOrder(
+        id: 'ord_xmr_02',
+        traderName: 'KuraP2P_Rio',
+        traderPublicId: 'NIX-7700-112B-AC45',
+        trustLevel: NixTrustLevel.level3Green,
+        reputationScore: 100.0,
+        completedTrades: 88,
+        side: MoneroP2pSide.sell,
+        fiatCurrency: 'BRL',
+        pricePerXmr: 852.00,
+        minFiatLimit: 500.00,
+        maxFiatLimit: 12000.00,
+        paymentMethod: 'Dinheiro em mãos / Cash (Zona Sul)',
+        isOnline: true,
+        avgResponseMinutes: 5,
+        signedManifestHash: '44da112399bcfe01',
+        notes: 'Encontro presencial seguro em local público. Verificação de cédulas e transação in loco.',
+      ),
+      MoneroP2pOrder(
+        id: 'ord_xmr_03',
+        traderName: 'EuroMoneroRelay',
+        traderPublicId: 'NIX-9988-EF10-0012',
+        trustLevel: NixTrustLevel.level3Green,
+        reputationScore: 99.2,
+        completedTrades: 312,
+        side: MoneroP2pSide.sell,
+        fiatCurrency: 'EUR',
+        pricePerXmr: 142.30,
+        minFiatLimit: 50.00,
+        maxFiatLimit: 2500.00,
+        paymentMethod: 'SEPA Instant',
+        isOnline: true,
+        avgResponseMinutes: 3,
+        signedManifestHash: 'ac33f9901182bcda',
+        notes: 'SEPA instantânea sem intermediários bancários abusivos. Suporte a Revolut / Wise.',
+      ),
+      MoneroP2pOrder(
+        id: 'ord_xmr_04',
+        traderName: 'GlobalPrivacy_US',
+        traderPublicId: 'NIX-1144-8899-DD01',
+        trustLevel: NixTrustLevel.level2Yellow,
+        reputationScore: 98.7,
+        completedTrades: 64,
+        side: MoneroP2pSide.sell,
+        fiatCurrency: 'USD',
+        pricePerXmr: 154.00,
+        minFiatLimit: 100.00,
+        maxFiatLimit: 4000.00,
+        paymentMethod: 'Zelle / CashApp',
+        isOnline: false,
+        avgResponseMinutes: 15,
+        signedManifestHash: 'ee904123bb0045aa',
+        notes: 'P2P sob demanda. Não envio fundos para contas de terceiros.',
+      ),
+      // Compra de XMR (Usuário vende XMR)
+      MoneroP2pOrder(
+        id: 'ord_xmr_05',
+        traderName: 'CryptoVault_BR',
+        traderPublicId: 'NIX-6622-AA11-9980',
+        trustLevel: NixTrustLevel.level3Green,
+        reputationScore: 100.0,
+        completedTrades: 147,
+        side: MoneroP2pSide.buy,
+        fiatCurrency: 'BRL',
+        pricePerXmr: 838.00,
+        minFiatLimit: 200.00,
+        maxFiatLimit: 8000.00,
+        paymentMethod: 'PIX Instantâneo',
+        isOnline: true,
+        avgResponseMinutes: 2,
+        signedManifestHash: '55bc004412ef8899',
+        notes: 'Pago imediatamente via PIX após geração de subendereço integrado.',
+      ),
+      MoneroP2pOrder(
+        id: 'ord_xmr_06',
+        traderName: 'BerlinCashDesk',
+        traderPublicId: 'NIX-3399-7711-DE44',
+        trustLevel: NixTrustLevel.level2Yellow,
+        reputationScore: 99.1,
+        completedTrades: 53,
+        side: MoneroP2pSide.buy,
+        fiatCurrency: 'EUR',
+        pricePerXmr: 139.80,
+        minFiatLimit: 100.00,
+        maxFiatLimit: 3000.00,
+        paymentMethod: 'SEPA Instant / Revolut',
+        isOnline: true,
+        avgResponseMinutes: 4,
+        signedManifestHash: '11ff9944bb0233ea',
+        notes: 'Compro XMR continuamente para reservas institucionais privadas.',
+      ),
+    ];
+  }
+
+  static List<GithubRepository> getInitialGithubRepos() {
+    final now = DateTime.now();
+    return [
+      GithubRepository(
+        id: 'gh_rust_anything',
+        name: 'rust-anything',
+        owner: 'rust-anything',
+        description: 'Biblioteca leve e de altíssimo desempenho para construir agentes, pipelines e bridges em Rust sem dependências pesadas.',
+        language: 'Rust',
+        starsCount: 14200,
+        forksCount: 980,
+        license: 'Apache-2.0',
+        topics: const ['rust', 'agents', 'async', 'systems', 'privacy'],
+        updatedDate: now.subtract(const Duration(hours: 12)),
+        htmlUrl: 'https://github.com/rust-anything/rust-anything',
+        isSavedInAcervo: true,
+      ),
+      GithubRepository(
+        id: 'gh_nix_crypto',
+        name: 'nix-crypto-core',
+        owner: 'projetonix',
+        description: 'Primitivas criptográficas formais do Projeto Nix: Double Ratchet, XChaCha20-Poly1305, Ed25519 e Argon2id.',
+        language: 'Go',
+        starsCount: 3840,
+        forksCount: 240,
+        license: 'MIT',
+        topics: const ['cryptography', 'double-ratchet', 'e2ee', 'privacy', 'tor'],
+        updatedDate: now.subtract(const Duration(days: 2)),
+        htmlUrl: 'https://github.com/foros049695/nix',
+        isSavedInAcervo: true,
+      ),
+      GithubRepository(
+        id: 'gh_reticulum',
+        name: 'reticulum-mesh',
+        owner: 'markqvist',
+        description: 'The cryptography-based self-configuring communications stack for reliable wide-area mesh networks and off-grid radio.',
+        language: 'Python',
+        starsCount: 6150,
+        forksCount: 520,
+        license: 'MIT',
+        topics: const ['mesh', 'offgrid', 'radio', 'lora', 'networking'],
+        updatedDate: now.subtract(const Duration(days: 3)),
+        htmlUrl: 'https://github.com/markqvist/Reticulum',
+      ),
+      GithubRepository(
+        id: 'gh_monero_cli',
+        name: 'monero',
+        owner: 'monero-project',
+        description: 'Monero: the secure, private, untraceable cryptocurrency. Decentralized, ASIC-resistant and fungible digital cash.',
+        language: 'C++',
+        starsCount: 8900,
+        forksCount: 3600,
+        license: 'BSD-3-Clause',
+        topics: const ['cryptocurrency', 'privacy', 'ringct', 'bulletproofs', 'p2p'],
+        updatedDate: now.subtract(const Duration(hours: 5)),
+        htmlUrl: 'https://github.com/monero-project/monero',
+      ),
+      GithubRepository(
+        id: 'gh_tor_proxy',
+        name: 'arti-tor',
+        owner: 'torproject',
+        description: 'An implementation of Tor in Rust: modular, memory-safe and designed to be embedded in privacy-first client applications.',
+        language: 'Rust',
+        starsCount: 3200,
+        forksCount: 310,
+        license: 'Apache-2.0',
+        topics: const ['tor', 'rust', 'anonymity', 'onion', 'security'],
+        updatedDate: now.subtract(const Duration(hours: 18)),
+        htmlUrl: 'https://gitlab.torproject.org/tpo/core/arti',
+      ),
+      GithubRepository(
+        id: 'gh_matrix_sdk',
+        name: 'matrix-rust-sdk',
+        owner: 'matrix-org',
+        description: 'Next-generation Matrix client SDK written in Rust with robust end-to-end encryption (Olm/Megolm) and sliding sync.',
+        language: 'Rust',
+        starsCount: 2950,
+        forksCount: 410,
+        license: 'Apache-2.0',
+        topics: const ['matrix', 'e2ee', 'rust', 'messaging', 'decentralized'],
+        updatedDate: now.subtract(const Duration(days: 1)),
+        htmlUrl: 'https://github.com/matrix-org/matrix-rust-sdk',
+      ),
+      GithubRepository(
+        id: 'gh_llama_cpp',
+        name: 'llama.cpp',
+        owner: 'ggerganov',
+        description: 'LLM inference in C/C++ with zero dependencies and optimal local hardware acceleration for private offline edge intelligence.',
+        language: 'C++',
+        starsCount: 68500,
+        forksCount: 9400,
+        license: 'MIT',
+        topics: const ['llm', 'inference', 'edge-ai', 'privacy', 'c-plus-plus'],
+        updatedDate: now.subtract(const Duration(hours: 2)),
+        htmlUrl: 'https://github.com/ggerganov/llama.cpp',
+      ),
+    ];
   }
 }

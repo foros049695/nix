@@ -4,7 +4,10 @@
 # ==============================================================================
 set -euo pipefail
 
-echo "🛡️ [NIX-AUDIT] Iniciando varredura da Matriz de Privacidade..."
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+echo "🛡️ [NIX-AUDIT] Iniciando varredura da Matriz de Privacidade no repositório ($REPO_ROOT)..."
 
 ERRORS=0
 

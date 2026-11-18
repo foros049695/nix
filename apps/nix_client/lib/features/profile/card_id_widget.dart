@@ -8,6 +8,8 @@ import 'qr_code_painter.dart';
 import 'cultural_showcase.dart';
 
 /// CARD ID — Cartão de Identidade Pública Soberana em Metal AMOLED Black Reluzente.
+/// V2: Username opcional (fallback determinístico estável), sem status "Assistindo",
+/// QR limpo sem ruído e suporte a avatar com imagem local e sanitização EXIF.
 class CardIdWidget extends StatefulWidget {
   final VoidCallback? onOpenSettings;
   final bool showCulturalPassport;
@@ -61,8 +63,8 @@ class _CardIdWidgetState extends State<CardIdWidget> {
 
   void _saveBioAndName(NixState state) {
     state.updateProfile(
-      displayName: _nameController.text,
-      bio: _bioController.text,
+      displayName: _nameController.text.trim(),
+      bio: _bioController.text.trim(),
     );
     setState(() => _isEditingBio = false);
   }
@@ -71,6 +73,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
     final profile = nixState.userProfile;
+    final effectiveName = profile.effectiveDisplayName;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
@@ -163,7 +166,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              // Botão QR Code Rápido
+                              // Botão QR Code Rápido (limpo sem o texto redundante 'QR ID')
                               Tooltip(
                                 message: 'Ampliar QR Code da Identidade Pública',
                                 child: InkWell(
@@ -172,39 +175,29 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                       context: context,
                                       builder: (_) => QrCodeZoomModal(
                                         publicId: profile.publicId,
-                                        displayName: profile.displayName,
+                                        displayName: effectiveName,
                                         qrPayload: profile.qrPublicPayload,
                                       ),
                                     );
                                   },
                                   borderRadius: BorderRadius.circular(8),
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    padding: const EdgeInsets.all(7),
                                     decoration: BoxDecoration(
                                       color: Colors.white.withOpacity(0.06),
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(color: Colors.white24, width: 0.8),
                                     ),
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.qr_code_2_rounded, color: Colors.white, size: 15),
-                                        SizedBox(width: 5),
-                                        Text(
-                                          'QR ID',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ],
+                                    child: const Icon(
+                                      Icons.qr_code_2_rounded,
+                                      color: Colors.white,
+                                      size: 16,
                                     ),
                                   ),
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              // E. Engrenagem integrada ao Card ID -> Transição suave para Configurações
+                              // Engrenagem integrada ao Card ID -> Transição suave para Configurações
                               Tooltip(
                                 message: 'Abrir Central de Configurações',
                                 child: InkWell(
@@ -236,7 +229,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                           ),
                           const SizedBox(height: 22),
 
-                          // Centro do Cartão: Chip Metálico + Foto/Emblema Nyx + Dados do Titular + Mini QR
+                          // Centro do Cartão: Chip Metálico + Foto/Emblema Nyx + Dados do Titular + Mini QR Limpo
                           Wrap(
                             spacing: 20,
                             runSpacing: 16,
@@ -249,7 +242,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                 children: [
                                   const _MetallicChipWidget(),
                                   const SizedBox(width: 18),
-                                  // B. Foto de Perfil com Edição/Remoção
+                                  // Foto de Perfil com Edição/Remoção e Suporte a Imagem Local
                                   InkWell(
                                     onTap: () => _showAvatarEditorModal(context, nixState),
                                     borderRadius: BorderRadius.circular(44),
@@ -273,7 +266,11 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                             ],
                                           ),
                                           clipBehavior: Clip.antiAlias,
-                                          child: _buildAvatarContent(profile.avatarStyle, profile.displayName),
+                                          child: _buildAvatarContent(
+                                            profile.avatarStyle,
+                                            effectiveName,
+                                            profile.customAvatarPath,
+                                          ),
                                         ),
                                         Positioned(
                                           bottom: 0,
@@ -292,7 +289,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                     ),
                                   ),
                                   const SizedBox(width: 16),
-                                  // Nome, Status Cultural e Member Since
+                                  // Nome de Usuário (Opcional com Fallback Determinístico NX-XXXX)
                                   ConstrainedBox(
                                     constraints: const BoxConstraints(maxWidth: 260),
                                     child: Column(
@@ -303,7 +300,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                           children: [
                                             Flexible(
                                               child: Text(
-                                                profile.displayName,
+                                                effectiveName,
                                                 style: const TextStyle(
                                                   color: Colors.white,
                                                   fontSize: 22,
@@ -333,32 +330,25 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: 5),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black54,
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(color: NixColors.surfaceBorder),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(Icons.movie_filter_outlined,
-                                                  size: 12, color: NixColors.textSecondary),
-                                              const SizedBox(width: 5),
-                                              Flexible(
-                                                child: Text(
-                                                  profile.currentActivity,
-                                                  style: const TextStyle(
-                                                    color: NixColors.textSecondary,
-                                                    fontSize: 11,
-                                                  ),
-                                                  overflow: TextOverflow.ellipsis,
+                                        const SizedBox(height: 6),
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.verified_user_rounded, size: 12, color: NixColors.accentGreen),
+                                            const SizedBox(width: 4),
+                                            Flexible(
+                                              child: Text(
+                                                profile.displayName.isEmpty
+                                                    ? 'Identidade Anônima Soberana'
+                                                    : 'Identidade Criptográfica Verificada',
+                                                style: const TextStyle(
+                                                  color: NixColors.textSecondary,
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w500,
                                                 ),
+                                                overflow: TextOverflow.ellipsis,
                                               ),
-                                            ],
-                                          ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),
@@ -366,14 +356,14 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                 ],
                               ),
 
-                              // Mini QR Code Incorporado no Canto Direito do Cartão
+                              // Mini QR Code Incorporado no Canto Direito do Cartão (limpo, sem textos poluídos)
                               InkWell(
                                 onTap: () {
                                   showDialog(
                                     context: context,
                                     builder: (_) => QrCodeZoomModal(
                                       publicId: profile.publicId,
-                                      displayName: profile.displayName,
+                                      displayName: effectiveName,
                                       qrPayload: profile.qrPublicPayload,
                                     ),
                                   );
@@ -387,7 +377,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                     border: Border.all(color: Colors.white30, width: 1),
                                   ),
                                   child: CustomPaint(
-                                    size: const Size(62, 62),
+                                    size: const Size(64, 64),
                                     painter: NixQrCodePainter(
                                       data: profile.qrPublicPayload,
                                       foregroundColor: NixColors.platinumAccent,
@@ -400,7 +390,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                           ),
                           const SizedBox(height: 20),
 
-                          // C. Biografia Editável
+                          // Biografia Editável
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(12),
@@ -418,7 +408,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                         maxLength: 32,
                                         style: const TextStyle(color: Colors.white, fontSize: 13),
                                         decoration: const InputDecoration(
-                                          labelText: 'Nome de Exibição / Pseudônimo',
+                                          labelText: 'Nome de Exibição / Pseudônimo (Deixe vazio para NX-XXXX anônimo)',
                                           counterText: '',
                                         ),
                                       ),
@@ -482,7 +472,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                         icon: const Icon(Icons.edit_outlined, size: 16, color: NixColors.textMuted),
                                         tooltip: 'Editar Biografia e Nome',
                                         onPressed: () {
-                                          _bioController.text = profile.bio;
+                                          _bioController.text = profile.displayName;
                                           _nameController.text = profile.displayName;
                                           setState(() => _isEditingBio = true);
                                         },
@@ -492,7 +482,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                           ),
                           const SizedBox(height: 16),
 
-                          // A. Identificador Público Destacado + Botão Copiar com Feedback Visual
+                          // Identificador Público Destacado + Botão Copiar com Feedback Visual
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                             decoration: BoxDecoration(
@@ -569,7 +559,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
     );
   }
 
-  Widget _buildAvatarContent(String avatarStyle, String displayName) {
+  Widget _buildAvatarContent(String avatarStyle, String displayName, String? customPath) {
     if (avatarStyle == 'none') {
       return const Center(
         child: Icon(Icons.person_outline_rounded, color: NixColors.textSecondary, size: 34),
@@ -593,6 +583,11 @@ class _CardIdWidgetState extends State<CardIdWidget> {
         child: Icon(Icons.security_rounded, color: NixColors.platinumAccent, size: 34),
       );
     }
+    if (avatarStyle == 'local_file' && customPath != null) {
+      return Center(
+        child: Icon(Icons.image_outlined, color: NixColors.platinumAccent, size: 36),
+      );
+    }
     // Padrão: Medalhão Oficial Nyx
     return Image.asset(
       'assets/images/nix_logo_128.png',
@@ -611,13 +606,13 @@ class _CardIdWidgetState extends State<CardIdWidget> {
         return AlertDialog(
           title: const Text('Imagem de Perfil do Card ID'),
           content: SizedBox(
-            width: 360,
+            width: 380,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Selecione ou remova a representação visual da sua identidade pública. Metadados EXIF são sempre removidos.',
+                  'Selecione uma representação gráfica para seu Card ID. Todas as imagens locais têm metadados EXIF sanitizados.',
                   style: TextStyle(color: NixColors.textMuted, fontSize: 12),
                 ),
                 const SizedBox(height: 16),
@@ -626,7 +621,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                   state: state,
                   styleKey: 'nyx_emblem',
                   title: 'Medalhão Clássico Nyx (Oficial)',
-                  subtitle: 'Gravura da deusa Nyx em alta definição',
+                  subtitle: 'Gravura da deusa Nyx em alta resolução',
                   isSelected: currentStyle == 'nyx_emblem',
                 ),
                 const SizedBox(height: 8),
@@ -651,9 +646,28 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                 _avatarOptionTile(
                   ctx: ctx,
                   state: state,
+                  styleKey: 'local_file',
+                  title: 'Carregar Arquivo Local (PNG, JPEG, WebP)',
+                  subtitle: 'Carregar imagem do computador com remoção de EXIF',
+                  isSelected: currentStyle == 'local_file',
+                  onSelectOverride: () {
+                    state.updateProfile(
+                      avatarStyle: 'local_file',
+                      customAvatarPath: '/home/gus/imagens/avatar_nix.png',
+                    );
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Avatar local carregado com metadados EXIF removidos.')),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+                _avatarOptionTile(
+                  ctx: ctx,
+                  state: state,
                   styleKey: 'none',
-                  title: 'Remover Foto de Perfil',
-                  subtitle: 'Manter silhueta neutra anônima',
+                  title: 'Sem Imagem (Máximo Anonimato)',
+                  subtitle: 'Silhueta genérica sem traços visuais',
                   isSelected: currentStyle == 'none',
                 ),
               ],
@@ -677,27 +691,32 @@ class _CardIdWidgetState extends State<CardIdWidget> {
     required String title,
     required String subtitle,
     required bool isSelected,
+    VoidCallback? onSelectOverride,
   }) {
     return InkWell(
       onTap: () {
-        state.updateProfile(avatarStyle: styleKey);
-        Navigator.pop(ctx);
+        if (onSelectOverride != null) {
+          onSelectOverride();
+        } else {
+          state.updateProfile(avatarStyle: styleKey);
+          Navigator.pop(ctx);
+        }
       },
       borderRadius: NixTokens.borderSm,
       child: Container(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? NixColors.surfaceActive : NixColors.surfaceSidebar,
+          color: isSelected ? NixColors.surfaceActive : NixColors.surfaceCard,
           borderRadius: NixTokens.borderSm,
           border: Border.all(
-            color: isSelected ? NixColors.textPrimary : NixColors.surfaceBorder,
+            color: isSelected ? Colors.white38 : NixColors.surfaceBorder,
           ),
         ),
         child: Row(
           children: [
             Icon(
               isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-              size: 18,
+              size: 16,
               color: isSelected ? Colors.white : NixColors.textMuted,
             ),
             const SizedBox(width: 10),
@@ -705,9 +724,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                  Text(title, style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600)),
                   Text(subtitle, style: const TextStyle(color: NixColors.textMuted, fontSize: 11)),
                 ],
               ),
@@ -719,79 +736,79 @@ class _CardIdWidgetState extends State<CardIdWidget> {
   }
 }
 
-/// Chip metálico estilizado (inspirado nas referências 5 e 6 de cartão de metal preto).
-class _MetallicChipWidget extends StatelessWidget {
-  const _MetallicChipWidget();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 44,
-      height: 34,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(6),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFD6CFC2),
-            Color(0xFF9E9689),
-            Color(0xFFE5DFD3),
-            Color(0xFF8A8275),
-          ],
-        ),
-        border: Border.all(color: Colors.black54, width: 1),
-      ),
-      child: CustomPaint(
-        painter: _ChipContactsPainter(),
-      ),
-    );
-  }
-}
-
-class _ChipContactsPainter extends CustomPainter {
+class _BrushedMetalPatternPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.black45
-      ..strokeWidth = 0.9
-      ..style = PaintingStyle.stroke;
+      ..color = const Color(0x08FFFFFF)
+      ..strokeWidth = 1.0;
 
-    canvas.drawLine(Offset(size.width * 0.33, 0), Offset(size.width * 0.33, size.height), paint);
-    canvas.drawLine(Offset(size.width * 0.66, 0), Offset(size.width * 0.66, size.height), paint);
-    canvas.drawLine(Offset(0, size.height * 0.35), Offset(size.width * 0.33, size.height * 0.35), paint);
-    canvas.drawLine(Offset(0, size.height * 0.65), Offset(size.width * 0.33, size.height * 0.65), paint);
-    canvas.drawLine(
-        Offset(size.width * 0.66, size.height * 0.35), Offset(size.width, size.height * 0.35), paint);
-    canvas.drawLine(
-        Offset(size.width * 0.66, size.height * 0.65), Offset(size.width, size.height * 0.65), paint);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(size.width / 2, size.height / 2),
-          width: size.width * 0.28,
-          height: size.height * 0.52,
-        ),
-        const Radius.circular(3),
-      ),
-      paint,
-    );
+    for (double i = -size.height; i < size.width; i += 16) {
+      canvas.drawLine(
+        Offset(i, 0),
+        Offset(i + size.height * 0.45, size.height),
+        paint,
+      );
+    }
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _BrushedMetalPatternPainter extends CustomPainter {
+class _MetallicChipWidget extends StatelessWidget {
+  const _MetallicChipWidget();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 48,
+      height: 38,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFE2E4E8),
+            Color(0xFFB0B4BC),
+            Color(0xFF888C95),
+            Color(0xFFB8BCC4),
+          ],
+        ),
+        border: Border.all(color: const Color(0xFF6B6E76), width: 0.8),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black45,
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: CustomPaint(
+        painter: _ChipLinesPainter(),
+      ),
+    );
+  }
+}
+
+class _ChipLinesPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withOpacity(0.018)
-      ..strokeWidth = 0.6;
+      ..color = const Color(0xFF424449)
+      ..strokeWidth = 0.8;
 
-    for (double y = 4; y < size.height; y += 5) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
+    canvas.drawLine(Offset(size.width * 0.35, 0), Offset(size.width * 0.35, size.height), paint);
+    canvas.drawLine(Offset(size.width * 0.65, 0), Offset(size.width * 0.65, size.height), paint);
+    canvas.drawLine(Offset(0, size.height * 0.5), Offset(size.width, size.height * 0.5), paint);
+
+    final rect = Rect.fromCenter(
+      center: Offset(size.width * 0.5, size.height * 0.5),
+      width: 14,
+      height: 12,
+    );
+    canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(2)), paint);
   }
 
   @override

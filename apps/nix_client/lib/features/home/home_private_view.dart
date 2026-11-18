@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/direct_message.dart';
+import '../../core/models/member.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
@@ -9,7 +10,8 @@ import '../profile/card_id_widget.dart';
 
 /// Área Principal de Conversas Privadas (Home).
 /// Quando vazia (sem conversa/aba secundária selecionada), é preenchida pelo CARD ID.
-/// Ao selecionar um chat ou aba (Friends, Requests, Transações, Updates), o Card ID sai de cena.
+/// Ao selecionar um chat ou aba, o Card ID sai de cena.
+/// Suporta pré-visualização flutuante animada do Card ID em solicitações.
 class HomePrivateView extends StatefulWidget {
   const HomePrivateView({super.key});
 
@@ -41,11 +43,27 @@ class _HomePrivateViewState extends State<HomePrivateView> {
 
     return Container(
       color: NixColors.background,
-      child: AnimatedSwitcher(
-        duration: NixTokens.motionMedium,
-        switchInCurve: NixTokens.curveStandard,
-        switchOutCurve: NixTokens.curveStandard,
-        child: _buildStageContent(nixState, activeTab),
+      child: Stack(
+        children: [
+          AnimatedSwitcher(
+            duration: NixTokens.motionMedium,
+            switchInCurve: NixTokens.curveStandard,
+            switchOutCurve: NixTokens.curveStandard,
+            child: _buildStageContent(nixState, activeTab),
+          ),
+          // Painel Flutuante Animado de Card ID (Hover Preview em Solicitações)
+          if (activeTab == HomeSubTab.requests &&
+              nixState.hoveredContactRequest != null &&
+              nixState.settings.cardIdVisibility != 'Oculto')
+            Positioned(
+              top: 70,
+              right: 28,
+              child: _FloatingPeerCardIdPreview(
+                request: nixState.hoveredContactRequest!,
+                onDismiss: () => nixState.setHoveredContactRequest(null),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -53,7 +71,6 @@ class _HomePrivateViewState extends State<HomePrivateView> {
   Widget _buildStageContent(NixState state, HomeSubTab tab) {
     switch (tab) {
       case HomeSubTab.cardId:
-        // Estado vazio inicial da Home -> preenchido pelo CARD ID de metal AMOLED black reluzente
         return Column(
           key: const ValueKey('home_stage_card_id'),
           children: [
@@ -93,6 +110,13 @@ class _HomePrivateViewState extends State<HomePrivateView> {
 
       case HomeSubTab.updates:
         return _buildUpdatesStage(state);
+
+      case HomeSubTab.moneroP2p:
+      case HomeSubTab.githubDiscovery:
+        return CardIdWidget(
+          key: const ValueKey('home_stage_default_card'),
+          onOpenSettings: () => state.openProfileOverlay(startInSettings: true),
+        );
     }
   }
 
@@ -101,99 +125,67 @@ class _HomePrivateViewState extends State<HomePrivateView> {
     required String title,
     required String subtitle,
     required NixState state,
-    Widget? trailing,
   }) {
     return Container(
       height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: const BoxDecoration(
-        color: NixColors.surfaceSidebar,
+        color: NixColors.surfaceElevated,
         border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
       ),
       child: Row(
         children: [
-          Icon(icon, color: NixColors.textPrimary, size: 19),
+          Icon(icon, size: 18, color: NixColors.textPrimary),
           const SizedBox(width: 10),
-          Text(
-            title,
-            style: const TextStyle(
-              color: NixColors.textPrimary,
-              fontSize: 14.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Container(width: 1, height: 14, color: NixColors.surfaceBorderStrong),
-          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              subtitle,
-              style: const TextStyle(color: NixColors.textMuted, fontSize: 12),
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: NixColors.textMuted, fontSize: 10.5),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ),
-          if (trailing != null) trailing,
-        ],
-      ),
-    );
-  }
-
-  // ================= CONVERSA PRIVADA (DM CHAT) =================
-  Widget _buildDirectChatStage(NixState state, DirectMessageThread dm) {
-    return Column(
-      key: ValueKey('home_dm_${dm.id}'),
-      children: [
-        _buildTopHeader(
-          icon: Icons.lock_outline_rounded,
-          title: dm.peerName,
-          subtitle: '${dm.peerPublicId} · ${dm.statusText}',
-          state: state,
-          trailing: TextButton.icon(
-            style: TextButton.styleFrom(foregroundColor: NixColors.textSecondary),
-            onPressed: () => state.selectHomeSubTab(HomeSubTab.cardId),
-            icon: const Icon(Icons.badge_outlined, size: 15),
-            label: const Text('Ver Card ID', style: TextStyle(fontSize: 11.5)),
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            itemCount: dm.messages.length,
-            itemBuilder: (context, idx) => MessageBubble(message: dm.messages[idx]),
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: const BoxDecoration(
-            color: NixColors.surfaceSidebar,
-            border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _dmInputController,
-                  onSubmitted: (_) => _sendDm(state),
-                  style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                  decoration: InputDecoration(
-                    hintText: 'Mensagem direta cifrada para @${dm.peerName}...',
-                    fillColor: NixColors.surfaceCard,
+          // Status Tor Onion
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: NixColors.surfaceActive,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.white24, width: 0.5),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock_outline_rounded, size: 11, color: NixColors.accentGreen),
+                SizedBox(width: 5),
+                Text(
+                  'TOR ONION V3 E2EE',
+                  style: TextStyle(
+                    color: NixColors.textSecondary,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              IconButton(
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black,
-                ),
-                onPressed: () => _sendDm(state),
-                icon: const Icon(Icons.send_rounded, size: 18),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -245,9 +237,15 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(dm.peerName,
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                          Row(
+                            children: [
+                              Text(dm.peerName,
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                              const SizedBox(width: 8),
+                              _TrustLevelIndicator(level: dm.trustLevel),
+                            ],
+                          ),
                           const SizedBox(height: 2),
                           Text(dm.peerPublicId, style: NixTokens.monoCode()),
                           const SizedBox(height: 2),
@@ -283,7 +281,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
         _buildTopHeader(
           icon: Icons.mark_email_unread_outlined,
           title: 'Solicitações de Contato',
-          subtitle: 'Handshakes X3DH pendentes de aprovação local',
+          subtitle: 'Handshakes X3DH pendentes de aprovação local · Passe o mouse para inspecionar Card ID',
           state: state,
         ),
         Expanded(
@@ -300,54 +298,187 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (context, idx) {
                     final req = state.contactRequests[idx];
-                    return Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: NixColors.surfaceCard,
-                        borderRadius: NixTokens.borderMd,
-                        border: Border.all(color: NixColors.surfaceBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(req.peerName,
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 2),
-                                Text(req.peerPublicId, style: NixTokens.monoCode()),
-                                const SizedBox(height: 6),
-                                Text(req.note,
-                                    style: const TextStyle(
-                                        color: NixColors.textSecondary, fontSize: 12.5)),
-                              ],
+                    return MouseRegion(
+                      onEnter: (_) => state.setHoveredContactRequest(req),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: NixColors.surfaceCard,
+                          borderRadius: NixTokens.borderMd,
+                          border: Border.all(
+                            color: state.hoveredContactRequest?.id == req.id
+                                ? Colors.white54
+                                : NixColors.surfaceBorder,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(req.peerName,
+                                          style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold)),
+                                      const SizedBox(width: 8),
+                                      _TrustLevelIndicator(level: req.trustLevel),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(req.peerPublicId, style: NixTokens.monoCode()),
+                                  const SizedBox(height: 6),
+                                  Text(req.note,
+                                      style: const TextStyle(
+                                          color: NixColors.textSecondary, fontSize: 12.5)),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          TextButton(
-                            onPressed: () => state.declineContactRequest(req.id),
-                            child: const Text('Recusar',
-                                style: TextStyle(color: NixColors.textMuted, fontSize: 12)),
-                          ),
-                          const SizedBox(width: 8),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: Colors.black,
+                            const SizedBox(width: 12),
+                            TextButton(
+                              onPressed: () => state.declineContactRequest(req.id),
+                              child: const Text('Recusar',
+                                  style: TextStyle(color: NixColors.textMuted, fontSize: 12)),
                             ),
-                            onPressed: () => state.acceptContactRequest(req.id),
-                            child: const Text('Aceitar Chave',
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                          ),
-                        ],
+                            const SizedBox(width: 8),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: Colors.black,
+                              ),
+                              onPressed: () => state.acceptContactRequest(req.id),
+                              child: const Text('Aceitar Chave',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },
                 ),
+        ),
+      ],
+    );
+  }
+
+  // ================= ABA CONVERSA PRIVADA SELECIONADA =================
+  Widget _buildDirectChatStage(NixState state, DirectMessageThread dm) {
+    return Column(
+      key: ValueKey('stage_dm_${dm.id}'),
+      children: [
+        // Cabeçalho da Conversa Privada com Nível de Confiança
+        Container(
+          height: 52,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          decoration: const BoxDecoration(
+            color: NixColors.surfaceElevated,
+            border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.lock_rounded, size: 16, color: NixColors.accentGreen),
+              const SizedBox(width: 8),
+              Text(
+                dm.peerName,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _TrustLevelIndicator(level: dm.trustLevel),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  dm.statusText,
+                  style: const TextStyle(color: NixColors.textMuted, fontSize: 11.5),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: NixColors.surfaceActive,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.shield_outlined, size: 12, color: Colors.white),
+                    SizedBox(width: 4),
+                    Text(
+                      'DOUBLE RATCHET',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Lista de Mensagens Cifradas
+        Expanded(
+          child: dm.messages.isEmpty
+              ? const Center(
+                  child: Text(
+                    'Sessão iniciada. Envie a primeira mensagem privada cifrada.',
+                    style: TextStyle(color: NixColors.textMuted, fontSize: 12.5),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: dm.messages.length,
+                  itemBuilder: (context, idx) {
+                    final msg = dm.messages[idx];
+                    return MessageBubble(
+                      message: msg,
+                    );
+                  },
+                ),
+        ),
+
+        // Barra de Input DM
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: const BoxDecoration(
+            color: NixColors.surfaceElevated,
+            border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _dmInputController,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Mensagem cifrada para ${dm.peerName}...',
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  ),
+                  onSubmitted: (_) => _sendDm(state),
+                ),
+              ),
+              const SizedBox(width: 10),
+              IconButton(
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                ),
+                icon: const Icon(Icons.arrow_upward_rounded, size: 18),
+                onPressed: () => _sendDm(state),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -530,6 +661,189 @@ class _HomePrivateViewState extends State<HomePrivateView> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Indicador de Nível de Confiança Nix (3 Níveis Semânticos)
+class _TrustLevelIndicator extends StatelessWidget {
+  final NixTrustLevel level;
+
+  const _TrustLevelIndicator({required this.level});
+
+  @override
+  Widget build(BuildContext context) {
+    Color dotColor;
+    int dotCount;
+    String tooltip;
+
+    switch (level) {
+      case NixTrustLevel.level1Red:
+        dotColor = NixColors.trustLevel1Red;
+        dotCount = 1;
+        tooltip = 'Nível 1: Não verificado diretamente / contato externo';
+        break;
+      case NixTrustLevel.level2Yellow:
+        dotColor = NixColors.trustLevel2Yellow;
+        dotCount = 2;
+        tooltip = 'Nível 2: Conhecido por contexto de espaço privado compartilhado';
+        break;
+      case NixTrustLevel.level3Green:
+        dotColor = NixColors.trustLevel3Green;
+        dotCount = 3;
+        tooltip = 'Nível 3: Verificado diretamente por troca de chave / QR Code presencial';
+        break;
+    }
+
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.black45,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white12, width: 0.5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ...List.generate(
+              dotCount,
+              (i) => Container(
+                width: 6,
+                height: 6,
+                margin: EdgeInsets.only(left: i > 0 ? 3 : 0),
+                decoration: BoxDecoration(
+                  color: dotColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.shield, size: 10, color: dotColor),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Pré-visualização Flutuante Animada do Card ID em Solicitações
+class _FloatingPeerCardIdPreview extends StatelessWidget {
+  final ContactRequest request;
+  final VoidCallback onDismiss;
+
+  const _FloatingPeerCardIdPreview({
+    required this.request,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      elevation: 24,
+      child: Container(
+        width: 320,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: NixTokens.amoledMetalGradient,
+          borderRadius: NixTokens.borderLg,
+          border: Border.all(color: Colors.white38, width: 1.2),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black87,
+              blurRadius: 24,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: NixColors.surfaceActive,
+                    border: Border.all(color: Colors.white38),
+                  ),
+                  child: Center(
+                    child: Text(
+                      request.peerName[0],
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              request.peerName,
+                              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          _TrustLevelIndicator(level: request.trustLevel),
+                        ],
+                      ),
+                      Text(request.peerPublicId, style: NixTokens.monoCode(size: 10)),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 16, color: NixColors.textMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: onDismiss,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                request.bio,
+                style: const TextStyle(color: NixColors.textSecondary, fontSize: 11.5, height: 1.3),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text('DESTAQUES CULTURAIS PÚBLICOS', style: NixTokens.labelUppercase()),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: request.culturalHighlights.map((h) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white10,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    h,
+                    style: const TextStyle(color: Colors.white, fontSize: 10),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
