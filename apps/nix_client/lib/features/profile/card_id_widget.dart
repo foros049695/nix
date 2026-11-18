@@ -1,15 +1,18 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../../core/models/user_profile.dart';
+import '../../core/security/local_image_helper.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import 'qr_code_painter.dart';
 import 'cultural_showcase.dart';
 
-/// CARD ID — Cartão de Identidade Pública Soberana em Metal AMOLED Black Reluzente.
-/// V2: Username opcional (fallback determinístico estável), sem status "Assistindo",
-/// QR limpo sem ruído e suporte a avatar com imagem local e sanitização EXIF.
+/// CARD ID — Cartão de Identidade Pública Soberana em Metal Preto Reluzente.
+/// Sem status "Assistindo", sem botão QR duplicado, com suporte a imagem local + recorte e sanitização EXIF.
 class CardIdWidget extends StatefulWidget {
   final VoidCallback? onOpenSettings;
   final bool showCulturalPassport;
@@ -166,38 +169,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              // Botão QR Code Rápido (limpo sem o texto redundante 'QR ID')
-                              Tooltip(
-                                message: 'Ampliar QR Code da Identidade Pública',
-                                child: InkWell(
-                                  onTap: () {
-                                    showDialog(
-                                      context: context,
-                                      builder: (_) => QrCodeZoomModal(
-                                        publicId: profile.publicId,
-                                        displayName: effectiveName,
-                                        qrPayload: profile.qrPublicPayload,
-                                      ),
-                                    );
-                                  },
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(7),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.06),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.white24, width: 0.8),
-                                    ),
-                                    child: const Icon(
-                                      Icons.qr_code_2_rounded,
-                                      color: Colors.white,
-                                      size: 16,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              // Engrenagem integrada ao Card ID -> Transição suave para Configurações
+                              // Engrenagem integrada ao Card ID -> Transição suave para Configurações (Sem botão QR duplicado)
                               Tooltip(
                                 message: 'Abrir Central de Configurações',
                                 child: InkWell(
@@ -213,13 +185,16 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   child: Container(
                                     padding: const EdgeInsets.all(7),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.06),
+                                      color: Colors.white.withValues(alpha: 0.06),
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.white24, width: 0.8),
+                                      border: Border.all(
+                                        color: context.accentColor.withValues(alpha: 0.45),
+                                        width: 0.9,
+                                      ),
                                     ),
-                                    child: const Icon(
+                                    child: Icon(
                                       Icons.settings_outlined,
-                                      color: NixColors.textPrimary,
+                                      color: context.accentColor,
                                       size: 17,
                                     ),
                                   ),
@@ -266,11 +241,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                             ],
                                           ),
                                           clipBehavior: Clip.antiAlias,
-                                          child: _buildAvatarContent(
-                                            profile.avatarStyle,
-                                            effectiveName,
-                                            profile.customAvatarPath,
-                                          ),
+                                          child: _buildAvatarContent(profile, effectiveName),
                                         ),
                                         Positioned(
                                           bottom: 0,
@@ -333,14 +304,14 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                         const SizedBox(height: 6),
                                         Row(
                                           children: [
-                                            const Icon(Icons.verified_user_rounded, size: 12, color: NixColors.accentGreen),
+                                            Icon(Icons.verified_user_rounded, size: 12, color: NixColors.accentGreen),
                                             const SizedBox(width: 4),
                                             Flexible(
                                               child: Text(
                                                 profile.displayName.isEmpty
                                                     ? 'Identidade Anônima Soberana'
                                                     : 'Identidade Criptográfica Verificada',
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   color: NixColors.textSecondary,
                                                   fontSize: 11,
                                                   fontWeight: FontWeight.w500,
@@ -428,14 +399,14 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                         children: [
                                           TextButton(
                                             onPressed: () => setState(() => _isEditingBio = false),
-                                            child: const Text('Cancelar',
+                                            child: Text('Cancelar',
                                                 style: TextStyle(color: NixColors.textMuted, fontSize: 12)),
                                           ),
                                           const SizedBox(width: 8),
                                           ElevatedButton(
                                             style: ElevatedButton.styleFrom(
-                                              backgroundColor: NixColors.textPrimary,
-                                              foregroundColor: Colors.black,
+                                              backgroundColor: context.accentColor,
+                                              foregroundColor: context.onAccentColor,
                                               visualDensity: VisualDensity.compact,
                                             ),
                                             onPressed: () => _saveBioAndName(nixState),
@@ -453,14 +424,22 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text('BIOGRAFIA & INTERESSES', style: NixTokens.labelUppercase()),
+                                            const Text(
+                                              'BIOGRAFIA & INTERESSES',
+                                              style: TextStyle(
+                                                color: Color(0xFF9EA2AE),
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w700,
+                                                letterSpacing: 1.0,
+                                              ),
+                                            ),
                                             const SizedBox(height: 4),
                                             Text(
                                               profile.bio.isEmpty
                                                   ? 'Sem biografia definida. Clique em editar para adicionar.'
                                                   : profile.bio,
                                               style: const TextStyle(
-                                                color: NixColors.textSecondary,
+                                                color: Color(0xFFD5D8E0),
                                                 fontSize: 12.5,
                                                 height: 1.35,
                                               ),
@@ -469,10 +448,10 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                         ),
                                       ),
                                       IconButton(
-                                        icon: const Icon(Icons.edit_outlined, size: 16, color: NixColors.textMuted),
+                                        icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFFB7BAC4)),
                                         tooltip: 'Editar Biografia e Nome',
                                         onPressed: () {
-                                          _bioController.text = profile.displayName;
+                                          _bioController.text = profile.bio;
                                           _nameController.text = profile.displayName;
                                           setState(() => _isEditingBio = true);
                                         },
@@ -501,7 +480,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                       const Text(
                                         'IDENTIFICADOR PÚBLICO SOBERANO',
                                         style: TextStyle(
-                                          color: NixColors.textMuted,
+                                          color: Color(0xFF9EA2AE),
                                           fontSize: 9.5,
                                           fontWeight: FontWeight.bold,
                                           letterSpacing: 1.1,
@@ -559,10 +538,13 @@ class _CardIdWidgetState extends State<CardIdWidget> {
     );
   }
 
-  Widget _buildAvatarContent(String avatarStyle, String displayName, String? customPath) {
+  Widget _buildAvatarContent(UserProfile profile, String displayName) {
+    final avatarStyle = profile.avatarStyle;
+    final customPath = profile.customAvatarPath;
+
     if (avatarStyle == 'none') {
-      return const Center(
-        child: Icon(Icons.person_outline_rounded, color: NixColors.textSecondary, size: 34),
+      return Center(
+        child: Icon(Icons.person_outline_rounded, color: NixColors.platinumAccent, size: 34),
       );
     }
     if (avatarStyle == 'monogram') {
@@ -584,103 +566,288 @@ class _CardIdWidgetState extends State<CardIdWidget> {
       );
     }
     if (avatarStyle == 'local_file' && customPath != null) {
-      return Center(
+      final file = File(customPath);
+      if (file.existsSync()) {
+        return Transform.translate(
+          offset: Offset(profile.avatarCropOffsetX * 20, profile.avatarCropOffsetY * 20),
+          child: Transform.scale(
+            scale: profile.avatarCropScale.clamp(1.0, 2.5),
+            child: Image.file(
+              file,
+              fit: BoxFit.cover,
+              width: 78,
+              height: 78,
+              errorBuilder: (_, __, ___) => const Center(
+                child: Icon(Icons.broken_image_outlined, color: NixColors.platinumAccent, size: 30),
+              ),
+            ),
+          ),
+        );
+      }
+      return const Center(
         child: Icon(Icons.image_outlined, color: NixColors.platinumAccent, size: 36),
       );
     }
-    // Padrão: Medalhão Oficial Nyx
-    return Image.asset(
-      'assets/images/nix_logo_128.png',
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => const Center(
-        child: Icon(Icons.shield_moon_outlined, color: Colors.white, size: 32),
+    // Padrão: Medalhão Vetorizado Oficial Nix sobre metal escuro
+    return Padding(
+      padding: const EdgeInsets.all(6),
+      child: Image.asset(
+        'assets/images/nix_logo_light.png',
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => const Center(
+          child: Icon(Icons.shield_moon_outlined, color: Colors.white, size: 32),
+        ),
       ),
     );
   }
 
   void _showAvatarEditorModal(BuildContext context, NixState state) {
+    final pathCtrl = TextEditingController(text: state.userProfile.customAvatarPath ?? '');
+    double cropScale = state.userProfile.avatarCropScale;
+    double offsetX = state.userProfile.avatarCropOffsetX;
+    double offsetY = state.userProfile.avatarCropOffsetY;
+    String? previewPath = state.userProfile.customAvatarPath;
+    String? statusMsg;
+
     showDialog(
       context: context,
-      builder: (ctx) {
-        final currentStyle = state.userProfile.avatarStyle;
-        return AlertDialog(
-          title: const Text('Imagem de Perfil do Card ID'),
-          content: SizedBox(
-            width: 380,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Selecione uma representação gráfica para seu Card ID. Todas as imagens locais têm metadados EXIF sanitizados.',
-                  style: TextStyle(color: NixColors.textMuted, fontSize: 12),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final currentStyle = state.userProfile.avatarStyle;
+          return AlertDialog(
+            title: const Text('Imagem de Perfil do Card ID'),
+            content: SizedBox(
+              width: 430,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Selecione PNG, JPEG ou WebP do dispositivo. Os metadados EXIF/IPTC são removidos automaticamente antes do armazenamento local.',
+                      style: TextStyle(color: NixColors.textMuted, fontSize: 12),
+                    ),
+                    const SizedBox(height: 14),
+                    _avatarOptionTile(
+                      ctx: ctx,
+                      state: state,
+                      styleKey: 'nyx_emblem',
+                      title: 'Emblema Vetorizado Nix (Oficial)',
+                      subtitle: 'Nova gravura oficial em fundo transparente',
+                      isSelected: currentStyle == 'nyx_emblem',
+                    ),
+                    const SizedBox(height: 8),
+                    _avatarOptionTile(
+                      ctx: ctx,
+                      state: state,
+                      styleKey: 'monogram',
+                      title: 'Monograma Tipográfico Metálico',
+                      subtitle: 'Iniciais gravadas em fundo escuro',
+                      isSelected: currentStyle == 'monogram',
+                    ),
+                    const SizedBox(height: 8),
+                    _avatarOptionTile(
+                      ctx: ctx,
+                      state: state,
+                      styleKey: 'sentinel',
+                      title: 'Selo Sentinela Monocromático',
+                      subtitle: 'Ícone vetorial de segurança operacional',
+                      isSelected: currentStyle == 'sentinel',
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: NixColors.surfaceElevated,
+                        borderRadius: NixTokens.borderSm,
+                        border: Border.all(
+                          color: currentStyle == 'local_file'
+                              ? context.accentColor
+                              : NixColors.surfaceBorderStrong,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('IMAGEM LOCAL (PNG / JPEG / WebP)', style: NixTokens.labelUppercase()),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  key: const Key('avatar_local_path_input'),
+                                  controller: pathCtrl,
+                                  style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
+                                  decoration: const InputDecoration(
+                                    hintText: '/caminho/para/avatar.png',
+                                    isDense: true,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              OutlinedButton.icon(
+                                onPressed: () async {
+                                  final picked = await LocalImageHelper.pickImageNativeDesktop();
+                                  if (picked != null) {
+                                    pathCtrl.text = picked;
+                                    setModalState(() {
+                                      previewPath = picked;
+                                      statusMsg = null;
+                                    });
+                                  }
+                                },
+                                icon: const Icon(Icons.folder_open_rounded, size: 15),
+                                label: const Text('Procurar', style: TextStyle(fontSize: 11.5)),
+                              ),
+                            ],
+                          ),
+                          if (previewPath != null &&
+                              previewPath!.isNotEmpty &&
+                              File(previewPath!).existsSync()) ...[
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 64,
+                                  height: 64,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: context.accentColor, width: 1.5),
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: Transform.translate(
+                                    offset: Offset(offsetX * 16, offsetY * 16),
+                                    child: Transform.scale(
+                                      scale: cropScale,
+                                      child: Image.file(File(previewPath!), fit: BoxFit.cover),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Recorte & Enquadramento (${cropScale.toStringAsFixed(1)}x)',
+                                        style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
+                                      ),
+                                      Slider(
+                                        value: cropScale,
+                                        min: 1.0,
+                                        max: 2.4,
+                                        onChanged: (v) => setModalState(() => cropScale = v),
+                                      ),
+                                      Row(
+                                        children: [
+                                          Text('X', style: TextStyle(color: NixColors.textMuted, fontSize: 10)),
+                                          Expanded(
+                                            child: Slider(
+                                              value: offsetX,
+                                              min: -1.0,
+                                              max: 1.0,
+                                              onChanged: (v) => setModalState(() => offsetX = v),
+                                            ),
+                                          ),
+                                          Text('Y', style: TextStyle(color: NixColors.textMuted, fontSize: 10)),
+                                          Expanded(
+                                            child: Slider(
+                                              value: offsetY,
+                                              min: -1.0,
+                                              max: 1.0,
+                                              onChanged: (v) => setModalState(() => offsetY = v),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          if (statusMsg != null) ...[
+                            const SizedBox(height: 6),
+                            Text(statusMsg!,
+                                style: TextStyle(color: NixColors.accentDanger, fontSize: 11)),
+                          ],
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              ElevatedButton.icon(
+                                onPressed: () async {
+                                  final raw = pathCtrl.text.trim();
+                                  if (!LocalImageHelper.isSupportedExtension(raw)) {
+                                    setModalState(() => statusMsg = 'Use apenas PNG, JPEG ou WebP.');
+                                    return;
+                                  }
+                                  final cleaned = await LocalImageHelper.sanitizeAndStoreImage(raw);
+                                  if (cleaned == null) {
+                                    setModalState(() => statusMsg = 'Arquivo não encontrado no caminho informado.');
+                                    return;
+                                  }
+                                  state.updateProfile(
+                                    avatarStyle: 'local_file',
+                                    customAvatarPath: cleaned,
+                                    avatarCropScale: cropScale,
+                                    avatarCropOffsetX: offsetX,
+                                    avatarCropOffsetY: offsetY,
+                                  );
+                                  if (ctx.mounted) Navigator.pop(ctx);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Avatar local aplicado com metadados EXIF sanitizados.'),
+                                      ),
+                                    );
+                                  }
+                                },
+                                icon: const Icon(Icons.check_rounded, size: 15),
+                                label: const Text('Aplicar & Sanitizar EXIF', style: TextStyle(fontSize: 11.5)),
+                              ),
+                              if (state.userProfile.customAvatarPath != null) ...[
+                                const SizedBox(width: 8),
+                                TextButton(
+                                  onPressed: () {
+                                    state.updateProfile(
+                                      avatarStyle: 'nyx_emblem',
+                                      clearCustomAvatar: true,
+                                    );
+                                    Navigator.pop(ctx);
+                                  },
+                                  child: Text(
+                                    'Remover Foto',
+                                    style: TextStyle(color: NixColors.accentDanger, fontSize: 11.5),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _avatarOptionTile(
+                      ctx: ctx,
+                      state: state,
+                      styleKey: 'none',
+                      title: 'Sem Imagem (Máximo Anonimato)',
+                      subtitle: 'Silhueta genérica sem traços visuais',
+                      isSelected: currentStyle == 'none',
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                _avatarOptionTile(
-                  ctx: ctx,
-                  state: state,
-                  styleKey: 'nyx_emblem',
-                  title: 'Medalhão Clássico Nyx (Oficial)',
-                  subtitle: 'Gravura da deusa Nyx em alta resolução',
-                  isSelected: currentStyle == 'nyx_emblem',
-                ),
-                const SizedBox(height: 8),
-                _avatarOptionTile(
-                  ctx: ctx,
-                  state: state,
-                  styleKey: 'monogram',
-                  title: 'Monograma Tipográfico Metálico',
-                  subtitle: 'Iniciais gravadas em fundo preto AMOLED',
-                  isSelected: currentStyle == 'monogram',
-                ),
-                const SizedBox(height: 8),
-                _avatarOptionTile(
-                  ctx: ctx,
-                  state: state,
-                  styleKey: 'sentinel',
-                  title: 'Selo Sentinela Monocromático',
-                  subtitle: 'Ícone vetorial de segurança operacional',
-                  isSelected: currentStyle == 'sentinel',
-                ),
-                const SizedBox(height: 8),
-                _avatarOptionTile(
-                  ctx: ctx,
-                  state: state,
-                  styleKey: 'local_file',
-                  title: 'Carregar Arquivo Local (PNG, JPEG, WebP)',
-                  subtitle: 'Carregar imagem do computador com remoção de EXIF',
-                  isSelected: currentStyle == 'local_file',
-                  onSelectOverride: () {
-                    state.updateProfile(
-                      avatarStyle: 'local_file',
-                      customAvatarPath: '/home/gus/imagens/avatar_nix.png',
-                    );
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Avatar local carregado com metadados EXIF removidos.')),
-                    );
-                  },
-                ),
-                const SizedBox(height: 8),
-                _avatarOptionTile(
-                  ctx: ctx,
-                  state: state,
-                  styleKey: 'none',
-                  title: 'Sem Imagem (Máximo Anonimato)',
-                  subtitle: 'Silhueta genérica sem traços visuais',
-                  isSelected: currentStyle == 'none',
-                ),
-              ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Fechar', style: TextStyle(color: NixColors.textSecondary)),
-            ),
-          ],
-        );
-      },
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('Fechar', style: TextStyle(color: NixColors.textSecondary)),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -725,7 +892,7 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title, style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600)),
-                  Text(subtitle, style: const TextStyle(color: NixColors.textMuted, fontSize: 11)),
+                  Text(subtitle, style: TextStyle(color: NixColors.textMuted, fontSize: 11)),
                 ],
               ),
             ),

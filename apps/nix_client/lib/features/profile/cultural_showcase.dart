@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/cultural_item.dart';
+import '../../core/security/local_image_helper.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
@@ -50,7 +53,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.album_outlined, color: NixColors.textPrimary, size: 18),
+                  Icon(Icons.album_outlined, color: NixColors.textPrimary, size: 18),
                   const SizedBox(width: 8),
                   Text(
                     'PASSAPORTE CULTURAL & ACERVO',
@@ -64,7 +67,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   foregroundColor: NixColors.textPrimary,
-                  side: const BorderSide(color: NixColors.surfaceBorderStrong),
+                  side: BorderSide(color: NixColors.surfaceBorderStrong),
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   shape: RoundedRectangleBorder(borderRadius: NixTokens.borderSm),
@@ -115,7 +118,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                   'MÚSICA · PRENSAGENS EM VINIL (${musicVinyls.length})',
                   style: NixTokens.labelUppercase(),
                 ),
-                const Text(
+                Text(
                   'Clique para inspecionar capa',
                   style: TextStyle(color: NixColors.textMuted, fontSize: 10),
                 ),
@@ -153,7 +156,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                   'REPOSITÓRIOS GITHUB NO ACERVO (${githubRepos.length})',
                   style: NixTokens.labelUppercase(),
                 ),
-                const Text(
+                Text(
                   'Sincronizado com aba GitHub Discovery',
                   style: TextStyle(color: NixColors.textMuted, fontSize: 10),
                 ),
@@ -186,7 +189,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                   'OBRAS VISUAIS & LITERATURA (${visualWorks.length})',
                   style: NixTokens.labelUppercase(),
                 ),
-                const Text(
+                Text(
                   'Formato pôster com rating',
                   style: TextStyle(color: NixColors.textMuted, fontSize: 10),
                 ),
@@ -212,7 +215,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 24),
               alignment: Alignment.center,
-              child: const Text(
+              child: Text(
                 'Nenhuma obra nesta categoria do acervo.',
                 style: TextStyle(color: NixColors.textMuted, fontSize: 12),
               ),
@@ -226,7 +229,14 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
   void _openCoverModal(BuildContext context, List<CulturalItem> items, int initialIndex) {
     showDialog(
       context: context,
-      builder: (_) => _CoverGalleryModal(items: items, initialIndex: initialIndex),
+      builder: (_) => _CoverGalleryModal(
+        items: items,
+        initialIndex: initialIndex,
+        onEditItem: (item) {
+          Navigator.of(context).pop();
+          _showAddCulturalItemDialog(context, existing: item);
+        },
+      ),
     );
   }
 
@@ -239,7 +249,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
+            child: Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -257,108 +267,239 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
     );
   }
 
-  void _showAddCulturalItemDialog(BuildContext context) {
-    final titleCtrl = TextEditingController();
-    final creatorCtrl = TextEditingController();
-    final ratingCtrl = TextEditingController(text: '9.5');
-    CulturalCategory category = CulturalCategory.movies;
+  void _showAddCulturalItemDialog(BuildContext context, {CulturalItem? existing}) {
+    final titleCtrl = TextEditingController(text: existing?.title ?? '');
+    final creatorCtrl = TextEditingController(text: existing?.creatorOrYear ?? '');
+    final ratingCtrl = TextEditingController(text: existing?.rating ?? '9.5');
+    final imagePathCtrl = TextEditingController(text: existing?.localImagePath ?? '');
+    CulturalCategory category = existing?.category ?? CulturalCategory.movies;
+    double cropScale = existing?.cropScale ?? 1.0;
+    String? previewPath = existing?.localImagePath;
+    String? imgError;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
+          final accent = context.accentColor;
           return AlertDialog(
-            backgroundColor: NixColors.surfaceElevatedHigh,
-            title: const Text('Adicionar ao Acervo Cultural', style: TextStyle(color: Colors.white, fontSize: 16)),
+            title: Text(
+              existing != null ? 'Editar Capa & Metadados' : 'Adicionar ao Acervo Cultural',
+              style: TextStyle(color: NixColors.textPrimary, fontSize: 16),
+            ),
             content: SizedBox(
-              width: 380,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('CATEGORIA', style: NixTokens.labelUppercase()),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: CulturalCategory.values.map((cat) {
-                      final selected = category == cat;
-                      return ChoiceChip(
-                        label: Text(cat.label, style: const TextStyle(fontSize: 11.5)),
-                        selected: selected,
-                        selectedColor: NixColors.textPrimary,
-                        backgroundColor: NixColors.surfaceCard,
-                        labelStyle: TextStyle(
-                          color: selected ? Colors.black : NixColors.textSecondary,
-                          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              width: 430,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('CATEGORIA', style: NixTokens.labelUppercase()),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: CulturalCategory.values.map((cat) {
+                        final selected = category == cat;
+                        return ChoiceChip(
+                          label: Text(cat.label, style: const TextStyle(fontSize: 11.5)),
+                          selected: selected,
+                          selectedColor: accent,
+                          backgroundColor: NixColors.surfaceCard,
+                          labelStyle: TextStyle(
+                            color: selected ? context.onAccentColor : NixColors.textSecondary,
+                            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                          ),
+                          onSelected: (_) => setModalState(() => category = cat),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                    Text('TÍTULO DA OBRA / REPOSITÓRIO', style: NixTokens.labelUppercase()),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: titleCtrl,
+                      decoration: const InputDecoration(
+                        hintText: 'ex: Sousou no Frieren ou rust-anything',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text('AUTOR / DIRETOR / LINGUAGEM', style: NixTokens.labelUppercase()),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: creatorCtrl,
+                      decoration: const InputDecoration(
+                        hintText: 'ex: 2024 · Kanehito Yamada ou Rust · org',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text('AVALIAÇÃO PESSOAL OU STARS', style: NixTokens.labelUppercase()),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: ratingCtrl,
+                      decoration: const InputDecoration(hintText: '9.5 ou 14k'),
+                    ),
+                    const SizedBox(height: 14),
+                    Text('CAPA LOCAL (PNG / JPEG / WebP · EXIF SANITIZADO)', style: NixTokens.labelUppercase()),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: imagePathCtrl,
+                            style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
+                            decoration: const InputDecoration(
+                              hintText: '/caminho/capa.jpg',
+                              isDense: true,
+                            ),
+                            onChanged: (v) => setModalState(() {
+                              previewPath = v.trim();
+                              imgError = null;
+                            }),
+                          ),
                         ),
-                        onSelected: (_) => setModalState(() => category = cat),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 14),
-                  Text('TÍTULO DA OBRA / REPOSITÓRIO', style: NixTokens.labelUppercase()),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: titleCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'ex: Sousou no Frieren ou rust-anything',
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final picked = await LocalImageHelper.pickImageNativeDesktop();
+                            if (picked != null) {
+                              imagePathCtrl.text = picked;
+                              setModalState(() {
+                                previewPath = picked;
+                                imgError = null;
+                              });
+                            }
+                          },
+                          icon: const Icon(Icons.folder_open_rounded, size: 15),
+                          label: const Text('Escolher', style: TextStyle(fontSize: 11.5)),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text('AUTOR / DIRETOR / LINGUAGEM', style: NixTokens.labelUppercase()),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: creatorCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'ex: 2024 · Kanehito Yamada ou Rust · org',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text('AVALIAÇÃO PESSOAL OU STARS', style: NixTokens.labelUppercase()),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: ratingCtrl,
-                    decoration: const InputDecoration(hintText: '9.5 ou 14k'),
-                  ),
-                ],
+                    if (previewPath != null &&
+                        previewPath!.isNotEmpty &&
+                        File(previewPath!).existsSync()) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Container(
+                            width: 54,
+                            height: category == CulturalCategory.music ? 54 : 78,
+                            decoration: BoxDecoration(
+                              borderRadius: NixTokens.borderSm,
+                              border: Border.all(color: accent, width: 1.3),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Transform.scale(
+                              scale: cropScale,
+                              child: Image.file(File(previewPath!), fit: BoxFit.cover),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Recorte / Zoom (${cropScale.toStringAsFixed(1)}x)',
+                                  style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
+                                ),
+                                Slider(
+                                  value: cropScale,
+                                  min: 1.0,
+                                  max: 2.2,
+                                  onChanged: (v) => setModalState(() => cropScale = v),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    imagePathCtrl.clear();
+                                    setModalState(() {
+                                      previewPath = null;
+                                      cropScale = 1.0;
+                                    });
+                                  },
+                                  child: Text(
+                                    'Remover Imagem',
+                                    style: TextStyle(color: NixColors.accentDanger, fontSize: 11),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (imgError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(imgError!, style: TextStyle(color: NixColors.accentDanger, fontSize: 11)),
+                      ),
+                  ],
+                ),
               ),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
+                child: Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
               ),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: NixColors.textPrimary,
-                  foregroundColor: Colors.black,
-                ),
-                onPressed: () {
+                onPressed: () async {
                   final t = titleCtrl.text.trim();
-                  if (t.isNotEmpty) {
-                    final words = t.split(' ').where((w) => w.isNotEmpty).toList();
-                    final mono = words.length >= 2
-                        ? '${words[0][0]}${words[1][0]}'.toUpperCase()
-                        : t.substring(0, t.length >= 2 ? 2 : 1).toUpperCase();
-                    context.read<NixState>().addCulturalItem(
-                          CulturalItem(
-                            id: 'cult_${DateTime.now().millisecondsSinceEpoch}',
-                            title: t,
-                            creatorOrYear: creatorCtrl.text.trim().isEmpty
-                                ? 'Acervo Pessoal'
-                                : creatorCtrl.text.trim(),
-                            category: category,
-                            rating: ratingCtrl.text.trim().isEmpty ? '9.5' : ratingCtrl.text.trim(),
-                            monogram: mono,
-                            toneShade: 55,
-                            isPublicInCardId: true,
-                          ),
-                        );
-                    Navigator.pop(ctx);
+                  if (t.isEmpty) return;
+                  String? storedPath;
+                  final rawPath = imagePathCtrl.text.trim();
+                  if (rawPath.isNotEmpty) {
+                    if (!LocalImageHelper.isSupportedExtension(rawPath)) {
+                      setModalState(() => imgError = 'Formato inválido. Use PNG, JPEG ou WebP.');
+                      return;
+                    }
+                    storedPath = await LocalImageHelper.sanitizeAndStoreImage(rawPath);
+                    if (storedPath == null) {
+                      setModalState(() => imgError = 'Imagem local não encontrada.');
+                      return;
+                    }
                   }
+                  final words = t.split(' ').where((w) => w.isNotEmpty).toList();
+                  final mono = words.length >= 2
+                      ? '${words[0][0]}${words[1][0]}'.toUpperCase()
+                      : t.substring(0, t.length >= 2 ? 2 : 1).toUpperCase();
+                  final nixState = context.read<NixState>();
+                  if (existing != null) {
+                    nixState.updateCulturalItem(
+                      existing.copyWith(
+                        title: t,
+                        creatorOrYear: creatorCtrl.text.trim().isEmpty
+                            ? 'Acervo Pessoal'
+                            : creatorCtrl.text.trim(),
+                        category: category,
+                        rating: ratingCtrl.text.trim().isEmpty ? '9.5' : ratingCtrl.text.trim(),
+                        monogram: mono,
+                        localImagePath: storedPath,
+                        clearLocalImage: rawPath.isEmpty,
+                        cropScale: cropScale,
+                      ),
+                    );
+                  } else {
+                    nixState.addCulturalItem(
+                      CulturalItem(
+                        id: 'cult_${DateTime.now().millisecondsSinceEpoch}',
+                        title: t,
+                        creatorOrYear: creatorCtrl.text.trim().isEmpty
+                            ? 'Acervo Pessoal'
+                            : creatorCtrl.text.trim(),
+                        category: category,
+                        rating: ratingCtrl.text.trim().isEmpty ? '9.5' : ratingCtrl.text.trim(),
+                        monogram: mono,
+                        toneShade: 55,
+                        localImagePath: storedPath,
+                        cropScale: cropScale,
+                        isPublicInCardId: true,
+                      ),
+                    );
+                  }
+                  if (ctx.mounted) Navigator.pop(ctx);
                 },
-                child: const Text('Salvar no Acervo', style: TextStyle(fontWeight: FontWeight.bold)),
+                child: Text(existing != null ? 'Salvar Alterações' : 'Salvar no Acervo'),
               ),
             ],
           );
@@ -381,6 +522,7 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = context.accentColor;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -388,16 +530,16 @@ class _FilterChip extends StatelessWidget {
         duration: NixTokens.motionFast,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? NixColors.textPrimary : NixColors.surfaceCard,
+          color: isSelected ? accent : NixColors.surfaceCard,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? NixColors.textPrimary : NixColors.surfaceBorder,
+            color: isSelected ? accent : NixColors.surfaceBorder,
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.black : NixColors.textSecondary,
+            color: isSelected ? context.onAccentColor : NixColors.textSecondary,
             fontSize: 11.5,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
           ),
@@ -458,38 +600,48 @@ class _VinylRecordWidget extends StatelessWidget {
                   BoxShadow(color: Colors.black87, blurRadius: 6, offset: Offset(0, 3)),
                 ],
               ),
-              child: Center(
-                child: Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white12, width: 0.8),
-                  ),
-                  child: Center(
-                    // Selo Central do Álbum
-                    child: Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Color.fromARGB(255, item.toneShade, item.toneShade, item.toneShade),
-                        border: Border.all(color: Colors.white38, width: 1),
+              clipBehavior: Clip.antiAlias,
+              child: item.localImagePath != null && File(item.localImagePath!).existsSync()
+                  ? Transform.scale(
+                      scale: item.cropScale.clamp(1.0, 2.2),
+                      child: Image.file(
+                        File(item.localImagePath!),
+                        fit: BoxFit.cover,
+                        width: 72,
+                        height: 72,
                       ),
-                      child: Center(
-                        child: Container(
-                          width: 6,
-                          height: 6,
-                          decoration: const BoxDecoration(
-                            color: Colors.black,
-                            shape: BoxShape.circle,
+                    )
+                  : Center(
+                      child: Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white12, width: 0.8),
+                        ),
+                        child: Center(
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Color.fromARGB(255, item.toneShade, item.toneShade, item.toneShade),
+                              border: Border.all(color: Colors.white38, width: 1),
+                            ),
+                            child: Center(
+                              child: Container(
+                                width: 6,
+                                height: 6,
+                                decoration: const BoxDecoration(
+                                  color: Colors.black,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -497,7 +649,7 @@ class _VinylRecordWidget extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 color: NixColors.textPrimary,
                 fontSize: 10.5,
                 fontWeight: FontWeight.w600,
@@ -507,7 +659,7 @@ class _VinylRecordWidget extends StatelessWidget {
               item.creatorOrYear,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: NixColors.textMuted, fontSize: 9),
+              style: TextStyle(color: NixColors.textMuted, fontSize: 9),
             ),
             const SizedBox(height: 4),
             Row(
@@ -518,7 +670,7 @@ class _VinylRecordWidget extends StatelessWidget {
                   child: Icon(
                     item.isPublicInCardId ? Icons.visibility_rounded : Icons.visibility_off_rounded,
                     size: 13,
-                    color: item.isPublicInCardId ? Colors.white70 : NixColors.textDim,
+                    color: item.isPublicInCardId ? NixColors.textSecondary : NixColors.textDim,
                   ),
                 ),
               ],
@@ -557,13 +709,13 @@ class _GithubRepoAcervoCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.code_rounded, size: 14, color: Colors.white),
+              Icon(Icons.code_rounded, size: 14, color: context.accentTextColor),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   item.title,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: NixColors.textPrimary,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
@@ -577,7 +729,7 @@ class _GithubRepoAcervoCard extends StatelessWidget {
                   child: Icon(
                     item.isPublicInCardId ? Icons.visibility_rounded : Icons.visibility_off_rounded,
                     size: 14,
-                    color: item.isPublicInCardId ? Colors.white70 : NixColors.textDim,
+                    color: item.isPublicInCardId ? NixColors.textSecondary : NixColors.textDim,
                   ),
                 ),
               ),
@@ -586,7 +738,7 @@ class _GithubRepoAcervoCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             item.creatorOrYear,
-            style: const TextStyle(color: NixColors.textMuted, fontSize: 10),
+            style: TextStyle(color: NixColors.textMuted, fontSize: 10),
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 8),
@@ -596,19 +748,19 @@ class _GithubRepoAcervoCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.white10,
+                  color: NixColors.surfaceActive,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   item.language ?? 'Código',
-                  style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: NixColors.textPrimary, fontSize: 9.5, fontWeight: FontWeight.bold),
                 ),
               ),
               Row(
                 children: [
                   const Icon(Icons.star_rounded, size: 13, color: Colors.amber),
                   const SizedBox(width: 3),
-                  Text(item.rating, style: const TextStyle(color: Colors.white, fontSize: 10)),
+                  Text(item.rating, style: TextStyle(color: NixColors.textPrimary, fontSize: 10)),
                 ],
               ),
             ],
@@ -669,18 +821,28 @@ class _PosterCoverCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
-            // Monograma em marca d'água no centro
-            Center(
-              child: Text(
-                item.monogram,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.09),
-                  fontSize: 54,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -2,
+            if (item.localImagePath != null && File(item.localImagePath!).existsSync())
+              Positioned.fill(
+                child: Transform.scale(
+                  scale: item.cropScale.clamp(1.0, 2.2),
+                  child: Image.file(
+                    File(item.localImagePath!),
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
-            ),
+            if (item.localImagePath == null || !File(item.localImagePath!).existsSync())
+              Center(
+                child: Text(
+                  item.monogram,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.09),
+                    fontSize: 54,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -2,
+                  ),
+                ),
+              ),
             // Rating no topo direito
             Positioned(
               top: 6,
@@ -715,40 +877,50 @@ class _PosterCoverCard extends StatelessWidget {
                 child: Text(
                   item.category.label.toUpperCase(),
                   style: const TextStyle(
-                    color: NixColors.textSecondary,
+                    color: Color(0xFFE0E2E8),
                     fontSize: 8,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
             ),
-            // Título e Autor na base
+            // Scrim inferior e Título/Autor sobre a capa
             Positioned(
-              left: 8,
-              right: 8,
-              bottom: 8,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: NixColors.textPrimary,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      height: 1.15,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(8, 22, 8, 8),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Colors.black87],
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        height: 1.15,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    item.creatorOrYear,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: NixColors.textMuted, fontSize: 9.5),
-                  ),
-                ],
+                    const SizedBox(height: 3),
+                    Text(
+                      item.creatorOrYear,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Color(0xFFB7BAC4), fontSize: 9.5),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -762,10 +934,12 @@ class _PosterCoverCard extends StatelessWidget {
 class _CoverGalleryModal extends StatefulWidget {
   final List<CulturalItem> items;
   final int initialIndex;
+  final ValueChanged<CulturalItem>? onEditItem;
 
   const _CoverGalleryModal({
     required this.items,
     required this.initialIndex,
+    this.onEditItem,
   });
 
   @override
@@ -807,19 +981,37 @@ class _CoverGalleryModalState extends State<_CoverGalleryModal> {
             left: 28,
             child: Text(
               'Capa · ${current.title}',
-              style: const TextStyle(color: NixColors.textSecondary, fontSize: 13),
+              style: const TextStyle(color: Color(0xFFD0D4DE), fontSize: 13),
             ),
           ),
           Positioned(
             top: 18,
             right: 24,
-            child: IconButton(
-              style: IconButton.styleFrom(
-                backgroundColor: NixColors.surfaceCard,
-                side: const BorderSide(color: NixColors.surfaceBorderStrong),
-              ),
-              icon: const Icon(Icons.close, color: Colors.white, size: 18),
-              onPressed: () => Navigator.pop(context),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.onEditItem != null) ...[
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: context.accentColor,
+                      foregroundColor: context.onAccentColor,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => widget.onEditItem!(current),
+                    icon: const Icon(Icons.edit_outlined, size: 15),
+                    label: const Text('Editar Capa', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                IconButton(
+                  style: IconButton.styleFrom(
+                    backgroundColor: const Color(0xFF1F2229),
+                    side: const BorderSide(color: Colors.white24),
+                  ),
+                  icon: const Icon(Icons.close, color: Colors.white, size: 18),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
             ),
           ),
 
@@ -852,7 +1044,7 @@ class _CoverGalleryModalState extends State<_CoverGalleryModal> {
                           Text(
                             '${current.rating} ★',
                             style: const TextStyle(
-                              color: NixColors.textPrimary,
+                              color: Colors.white,
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
                             ),
@@ -884,7 +1076,7 @@ class _CoverGalleryModalState extends State<_CoverGalleryModal> {
                       const SizedBox(height: 6),
                       Text(
                         '${current.category.label} · ${current.creatorOrYear}',
-                        style: const TextStyle(color: NixColors.textSecondary, fontSize: 12.5),
+                        style: const TextStyle(color: Color(0xFFB7BAC4), fontSize: 12.5),
                       ),
                     ],
                   ),
@@ -922,8 +1114,8 @@ class _CoverGalleryModalState extends State<_CoverGalleryModal> {
             left: 28,
             child: IconButton(
               style: IconButton.styleFrom(
-                backgroundColor: NixColors.surfaceCard,
-                side: const BorderSide(color: NixColors.surfaceBorderStrong),
+                backgroundColor: const Color(0xFF1F2229),
+                side: const BorderSide(color: Colors.white24),
               ),
               icon: const Icon(Icons.chevron_left, color: Colors.white),
               onPressed: _prev,
@@ -934,8 +1126,8 @@ class _CoverGalleryModalState extends State<_CoverGalleryModal> {
             right: 28,
             child: IconButton(
               style: IconButton.styleFrom(
-                backgroundColor: NixColors.surfaceCard,
-                side: const BorderSide(color: NixColors.surfaceBorderStrong),
+                backgroundColor: const Color(0xFF1F2229),
+                side: const BorderSide(color: Colors.white24),
               ),
               icon: const Icon(Icons.chevron_right, color: Colors.white),
               onPressed: _next,

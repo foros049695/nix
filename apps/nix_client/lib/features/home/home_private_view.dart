@@ -24,11 +24,12 @@ class HomePrivateView extends StatefulWidget {
 
 class _HomePrivateViewState extends State<HomePrivateView> {
   final TextEditingController _dmInputController = TextEditingController();
-  String? _hoverLockoutRequestId;
+  final ScrollController _dmScrollController = ScrollController();
 
   @override
   void dispose() {
     _dmInputController.dispose();
+    _dmScrollController.dispose();
     super.dispose();
   }
 
@@ -54,43 +55,48 @@ class _HomePrivateViewState extends State<HomePrivateView> {
           DismissIntent: CallbackAction<DismissIntent>(
             onInvoke: (_) {
               if (nixState.hoveredContactRequest != null) {
-                setState(() => _hoverLockoutRequestId = nixState.hoveredContactRequest?.id);
-                nixState.setHoveredContactRequest(null);
+                nixState.dismissHoveredPeerCard();
               }
               return null;
             },
           ),
         },
-        child: Container(
-          color: NixColors.background,
-          child: Stack(
-            children: [
-              AnimatedSwitcher(
-                duration: NixTokens.motionMedium,
-                switchInCurve: NixTokens.curveStandard,
-                switchOutCurve: NixTokens.curveStandard,
-                child: _buildStageContent(nixState, activeTab),
-              ),
-              // Painel Flutuante Animado de Card ID (Hover Preview em Solicitações)
-              // Posicionado de forma inteligente para NUNCA cobrir os botões de ação na direita
-              if (activeTab == HomeSubTab.requests &&
-                  nixState.hoveredContactRequest != null &&
-                  nixState.settings.cardIdVisibility != 'Oculto')
-                Positioned(
-                  top: 76,
-                  left: 24,
-                  child: _FloatingPeerCardIdPreview(
-                    request: nixState.hoveredContactRequest!,
-                    onDismiss: () {
-                      setState(() {
-                        _hoverLockoutRequestId = nixState.hoveredContactRequest?.id;
-                      });
-                      nixState.setHoveredContactRequest(null);
-                    },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Faixa central-direita livre: nunca cobre o nome/avatar (esquerda) nem Recusar/Aceitar (direita)
+            final double maxSafeLeft = (constraints.maxWidth - 315 - 235).clamp(250.0, 560.0);
+            final double safeLeft = (constraints.maxWidth * 0.38).clamp(250.0, maxSafeLeft);
+
+            return Container(
+              color: NixColors.background,
+              child: Stack(
+                children: [
+                  AnimatedSwitcher(
+                    duration: NixTokens.motionMedium,
+                    switchInCurve: NixTokens.curveStandard,
+                    switchOutCurve: NixTokens.curveStandard,
+                    child: _buildStageContent(nixState, activeTab),
                   ),
-                ),
-            ],
-          ),
+                  if (activeTab == HomeSubTab.requests &&
+                      nixState.hoveredContactRequest != null &&
+                      nixState.peerHoverState != PeerCardHoverState.closingRequested &&
+                      nixState.settings.cardIdVisibility != 'Oculto')
+                    Positioned(
+                      top: 74,
+                      left: safeLeft,
+                      child: MouseRegion(
+                        onEnter: (_) => nixState.setHoverOverPreviewCard(true),
+                        onExit: (_) => nixState.setHoverOverPreviewCard(false),
+                        child: _FloatingPeerCardIdPreview(
+                          request: nixState.hoveredContactRequest!,
+                          onDismiss: () => nixState.dismissHoveredPeerCard(),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
@@ -157,7 +163,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
     return Container(
       height: 52,
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: NixColors.surfaceElevated,
         border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
       ),
@@ -181,7 +187,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                 ),
                 Text(
                   subtitle,
-                  style: const TextStyle(color: NixColors.textMuted, fontSize: 10.5),
+                  style: TextStyle(color: NixColors.textMuted, fontSize: 10.5),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -195,7 +201,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
               borderRadius: BorderRadius.circular(4),
               border: Border.all(color: Colors.white24, width: 0.5),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.lock_outline_rounded, size: 11, color: NixColors.accentGreen),
@@ -219,22 +225,23 @@ class _HomePrivateViewState extends State<HomePrivateView> {
 
   // ================= ABA AMIGOS =================
   Widget _buildFriendsStage(NixState state) {
+    final friends = state.directMessages.where((d) => !d.isSavedMessages).toList();
     return Column(
       key: const ValueKey('home_stage_friends'),
       children: [
         _buildTopHeader(
           icon: Icons.people_outline_rounded,
           title: 'Amigos & Pares Verificados',
-          subtitle: '${state.directMessages.length} contatos com fingerprint validado',
+          subtitle: '${friends.length} contatos com fingerprint validado · Clique no nome/avatar para Card ID',
           state: state,
         ),
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.all(24),
-            itemCount: state.directMessages.length,
+            itemCount: friends.length,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (context, idx) {
-              final dm = state.directMessages[idx];
+              final dm = friends[idx];
               return Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -244,49 +251,53 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: NixColors.surfaceActive,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white38),
-                      ),
-                      child: Center(
-                        child: Text(
-                          dm.peerName[0],
-                          style: const TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    InkWell(
+                      onTap: () => PeerCardIdDialog.showForDirectMessage(context, dm),
+                      borderRadius: BorderRadius.circular(24),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Row(
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: NixColors.surfaceActive,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: NixColors.surfaceBorderStrong),
+                            ),
+                            child: Center(
+                              child: Text(
+                                dm.peerName[0],
+                                style: TextStyle(
+                                    color: NixColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 15),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(dm.peerName,
-                                  style: const TextStyle(
-                                      color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-                              const SizedBox(width: 8),
-                              _TrustLevelIndicator(level: dm.trustLevel),
+                              Row(
+                                children: [
+                                  Text(dm.peerName,
+                                      style: TextStyle(
+                                          color: NixColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+                                  const SizedBox(width: 8),
+                                  _TrustLevelIndicator(level: dm.trustLevel),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(dm.peerPublicId, style: NixTokens.monoCode()),
+                              const SizedBox(height: 2),
+                              Text(dm.statusText,
+                                  style: TextStyle(color: NixColors.textMuted, fontSize: 11.5)),
                             ],
                           ),
-                          const SizedBox(height: 2),
-                          Text(dm.peerPublicId, style: NixTokens.monoCode()),
-                          const SizedBox(height: 2),
-                          Text(dm.statusText,
-                              style: const TextStyle(color: NixColors.textMuted, fontSize: 11.5)),
                         ],
                       ),
                     ),
+                    const Spacer(),
                     OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: NixColors.surfaceBorderStrong),
-                      ),
                       onPressed: () => state.selectDirectMessage(dm),
                       icon: const Icon(Icons.chat_bubble_outline_rounded, size: 15),
                       label: const Text('Abrir Conversa', style: TextStyle(fontSize: 12)),
@@ -314,7 +325,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
         ),
         Expanded(
           child: state.contactRequests.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text(
                     'Nenhuma solicitação de contato pendente.',
                     style: TextStyle(color: NixColors.textMuted, fontSize: 13),
@@ -344,19 +355,8 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                         children: [
                           // 1. ZONA EXCLUSIVA DE HOVER E CLIQUE: Avatar + Nome
                           MouseRegion(
-                            onEnter: (_) {
-                              if (_hoverLockoutRequestId != req.id) {
-                                state.setHoveredContactRequest(req);
-                              }
-                            },
-                            onExit: (_) {
-                              if (state.hoveredContactRequest?.id == req.id) {
-                                state.setHoveredContactRequest(null);
-                              }
-                              if (_hoverLockoutRequestId == req.id) {
-                                _hoverLockoutRequestId = null;
-                              }
-                            },
+                            onEnter: (_) => state.onRequestPeerHoverEnter(req),
+                            onExit: (_) => state.onRequestPeerHoverExit(req),
                             child: InkWell(
                               onTap: () => PeerCardIdDialog.showForRequest(context, req),
                               borderRadius: BorderRadius.circular(8),
@@ -392,8 +392,8 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                                           children: [
                                             Text(
                                               req.peerName,
-                                              style: const TextStyle(
-                                                color: Colors.white,
+                                              style: TextStyle(
+                                                color: NixColors.textPrimary,
                                                 fontSize: 14,
                                                 fontWeight: FontWeight.bold,
                                               ),
@@ -422,7 +422,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                                 const SizedBox(height: 4),
                                 Text(
                                   req.note,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: NixColors.textSecondary,
                                     fontSize: 12,
                                   ),
@@ -436,14 +436,14 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                           // 3. Botões de Ação (100% Desobstruídos, sem ativar hover)
                           TextButton(
                             onPressed: () => state.declineContactRequest(req.id),
-                            child: const Text('Recusar',
+                            child: Text('Recusar',
                                 style: TextStyle(color: NixColors.textMuted, fontSize: 12)),
                           ),
                           const SizedBox(width: 8),
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: accent,
-                              foregroundColor: Colors.black,
+                              foregroundColor: context.onAccentColor,
                             ),
                             onPressed: () => state.acceptContactRequest(req.id),
                             child: const Text('Aceitar Chave',
@@ -461,105 +461,206 @@ class _HomePrivateViewState extends State<HomePrivateView> {
 
   // ================= ABA CONVERSA PRIVADA SELECIONADA =================
   Widget _buildDirectChatStage(NixState state, DirectMessageThread dm) {
+    final pinnedMsgs = dm.messages.where((m) => m.isPinned).toList();
+    final replying = state.replyingToMessage;
+    final editing = state.editingMessage;
+    if (editing != null && _dmInputController.text.isEmpty) {
+      _dmInputController.text = editing.text;
+    }
+
     return Column(
       key: ValueKey('stage_dm_${dm.id}'),
       children: [
-        // Cabeçalho da Conversa Privada com Nível de Confiança
-        Container(
-          height: 52,
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: const BoxDecoration(
-            color: NixColors.surfaceElevated,
-            border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.lock_rounded, size: 16, color: NixColors.accentGreen),
-              const SizedBox(width: 8),
-              InkWell(
-                onTap: () => PeerCardIdDialog.showForDirectMessage(context, dm),
-                borderRadius: BorderRadius.circular(4),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        dm.peerName,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
+        // Cabeçalho clicável (abre Painel de Informações da Conversa ou Card ID no nome)
+        InkWell(
+          key: const Key('dm_chat_header'),
+          onTap: () => state.toggleConversationInfoPanel(),
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(
+              color: NixColors.surfaceElevated,
+              border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  dm.isSavedMessages ? Icons.bookmark_rounded : Icons.lock_rounded,
+                  size: 16,
+                  color: dm.isSavedMessages ? context.accentTextColor : NixColors.accentGreen,
+                ),
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: dm.isSavedMessages
+                      ? () => state.toggleConversationInfoPanel()
+                      : () => PeerCardIdDialog.showForDirectMessage(context, dm),
+                  borderRadius: BorderRadius.circular(4),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          dm.peerName,
+                          style: TextStyle(
+                            color: NixColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(Icons.badge_outlined, size: 12, color: context.accentColor),
-                    ],
+                        if (!dm.isSavedMessages) ...[
+                          const SizedBox(width: 4),
+                          Icon(Icons.badge_outlined, size: 12, color: context.accentTextColor),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              _TrustLevelIndicator(level: dm.trustLevel),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  dm.statusText,
-                  style: const TextStyle(color: NixColors.textMuted, fontSize: 11.5),
-                  overflow: TextOverflow.ellipsis,
+                const SizedBox(width: 8),
+                if (!dm.isSavedMessages) _TrustLevelIndicator(level: dm.trustLevel),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    dm.statusText,
+                    style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: NixColors.surfaceActive,
-                  borderRadius: BorderRadius.circular(4),
+                IconButton(
+                  key: const Key('dm_info_panel_button'),
+                  icon: Icon(
+                    Icons.view_sidebar_outlined,
+                    size: 18,
+                    color: state.isConversationInfoOpen
+                        ? context.accentTextColor
+                        : NixColors.textSecondary,
+                  ),
+                  tooltip: 'Informações & Mídia da Conversa',
+                  onPressed: () => state.toggleConversationInfoPanel(),
                 ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.shield_outlined, size: 12, color: Colors.white),
-                    SizedBox(width: 4),
-                    Text(
-                      'DOUBLE RATCHET',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.6,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
+
+        // Faixa compacta de Mensagem Fixada (estilo Telegram)
+        if (pinnedMsgs.isNotEmpty)
+          InkWell(
+            onTap: () => state.highlightMessage(pinnedMsgs.last.id),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+              decoration: BoxDecoration(
+                color: NixColors.surfaceCard,
+                border: Border(
+                  bottom: BorderSide(color: NixColors.surfaceBorder),
+                  left: BorderSide(color: context.accentColor, width: 3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.push_pin_rounded, size: 14, color: context.accentTextColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Mensagem Fixada',
+                          style: TextStyle(
+                            color: context.accentTextColor,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          pinnedMsgs.last.text,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: NixColors.textSecondary, fontSize: 11.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, size: 14, color: NixColors.textMuted),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    tooltip: 'Desafixar',
+                    onPressed: () => state.togglePinMessage(pinnedMsgs.last.id),
+                  ),
+                ],
+              ),
+            ),
+          ),
 
         // Lista de Mensagens Cifradas
         Expanded(
           child: dm.messages.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text(
-                    'Sessão iniciada. Envie a primeira mensagem privada cifrada.',
+                    dm.isSavedMessages
+                        ? 'Salve notas, arquivos, links ou mensagens encaminhadas aqui.'
+                        : 'Sessão iniciada. Envie a primeira mensagem privada cifrada.',
                     style: TextStyle(color: NixColors.textMuted, fontSize: 12.5),
                   ),
                 )
               : ListView.builder(
+                  controller: _dmScrollController,
                   padding: const EdgeInsets.all(16),
                   itemCount: dm.messages.length,
                   itemBuilder: (context, idx) {
                     final msg = dm.messages[idx];
-                    return MessageBubble(
-                      message: msg,
-                    );
+                    return MessageBubble(message: msg);
                   },
                 ),
         ),
 
+        // Banner Responder / Editar
+        if (replying != null || editing != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: NixColors.surfaceCard,
+              border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  editing != null ? Icons.edit_outlined : Icons.reply_rounded,
+                  size: 16,
+                  color: context.accentTextColor,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    editing != null
+                        ? 'Editando: ${editing.text}'
+                        : 'Respondendo a ${replying!.senderName}: ${replying.text}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: NixColors.textSecondary, fontSize: 11.5),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close_rounded, size: 15, color: NixColors.textMuted),
+                  onPressed: () {
+                    if (editing != null) {
+                      state.cancelEditMessage();
+                      _dmInputController.clear();
+                    } else {
+                      state.cancelReply();
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+
         // Barra de Input DM
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: NixColors.surfaceElevated,
             border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
           ),
@@ -568,9 +669,11 @@ class _HomePrivateViewState extends State<HomePrivateView> {
               Expanded(
                 child: TextField(
                   controller: _dmInputController,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
                   decoration: InputDecoration(
-                    hintText: 'Mensagem cifrada para ${dm.peerName}...',
+                    hintText: dm.isSavedMessages
+                        ? 'Escrever nota privada em Mensagens Salvas...'
+                        : 'Mensagem cifrada para ${dm.peerName}...',
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   ),
@@ -580,10 +683,13 @@ class _HomePrivateViewState extends State<HomePrivateView> {
               const SizedBox(width: 10),
               IconButton(
                 style: IconButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black,
+                  backgroundColor: context.accentColor,
+                  foregroundColor: context.onAccentColor,
                 ),
-                icon: const Icon(Icons.arrow_upward_rounded, size: 18),
+                icon: Icon(
+                  editing != null ? Icons.check_rounded : Icons.arrow_upward_rounded,
+                  size: 18,
+                ),
                 onPressed: () => _sendDm(state),
               ),
             ],
@@ -615,7 +721,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                   borderRadius: NixTokens.borderMd,
                   border: Border.all(color: NixColors.surfaceBorderStrong),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Column(
@@ -660,7 +766,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                           tx.isIncoming
                               ? Icons.call_received_rounded
                               : Icons.call_made_rounded,
-                          color: Colors.white,
+                          color: NixColors.textPrimary,
                           size: 18,
                         ),
                         const SizedBox(width: 12),
@@ -669,21 +775,21 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(tx.title,
-                                  style: const TextStyle(
-                                      color: Colors.white,
+                                  style: TextStyle(
+                                      color: NixColors.textPrimary,
                                       fontSize: 13.5,
                                       fontWeight: FontWeight.w600)),
                               const SizedBox(height: 2),
                               Text('${tx.subaddressPreview} · ${tx.confirmations} confirmações',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: NixColors.textMuted, fontSize: 11)),
                             ],
                           ),
                         ),
                         Text(
                           tx.amountXmr,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: NixColors.textPrimary,
                             fontWeight: FontWeight.bold,
                             fontFamily: 'monospace',
                             fontSize: 13.5,
@@ -731,33 +837,33 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(upd.version,
-                            style: const TextStyle(
-                                color: Colors.white,
+                            style: TextStyle(
+                                color: NixColors.textPrimary,
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.bold)),
                         Text(upd.dateLabel,
-                            style: const TextStyle(color: NixColors.textMuted, fontSize: 11.5)),
+                            style: TextStyle(color: NixColors.textMuted, fontSize: 11.5)),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(upd.title,
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: NixColors.textSecondary,
                             fontSize: 13,
                             fontWeight: FontWeight.w600)),
                     const SizedBox(height: 8),
                     Text(upd.summary,
-                        style: const TextStyle(color: NixColors.textMuted, fontSize: 12)),
+                        style: TextStyle(color: NixColors.textMuted, fontSize: 12)),
                     const SizedBox(height: 10),
                     ...upd.highlights.map((h) => Padding(
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('• ', style: TextStyle(color: Colors.white)),
+                              Text('• ', style: TextStyle(color: NixColors.textPrimary)),
                               Expanded(
                                 child: Text(h,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         color: NixColors.textSecondary, fontSize: 12)),
                               ),
                             ],
@@ -849,19 +955,32 @@ class _FloatingPeerCardIdPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final nixState = context.watch<NixState>();
+    final auth = nixState.getAuthorizedPeerCardData(
+      peerName: request.peerName,
+      peerPublicId: request.peerPublicId,
+      trustLevel: request.trustLevel,
+      hasCryptographicShield: true,
+      rawBio: request.bio,
+      rawHighlights: request.culturalHighlights,
+      ownerVisibility: request.cardIdVisibility,
+      isVerifiedContact: request.trustLevel == NixTrustLevel.level3Green,
+    );
+
     return Material(
+      key: const Key('floating_peer_card_id_preview'),
       color: Colors.transparent,
       elevation: 24,
       child: Container(
-        width: 320,
+        width: 310,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           gradient: NixTokens.amoledMetalGradient,
           borderRadius: NixTokens.borderLg,
-          border: Border.all(color: context.accentColor.withValues(alpha: 0.5), width: 1.2),
+          border: Border.all(color: context.accentColor.withValues(alpha: 0.6), width: 1.3),
           boxShadow: [
             BoxShadow(
-              color: context.accentColor.withValues(alpha: 0.15),
+              color: context.accentColor.withValues(alpha: 0.16),
               blurRadius: 24,
               offset: const Offset(0, 8),
             ),
@@ -883,7 +1002,7 @@ class _FloatingPeerCardIdPreview extends StatelessWidget {
                   height: 36,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: NixColors.surfaceActive,
+                    color: const Color(0xFF1F2229),
                     border: Border.all(color: Colors.white38),
                   ),
                   child: Center(
@@ -911,13 +1030,20 @@ class _FloatingPeerCardIdPreview extends StatelessWidget {
                           _TrustLevelIndicator(level: request.trustLevel),
                         ],
                       ),
-                      Text(request.peerPublicId, style: NixTokens.monoCode(size: 10)),
+                      Text(
+                        request.peerPublicId,
+                        style: const TextStyle(
+                          color: Color(0xFFB7BAC4),
+                          fontSize: 10,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 IconButton(
                   key: const Key('floating_card_id_close_button'),
-                  icon: const Icon(Icons.close_rounded, size: 16, color: NixColors.textMuted),
+                  icon: const Icon(Icons.close_rounded, size: 16, color: Color(0xFFB7BAC4)),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   tooltip: 'Fechar (Esc)',
@@ -933,30 +1059,40 @@ class _FloatingPeerCardIdPreview extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                request.bio,
-                style: const TextStyle(color: NixColors.textSecondary, fontSize: 11.5, height: 1.3),
+                auth.bio,
+                style: const TextStyle(color: Color(0xFFB7BAC4), fontSize: 11.5, height: 1.3),
               ),
             ),
-            const SizedBox(height: 10),
-            Text('DESTAQUES CULTURAIS PÚBLICOS', style: NixTokens.labelUppercase()),
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: request.culturalHighlights.map((h) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.white10,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    h,
-                    style: const TextStyle(color: Colors.white, fontSize: 10),
-                  ),
-                );
-              }).toList(),
-            ),
+            if (auth.culturalHighlights.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'DESTAQUES CULTURAIS PÚBLICOS',
+                style: TextStyle(
+                  color: Color(0xFF9CA3AF),
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.9,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: auth.culturalHighlights.map((h) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      h,
+                      style: const TextStyle(color: Colors.white, fontSize: 10),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
           ],
         ),
       ),
