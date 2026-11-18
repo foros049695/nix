@@ -2,14 +2,14 @@ import 'message.dart';
 import 'member.dart';
 
 enum HomeSubTab {
-  cardId,          // Estado inicial vazio da Home -> preenchido pelo CARD ID
+  cardId,          // Estado inicial vazio / Gerenciamento do Card ID
   friends,         // Amigos verificados
-  requests,        // Solicitações de contato (com hover preview de Card ID)
-  moneroP2p,       // Monero Non-Custodial P2P Marketplace (Trocador style)
-  githubDiscovery, // Descoberta de Repositórios GitHub (starwire style)
-  transactions,    // Histórico de transações XMR da carteira
+  requests,        // Solicitações de contato (com hover preview restrito a avatar/nome)
+  moneroP2p,       // Monero Non-Custodial P2P Marketplace
+  githubDiscovery, // Descoberta de Repositórios GitHub (Starwire)
+  transactions,    // Histórico local XMR
   updates,         // Atualizações do ecossistema Nix
-  directChat,      // Conversa privada selecionada (Card ID sai de cena e abre-se o chat)
+  directChat,      // Conversa privada selecionada (ou Mensagens Salvas)
 }
 
 class DirectMessageThread {
@@ -21,6 +21,9 @@ class DirectMessageThread {
   final bool isVerified;
   final NixTrustLevel trustLevel;
   final int unreadCount;
+  final bool isSavedMessages;
+  final bool isPinned;
+  final bool isMuted;
   final List<Message> messages;
 
   const DirectMessageThread({
@@ -32,14 +35,30 @@ class DirectMessageThread {
     this.isVerified = true,
     this.trustLevel = NixTrustLevel.level3Green,
     this.unreadCount = 0,
+    this.isSavedMessages = false,
+    this.isPinned = false,
+    this.isMuted = false,
     required this.messages,
   });
 
-  String get lastMessagePreview =>
-      messages.isNotEmpty ? messages.last.text : 'Sessão Double Ratchet estabelecida.';
+  String get lastMessagePreview {
+    if (messages.isEmpty) {
+      return isSavedMessages
+          ? 'Notas criptografadas, links, arquivos e encaminhamentos privados.'
+          : 'Sessão Double Ratchet estabelecida.';
+    }
+    return messages.last.text;
+  }
+
+  DateTime? get lastActivityAt => messages.isNotEmpty ? messages.last.timestamp : null;
 
   DirectMessageThread copyWith({
+    String? peerName,
+    String? statusText,
     int? unreadCount,
+    bool? isSavedMessages,
+    bool? isPinned,
+    bool? isMuted,
     List<Message>? messages,
     NixTrustLevel? trustLevel,
     bool? isOnline,
@@ -47,13 +66,16 @@ class DirectMessageThread {
   }) {
     return DirectMessageThread(
       id: id,
-      peerName: peerName,
+      peerName: peerName ?? this.peerName,
       peerPublicId: peerPublicId,
-      statusText: statusText,
+      statusText: statusText ?? this.statusText,
       isOnline: isOnline ?? this.isOnline,
       isVerified: isVerified ?? this.isVerified,
       trustLevel: trustLevel ?? this.trustLevel,
       unreadCount: unreadCount ?? this.unreadCount,
+      isSavedMessages: isSavedMessages ?? this.isSavedMessages,
+      isPinned: isPinned ?? this.isPinned,
+      isMuted: isMuted ?? this.isMuted,
       messages: messages ?? this.messages,
     );
   }
@@ -69,6 +91,7 @@ class ContactRequest {
   final NixTrustLevel trustLevel;
   final String bio;
   final List<String> culturalHighlights;
+  final String cardIdVisibility; // 'Público', 'Apenas Contatos Verificados', 'Oculto'
 
   const ContactRequest({
     required this.id,
@@ -80,6 +103,7 @@ class ContactRequest {
     this.trustLevel = NixTrustLevel.level1Red,
     this.bio = 'Membro da rede Tor Onion com interesse em criptografia e privacidade.',
     this.culturalHighlights = const ['Ghost Dog', 'Mobile Suit Gundam Hathaway', '12 Angry Men'],
+    this.cardIdVisibility = 'Público',
   });
 }
 
