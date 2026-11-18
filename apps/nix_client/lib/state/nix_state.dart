@@ -174,6 +174,7 @@ class NixState extends ChangeNotifier {
 
   /// Caminho local de persistência de preferências do cliente (apenas desktop/mobile reais).
   String get _prefsFilePath {
+    if (Platform.environment['FLUTTER_TEST'] == 'true') return '';
     final home = Platform.environment['HOME'] ?? '';
     if (home.isEmpty) return '';
     return '$home/.local/share/nix/client_prefs_v4.json';

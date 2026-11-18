@@ -63,7 +63,6 @@ class NixTheme {
     NixPalette palette = NixPalette.yellow,
     double fontScale = 1.0,
   }) {
-    NixColors.sync(scheme, palette);
     final isLight = scheme.isLight;
     final onPrimary = palette.onAccentColor;
 

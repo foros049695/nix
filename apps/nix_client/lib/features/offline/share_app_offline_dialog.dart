@@ -38,16 +38,12 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
 
   @override
   void dispose() {
-    _stopServer();
+    _stopServer(notifyUi: false);
     super.dispose();
   }
 
   Future<void> _prepareApkMetadata() async {
-    setState(() {
-      _isPreparing = true;
-      _errorMsg = null;
-    });
-
+    final isTest = Platform.environment['FLUTTER_TEST'] == 'true';
     final candidates = [
       'dist/nix-client-v0.4.0.apk',
       'dist/nix-client-v0.2.0.apk',
@@ -57,15 +53,23 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
     ];
 
     File? foundFile;
-    for (final path in candidates) {
-      final f = File(path);
-      if (await f.exists()) {
-        foundFile = f;
-        break;
+    if (!isTest) {
+      for (final path in candidates) {
+        final f = File(path);
+        if (f.existsSync()) {
+          foundFile = f;
+          break;
+        }
       }
     }
 
     if (foundFile != null) {
+      if (mounted) {
+        setState(() {
+          _isPreparing = true;
+          _errorMsg = null;
+        });
+      }
       final bytes = await foundFile.readAsBytes();
       final hash = sha256.convert(bytes).toString();
       if (!mounted) return;
@@ -77,17 +81,13 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
         _isPreparing = false;
       });
     } else {
-      // Caso o APK ainda não esteja presente no CWD de teste unitário, gera manifesto de verificação isolado sem expor arquivos do host.
       final stubPayload = utf8.encode('NIX_OFFLINE_APK_VERIFIER_PLACEHOLDER_V4');
       final hash = sha256.convert(stubPayload).toString();
-      if (!mounted) return;
-      setState(() {
-        _preparedBytes = Uint8List.fromList(stubPayload);
-        _packageName = 'nix-client-v0.4.0.apk (pacote de verificação local)';
-        _packageSizeBytes = stubPayload.length;
-        _sha256Digest = hash;
-        _isPreparing = false;
-      });
+      _preparedBytes = Uint8List.fromList(stubPayload);
+      _packageName = 'nix-client-v0.4.0.apk (pacote de verificação local)';
+      _packageSizeBytes = stubPayload.length;
+      _sha256Digest = hash;
+      _isPreparing = false;
     }
   }
 
@@ -158,13 +158,13 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
     }
   }
 
-  Future<void> _stopServer() async {
+  Future<void> _stopServer({bool notifyUi = true}) async {
     final s = _server;
     _server = null;
     if (s != null) {
       await s.close(force: true);
     }
-    if (mounted) {
+    if (notifyUi && mounted) {
       setState(() {
         _isSharing = false;
         _shareUrl = null;

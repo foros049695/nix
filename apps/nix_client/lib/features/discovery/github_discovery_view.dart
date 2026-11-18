@@ -510,9 +510,12 @@ class _StarwireRealChartsPanel extends StatelessWidget {
             children: [
               Icon(Icons.bar_chart_rounded, size: 16, color: accentText),
               const SizedBox(width: 8),
-              Text(
-                'DISTRIBUIÇÃO REAL DO DATASET STARWIRE ($totalRepos REPOSITÓRIOS · $filteredCount FILTRADOS)',
-                style: NixTokens.labelUppercase(),
+              Expanded(
+                child: Text(
+                  'DISTRIBUIÇÃO REAL DO DATASET STARWIRE ($totalRepos REPOSITÓRIOS · $filteredCount FILTRADOS)',
+                  style: NixTokens.labelUppercase(),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
