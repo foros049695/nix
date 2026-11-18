@@ -26,6 +26,10 @@ Thumbs.db
 [Dd]esktop.ini
 
 # Flutter / Dart
+.dart_tool/
+**/.dart_tool/
+.packages
+.pub-cache/
 apps/nix_client/.dart_tool/
 apps/nix_client/.flutter-plugins
 apps/nix_client/.flutter-plugins-dependencies
