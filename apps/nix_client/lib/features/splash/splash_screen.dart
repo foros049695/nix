@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 
@@ -93,26 +94,33 @@ class _NixSplashWrapperState extends State<NixSplashWrapper>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Ícone Oficial do Nix Centralizado em Fundo Preto AMOLED
+                // Nova Logo Vetorizada do Nix adaptada ao Tema Ativo
                 Container(
-                  width: 96,
-                  height: 96,
+                  width: 108,
+                  height: 108,
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: NixColors.surfaceCard,
-                    border: Border.all(color: NixColors.surfaceBorderStrong, width: 1.5),
+                    border: Border.all(
+                      color: context.accentColor.withValues(alpha: 0.65),
+                      width: 1.6,
+                    ),
                   ),
-                  clipBehavior: Clip.antiAlias,
                   child: Image.asset(
-                    'assets/images/nix_logo.png',
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Center(
-                      child: Icon(Icons.shield_moon_outlined, color: Colors.white, size: 42),
+                    context.brandLogoAsset,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Center(
+                      child: Icon(
+                        Icons.shield_moon_outlined,
+                        color: NixColors.textPrimary,
+                        size: 42,
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
+                Text(
                   'N I X',
                   style: TextStyle(
                     color: NixColors.textPrimary,
@@ -125,13 +133,13 @@ class _NixSplashWrapperState extends State<NixSplashWrapper>
                 if (_initError != null) ...[
                   Text(
                     _initError!,
-                    style: const TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                    style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: NixColors.surfaceBorderStrong),
+                      foregroundColor: NixColors.textPrimary,
+                      side: BorderSide(color: NixColors.surfaceBorderStrong),
                     ),
                     onPressed: _bootServices,
                     child: const Text('Tentar Novamente', style: TextStyle(fontSize: 12)),
@@ -139,7 +147,7 @@ class _NixSplashWrapperState extends State<NixSplashWrapper>
                 ] else ...[
                   Text(
                     _statusMessage,
-                    style: const TextStyle(color: NixColors.textMuted, fontSize: 11.5),
+                    style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
                   ),
                 ],
               ],

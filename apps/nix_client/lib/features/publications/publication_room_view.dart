@@ -22,17 +22,17 @@ class PublicationRoomView extends StatelessWidget {
         Container(
           height: 52,
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: NixColors.surfaceSidebar,
             border: Border(bottom: BorderSide(color: NixColors.surfaceBorder, width: 1)),
           ),
           child: Row(
             children: [
-              const Icon(Icons.auto_stories_rounded, color: NixColors.accentPublication, size: 20),
+              Icon(Icons.auto_stories_rounded, color: NixColors.accentPublication, size: 20),
               const SizedBox(width: 8),
               Text(
                 channel.name,
-                style: const TextStyle(
+                style: TextStyle(
                   color: NixColors.textPrimary,
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
@@ -46,7 +46,7 @@ class PublicationRoomView extends StatelessWidget {
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(color: NixColors.accentPublication.withOpacity(0.3)),
                 ),
-                child: const Text(
+                child: Text(
                   'NIX ARCHIVE · OBJETOS CANÔNICOS',
                   style: TextStyle(color: NixColors.accentPublication, fontSize: 10, fontWeight: FontWeight.bold),
                 ),
@@ -91,7 +91,7 @@ class PublicationRoomView extends StatelessWidget {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: const [
+        children: [
           Icon(Icons.library_books_rounded, size: 48, color: NixColors.textMuted),
           SizedBox(height: 12),
           Text(
@@ -118,7 +118,7 @@ class PublicationRoomView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
+            children: [
               Text(
                 'Toda publicação é assinada pela sua Persona Editorial Ed25519 e recebe um identificador imutável de hash canônico.',
                 style: TextStyle(color: NixColors.textMuted, fontSize: 12),
@@ -138,7 +138,7 @@ class PublicationRoomView extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
+            child: Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -147,7 +147,7 @@ class PublicationRoomView extends StatelessWidget {
             ),
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
+                SnackBar(
                   content: Text('Objeto canônico assinado e propagado nas réplicas opt-in!'),
                   backgroundColor: NixColors.accentPublication,
                 ),
@@ -189,7 +189,7 @@ class _PublicationCard extends StatelessWidget {
                   children: [
                     Text(
                       publication.title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: NixColors.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -198,16 +198,16 @@ class _PublicationCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        const Icon(Icons.verified, size: 14, color: NixColors.accentGreen),
+                        Icon(Icons.verified, size: 14, color: NixColors.accentGreen),
                         const SizedBox(width: 4),
                         Text(
                           publication.authorPersona,
-                          style: const TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                          style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
                         ),
                         const SizedBox(width: 8),
                         Text(
                           '· ${publication.publishedAt.day}/${publication.publishedAt.month}',
-                          style: const TextStyle(color: NixColors.textMuted, fontSize: 12),
+                          style: TextStyle(color: NixColors.textMuted, fontSize: 12),
                         ),
                       ],
                     ),

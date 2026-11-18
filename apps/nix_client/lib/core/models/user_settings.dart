@@ -59,10 +59,15 @@ class AuthorizedDevice {
 }
 
 class UserSettings {
-  // 5.0 Aparência — Living AMOLED & Paleta
+  // 5.0 Aparência — Dark Yellow, Light Yellow, AMOLED e Paleta
+  final NixThemeMode themeMode;
   final NixPaletteType paletteType;
   final int? customPaletteColor;
   final bool floatingWindowMode;
+  final double windowWidth;
+  final double windowHeight;
+  final double? windowOffsetX;
+  final double? windowOffsetY;
 
   // 5.1 Notificações e sons
   final bool messageNotifications;
@@ -120,9 +125,14 @@ class UserSettings {
   final bool atakBridgeEnabled;
 
   const UserSettings({
-    this.paletteType = NixPaletteType.original,
+    this.themeMode = NixThemeMode.darkYellow,
+    this.paletteType = NixPaletteType.yellow,
     this.customPaletteColor,
     this.floatingWindowMode = true,
+    this.windowWidth = 1152.0,
+    this.windowHeight = 720.0,
+    this.windowOffsetX,
+    this.windowOffsetY,
     this.messageNotifications = true,
     this.callNotifications = true,
     this.systemAlerts = true,
@@ -186,22 +196,22 @@ class UserSettings {
       AuthorizedDevice(
         id: 'dev_current',
         deviceName: 'Linux Desktop (Esta Sessão)',
-        clientVersion: 'Nix Client v0.2.0-amoled',
-        lastSeenLabel: 'Hoje, 03:40',
+        clientVersion: 'Nix Client v0.4.0-dev',
+        lastSeenLabel: 'Sessão Ativa',
         isCurrent: true,
         fingerprint: 'ED25-992A-44B1-02E3',
       ),
       AuthorizedDevice(
         id: 'dev_mobile',
         deviceName: 'Android Mobile (Tor TransProxy)',
-        clientVersion: 'Nix Mobile v0.2.0',
-        lastSeenLabel: '18 Nov 2026, 01:15',
+        clientVersion: 'Nix Mobile v0.4.0-dev',
+        lastSeenLabel: 'Última sincronização local',
         isCurrent: false,
         fingerprint: '77F1-30A8-C129-B582',
       ),
     ],
     this.persistWindowGeometry = false,
-    this.quantizeViewportDimensions = true,
+    this.quantizeViewportDimensions = false,
     this.blockRemoteEmbeds = true,
     this.reducedMotion = false,
     this.duressPinConfigured = true,
@@ -209,9 +219,14 @@ class UserSettings {
   });
 
   UserSettings copyWith({
+    NixThemeMode? themeMode,
     NixPaletteType? paletteType,
     int? customPaletteColor,
     bool? floatingWindowMode,
+    double? windowWidth,
+    double? windowHeight,
+    double? windowOffsetX,
+    double? windowOffsetY,
     bool? messageNotifications,
     bool? callNotifications,
     bool? systemAlerts,
@@ -255,9 +270,14 @@ class UserSettings {
     bool? atakBridgeEnabled,
   }) {
     return UserSettings(
+      themeMode: themeMode ?? this.themeMode,
       paletteType: paletteType ?? this.paletteType,
       customPaletteColor: customPaletteColor ?? this.customPaletteColor,
       floatingWindowMode: floatingWindowMode ?? this.floatingWindowMode,
+      windowWidth: windowWidth ?? this.windowWidth,
+      windowHeight: windowHeight ?? this.windowHeight,
+      windowOffsetX: windowOffsetX ?? this.windowOffsetX,
+      windowOffsetY: windowOffsetY ?? this.windowOffsetY,
       messageNotifications: messageNotifications ?? this.messageNotifications,
       callNotifications: callNotifications ?? this.callNotifications,
       systemAlerts: systemAlerts ?? this.systemAlerts,
@@ -299,6 +319,64 @@ class UserSettings {
       reducedMotion: reducedMotion ?? this.reducedMotion,
       duressPinConfigured: duressPinConfigured ?? this.duressPinConfigured,
       atakBridgeEnabled: atakBridgeEnabled ?? this.atakBridgeEnabled,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'themeMode': themeMode.name,
+        'paletteType': paletteType.name,
+        'customPaletteColor': customPaletteColor,
+        'floatingWindowMode': floatingWindowMode,
+        'windowWidth': windowWidth,
+        'windowHeight': windowHeight,
+        'windowOffsetX': windowOffsetX,
+        'windowOffsetY': windowOffsetY,
+        'cardIdVisibility': cardIdVisibility,
+        'compactChatMode': compactChatMode,
+        'fontScale': fontScale,
+        'enterToSend': enterToSend,
+        'persistWindowGeometry': persistWindowGeometry,
+        'quantizeViewportDimensions': quantizeViewportDimensions,
+        'reducedMotion': reducedMotion,
+        'transportProfile': transportProfile,
+      };
+
+  factory UserSettings.fromJson(Map<String, dynamic> json) {
+    NixThemeMode parsedMode = NixThemeMode.darkYellow;
+    if (json['themeMode'] is String) {
+      for (final m in NixThemeMode.values) {
+        if (m.name == json['themeMode']) {
+          parsedMode = m;
+          break;
+        }
+      }
+    }
+    NixPaletteType parsedPalette = NixPaletteType.yellow;
+    if (json['paletteType'] is String) {
+      for (final p in NixPaletteType.values) {
+        if (p.name == json['paletteType']) {
+          parsedPalette = p;
+          break;
+        }
+      }
+    }
+    return UserSettings(
+      themeMode: parsedMode,
+      paletteType: parsedPalette,
+      customPaletteColor: json['customPaletteColor'] as int?,
+      floatingWindowMode: (json['floatingWindowMode'] as bool?) ?? true,
+      windowWidth: (json['windowWidth'] as num?)?.toDouble() ?? 1152.0,
+      windowHeight: (json['windowHeight'] as num?)?.toDouble() ?? 720.0,
+      windowOffsetX: (json['windowOffsetX'] as num?)?.toDouble(),
+      windowOffsetY: (json['windowOffsetY'] as num?)?.toDouble(),
+      cardIdVisibility: (json['cardIdVisibility'] as String?) ?? 'Apenas Contatos Verificados',
+      compactChatMode: (json['compactChatMode'] as bool?) ?? false,
+      fontScale: (json['fontScale'] as num?)?.toDouble() ?? 1.0,
+      enterToSend: (json['enterToSend'] as bool?) ?? true,
+      persistWindowGeometry: (json['persistWindowGeometry'] as bool?) ?? false,
+      quantizeViewportDimensions: (json['quantizeViewportDimensions'] as bool?) ?? false,
+      reducedMotion: (json['reducedMotion'] as bool?) ?? false,
+      transportProfile: (json['transportProfile'] as String?) ?? 'Tor Onion v3 (Fail-Closed)',
     );
   }
 }

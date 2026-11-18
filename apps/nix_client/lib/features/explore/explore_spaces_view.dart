@@ -44,18 +44,18 @@ class _ExploreSpacesViewState extends State<ExploreSpacesView> {
           Container(
             height: 52,
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: NixColors.surfaceSidebar,
               border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.explore_outlined, color: Colors.white, size: 20),
+                Icon(Icons.explore_outlined, color: NixColors.textPrimary, size: 20),
                 const SizedBox(width: 10),
-                const Text(
+                Text(
                   'EXPLORAR COMUNIDADES & CANAIS PÚBLICOS',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: NixColors.textPrimary,
                     fontSize: 13.5,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.8,
@@ -81,15 +81,15 @@ class _ExploreSpacesViewState extends State<ExploreSpacesView> {
                               ? Icons.arrow_upward_rounded
                               : Icons.arrow_downward_rounded,
                           size: 14,
-                          color: Colors.white,
+                          color: NixColors.textPrimary,
                         ),
                         const SizedBox(width: 6),
                         Text(
                           nixState.exploreSortAscending
                               ? 'Ordem: Menos Populoso → Mais Populoso'
                               : 'Ordem: Mais Populoso → Menos Populoso',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: NixColors.textPrimary,
                             fontSize: 11.5,
                             fontWeight: FontWeight.w600,
                           ),
@@ -117,25 +117,25 @@ class _ExploreSpacesViewState extends State<ExploreSpacesView> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'ENCONTRE SUA COMUNIDADE NO NIX',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: NixColors.textPrimary,
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 0.5,
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
+                      Text(
                         'Listagem priorizando células enxutas (do menos populoso ao mais populoso) para descentralização orgânica.',
                         style: TextStyle(color: NixColors.textSecondary, fontSize: 13),
                       ),
                       const SizedBox(height: 16),
                       TextField(
                         onChanged: (v) => nixState.setExploreSearchQuery(v),
-                        style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                        decoration: const InputDecoration(
+                        style: TextStyle(color: NixColors.textPrimary, fontSize: 13.5),
+                        decoration: InputDecoration(
                           hintText: 'Pesquisar grupos públicos por nome, tema ou tecnologia...',
                           prefixIcon: Icon(Icons.search_rounded, color: NixColors.textSecondary),
                           fillColor: NixColors.background,
@@ -160,10 +160,10 @@ class _ExploreSpacesViewState extends State<ExploreSpacesView> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
-                              color: selected ? Colors.white : NixColors.surfaceCard,
+                              color: selected ? NixColors.textPrimary : NixColors.surfaceCard,
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: selected ? Colors.white : NixColors.surfaceBorder,
+                                color: selected ? NixColors.textPrimary : NixColors.surfaceBorder,
                               ),
                             ),
                             child: Text(
@@ -254,8 +254,8 @@ class _PublicSpaceCard extends StatelessWidget {
                   child: Center(
                     child: Text(
                       space.initials,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: NixColors.textPrimary,
                         fontWeight: FontWeight.w800,
                         fontSize: 14,
                       ),
@@ -269,13 +269,13 @@ class _PublicSpaceCard extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.verified_outlined, size: 14, color: Colors.white),
+                          Icon(Icons.verified_outlined, size: 14, color: NixColors.textPrimary),
                           const SizedBox(width: 5),
                           Expanded(
                             child: Text(
                               space.name,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: NixColors.textPrimary,
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -287,7 +287,7 @@ class _PublicSpaceCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         space.categoryTag,
-                        style: const TextStyle(color: NixColors.textMuted, fontSize: 11),
+                        style: TextStyle(color: NixColors.textMuted, fontSize: 11),
                       ),
                     ],
                   ),
@@ -300,27 +300,27 @@ class _PublicSpaceCard extends StatelessWidget {
                 space.description,
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   color: NixColors.textSecondary,
                   fontSize: 12,
                   height: 1.35,
                 ),
               ),
             ),
-            const Divider(height: 16, color: NixColors.surfaceBorder),
+            Divider(height: 16, color: NixColors.surfaceBorder),
             Row(
               children: [
                 Container(
                   width: 7,
                   height: 7,
-                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: NixColors.textPrimary, shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 5),
                 Expanded(
                   child: Text(
                     '${space.onlineCount} on · ${space.memberCount} membros',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: NixColors.textPrimary,
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
@@ -328,10 +328,10 @@ class _PublicSpaceCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 6),
-                const Text(
+                Text(
                   'Acessar →',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: NixColors.textPrimary,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),

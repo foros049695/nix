@@ -15,7 +15,7 @@ class MembersPanel extends StatelessWidget {
 
     return Container(
       width: 240,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: NixColors.surfaceSidebar,
         border: Border(
           left: BorderSide(color: NixColors.surfaceBorder, width: 1),
@@ -30,7 +30,7 @@ class MembersPanel extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Row(
               children: [
-                const Text(
+                Text(
                   'PARTICIPANTES',
                   style: TextStyle(
                     color: NixColors.textMuted,
@@ -48,13 +48,13 @@ class MembersPanel extends StatelessWidget {
                   ),
                   child: Text(
                     '${members.length}',
-                    style: const TextStyle(color: NixColors.textSecondary, fontSize: 10, fontWeight: FontWeight.bold),
+                    style: TextStyle(color: NixColors.textSecondary, fontSize: 10, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
             ),
           ),
-          const Divider(height: 1, color: NixColors.surfaceBorder),
+          Divider(height: 1, color: NixColors.surfaceBorder),
           Expanded(
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
@@ -106,7 +106,7 @@ class _MemberTile extends StatelessWidget {
                 child: Center(
                   child: Text(
                     member.name[0],
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                    style: TextStyle(color: NixColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                 ),
               ),
@@ -148,7 +148,7 @@ class _MemberTile extends StatelessWidget {
                 ),
                 Text(
                   member.fingerprint.substring(0, 9),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: NixColors.textMuted,
                     fontSize: 9,
                     fontFamily: 'monospace',

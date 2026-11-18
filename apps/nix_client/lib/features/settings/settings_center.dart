@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/user_settings.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../core/theme/nix_palette.dart';
@@ -58,20 +59,21 @@ class _SettingsCenterState extends State<SettingsCenter> {
     }
   }
 
-  void _runConnectivityDiagnostic() {
+  void _runConnectivityDiagnostic() async {
+    final nixState = context.read<NixState>();
     setState(() {
       _isRunningNetDiag = true;
-      _netDiagResult = 'Verificando isolamento SOCKS5, guarda de entrada e política Fail-Closed...';
+      _netDiagResult = 'Verificando porta SOCKS5 127.0.0.1:9050 e política Fail-Closed...';
     });
-    Future.delayed(const Duration(milliseconds: 700), () {
-      if (mounted) {
-        setState(() {
-          _isRunningNetDiag = false;
-          _netDiagResult =
-              'Diagnóstico concluído: Proxy SOCKS5 (127.0.0.1:9050) ativo · Latência Onion p50: 412ms · Fallback IP Direto: BLOQUEADO.';
-        });
-      }
-    });
+    final ok = await nixState.checkTorDaemonStatus();
+    if (mounted) {
+      setState(() {
+        _isRunningNetDiag = false;
+        _netDiagResult = ok
+            ? '${nixState.torDiagnosticDetail} · Fallback IP Direto: BLOQUEADO.'
+            : nixState.torDiagnosticDetail;
+      });
+    }
   }
 
   void _showAddDeviceDialog(NixState state) {
@@ -80,12 +82,12 @@ class _SettingsCenterState extends State<SettingsCenter> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: NixColors.surfaceElevatedHigh,
-        title: const Text('Vincular Novo Dispositivo', style: TextStyle(color: Colors.white, fontSize: 16)),
+        title: Text('Vincular Novo Dispositivo', style: TextStyle(color: NixColors.textPrimary, fontSize: 16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Escaneie o código efêmero com o app Nix no seu segundo dispositivo para autorizar uma nova chave de sessão sem passar chaves privadas mestre pela rede.',
               style: TextStyle(color: NixColors.textMuted, fontSize: 12),
             ),
@@ -118,7 +120,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar', style: TextStyle(color: NixColors.textSecondary)),
+            child: Text('Cancelar', style: TextStyle(color: NixColors.textSecondary)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -161,7 +163,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
               Container(
                 height: 54,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: NixColors.surfaceSidebar,
                   border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
                 ),
@@ -179,15 +181,15 @@ class _SettingsCenterState extends State<SettingsCenter> {
                             borderRadius: NixTokens.borderSm,
                             border: Border.all(color: NixColors.surfaceBorderStrong),
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.arrow_back_rounded, size: 15, color: Colors.white),
+                              Icon(Icons.arrow_back_rounded, size: 15, color: NixColors.textPrimary),
                               SizedBox(width: 6),
                               Text(
                                 'Card ID',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: NixColors.textPrimary,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -198,9 +200,9 @@ class _SettingsCenterState extends State<SettingsCenter> {
                       ),
                       const SizedBox(width: 14),
                     ],
-                    const Icon(Icons.tune_rounded, color: NixColors.textPrimary, size: 18),
+                    Icon(Icons.tune_rounded, color: NixColors.textPrimary, size: 18),
                     const SizedBox(width: 8),
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         'CENTRAL DE CONFIGURAÇÕES NIX',
                         style: TextStyle(
@@ -214,7 +216,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
                     ),
                     if (widget.onClose != null)
                       IconButton(
-                        icon: const Icon(Icons.close_rounded, color: NixColors.textSecondary, size: 20),
+                        icon: Icon(Icons.close_rounded, color: NixColors.textSecondary, size: 20),
                         tooltip: 'Fechar (Esc)',
                         onPressed: widget.onClose,
                       ),
@@ -228,7 +230,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
                     ? Column(
                         children: [
                           _buildHorizontalCategorySelector(nixState, activeCat),
-                          const Divider(height: 1, color: NixColors.surfaceBorder),
+                          Divider(height: 1, color: NixColors.surfaceBorder),
                           Expanded(child: _buildCategoryContent(nixState, settings, activeCat)),
                         ],
                       )
@@ -249,7 +251,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
   Widget _buildSidebarNavigation(NixState nixState, SettingsCategory activeCat) {
     return Container(
       width: 235,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: NixColors.surfaceSidebar,
         border: Border(right: BorderSide(color: NixColors.surfaceBorder)),
       ),
@@ -266,7 +268,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
             nixState: nixState,
             category: SettingsCategory.appearance,
             icon: Icons.palette_outlined,
-            label: 'Aparência Living AMOLED',
+            label: 'Aparência & Temas',
             isSelected: activeCat == SettingsCategory.appearance,
           ),
           const SizedBox(height: 8),
@@ -316,7 +318,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
             label: 'Dispositivos & Sessões',
             isSelected: activeCat == SettingsCategory.devices,
           ),
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
             child: Divider(height: 1, color: NixColors.surfaceBorder),
           ),
@@ -362,18 +364,18 @@ class _SettingsCenterState extends State<SettingsCenter> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: selected ? NixColors.textPrimary : NixColors.surfaceCard,
+                color: selected ? context.accentColor : NixColors.surfaceCard,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: NixColors.surfaceBorder),
               ),
               child: Row(
                 children: [
-                  Icon(item.$2, size: 14, color: selected ? Colors.black : Colors.white),
+                  Icon(item.$2, size: 14, color: selected ? context.onAccentColor : NixColors.textPrimary),
                   const SizedBox(width: 6),
                   Text(
                     item.$3,
                     style: TextStyle(
-                      color: selected ? Colors.black : Colors.white,
+                      color: selected ? context.onAccentColor : NixColors.textPrimary,
                       fontSize: 11.5,
                       fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                     ),
@@ -454,21 +456,84 @@ class _SettingsCenterState extends State<SettingsCenter> {
     );
   }
 
-  // ================= 5.0 APARÊNCIA — LIVING AMOLED & PALETAS =================
+  // ================= 5.0 APARÊNCIA — DARK YELLOW, LIGHT YELLOW & AMOLED =================
   Widget _buildAppearanceSection(NixState state, UserSettings s) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeader(
-          'Configurações → Aparência → Paleta de Cores',
-          'Direção visual NIX LIVING AMOLED: Preto absoluto (#000000), superfícies elevadas (#101014 / #19191F) e acentos de cor selecionáveis sem quebrar garantias de segurança.',
+          'Configurações → Aparência → Temas',
+          'Escolha entre os dois temas oficiais com destaque amarelo (#FFC928), AMOLED puro (#000000) ou acompanhe o sistema.',
         ),
-        Text('TEMAS DE COR NIX LIVING AMOLED', style: NixTokens.labelUppercase()),
+        Text('TEMAS OFICIAIS DO NIX', style: NixTokens.labelUppercase()),
         const SizedBox(height: 8),
         Wrap(
           spacing: 12,
           runSpacing: 12,
           children: [
+            _themeModeCard(
+              key: const Key('theme_mode_dark_yellow'),
+              state: state,
+              mode: NixThemeMode.darkYellow,
+              title: 'Dark Yellow',
+              subtitle: '#08090B · #FFC928',
+              previewBg: const Color(0xFF08090B),
+              previewSurface: const Color(0xFF17191E),
+              previewElevated: const Color(0xFF292C33),
+              previewText: const Color(0xFFFFFFFF),
+              isSelected: s.themeMode == NixThemeMode.darkYellow,
+            ),
+            _themeModeCard(
+              key: const Key('theme_mode_light_yellow'),
+              state: state,
+              mode: NixThemeMode.lightYellow,
+              title: 'Light Yellow',
+              subtitle: '#FFFFFF · #FFC928',
+              previewBg: const Color(0xFFFFFFFF),
+              previewSurface: const Color(0xFFF6F7F9),
+              previewElevated: const Color(0xFFE9EBEF),
+              previewText: const Color(0xFF17191E),
+              isSelected: s.themeMode == NixThemeMode.lightYellow,
+            ),
+            _themeModeCard(
+              key: const Key('theme_mode_amoled'),
+              state: state,
+              mode: NixThemeMode.amoled,
+              title: 'AMOLED Puro',
+              subtitle: '#000000 · Opcional',
+              previewBg: const Color(0xFF000000),
+              previewSurface: const Color(0xFF0A0A0E),
+              previewElevated: const Color(0xFF19191F),
+              previewText: const Color(0xFFFFFFFF),
+              isSelected: s.themeMode == NixThemeMode.amoled,
+            ),
+            _themeModeCard(
+              key: const Key('theme_mode_system'),
+              state: state,
+              mode: NixThemeMode.system,
+              title: 'Tema do Sistema',
+              subtitle: 'Claro / Escuro automático',
+              previewBg: const Color(0xFF17191E),
+              previewSurface: const Color(0xFFF6F7F9),
+              previewElevated: const Color(0xFF292C33),
+              previewText: NixColors.textPrimary,
+              isSelected: s.themeMode == NixThemeMode.system,
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        Text('COR DE DESTAQUE & PERSONALIZAÇÃO', style: NixTokens.labelUppercase()),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            _paletteCard(
+              state: state,
+              type: NixPaletteType.yellow,
+              palette: NixPalette.yellow,
+              isSelected: s.paletteType == NixPaletteType.yellow,
+            ),
             _paletteCard(
               state: state,
               type: NixPaletteType.original,
@@ -513,7 +578,8 @@ class _SettingsCenterState extends State<SettingsCenter> {
         const SizedBox(height: 8),
         _switchTile(
           title: 'Janela Flutuante & Redimensionável',
-          subtitle: 'Permite redimensionar a janela pelas bordas e cantos do mouse no desktop com limites mínimos de segurança (800×540).',
+          subtitle:
+              'Permite redimensionar pelas 8 bordas e cantos no desktop (dimensões mínimas 720×500) com cantos arredondados.',
           value: s.floatingWindowMode,
           onChanged: (v) => state.toggleFloatingWindowMode(v),
         ),
@@ -526,6 +592,118 @@ class _SettingsCenterState extends State<SettingsCenter> {
           onChanged: (v) => state.updateSettings(s.copyWith(fontScale: v)),
         ),
       ],
+    );
+  }
+
+  Widget _themeModeCard({
+    required Key key,
+    required NixState state,
+    required NixThemeMode mode,
+    required String title,
+    required String subtitle,
+    required Color previewBg,
+    required Color previewSurface,
+    required Color previewElevated,
+    required Color previewText,
+    required bool isSelected,
+  }) {
+    final accent = state.currentPalette.primaryAccent;
+    return InkWell(
+      key: key,
+      onTap: () => state.updateThemeMode(mode),
+      borderRadius: NixTokens.borderMd,
+      child: Container(
+        width: 175,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected ? NixColors.surfaceElevatedHigh : NixColors.surfaceCard,
+          borderRadius: NixTokens.borderMd,
+          border: Border.all(
+            color: isSelected ? accent : NixColors.surfaceBorder,
+            width: isSelected ? 1.8 : 1.0,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 44,
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: previewBg,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: NixColors.surfaceBorderStrong),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 24,
+                    decoration: BoxDecoration(
+                      color: previewSurface,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          height: 6,
+                          width: 54,
+                          decoration: BoxDecoration(
+                            color: previewText,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Container(
+                          height: 8,
+                          width: 72,
+                          decoration: BoxDecoration(
+                            color: previewElevated,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      color: NixColors.textPrimary,
+                      fontSize: 12.5,
+                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (isSelected)
+                  Icon(Icons.check_circle_rounded, size: 15, color: NixColors.accentText),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TextStyle(color: NixColors.textMuted, fontSize: 10.5, fontFamily: 'monospace'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -570,7 +748,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
                   decoration: BoxDecoration(
                     color: palette.primaryAccent,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white24, width: 1),
+                    border: Border.all(color: NixColors.surfaceBorder, width: 1),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -578,7 +756,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
                   child: Text(
                     palette.name,
                     style: TextStyle(
-                      color: isSelected ? Colors.white : NixColors.textSecondary,
+                      color: isSelected ? NixColors.textPrimary : NixColors.textSecondary,
                       fontSize: 12,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                     ),
@@ -666,15 +844,15 @@ class _SettingsCenterState extends State<SettingsCenter> {
                   decoration: BoxDecoration(
                     color: customColor,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white24, width: 1),
+                    border: Border.all(color: NixColors.surfaceBorder, width: 1),
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Personalizado',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: NixColors.textPrimary,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -772,8 +950,8 @@ class _SettingsCenterState extends State<SettingsCenter> {
           onChanged: (v) => state.updateSettings(s.copyWith(profileVisibility: v)),
         ),
         _dropdownCard(
-          title: 'Visibilidade do Card ID em Solicitações & Hover',
-          subtitle: 'Controla a exibição do Card ID flutuante quando outros usuários visualizam suas solicitações.',
+          title: 'Privacidade → Visibilidade do Card ID',
+          subtitle: 'Define na camada de dados quem pode visualizar seu Card ID, biografia e acervo.',
           value: s.cardIdVisibility,
           options: const ['Público', 'Apenas Contatos Verificados', 'Oculto'],
           onChanged: (v) => state.updateCardIdVisibility(v),
@@ -833,7 +1011,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
                   Expanded(
                     child: TextField(
                       controller: _blockIdController,
-                      style: const TextStyle(fontSize: 12, color: Colors.white),
+                      style: TextStyle(fontSize: 12, color: NixColors.textPrimary),
                       decoration: const InputDecoration(
                         hintText: 'Inserir ID para bloquear (ex: NIX-1234-...)',
                         isDense: true,
@@ -843,8 +1021,8 @@ class _SettingsCenterState extends State<SettingsCenter> {
                   const SizedBox(width: 8),
                   OutlinedButton(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: NixColors.surfaceBorderStrong),
+                      foregroundColor: NixColors.textPrimary,
+                      side: BorderSide(color: NixColors.surfaceBorderStrong),
                     ),
                     onPressed: () {
                       state.blockNewUser(_blockIdController.text);
@@ -858,11 +1036,11 @@ class _SettingsCenterState extends State<SettingsCenter> {
               ...s.blockedUserIds.map((id) => ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.block, size: 16, color: NixColors.textMuted),
+                    leading: Icon(Icons.block, size: 16, color: NixColors.textMuted),
                     title: Text(id, style: NixTokens.monoCode()),
                     trailing: TextButton(
                       onPressed: () => state.unblockUser(id),
-                      child: const Text('Desbloquear',
+                      child: Text('Desbloquear',
                           style: TextStyle(color: NixColors.textSecondary, fontSize: 11)),
                     ),
                   )),
@@ -880,15 +1058,15 @@ class _SettingsCenterState extends State<SettingsCenter> {
           ),
           child: Row(
             children: [
-              const Icon(Icons.delete_sweep_outlined, color: Colors.white, size: 20),
+              Icon(Icons.delete_sweep_outlined, color: NixColors.textPrimary, size: 20),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Limpeza de Cache e Temporários Locais',
                         style: TextStyle(
-                            color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                            color: NixColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                     Text('Zera buffers de miniaturas decifradas e limpa chaves efêmeras antigas.',
                         style: TextStyle(color: NixColors.textMuted, fontSize: 11.5)),
                   ],
@@ -896,8 +1074,8 @@ class _SettingsCenterState extends State<SettingsCenter> {
               ),
               OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: NixColors.surfaceBorderStrong),
+                  foregroundColor: NixColors.textPrimary,
+                  side: BorderSide(color: NixColors.surfaceBorderStrong),
                 ),
                 onPressed: () {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -1041,12 +1219,12 @@ class _SettingsCenterState extends State<SettingsCenter> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('TESTE DE CAPTURA DE VOZ EM TEMPO REAL',
-                      style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                  Text('TESTE DE CAPTURA DE VOZ EM TEMPO REAL',
+                      style: TextStyle(color: NixColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700)),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: NixColors.surfaceBorderStrong),
+                      foregroundColor: NixColors.textPrimary,
+                      side: BorderSide(color: NixColors.surfaceBorderStrong),
                     ),
                     onPressed: _toggleMicTest,
                     icon: Icon(_isTestingMic ? Icons.stop_rounded : Icons.play_arrow_rounded, size: 16),
@@ -1071,7 +1249,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
                 _isTestingMic
                     ? 'Fale no microfone. O medidor responde em tempo real sem transmitir áudio para a rede.'
                     : 'Pressione "Iniciar Teste" para calibrar o ganho do microfone localmente.',
-                style: const TextStyle(color: NixColors.textMuted, fontSize: 11.5),
+                style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
               ),
             ],
           ),
@@ -1127,16 +1305,16 @@ class _SettingsCenterState extends State<SettingsCenter> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('DIAGNÓSTICO DO CIRCUITO ONION V3',
-                      style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                  Text('DIAGNÓSTICO DO CIRCUITO ONION V3',
+                      style: TextStyle(color: NixColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700)),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: NixColors.surfaceBorderStrong),
+                      foregroundColor: NixColors.textPrimary,
+                      side: BorderSide(color: NixColors.surfaceBorderStrong),
                     ),
                     onPressed: _isRunningNetDiag ? null : _runConnectivityDiagnostic,
                     icon: _isRunningNetDiag
-                        ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        ? SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: NixColors.textPrimary))
                         : const Icon(Icons.refresh_rounded, size: 14),
                     label: const Text('Executar Teste', style: TextStyle(fontSize: 11)),
                   ),
@@ -1179,8 +1357,8 @@ class _SettingsCenterState extends State<SettingsCenter> {
                         Row(
                           children: [
                             Text(c.name,
-                                style: const TextStyle(
-                                    color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                                style: TextStyle(
+                                    color: NixColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                             const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1190,14 +1368,14 @@ class _SettingsCenterState extends State<SettingsCenter> {
                               ),
                               child: Text(
                                 c.scopeLabel,
-                                style: const TextStyle(color: NixColors.textSecondary, fontSize: 10),
+                                style: TextStyle(color: NixColors.textSecondary, fontSize: 10),
                               ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 4),
                         Text(c.description,
-                            style: const TextStyle(color: NixColors.textMuted, fontSize: 11.5)),
+                            style: TextStyle(color: NixColors.textMuted, fontSize: 11.5)),
                       ],
                     ),
                   ),
@@ -1244,7 +1422,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
                 color: NixColors.surfaceCard,
                 borderRadius: NixTokens.borderSm,
                 border: Border.all(
-                  color: dev.isCurrent ? Colors.white38 : NixColors.surfaceBorder,
+                  color: dev.isCurrent ? NixColors.surfaceBorderStrong : NixColors.surfaceBorder,
                   width: dev.isCurrent ? 1.2 : 1.0,
                 ),
               ),
@@ -1254,13 +1432,13 @@ class _SettingsCenterState extends State<SettingsCenter> {
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: dev.isCurrent ? Colors.white12 : NixColors.surfaceActive,
+                      color: dev.isCurrent ? NixColors.surfaceActive : NixColors.surfaceActive,
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
                       dev.isCurrent ? Icons.laptop_chromebook_rounded : Icons.phone_android_rounded,
                       size: 20,
-                      color: dev.isCurrent ? Colors.white : NixColors.textSecondary,
+                      color: dev.isCurrent ? NixColors.textPrimary : NixColors.textSecondary,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1273,8 +1451,8 @@ class _SettingsCenterState extends State<SettingsCenter> {
                             Flexible(
                               child: Text(
                                 dev.deviceName,
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: NixColors.textPrimary,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -1290,7 +1468,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
                                   borderRadius: BorderRadius.circular(4),
                                   border: Border.all(color: NixColors.accentGreen.withOpacity(0.4)),
                                 ),
-                                child: const Text(
+                                child: Text(
                                   'ESTA SESSÃO',
                                   style: TextStyle(
                                     color: NixColors.accentGreen,
@@ -1338,7 +1516,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
             borderRadius: NixTokens.borderSm,
             border: Border.all(color: NixColors.surfaceBorderStrong),
           ),
-          child: const Row(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(Icons.security_rounded, size: 16, color: NixColors.accentGreen),
@@ -1404,14 +1582,14 @@ class _SettingsCenterState extends State<SettingsCenter> {
             borderRadius: NixTokens.borderSm,
             border: Border.all(color: NixColors.surfaceBorderStrong),
           ),
-          child: const Row(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(Icons.info_outline_rounded, size: 16, color: NixColors.textSecondary),
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Nota de Engenharia (Limites Reais de Fingerprinting): Iniciar em janela não maximizada (1152×720) e discretizar o viewport protege contra inferência de resolução por conteúdos embutidos/remotos. Contudo, processos locais executando no mesmo SO com acesso às APIs do servidor gráfico (X11/Wayland) continuam capazes de consultar o hardware físico do monitor.',
+                  'Nota de Segurança: Iniciar em janela não maximizada (1152×720) e ajustar dimensões oferece melhor ergonomia no desktop e reduz variações triviais em conteúdo embutido, porém o modo janela não constitui garantia de proteção contra fingerprinting.',
                   style: TextStyle(color: NixColors.textMuted, fontSize: 11, height: 1.35),
                 ),
               ),
@@ -1423,17 +1601,17 @@ class _SettingsCenterState extends State<SettingsCenter> {
         // Mapa Transparente de Módulos: Implementado vs Experimental vs Planejado
         Text('MATRIZ DE MÓDULOS DE SOBREVIVÊNCIA & PRIVACIDADE', style: NixTokens.labelUppercase()),
         const SizedBox(height: 4),
-        const Text(
+        Text(
           'Distinção rigorosa entre recursos implementados nesta versão, recursos em validação experimental e especificações planejadas no roadmap.',
           style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
         ),
         const SizedBox(height: 12),
 
         _survivalModuleCard(
-          title: 'Design System NIX LIVING AMOLED & Paleta Personalizada',
+          title: 'Design System Nix V4 — Dark Yellow, Light Yellow & AMOLED',
           status: 'IMPLEMENTADO',
           description:
-              'Visual AMOLED com superfícies elevadas (#101014/#19191F), acentos selecionáveis em tempo real (Violet, Blue, Crimson, Amber, Rose, Custom) e persistência.',
+              'Dois temas oficiais com destaque amarelo (#FFC928), opção AMOLED Puro (#000000) e modo Sistema com persistência e aplicação global.',
         ),
         _survivalModuleCard(
           title: 'Identidade Local Soberana & Card ID Público',
@@ -1501,7 +1679,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
         children: [
           Text(title, style: NixTokens.headingMedium()),
           const SizedBox(height: 4),
-          Text(subtitle, style: const TextStyle(color: NixColors.textMuted, fontSize: 12.5)),
+          Text(subtitle, style: TextStyle(color: NixColors.textMuted, fontSize: 12.5)),
         ],
       ),
     );
@@ -1528,11 +1706,11 @@ class _SettingsCenterState extends State<SettingsCenter> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: NixColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
                 Text(subtitle,
-                    style: const TextStyle(color: NixColors.textMuted, fontSize: 11.5)),
+                    style: TextStyle(color: NixColors.textMuted, fontSize: 11.5)),
               ],
             ),
           ),
@@ -1561,7 +1739,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title,
-              style: const TextStyle(
+              style: TextStyle(
                   color: NixColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
           Slider(
             value: value.clamp(min, max),
@@ -1596,11 +1774,11 @@ class _SettingsCenterState extends State<SettingsCenter> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: NixColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
                 Text(subtitle,
-                    style: const TextStyle(color: NixColors.textMuted, fontSize: 11.5)),
+                    style: TextStyle(color: NixColors.textMuted, fontSize: 11.5)),
               ],
             ),
           ),
@@ -1609,7 +1787,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
             child: DropdownButton<String>(
               value: options.contains(value) ? value : options.first,
               dropdownColor: NixColors.surfaceActive,
-              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+              style: TextStyle(color: NixColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w600),
               items: options
                   .map((o) => DropdownMenuItem(value: o, child: Text(o)))
                   .toList(),
@@ -1647,8 +1825,8 @@ class _SettingsCenterState extends State<SettingsCenter> {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: NixColors.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                   ),
@@ -1657,14 +1835,14 @@ class _SettingsCenterState extends State<SettingsCenter> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: isImplemented ? Colors.white : NixColors.surfaceActive,
+                  color: isImplemented ? context.accentColor : NixColors.surfaceActive,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.white24, width: 0.5),
+                  border: Border.all(color: NixColors.surfaceBorder, width: 0.5),
                 ),
                 child: Text(
                   status,
                   style: TextStyle(
-                    color: isImplemented ? Colors.black : NixColors.textSecondary,
+                    color: isImplemented ? context.onAccentColor : NixColors.textSecondary,
                     fontSize: 9.5,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.6,
@@ -1676,7 +1854,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
           const SizedBox(height: 6),
           Text(
             description,
-            style: const TextStyle(color: NixColors.textMuted, fontSize: 11.5, height: 1.35),
+            style: TextStyle(color: NixColors.textMuted, fontSize: 11.5, height: 1.35),
           ),
         ],
       ),

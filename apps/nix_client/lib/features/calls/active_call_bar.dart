@@ -16,7 +16,7 @@ class ActiveCallBar extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: NixColors.surfaceCard,
         border: Border(
           top: BorderSide(color: NixColors.surfaceBorderStrong, width: 1),
@@ -28,12 +28,12 @@ class ActiveCallBar extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
+              color: NixColors.textPrimary.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.graphic_eq_rounded,
-              color: Colors.white,
+              color: NixColors.textPrimary,
               size: 16,
             ),
           ),
@@ -43,12 +43,12 @@ class ActiveCallBar extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Row(
+                Row(
                   children: [
                     Text(
                       'Voz Conectada',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: NixColors.textPrimary,
                         fontWeight: FontWeight.bold,
                         fontSize: 11,
                       ),
@@ -62,14 +62,14 @@ class ActiveCallBar extends StatelessWidget {
                 ),
                 Text(
                   '${call.activeChannelName ?? "Call"} ($minutes:$seconds)',
-                  style: const TextStyle(color: NixColors.textSecondary, fontSize: 11),
+                  style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.call_end_rounded, color: Colors.white, size: 18),
+            icon: Icon(Icons.call_end_rounded, color: NixColors.textPrimary, size: 18),
             tooltip: 'Desconectar da Call',
             onPressed: () => nixState.leaveCall(),
           ),
