@@ -520,7 +520,11 @@ class DoubleRatchet {
     return RatchetCiphertext(header: header, body: body);
   }
 
-  /// Decifra mensagem tratando entrega fora de ordem e avanço do DH Ratchet.
+  /// Decifra mensagem tratando entrega fora de ordem e avanço do DH Ratchet
+  /// com garantia estrita de execução atômica em estado candidato (Marco P0-1 / CRY01).
+  ///
+  /// Se a mensagem for forjada ou o AEAD falhar, nenhuma alteração de chave, contador
+  /// ou cabeçalho DH é efetivada, preservando a integridade da sessão contra ataques DoS.
   Future<Uint8List> decrypt(
     RatchetCiphertext message, {
     List<int> extraAad = const [],
@@ -532,6 +536,7 @@ class DoubleRatchet {
     final skippedId = _skipMapKey(header.dhPublicBytes, header.messageNumber);
     final skippedMk = _skippedMessageKeys[skippedId];
     if (skippedMk != null) {
+      // Abre primeiro; apenas remove a chave pulada se a decifração autenticada passar
       final clear = await SealedEnvelope.open(
         key: SecretKey(skippedMk),
         payload: message.body,
@@ -541,31 +546,102 @@ class DoubleRatchet {
       return clear;
     }
 
-    // 2. Se o remetente rotacionou a chave DH, pula mensagens pendentes da chain atual e faz passo DH
-    final remoteChanged = _dhRemote == null ||
-        !_constantTimeEquals(_dhRemote!.bytes, header.dhPublicBytes);
+    // 2. Snapshot do estado candidato isolado
+    var candDhSelf = _dhSelf;
+    var candDhRemote = _dhRemote;
+    var candRootKey = Uint8List.fromList(_rootKey);
+    var candSendChainKey = _sendChainKey != null ? Uint8List.fromList(_sendChainKey!) : null;
+    var candRecvChainKey = _recvChainKey != null ? Uint8List.fromList(_recvChainKey!) : null;
+    var candSendMessageNumber = _sendMessageNumber;
+    var candRecvMessageNumber = _recvMessageNumber;
+    var candPreviousChainLength = _previousChainLength;
+    final candSkipped = LinkedHashMap<String, Uint8List>.from(_skippedMessageKeys);
+
+    // Se o remetente rotacionou a chave DH, pula mensagens pendentes e avança DH na cópia candidata
+    final remoteChanged = candDhRemote == null ||
+        !_constantTimeEquals(candDhRemote.bytes, header.dhPublicBytes);
+
     if (remoteChanged) {
-      await _skipMessageKeys(header.previousChainLength);
-      await _dhRatchet(SimplePublicKey(header.dhPublicBytes, type: KeyPairType.x25519));
+      if (candRecvChainKey != null) {
+        if (candRecvMessageNumber + maxSkippedKeys < header.previousChainLength) {
+          throw StateError('Salto de mensagens além do limite seguro ($maxSkippedKeys).');
+        }
+        while (candRecvMessageNumber < header.previousChainLength) {
+          final step = await _kdfChainKey(candRecvChainKey);
+          candRecvChainKey = step.$1;
+          final keyId = _skipMapKey(candDhRemote!.bytes, candRecvMessageNumber);
+          if (candSkipped.length >= maxSkippedKeys) {
+            candSkipped.remove(candSkipped.keys.first);
+          }
+          candSkipped[keyId] = step.$2;
+          candRecvMessageNumber += 1;
+        }
+      }
+
+      candPreviousChainLength = candSendMessageNumber;
+      candSendMessageNumber = 0;
+      candRecvMessageNumber = 0;
+      candDhRemote = SimplePublicKey(header.dhPublicBytes, type: KeyPairType.x25519);
+
+      final dhRecv = await _x25519.sharedSecretKey(
+        keyPair: candDhSelf,
+        remotePublicKey: candDhRemote,
+      );
+      final recvStep = await _kdfRootKey(candRootKey, Uint8List.fromList(await dhRecv.extractBytes()));
+      candRootKey = recvStep.$1;
+      candRecvChainKey = recvStep.$2;
+
+      candDhSelf = await (await _x25519.newKeyPair()).extract();
+      final dhSend = await _x25519.sharedSecretKey(
+        keyPair: candDhSelf,
+        remotePublicKey: candDhRemote,
+      );
+      final sendStep = await _kdfRootKey(candRootKey, Uint8List.fromList(await dhSend.extractBytes()));
+      candRootKey = sendStep.$1;
+      candSendChainKey = sendStep.$2;
     }
 
-    // 3. Avança chain de recepção até o índice da mensagem
-    await _skipMessageKeys(header.messageNumber);
-
-    if (_recvChainKey == null) {
+    // Avança chain de recepção até o índice da mensagem na cópia candidata
+    if (candRecvChainKey == null) {
       throw StateError('Chain key de recepção não disponível.');
     }
-    final step = await _kdfChainKey(_recvChainKey!);
+    if (candRecvMessageNumber + maxSkippedKeys < header.messageNumber) {
+      throw StateError('Salto de mensagens além do limite seguro ($maxSkippedKeys).');
+    }
+    while (candRecvMessageNumber < header.messageNumber) {
+      final step = await _kdfChainKey(candRecvChainKey);
+      candRecvChainKey = step.$1;
+      final keyId = _skipMapKey(candDhRemote!.bytes, candRecvMessageNumber);
+      if (candSkipped.length >= maxSkippedKeys) {
+        candSkipped.remove(candSkipped.keys.first);
+      }
+      candSkipped[keyId] = step.$2;
+      candRecvMessageNumber += 1;
+    }
+
+    final step = await _kdfChainKey(candRecvChainKey);
     final nextRecvCk = step.$1;
     final messageKey = step.$2;
 
+    // 3. Autenticação AEAD antes do commit: se falhar, SealedEnvelope.open lança exceção e o estado original é preservado
     final clear = await SealedEnvelope.open(
       key: SecretKey(messageKey),
       payload: message.body,
       aad: aad,
     );
+
+    // 4. COMMIT ATÔMICO DO ESTADO: Alcançado apenas após validação de autenticidade
+    _dhSelf = candDhSelf;
+    _dhRemote = candDhRemote;
+    _rootKey = candRootKey;
+    _sendChainKey = candSendChainKey;
     _recvChainKey = nextRecvCk;
-    _recvMessageNumber += 1;
+    _sendMessageNumber = candSendMessageNumber;
+    _recvMessageNumber = candRecvMessageNumber + 1;
+    _previousChainLength = candPreviousChainLength;
+    _skippedMessageKeys.clear();
+    _skippedMessageKeys.addAll(candSkipped);
+
     return clear;
   }
 
@@ -731,10 +807,7 @@ class SignedRecord {
     required int expiresAtEpochMs,
     required Map<String, dynamic> payload,
   }) {
-    final sortedKeys = payload.keys.toList()..sort();
-    final canonicalPayload = <String, dynamic>{
-      for (final k in sortedKeys) k: payload[k],
-    };
+    final canonicalPayload = _canonicalizeValue(payload);
     final body = jsonEncode({
       'domain': 'NIX-RECORD-V4',
       'type': recordType,
@@ -745,6 +818,18 @@ class SignedRecord {
       'payload': canonicalPayload,
     });
     return utf8.encode(body);
+  }
+
+  static dynamic _canonicalizeValue(dynamic val) {
+    if (val is Map) {
+      final sortedKeys = val.keys.map((k) => k.toString()).toList()..sort();
+      return <String, dynamic>{
+        for (final k in sortedKeys) k: _canonicalizeValue(val[k]),
+      };
+    } else if (val is List) {
+      return val.map((e) => _canonicalizeValue(e)).toList();
+    }
+    return val;
   }
 }
 
@@ -778,8 +863,6 @@ class ReplayGuard {
     for (final entry in _seen.entries) {
       if (entry.value < nowEpochMs) {
         expired.add(entry.key);
-      } else {
-        break;
       }
     }
     for (final key in expired) {

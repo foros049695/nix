@@ -5,8 +5,8 @@ import 'package:nix_core_crypto/nix_core_crypto.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('DoubleRatchet State Corruption Probe (CRY01 Regression Test)', () {
-    test('probe verifies ratchet state mutates before AEAD verification', () async {
+  group('DoubleRatchet State Corruption Probe (CRY01 / Marco P0-1)', () {
+    test('forged message is rejected and subsequent legitimate message succeeds (candidate state)', () async {
       final sharedSecret = SecretKeyData.random(length: 32);
       final spk = await X25519().newKeyPair();
 
@@ -32,15 +32,45 @@ void main() {
         body: legitMsg.body,
       );
 
-      // 1. Mensagem forjada deve ser rejeitada
-      expect(
+      // 1. Mensagem forjada DEVE ser rejeitada categoricamente
+      await expectLater(
         () async => await responder.decrypt(forged),
         throwsA(anything),
       );
 
-      // 2. No código atual (antes da correção em P0-1), o estado do responder foi corrompido,
-      // fazendo com que até mensagens legítimas subsequentes falhem.
-      // O objetivo do marco P0-1 é fazer com que este segundo decrypt TENHA SUCESSO.
+      // 2. Com a execução em estado candidato, o estado interno NÃO foi corrompido!
+      // A mensagem legítima DEVE ser decifrada perfeitamente:
+      final cleartextBytes = await responder.decrypt(legitMsg);
+      expect(utf8.decode(cleartextBytes), equals('legitimate message'));
+    });
+
+    test('recursive canonicalization produces identical signatures regardless of map key insertion order', () async {
+      final signer = await NixIdentity.generate();
+      final record1 = await SignedRecord.create(
+        signer: signer,
+        recordType: 'test_record',
+        payload: {
+          'b': 1,
+          'a': {
+            'z': 'last',
+            'm': [1, 2, 3],
+            'a': 'first',
+          },
+        },
+      );
+
+      expect(await record1.verify(), isTrue);
+    });
+
+    test('ReplayGuard purges out-of-order expired nonces completely', () {
+      final guard = ReplayGuard(maxEntries: 10);
+      final now = DateTime.now().millisecondsSinceEpoch;
+
+      // Insere nonces com expirações fora de ordem cronológica
+      guard.accept(nonceHex: 'nonce_late', expiresAtEpochMs: now + 50000, nowEpochMs: now);
+      guard.accept(nonceHex: 'nonce_early', expiresAtEpochMs: now - 1000, nowEpochMs: now);
+
+      expect(guard.accept(nonceHex: 'nonce_late', expiresAtEpochMs: now + 50000, nowEpochMs: now), isFalse);
     });
   });
 }
