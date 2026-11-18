@@ -99,16 +99,67 @@ class Socks5Connector {
       throw TransportBlockedException('Hostname inválido para quadro SOCKS5 ($cleanHost).');
     }
 
-    final socket = await Socket.connect(proxyHost, proxyPort, timeout: timeout);
-    final reader = _SocketByteReader(socket);
+    final rawSocket = await Socket.connect(proxyHost, proxyPort, timeout: timeout);
+    final controller = StreamController<Uint8List>();
+    final buffer = BytesBuilder();
+    Completer<void>? waiter;
+    bool inHandshake = true;
+    bool closed = false;
+    Object? socketError;
+
+    rawSocket.listen(
+      (chunk) {
+        if (inHandshake) {
+          buffer.add(chunk);
+          waiter?.complete();
+          waiter = null;
+        } else {
+          controller.add(chunk);
+        }
+      },
+      onError: (err) {
+        socketError = err;
+        waiter?.completeError(err);
+        waiter = null;
+        if (!inHandshake) controller.addError(err);
+      },
+      onDone: () {
+        closed = true;
+        waiter?.complete();
+        waiter = null;
+        if (!inHandshake) controller.close();
+      },
+      cancelOnError: false,
+    );
+
+    Future<Uint8List> readExact(int count, {Duration timeout = const Duration(seconds: 15)}) async {
+      final deadline = DateTime.now().add(timeout);
+      while (buffer.length < count) {
+        if (socketError != null) throw socketError!;
+        if (closed) {
+          throw const SocketException('Conexão encerrada antes de completar o handshake SOCKS5.');
+        }
+        final rem = deadline.difference(DateTime.now());
+        if (rem.isNegative) {
+          throw const SocketException('Timeout durante handshake SOCKS5.');
+        }
+        waiter ??= Completer<void>();
+        await waiter!.future.timeout(rem);
+      }
+      final all = buffer.takeBytes();
+      if (all.length > count) {
+        buffer.add(all.sublist(count));
+      }
+      return Uint8List.fromList(all.sublist(0, count));
+    }
 
     try {
       final useUserPass = username != null && password != null;
       // Greeting: VER=0x05, NMETHODS=1, METHOD=0x00 ou 0x02 (IsolateSOCKSAuth)
-      socket.add(<int>[0x05, 0x01, useUserPass ? 0x02 : 0x00]);
-      await socket.flush();
+      rawSocket.add(<int>[0x05, 0x01, useUserPass ? 0x02 : 0x00]);
+      await rawSocket.flush();
 
-      final methodReply = await reader.readExact(2, timeout: timeout);
+      final methodReply = await readExact(2, timeout: timeout);
       if (methodReply[0] != 0x05 || methodReply[1] == 0xFF) {
         throw const TransportBlockedException('Proxy SOCKS5 rejeitou os métodos de autenticação.');
       }
@@ -125,9 +176,9 @@ class Socks5Connector {
           ..add(uBytes)
           ..addByte(pBytes.length)
           ..add(pBytes);
-        socket.add(authReq.toBytes());
-        await socket.flush();
-        final authReply = await reader.readExact(2, timeout: timeout);
+        rawSocket.add(authReq.toBytes());
+        await rawSocket.flush();
+        final authReply = await readExact(2, timeout: timeout);
         if (authReply[1] != 0x00) {
           throw const TransportBlockedException('Falha de autenticação no proxy SOCKS5.');
         }
@@ -139,88 +190,108 @@ class Socks5Connector {
         ..add(<int>[0x05, 0x01, 0x00, 0x03, hostBytes.length])
         ..add(hostBytes)
         ..add(portBytes.buffer.asUint8List());
-      socket.add(req.toBytes());
-      await socket.flush();
+      rawSocket.add(req.toBytes());
+      await rawSocket.flush();
 
-      final header = await reader.readExact(4, timeout: timeout);
+      final header = await readExact(4, timeout: timeout);
       if (header[0] != 0x05 || header[1] != 0x00) {
         throw TransportBlockedException('Falha no túnel SOCKS5 (REP=0x${header[1].toRadixString(16)}).');
       }
 
       final atyp = header[3];
       if (atyp == 0x01) {
-        await reader.readExact(4 + 2, timeout: timeout);
+        await readExact(4 + 2, timeout: timeout);
       } else if (atyp == 0x03) {
-        final lenBuf = await reader.readExact(1, timeout: timeout);
-        await reader.readExact(lenBuf[0] + 2, timeout: timeout);
+        final lenBuf = await readExact(1, timeout: timeout);
+        await readExact(lenBuf[0] + 2, timeout: timeout);
       } else if (atyp == 0x04) {
-        await reader.readExact(16 + 2, timeout: timeout);
+        await readExact(16 + 2, timeout: timeout);
       } else {
         throw TransportBlockedException('Tipo de endereço ATYP desconhecido ($atyp) retornado pelo proxy.');
       }
 
-      reader.detach();
-      return socket;
+      inHandshake = false;
+      final leftover = buffer.isNotEmpty ? Uint8List.fromList(buffer.takeBytes()) : null;
+      return SocksSocket(rawSocket, controller, leftover);
     } catch (e) {
-      socket.destroy();
+      rawSocket.destroy();
       rethrow;
     }
   }
 }
 
-/// Leitor bufferizado em cima de um `StreamSubscription<Uint8List>` apenas durante o handshake.
-class _SocketByteReader {
-  final BytesBuilder _buffer = BytesBuilder();
-  late final StreamSubscription<Uint8List> _sub;
-  Completer<void>? _waiter;
-  bool _closed = false;
-  Object? _error;
+/// Socket decorado que mantém o fluxo contínuo do socket TCP subjacente
+/// sem incorrer no erro de relisten em stream single-subscription (Marco P0-3 / NET01).
+class SocksSocket extends Stream<Uint8List> implements Socket {
+  final Socket _rawSocket;
+  final StreamController<Uint8List> _controller;
+  final Uint8List? _initialBytes;
 
-  _SocketByteReader(Socket socket) {
-    _sub = socket.listen(
-      (Uint8List chunk) {
-        _buffer.add(chunk);
-        _waiter?.complete();
-        _waiter = null;
-      },
-      onError: (Object err) {
-        _error = err;
-        _waiter?.completeError(err);
-        _waiter = null;
-      },
-      onDone: () {
-        _closed = true;
-        _waiter?.complete();
-        _waiter = null;
-      },
-      cancelOnError: true,
+  SocksSocket(this._rawSocket, this._controller, [this._initialBytes]);
+
+  @override
+  StreamSubscription<Uint8List> listen(
+    void Function(Uint8List event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    if (_initialBytes != null && _initialBytes.isNotEmpty) {
+      scheduleMicrotask(() {
+        if (!_controller.isClosed) {
+          onData?.call(_initialBytes);
+        }
+      });
+    }
+    return _controller.stream.listen(
+      onData,
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: cancelOnError,
     );
   }
 
-  Future<Uint8List> readExact(int count, {Duration timeout = const Duration(seconds: 15)}) async {
-    final deadline = DateTime.now().add(timeout);
-    while (_buffer.length < count) {
-      if (_error != null) throw _error!;
-      if (_closed) {
-        throw const SocketException('Conexão encerrada antes de completar o handshake SOCKS5.');
-      }
-      final rem = deadline.difference(DateTime.now());
-      if (rem.isNegative) {
-        throw const SocketException('Timeout durante handshake SOCKS5.');
-      }
-      _waiter ??= Completer<void>();
-      await _waiter!.future.timeout(rem);
-    }
-    final all = _buffer.takeBytes();
-    if (all.length > count) {
-      _buffer.add(all.sublist(count));
-    }
-    return Uint8List.fromList(all.sublist(0, count));
-  }
+  @override
+  Encoding get encoding => _rawSocket.encoding;
+  @override
+  set encoding(Encoding value) => _rawSocket.encoding = value;
 
-  void detach() {
-    _sub.cancel();
-  }
+  @override
+  void add(List<int> data) => _rawSocket.add(data);
+  @override
+  void write(Object? object) => _rawSocket.write(object);
+  @override
+  void writeAll(Iterable objects, [String separator = '']) => _rawSocket.writeAll(objects, separator);
+  @override
+  void writeln([Object? object = '']) => _rawSocket.writeln(object);
+  @override
+  void writeCharCode(int charCode) => _rawSocket.writeCharCode(charCode);
+  @override
+  void addError(Object error, [StackTrace? stackTrace]) => _rawSocket.addError(error, stackTrace);
+  @override
+  Future addStream(Stream<List<int>> stream) => _rawSocket.addStream(stream);
+  @override
+  Future flush() => _rawSocket.flush();
+  @override
+  Future close() => _rawSocket.close();
+  @override
+  Future get done => _rawSocket.done;
+  @override
+  void destroy() => _rawSocket.destroy();
+  @override
+  bool setOption(SocketOption option, bool enabled) => _rawSocket.setOption(option, enabled);
+  @override
+  Uint8List getRawOption(RawSocketOption option) => _rawSocket.getRawOption(option);
+  @override
+  void setRawOption(RawSocketOption option) => _rawSocket.setRawOption(option);
+  @override
+  int get port => _rawSocket.port;
+  @override
+  int get remotePort => _rawSocket.remotePort;
+  @override
+  InternetAddress get address => _rawSocket.address;
+  @override
+  InternetAddress get remoteAddress => _rawSocket.remoteAddress;
 }
 
 /// Cliente para a ControlPort do daemon Tor (autenticação, bootstrap e Hidden Services v3).
@@ -581,15 +652,26 @@ class RelayClient {
     Uri uri, {
     required Map<String, String> headers,
     String? body,
+    Duration timeout = const Duration(seconds: 30),
   }) async {
     final connector = Socks5Connector(proxyHost: policy.socksHost, proxyPort: policy.socksPort);
     final port = uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
-    final socket = await connector.connect(uri.host, port, requireOnionV3: true);
+    Socket socket = await connector.connect(uri.host, port, requireOnionV3: true, timeout: timeout);
+
+    // Negociação TLS explícita para HTTPS sobre túnel SOCKS5 (Marco P0-3 / NET02)
+    if (uri.scheme == 'https') {
+      socket = await SecureSocket.secure(
+        socket,
+        host: uri.host,
+        onBadCertificate: (cert) => false,
+      ).timeout(timeout);
+    }
 
     try {
       final bodyBytes = body != null ? utf8.encode(body) : const <int>[];
+      final targetPath = uri.path.isEmpty ? '/' : uri.path;
       final reqBuf = StringBuffer()
-        ..write('$method ${uri.path}${uri.hasQuery ? '?${uri.query}' : ''} HTTP/1.1\r\n')
+        ..write('$method $targetPath${uri.hasQuery ? '?${uri.query}' : ''} HTTP/1.1\r\n')
         ..write('Host: ${uri.host}\r\n')
         ..write('Connection: close\r\n');
       headers.forEach((k, v) => reqBuf.write('$k: $v\r\n'));
@@ -607,20 +689,73 @@ class RelayClient {
       final rawBytes = await socket.fold<BytesBuilder>(
         BytesBuilder(),
         (acc, chunk) => acc..add(chunk),
-      );
-      final rawStr = utf8.decode(rawBytes.toBytes(), allowMalformed: true);
-      final splitIdx = rawStr.indexOf('\r\n\r\n');
+      ).timeout(timeout);
+
+      final fullBytes = rawBytes.takeBytes();
+      int splitIdx = -1;
+      for (int i = 0; i < fullBytes.length - 3; i++) {
+        if (fullBytes[i] == 13 && fullBytes[i + 1] == 10 && fullBytes[i + 2] == 13 && fullBytes[i + 3] == 10) {
+          splitIdx = i;
+          break;
+        }
+      }
       if (splitIdx == -1) {
         throw const HttpException('Resposta HTTP inválida sobre túnel SOCKS5.');
       }
-      final head = rawStr.substring(0, splitIdx);
-      final resBody = rawStr.substring(splitIdx + 4);
-      final statusLine = head.split('\r\n').first;
+
+      final headerStr = utf8.decode(fullBytes.sublist(0, splitIdx), allowMalformed: true);
+      final bodyPayloadBytes = fullBytes.sublist(splitIdx + 4);
+
+      final headerLines = headerStr.split('\r\n');
+      final statusLine = headerLines.first;
       final parts = statusLine.split(' ');
       final statusCode = parts.length >= 2 ? (int.tryParse(parts[1]) ?? 500) : 500;
+
+      bool isChunked = false;
+      for (final line in headerLines.skip(1)) {
+        final colon = line.indexOf(':');
+        if (colon != -1) {
+          final key = line.substring(0, colon).trim().toLowerCase();
+          final val = line.substring(colon + 1).trim().toLowerCase();
+          if (key == 'transfer-encoding' && val.contains('chunked')) {
+            isChunked = true;
+          }
+        }
+      }
+
+      final payload = isChunked ? _decodeChunked(bodyPayloadBytes) : Uint8List.fromList(bodyPayloadBytes);
+      final resBody = utf8.decode(payload, allowMalformed: true);
       return (statusCode: statusCode, body: resBody);
     } finally {
       socket.destroy();
     }
+  }
+
+  static Uint8List _decodeChunked(List<int> bytes) {
+    final builder = BytesBuilder();
+    int pos = 0;
+    while (pos < bytes.length) {
+      int lineEnd = -1;
+      for (int i = pos; i < bytes.length - 1; i++) {
+        if (bytes[i] == 13 && bytes[i + 1] == 10) {
+          lineEnd = i;
+          break;
+        }
+      }
+      if (lineEnd == -1) break;
+      final sizeStr = utf8.decode(bytes.sublist(pos, lineEnd)).trim().split(';').first;
+      final chunkSize = int.tryParse(sizeStr, radix: 16) ?? 0;
+      pos = lineEnd + 2;
+      if (chunkSize <= 0) break;
+      if (pos + chunkSize > bytes.length) {
+        builder.add(bytes.sublist(pos));
+        break;
+      }
+      builder.add(bytes.sublist(pos, pos + chunkSize));
+      pos += chunkSize;
+      if (pos < bytes.length && bytes[pos] == 13) pos++;
+      if (pos < bytes.length && bytes[pos] == 10) pos++;
+    }
+    return builder.toBytes();
   }
 }
