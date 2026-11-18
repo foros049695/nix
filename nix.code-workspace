@@ -1,0 +1,28 @@
+{
+  "folders": [
+    {
+      "name": "Nix (Root Workspace)",
+      "path": "."
+    },
+    {
+      "name": "App: Client Flutter",
+      "path": "apps/nix_client"
+    },
+    {
+      "name": "Service: Relay Backend",
+      "path": "services/nix_relay"
+    },
+    {
+      "name": "Core: Protocols & Schemas",
+      "path": "proto"
+    },
+    {
+      "name": "Documentation & ADRs",
+      "path": "docs"
+    }
+  ],
+  "settings": {
+    "editor.tabSize": 2,
+    "editor.formatOnSave": true
+  }
+}

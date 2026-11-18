@@ -1,0 +1,85 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Client: Run Flutter (Linux Desktop)",
+      "type": "shell",
+      "command": "flutter run -d linux",
+      "options": {
+        "cwd": "${workspaceFolder}/apps/nix_client"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      },
+      "problemMatcher": ["$dart-flutter"]
+    },
+    {
+      "label": "Client: Test Flutter",
+      "type": "shell",
+      "command": "flutter test",
+      "options": {
+        "cwd": "${workspaceFolder}/apps/nix_client"
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": ["$dart-flutter"]
+    },
+    {
+      "label": "Relay: Build (Go)",
+      "type": "shell",
+      "command": "go build -v -o bin/nix_relay ./cmd/relay",
+      "options": {
+        "cwd": "${workspaceFolder}/services/nix_relay"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Relay: Run Local",
+      "type": "shell",
+      "command": "go run ./cmd/relay/main.go -config configs/relay.example.yaml",
+      "options": {
+        "cwd": "${workspaceFolder}/services/nix_relay"
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Relay: Test (Go)",
+      "type": "shell",
+      "command": "go test -v -race ./...",
+      "options": {
+        "cwd": "${workspaceFolder}/services/nix_relay"
+      },
+      "group": "test",
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Security: Verify Privacy Matrix",
+      "type": "shell",
+      "command": "./scripts/verify_privacy_matrix.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Proto: Compile Schemas",
+      "type": "shell",
+      "command": "protoc -I=proto --go_out=services/nix_relay/internal/pb --dart_out=apps/nix_client/lib/core/pb proto/nix/v1/*.proto",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

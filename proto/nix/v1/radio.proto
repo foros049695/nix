@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package nix.v1;
+
+option go_package = "services/nix_relay/internal/pb/v1;pbv1";
+
+// Mensagem ultra-compacta para rádio LoRa / Reticulum (< 240 bytes).
+// MÍDIAS, IMAGENS E ANEXOS SÃO ESTRITAMENTE PROIBIDOS NESTE SCHEMA.
+message RadioPacket {
+  uint32 protocol_version = 1;
+  bytes channel_id = 2;          // 4 bytes hash do canal
+  bytes sender_fingerprint = 3;  // 8 bytes truncados
+  uint32 hop_limit = 4;          // Controle de saltos (máx 3-7)
+  int64 timestamp = 5;
+  oneof payload {
+    ShortText text = 6;
+    TacticalAlert alert = 7;
+    CoTTelemetry telemetry = 8;
+  }
+}
+
+message ShortText {
+  string content = 1;            // Máx 140 caracteres
+}
+
+message TacticalAlert {
+  uint32 alert_level = 1;        // 1=Info, 2=Aviso, 3=Emergência
+  string summary = 2;
+}
+
+message CoTTelemetry {
+  double latitude = 1;
+  double longitude = 2;
+  float altitude = 3;
+  string callsign = 4;
+}

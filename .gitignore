@@ -1,0 +1,88 @@
+# ==========================================
+# Projeto NIX — Master .gitignore
+# ==========================================
+
+# Ambientes Locais & Chaves (NUNCA COMITAR SEGREDO)
+*.key
+*.pem
+*.pub
+*.priv
+*.wallet
+*.seed
+*.stage
+.env
+.env.*
+*.secret
+secring.*
+
+# Operating Systems
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+
+# Flutter / Dart
+apps/nix_client/.dart_tool/
+apps/nix_client/.flutter-plugins
+apps/nix_client/.flutter-plugins-dependencies
+apps/nix_client/.packages
+apps/nix_client/build/
+apps/nix_client/.pub-cache/
+apps/nix_client/.pub/
+apps/nix_client/ios/Pods/
+apps/nix_client/ios/.symlinks/
+apps/nix_client/android/.gradle/
+apps/nix_client/android/local.properties
+apps/nix_client/linux/flutter/ephemeral/
+apps/nix_client/windows/flutter/ephemeral/
+
+# Go
+services/nix_relay/bin/
+services/nix_relay/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+services/nix_relay/vendor/
+
+# Rust / Cargo
+target/
+**/*.rs.bk
+Cargo.lock
+
+# C / C++ / Native Build
+*.o
+*.a
+*.obj
+*.so
+*.dylib
+
+# Databases & Runtime Dumps
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.log
+*.dump
+/data/
+/minio_data/
+
+# Protobuf generated code (if compiled into temporary caches)
+# Maintain checked-in stubs only if desired, else ignore runtime bins
+*.pb.tmp
+
+# VS Code workspace state (keep workspace settings, ignore personal state)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-search

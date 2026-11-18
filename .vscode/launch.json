@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Nix Client: Flutter (Debug)",
+      "type": "dart",
+      "request": "launch",
+      "program": "apps/nix_client/lib/main.dart",
+      "cwd": "apps/nix_client"
+    },
+    {
+      "name": "Nix Client: Flutter (Profile Mode)",
+      "type": "dart",
+      "request": "launch",
+      "program": "apps/nix_client/lib/main.dart",
+      "cwd": "apps/nix_client",
+      "flutterMode": "profile"
+    },
+    {
+      "name": "Nix Relay: Go Debug",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/services/nix_relay/cmd/relay/main.go",
+      "cwd": "${workspaceFolder}/services/nix_relay",
+      "args": ["-config", "configs/relay.example.yaml"]
+    }
+  ]
+}

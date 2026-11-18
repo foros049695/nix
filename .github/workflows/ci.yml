@@ -1,0 +1,59 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  privacy-and-lint:
+    name: Privacy & Security Gate Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Verify Privacy Rules
+        run: |
+          chmod +x scripts/verify_privacy_matrix.sh
+          ./scripts/verify_privacy_matrix.sh
+
+  relay-go:
+    name: Relay Go Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          check-latest: true
+
+      - name: Test Relay
+        working-directory: services/nix_relay
+        run: |
+          go vet ./...
+          go test -v -race ./...
+
+  client-flutter:
+    name: Flutter Client Analyze & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.x'
+          channel: 'stable'
+
+      - name: Analyze & Test Client
+        working-directory: apps/nix_client
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test

@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package nix.v1;
+
+option go_package = "services/nix_relay/internal/pb/v1;pbv1";
+
+// Mural P2P Efêmero de Ofertas (Exclusivamente Monero XMR)
+message P2POfferManifest {
+  string offer_id = 1;
+  string title = 2;
+  string description = 3;
+  uint64 price_piconero = 4;     // Valor em piconero (1 XMR = 1e12 piconero)
+  string receiver_subaddress = 5;// Subendereço 8... exclusivo para a oferta
+  int64 expires_at = 6;
+  bytes creator_signature = 7;
+}

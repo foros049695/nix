@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package nix.v1;
+
+option go_package = "services/nix_relay/internal/pb/v1;pbv1";
+
+// Envelope padronizado para troca de mensagens privadas e efêmeras.
+message MessageEnvelope {
+  uint32 version = 1;
+  bytes recipient_box = 2;       // Hash da chave pública de destino (caixa opaca)
+  bytes ephemeral_pubkey = 3;    // Chave efêmera para sessão Double Ratchet
+  bytes nonce = 4;               // Nonce de 24 bytes (XChaCha20-Poly1305)
+  bytes encrypted_payload = 5;   // Payload cifrado fim a fim
+  int64 created_at = 6;          // Unix timestamp UTC
+  uint32 ttl_seconds = 7;        // TTL solicitado (máx 604800 = 7 dias)
+  bytes message_signature = 8;   // Opcional para autenticação de remetente
+}
+
+// Payload decifrado pelo cliente
+message InnerMessagePayload {
+  string message_id = 1;
+  string text_content = 2;
+  repeated AttachmentMetadata attachments = 3;
+  uint32 ephemeral_timer_seconds = 4;
+}
+
+message AttachmentMetadata {
+  string attachment_id = 1;
+  string mime_type = 2;
+  uint64 size_bytes = 3;
+  bytes sha256_hash = 4;
+  bytes decryption_key = 5;     // Chave simétrica do anexo
+}

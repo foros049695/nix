@@ -1,0 +1,31 @@
+{
+  "recommendations": [
+    // Flutter & Dart
+    "dart-code.flutter",
+    "dart-code.dart-code",
+
+    // Backend: Go & Rust
+    "golang.go",
+    "rust-lang.rust-analyzer",
+    "tamasfe.even-better-toml",
+
+    // C / C++ / FFI
+    "ms-vscode.cpptools",
+
+    // Protocol Buffers
+    "zxh404.vscode-proto3",
+
+    // Git & Collaboration
+    "eamodio.gitlens",
+    "github.vscode-pull-request-github",
+
+    // Documentation & Diagrams
+    "bierner.markdown-mermaid",
+    "davidanson.vscode-markdownlint",
+
+    // Formatting & Code Quality
+    "editorconfig.editorconfig",
+    "redhat.vscode-yaml",
+    "tamasfe.even-better-toml"
+  ]
+}

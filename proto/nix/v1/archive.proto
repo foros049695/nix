@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package nix.v1;
+
+option go_package = "services/nix_relay/internal/pb/v1;pbv1";
+
+// Objeto Canônico do Nix Archive (v1)
+message ArchiveArticle {
+  string schema = 1;             // "nix.archive.article.v1"
+  string title = 2;
+  ArticleBody body = 3;
+  repeated VerifiableClaim claims = 4;
+  repeated ReferenceLink references = 5;
+  string supersedes = 6;         // CID do artigo anterior (se for correção)
+  bytes author_key = 7;          // Chave Ed25519 pública opcional da persona
+}
+
+message ArticleBody {
+  string format = 1;             // "markdown"
+  string content = 2;
+}
+
+message VerifiableClaim {
+  string id = 1;                 // ex: "claim-001"
+  string text = 2;
+}
+
+message ReferenceLink {
+  string url = 1;
+  bytes sha256 = 2;
+}
+
+message RefutationObject {
+  string schema = 1;             // "nix.archive.refutation.v1"
+  string target_article_cid = 2;
+  string target_claim_id = 3;
+  string argument = 4;
+  repeated ReferenceLink evidence = 5;
+  bytes author_key = 6;
+}

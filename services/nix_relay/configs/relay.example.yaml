@@ -1,0 +1,22 @@
+# Configuração de Referência do Nix Relay
+server:
+  host: "127.0.0.1"
+  port: 8080
+  onion_service_host: "" # Preenchido automaticamente pelo serviço Tor
+
+storage:
+  base_dir: "/var/lib/nix_relay/data"
+  max_attachment_size_bytes: 52428800 # 50 MB
+  max_in_flight_per_quota_token: 524288000 # 500 MB
+  base_ttl_seconds: 604800 # 7 dias
+
+pruning:
+  check_interval_seconds: 60
+  light_threshold_percent: 75
+  severe_threshold_percent: 85
+  critical_threshold_percent: 92
+
+metrics:
+  enabled: true
+  listen_addr: "127.0.0.1:9090"
+  zero_identifying_labels: true
