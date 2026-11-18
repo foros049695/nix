@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/channel.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
@@ -219,12 +220,15 @@ class _ChannelItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = context.accentColor;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1.5),
       decoration: BoxDecoration(
-        color: isSelected ? NixColors.surfaceActive : Colors.transparent,
+        color: isSelected ? accent.withValues(alpha: 0.16) : Colors.transparent,
         borderRadius: BorderRadius.circular(6),
-        border: isSelected ? Border.all(color: NixColors.surfaceBorderStrong, width: 1) : null,
+        border: isSelected
+            ? Border.all(color: accent.withValues(alpha: 0.45), width: 1)
+            : null,
       ),
       child: ListTile(
         dense: true,
@@ -234,7 +238,7 @@ class _ChannelItem extends StatelessWidget {
         leading: Icon(
           channel.icon,
           size: 17,
-          color: isSelected ? Colors.white : NixColors.iconMuted,
+          color: isSelected ? accent : NixColors.iconMuted,
         ),
         title: Text(
           channel.name,
@@ -249,7 +253,7 @@ class _ChannelItem extends StatelessWidget {
             ? Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: accent,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(

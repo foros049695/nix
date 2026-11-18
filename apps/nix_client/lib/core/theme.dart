@@ -175,3 +175,10 @@ class NixTheme {
     );
   }
 }
+
+extension NixThemeContext on BuildContext {
+  NixPalette get nixPalette =>
+      Theme.of(this).extension<NixThemeExtension>()?.palette ?? NixPalette.original;
+  Color get accentColor => Theme.of(this).colorScheme.primary;
+  Color get glowColor => nixPalette.glowColor;
+}

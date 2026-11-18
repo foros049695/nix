@@ -3,9 +3,33 @@
 > **Comunicação, conhecimento e mídia com privacidade verificável, resiliência off-grid e soberania digital.**
 
 [![Licença: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Status: Especificação & Fundação](https://img.shields.io/badge/Status-Fase%200%20%2F%20Fase%201-orange.svg)](ROADMAP.md)
-[![Tor: Fail-Closed](https://img.shields.io/badge/Network-Tor%20Onion%20Default-purple.svg)](docs/TRANSPORTS.md)
+[![Status: Protótipo Experimental](https://img.shields.io/badge/Status-Protótipo%20Experimental-FFA000.svg)](ROADMAP.md)
+[![Design: Living AMOLED](https://img.shields.io/badge/Design-Living%20AMOLED-000000.svg)](docs/AUDIT_REPORT_V2.md)
+[![Tor: Fail-Closed](https://img.shields.io/badge/Network-Tor%20Onion%20v3-purple.svg)](docs/DEPLOYMENT_ONION_V3.md)
 [![Criptografia: XMR Only](https://img.shields.io/badge/Finan%C3%A7as-Monero%20(XMR)-FF6600.svg)](docs/WALLET.md)
+
+---
+
+## 🧪 Estado do Projeto e Compilação de Protótipos Locais
+
+> ⚠️ **Aviso de Desenvolvimento:** O Nix está em fase de **prototipagem experimental e desenvolvimento ativo (pre-alpha)**. Os pacotes e binários gerados são estritamente para testes locais, validação de arquitetura e homologação técnica interna. **Não disponibilizamos lançamentos oficiais para usuários finais.**
+
+Para compilar e executar os protótipos de desenvolvimento localmente a partir do código-fonte:
+
+```bash
+# 1. Executar protótipo Linux Desktop
+cd apps/nix_client
+flutter run -d linux
+
+# 2. Compilar protótipo para Linux Desktop
+flutter build linux --release
+
+# 3. Compilar APK de teste para Android
+flutter build apk --release
+```
+
+- **Documentação de Auditoria Técnica:** [`docs/AUDIT_REPORT_V2.md`](docs/AUDIT_REPORT_V2.md)
+- **Guia de Implantação Tor Onion v3:** [`docs/DEPLOYMENT_ONION_V3.md`](docs/DEPLOYMENT_ONION_V3.md)
 
 ---
 

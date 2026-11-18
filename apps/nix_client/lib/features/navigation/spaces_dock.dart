@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/space.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
@@ -184,26 +185,6 @@ class SpacesDock extends StatelessWidget {
             child: Divider(color: NixColors.surfaceBorder, height: 1),
           ),
 
-          // 4. Botão GitHub Discovery (starwire.foo)
-          _DockNavButton(
-            key: const Key('dock_github_button'),
-            icon: Icons.code_rounded,
-            tooltip: 'GitHub Discovery & Repositórios (starwire.foo)',
-            isSelected: nixState.activeArea == NixActiveArea.github,
-            onTap: () => nixState.openGithubDiscoveryArea(),
-          ),
-          const SizedBox(height: 8),
-
-          // 5. Botão Monero Non-Custodial P2P Marketplace (Trocador.app)
-          _DockNavButton(
-            key: const Key('dock_monero_button'),
-            icon: Icons.currency_exchange_rounded,
-            tooltip: 'Mercado Monero P2P Descentralizado (Trocador)',
-            isSelected: nixState.activeArea == NixActiveArea.moneroP2p,
-            onTap: () => nixState.openMoneroP2pArea(),
-          ),
-          const SizedBox(height: 8),
-
           // 6. Botão Unir Grupos em Pasta
           _DockActionButton(
             key: const Key('dock_manage_folders_button'),
@@ -376,9 +357,9 @@ class _SpaceItemState extends State<_SpaceItem> {
               duration: NixTokens.motionFast,
               width: 4,
               height: active ? 36 : (_hovered ? 18 : (widget.space.unreadCount > 0 ? 8 : 0)),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.horizontal(right: Radius.circular(4)),
+              decoration: BoxDecoration(
+                color: active ? context.accentColor : Colors.white,
+                borderRadius: const BorderRadius.horizontal(right: Radius.circular(4)),
               ),
             ),
             const SizedBox(width: 8),
@@ -390,11 +371,11 @@ class _SpaceItemState extends State<_SpaceItem> {
                 height: 48,
                 decoration: BoxDecoration(
                   color: active
-                      ? Colors.white
+                      ? context.accentColor
                       : (_hovered ? NixColors.surfaceCardHover : NixColors.surfaceCard),
                   borderRadius: BorderRadius.circular(active || _hovered ? 16 : 24),
                   border: Border.all(
-                    color: active ? Colors.white : NixColors.surfaceBorderStrong,
+                    color: active ? context.accentColor : NixColors.surfaceBorderStrong,
                     width: active ? 1.5 : 1.0,
                   ),
                 ),
@@ -667,9 +648,9 @@ class _DockNavButtonState extends State<_DockNavButton> {
               duration: NixTokens.motionFast,
               width: 4,
               height: active ? 36 : (_hovered ? 18 : 0),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.horizontal(right: Radius.circular(4)),
+              decoration: BoxDecoration(
+                color: active ? context.accentColor : Colors.white,
+                borderRadius: const BorderRadius.horizontal(right: Radius.circular(4)),
               ),
             ),
             const SizedBox(width: 8),
@@ -681,11 +662,11 @@ class _DockNavButtonState extends State<_DockNavButton> {
                 height: 48,
                 decoration: BoxDecoration(
                   color: active
-                      ? Colors.white
+                      ? context.accentColor
                       : (_hovered ? NixColors.surfaceCardHover : NixColors.surfaceCard),
                   borderRadius: BorderRadius.circular(active || _hovered ? 16 : 24),
                   border: Border.all(
-                    color: active ? Colors.white : NixColors.surfaceBorderStrong,
+                    color: active ? context.accentColor : NixColors.surfaceBorderStrong,
                     width: active ? 1.5 : 1.0,
                   ),
                 ),

@@ -57,8 +57,10 @@ class AppShell extends StatelessWidget {
                               // 1. Dock de Espaços, Pastas, Home, GitHub, Monero P2P e Explorar
                               const SpacesDock(),
 
-                              // 2. Barra Lateral Secundária (Home Privada ou Canais do Espaço)
-                              if (activeArea == NixActiveArea.homePrivate)
+                              // 2. Barra Lateral Secundária (Home Privada / Ferramentas ou Canais do Espaço)
+                              if (activeArea == NixActiveArea.homePrivate ||
+                                  activeArea == NixActiveArea.github ||
+                                  activeArea == NixActiveArea.moneroP2p)
                                 const HomeSidebar()
                               else if (activeArea == NixActiveArea.spaces)
                                 const ChannelsSidebar(),
@@ -129,7 +131,9 @@ class AppShell extends StatelessWidget {
                         children: [
                           const SpacesDock(),
                           Expanded(
-                            child: activeArea == NixActiveArea.homePrivate
+                            child: (activeArea == NixActiveArea.homePrivate ||
+                                    activeArea == NixActiveArea.github ||
+                                    activeArea == NixActiveArea.moneroP2p)
                                 ? const HomeSidebar()
                                 : const ChannelsSidebar(),
                           ),

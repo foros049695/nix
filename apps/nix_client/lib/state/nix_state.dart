@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import '../core/models/space.dart';
 import '../core/models/channel.dart';
 import '../core/models/message.dart';
@@ -79,7 +81,7 @@ class NixState extends ChangeNotifier {
   Timer? _callTimer;
 
   // Estado Tor Onion
-  final String _onionAddress = 'nix6v3j7r8e2sovrq9m4l1kc82h4p9w0z.onion';
+  final String _onionAddress = 'gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion';
   final bool _isTorRunning = true;
 
   NixState() {
@@ -100,6 +102,26 @@ class NixState extends ChangeNotifier {
     _systemUpdates = MockData.getInitialSystemUpdates();
     _moneroOrders = MockData.getInitialMoneroOrders();
     _githubRepos = MockData.getInitialGithubRepos();
+    loadStarwireRepos();
+  }
+
+  /// Carrega o catálogo real Starwire (4.188 repositórios) do asset JSON em background
+  Future<void> loadStarwireRepos() async {
+    try {
+      final jsonString = await rootBundle.loadString('assets/data/starwire_repos.json');
+      final dynamic decoded = jsonDecode(jsonString);
+      if (decoded is List) {
+        final parsed = decoded
+            .map((item) => GithubRepository.fromStarwireJson(item as Map<String, dynamic>))
+            .toList();
+        if (parsed.isNotEmpty) {
+          _githubRepos = parsed;
+          notifyListeners();
+        }
+      }
+    } catch (_) {
+      // Fallback gracioso para dados locais quando em testes unitários sem asset bundle
+    }
   }
 
   // Getters principais
@@ -785,14 +807,146 @@ class NixState extends ChangeNotifier {
   }
 
   void toggleMessageReaction(String messageId, String emoji) {
-    final list = _messages[_currentChannel.id];
-    if (list == null) return;
-    final idx = list.indexWhere((m) => m.id == messageId);
-    if (idx == -1) return;
-    final currentReactions = Map<String, int>.from(list[idx].reactions);
-    currentReactions[emoji] = (currentReactions[emoji] ?? 0) + 1;
-    list[idx] = list[idx].copyWith(reactions: currentReactions);
+    // 1. Procura nas mensagens do canal ativo
+    final channelMsgs = _messages[_currentChannel.id];
+    if (channelMsgs != null) {
+      final idx = channelMsgs.indexWhere((m) => m.id == messageId);
+      if (idx != -1) {
+        channelMsgs[idx] = _toggleReactionOnMessage(channelMsgs[idx], emoji);
+        notifyListeners();
+        return;
+      }
+    }
+
+    // 2. Procura nas mensagens diretas (DM)
+    for (int t = 0; t < _directMessages.length; t++) {
+      final thread = _directMessages[t];
+      final mIdx = thread.messages.indexWhere((m) => m.id == messageId);
+      if (mIdx != -1) {
+        final updatedMsgs = List<Message>.from(thread.messages);
+        updatedMsgs[mIdx] = _toggleReactionOnMessage(updatedMsgs[mIdx], emoji);
+        _directMessages[t] = thread.copyWith(messages: updatedMsgs);
+        if (_selectedDm?.id == thread.id) {
+          _selectedDm = _directMessages[t];
+        }
+        notifyListeners();
+        return;
+      }
+    }
+
+    // 3. Procura nos comentários do fórum
+    for (int p = 0; p < _forumPosts.length; p++) {
+      final post = _forumPosts[p];
+      final cIdx = post.comments.indexWhere((m) => m.id == messageId);
+      if (cIdx != -1) {
+        final updatedComments = List<Message>.from(post.comments);
+        updatedComments[cIdx] = _toggleReactionOnMessage(updatedComments[cIdx], emoji);
+        _forumPosts[p] = post.copyWith(comments: updatedComments);
+        if (_selectedForumPost?.id == post.id) {
+          _selectedForumPost = _forumPosts[p];
+        }
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
+  Message _toggleReactionOnMessage(Message msg, String emoji) {
+    final currentReactions = Map<String, int>.from(msg.reactions);
+    final currentMyReactions = Set<String>.from(msg.myReactions);
+
+    if (currentMyReactions.contains(emoji)) {
+      currentMyReactions.remove(emoji);
+      final count = (currentReactions[emoji] ?? 1) - 1;
+      if (count <= 0) {
+        currentReactions.remove(emoji);
+      } else {
+        currentReactions[emoji] = count;
+      }
+    } else {
+      currentMyReactions.add(emoji);
+      currentReactions[emoji] = (currentReactions[emoji] ?? 0) + 1;
+    }
+
+    return msg.copyWith(
+      reactions: currentReactions,
+      myReactions: currentMyReactions,
+    );
+  }
+
+  void deleteMessage(String messageId, {bool forEveryone = false}) {
+    // 1. Canal ativo
+    final channelMsgs = _messages[_currentChannel.id];
+    if (channelMsgs != null) {
+      final idx = channelMsgs.indexWhere((m) => m.id == messageId);
+      if (idx != -1) {
+        channelMsgs.removeAt(idx);
+        notifyListeners();
+        return;
+      }
+    }
+
+    // 2. DM
+    for (int t = 0; t < _directMessages.length; t++) {
+      final thread = _directMessages[t];
+      final mIdx = thread.messages.indexWhere((m) => m.id == messageId);
+      if (mIdx != -1) {
+        final updatedMsgs = List<Message>.from(thread.messages)..removeAt(mIdx);
+        _directMessages[t] = thread.copyWith(messages: updatedMsgs);
+        if (_selectedDm?.id == thread.id) {
+          _selectedDm = _directMessages[t];
+        }
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
+  void forwardMessage(Message original, {required String targetId, required bool isChannel}) {
+    final fwdMsg = Message(
+      id: 'fwd_${DateTime.now().millisecondsSinceEpoch}',
+      channelId: targetId,
+      senderName: _userProfile.effectiveDisplayName,
+      senderFingerprint: _securityContext.myFingerprint,
+      isMe: true,
+      text: original.text,
+      timestamp: DateTime.now(),
+      attachments: original.attachments,
+    );
+
+    if (isChannel) {
+      if (!_messages.containsKey(targetId)) {
+        _messages[targetId] = [];
+      }
+      _messages[targetId]!.add(fwdMsg);
+    } else {
+      final tIdx = _directMessages.indexWhere((d) => d.id == targetId);
+      if (tIdx != -1) {
+        final updatedMsgs = List<Message>.from(_directMessages[tIdx].messages)..add(fwdMsg);
+        _directMessages[tIdx] = _directMessages[tIdx].copyWith(messages: updatedMsgs);
+        if (_selectedDm?.id == targetId) {
+          _selectedDm = _directMessages[tIdx];
+        }
+      }
+    }
     notifyListeners();
+  }
+
+  void updateChannelSettings(Channel updatedChannel) {
+    for (int s = 0; s < _spaces.length; s++) {
+      final space = _spaces[s];
+      final cIdx = space.channels.indexWhere((c) => c.id == updatedChannel.id);
+      if (cIdx != -1) {
+        final updatedChannels = List<Channel>.from(space.channels);
+        updatedChannels[cIdx] = updatedChannel;
+        _spaces[s] = space.copyWith(channels: updatedChannels);
+        if (_currentChannel.id == updatedChannel.id) {
+          _currentChannel = updatedChannel;
+        }
+        notifyListeners();
+        return;
+      }
+    }
   }
 
   void selectForumPost(ForumPost? post) {

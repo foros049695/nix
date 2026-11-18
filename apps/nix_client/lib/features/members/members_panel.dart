@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/models/member.dart';
 import '../../state/nix_state.dart';
+import '../profile/peer_card_id_dialog.dart';
 
 class MembersPanel extends StatelessWidget {
   const MembersPanel({super.key});
@@ -78,12 +79,15 @@ class _MemberTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
+    return InkWell(
+      onTap: () => PeerCardIdDialog.showForMember(context, member),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
         children: [
           // Avatar com badge de status
           Stack(
@@ -155,8 +159,9 @@ class _MemberTile extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _memberTrustBadge(NixTrustLevel level, bool hasShield) {
     Color dotColor = NixColors.trustLevel3Green;

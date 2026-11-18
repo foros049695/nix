@@ -170,4 +170,16 @@ flowchart LR
 | **Fase 6** | Nix Wallet (Monero) | `docs/WALLET.md` | `L-A`, `I-A`, `DD-A` |
 | **Fase 7** | Nix Archive | `docs/ARCHIVE.md`, `REPLICATION.md` | `N-A`, `DD-U` |
 | **Fase 8** | Nix Media & Index | `docs/MEDIA.md`, `INDEX.md` | `U-U`, `C-U` |
-| **Fase 9** | Security & PQ | `docs/POST_QUANTUM.md`, `TESTING.md` | `C-S`, `DD-S` |
+---
+
+## 🏁 Marco Atual: Protótipo v0.2.0 (Living AMOLED & Starwire)
+
+- [x] **Design System Nix Living AMOLED:** Fundo `#000000` AMOLED absoluto, paletas reativas dinâmicas (`context.accentColor`), superfícies elevadas e contraste refinado.
+- [x] **Card ID & Passaporte Cultural:** Abertura universal por clique, hover isolado exclusivamente no peer com lockout anti-reabertura no `X`, posicionamento lateral não-obstrutivo e destaques culturais.
+- [x] **Organização de Navegação:** Dock dedicado exclusivamente a Espaços e Pastas combinadas; HomeSidebar agregando Conversas Diretas, Solicitações, Mercado Monero P2P e GitHub Discovery.
+- [x] **Ações de Mensagens Completas:** Menu de contexto desktop/mobile, cópia segura UTF-8, encaminhamento com seletor de destino (`ForwardMessageDialog`), deleção local/geral e reações com emojis toggleable.
+- [x] **Configurações Avançadas de Canal:** Painel multi-categoria com permissões de mensagens, segurança anti-spam (slow mode), expurgo efêmero e suporte a `FLAG_SECURE` contra screenshots.
+- [x] **Catálogo Starwire Integrado:** Ingestão de 4.188 repositórios sob licença CC0-1.0 com métricas de crescimento semanal, busca instantânea e salvamento de 1 clique no Acervo Cultural.
+- [x] **Compilação e Homologação de Protótipos:**
+  - Pacotes experimentais gerados para validação interna e testes locais em Linux e Android.
+  - 100% dos testes unitários e de integração aprovados (7/7 suites verdes).
