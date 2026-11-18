@@ -135,7 +135,6 @@ flowchart TD
 ├── scripts/                  # Scripts de verificação, setup e CI
 ├── ROADMAP.md                # Roadmap detalhado em 10 fases (0 a 9)
 ├── CONTRIBUTING.md           # Guia de contribuição para a comunidade
-├── CODE_OF_CONDUCT.md        # Código de conduta
 └── LICENSE                   # GNU General Public License v3.0
 ```
 
