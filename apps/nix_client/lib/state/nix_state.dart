@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import '../core/models/space.dart';
@@ -15,16 +16,57 @@ import '../core/models/direct_message.dart';
 import '../core/models/user_settings.dart';
 import '../core/models/monero_order.dart';
 import '../core/models/github_repo.dart';
+import '../core/theme/nix_colors.dart';
 import '../core/theme/nix_palette.dart';
 import '../core/security/security_context.dart';
 import 'mock_data.dart';
 
 enum NixActiveArea {
-  homePrivate, // Área Inicial de Conversas Privadas (Friends, Requests, Transações, Updates + Card ID quando vazia)
-  spaces,      // Espaços / Servidores e Canais (Texto, Fórum, Call, Publicação)
-  explore,     // Explorar Canais e Grupos Públicos (do menos populoso ao mais populoso)
-  github,      // Aba GitHub Discovery (Inspirada no starwire.foo)
-  moneroP2p,   // Aba Monero P2P Marketplace (Inspirada no Trocador.app)
+  homePrivate, // Conversas privadas, Mensagens Salvas, Amigos, Solicitações e Card ID
+  spaces,      // Espaços / Grupos e Canais
+  explore,     // Explorar Canais e Grupos Públicos
+  github,      // GitHub Discovery (Starwire)
+  moneroP2p,   // Mercado Monero P2P Não Custodial
+}
+
+enum ConversationFilter {
+  all,
+  unread,
+  pinned,
+  privateChats,
+  groups,
+  channels,
+  muted,
+}
+
+enum PeerCardHoverState {
+  closed,
+  openingPending,
+  openByHover,
+  openByClick,
+  closingRequested,
+}
+
+class AuthorizedPeerCardData {
+  final String peerName;
+  final String peerPublicId;
+  final NixTrustLevel trustLevel;
+  final bool hasCryptographicShield;
+  final bool isAuthorized;
+  final String visibilityLabel;
+  final String bio;
+  final List<String> culturalHighlights;
+
+  const AuthorizedPeerCardData({
+    required this.peerName,
+    required this.peerPublicId,
+    required this.trustLevel,
+    required this.hasCryptographicShield,
+    required this.isAuthorized,
+    required this.visibilityLabel,
+    required this.bio,
+    required this.culturalHighlights,
+  });
 }
 
 class NixState extends ChangeNotifier {
@@ -47,42 +89,63 @@ class NixState extends ChangeNotifier {
   UserSettings _settings = const UserSettings();
 
   CallState _callState = const CallState();
-  final SecurityContext _securityContext = const SecurityContext(myPersona: 'GUS');
+  final SecurityContext _securityContext = const SecurityContext(myPersona: 'NX-7E3A');
 
   NixActiveArea _activeArea = NixActiveArea.spaces;
-  HomeSubTab _homeSubTab = HomeSubTab.cardId; // Quando vazio, preenchido pelo Card ID
+  HomeSubTab _homeSubTab = HomeSubTab.cardId;
   DirectMessageThread? _selectedDm;
   ForumPost? _selectedForumPost;
 
-  // Hover preview de Card ID em Solicitações
+  // Navegação por Pastas & Filtros (Estilo Telegram Desktop)
+  String _activeFolderId = 'all'; // 'all', 'private', ou folder.id
+  ConversationFilter _conversationFilter = ConversationFilter.all;
+  String _conversationSearchQuery = '';
+  bool _isWindowMaximized = false;
+
+  // Máquina de estados explícita para Hover/Clique de Card ID em Solicitações
   ContactRequest? _hoveredContactRequest;
+  PeerCardHoverState _peerHoverState = PeerCardHoverState.closed;
+  String? _hoverLockoutRequestId;
+  bool _isCursorOverHoverPreview = false;
+  Timer? _hoverDebounceTimer;
 
   bool _isProfileOverlayOpen = false;
   bool _isSettingsOpenInOverlay = false;
   SettingsCategory _activeSettingsCategory = SettingsCategory.appearance;
 
   bool _isMembersPanelOpen = false;
+  bool _isConversationInfoOpen = false;
+  String _conversationHistorySearch = '';
   int _selectedEphemeralTimer = 0;
-  bool _exploreSortAscending = true; // Padrão: do menos populoso ao mais populoso
+  bool _exploreSortAscending = true;
   String _exploreSearchQuery = '';
+
+  // Estado de Mensagens (Responder, Editar, Seleção Múltipla, Fixada destacada)
+  Message? _replyingToMessage;
+  Message? _editingMessage;
+  final Set<String> _selectedMessageIds = {};
+  String? _highlightedMessageId;
+  final Set<String> _seenMoneroNonces = {};
 
   // Filtros GitHub Discovery
   String _githubSearchQuery = '';
   String _githubSelectedTopic = 'Todos';
   String _githubSelectedLanguage = 'Todas';
-  String _githubSortBy = 'stars'; // 'stars', 'updated'
+  String _githubSortBy = 'stars'; // 'stars', 'trending', 'updated'
+  final Set<String> _savedAcervoIds = {};
 
   // Filtros Monero P2P
-  MoneroP2pSide _moneroSelectedSide = MoneroP2pSide.sell; // Default: Quero comprar XMR (vendo fiat)
-  String _moneroSelectedFiat = 'BRL'; // 'BRL', 'USD', 'EUR'
-  String _moneroSelectedPaymentMethod = 'Todos'; // 'Todos', 'PIX', 'Dinheiro', 'SEPA', 'TED'
+  MoneroP2pSide _moneroSelectedSide = MoneroP2pSide.sell;
+  String _moneroSelectedFiat = 'BRL';
+  String _moneroSelectedPaymentMethod = 'Todos';
   String _moneroSearchQuery = '';
 
   Timer? _callTimer;
 
   // Estado Tor Onion
   final String _onionAddress = 'gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion';
-  final bool _isTorRunning = true;
+  bool _isTorRunning = true;
+  String _torDiagnosticDetail = 'Daemon Tor Onion v3 ativo · SOCKS5 127.0.0.1:9050';
 
   NixState() {
     _spaces = MockData.getInitialSpaces();
@@ -102,10 +165,73 @@ class NixState extends ChangeNotifier {
     _systemUpdates = MockData.getInitialSystemUpdates();
     _moneroOrders = MockData.getInitialMoneroOrders();
     _githubRepos = MockData.getInitialGithubRepos();
+    NixColors.sync(
+      NixSurfaceScheme.resolve(_settings.themeMode),
+      currentPalette,
+    );
     loadStarwireRepos();
   }
 
-  /// Carrega o catálogo real Starwire (4.188 repositórios) do asset JSON em background
+  /// Caminho local de persistência de preferências do cliente (apenas desktop/mobile reais).
+  String get _prefsFilePath {
+    if (Platform.environment['FLUTTER_TEST'] == 'true') return '';
+    final home = Platform.environment['HOME'] ?? '';
+    if (home.isEmpty) return '';
+    return '$home/.local/share/nix/client_prefs_v4.json';
+  }
+
+  Future<void> _persistState() async {
+    try {
+      final path = _prefsFilePath;
+      if (path.isEmpty) return;
+      final file = File(path);
+      await file.parent.create(recursive: true);
+      final data = {
+        'settings': _settings.toJson(),
+        'savedAcervoIds': _savedAcervoIds.toList(),
+        'folders': _folders
+            .map((f) => {
+                  'id': f.id,
+                  'name': f.name,
+                  'iconName': f.iconName,
+                  'colorValue': f.colorValue,
+                  'spaceIds': f.spaceIds,
+                  'conversationIds': f.conversationIds,
+                })
+            .toList(),
+      };
+      await file.writeAsString(jsonEncode(data), flush: true);
+    } catch (_) {
+      // Ambiente de testes ou sandbox sem HOME gravável
+    }
+  }
+
+  Future<void> loadPersistedState() async {
+    try {
+      final path = _prefsFilePath;
+      if (path.isEmpty) return;
+      final file = File(path);
+      if (!await file.exists()) return;
+      final raw = jsonDecode(await file.readAsString());
+      if (raw is Map<String, dynamic>) {
+        if (raw['settings'] is Map<String, dynamic>) {
+          _settings = UserSettings.fromJson(raw['settings'] as Map<String, dynamic>);
+          NixColors.sync(
+            NixSurfaceScheme.resolve(_settings.themeMode),
+            currentPalette,
+          );
+        }
+        if (raw['savedAcervoIds'] is List) {
+          _savedAcervoIds
+            ..clear()
+            ..addAll((raw['savedAcervoIds'] as List).map((e) => e.toString()));
+        }
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  /// Carrega o catálogo real Starwire (4.188 repositórios) do asset JSON.
   Future<void> loadStarwireRepos() async {
     try {
       final jsonString = await rootBundle.loadString('assets/data/starwire_repos.json');
@@ -120,7 +246,7 @@ class NixState extends ChangeNotifier {
         }
       }
     } catch (_) {
-      // Fallback gracioso para dados locais quando em testes unitários sem asset bundle
+      // Fallback gracioso em testes unitários sem asset bundle completo
     }
   }
 
@@ -129,6 +255,16 @@ class NixState extends ChangeNotifier {
   List<SpaceFolder> get folders => _folders;
   Space get currentSpace => _currentSpace;
   Channel get currentChannel => _currentChannel;
+
+  List<Message> get activeConversationMessages {
+    if (_activeArea == NixActiveArea.homePrivate &&
+        _homeSubTab == HomeSubTab.directChat &&
+        _selectedDm != null) {
+      return _selectedDm!.messages;
+    }
+    return _messages[_currentChannel.id] ?? [];
+  }
+
   List<Message> get currentMessages => _messages[_currentChannel.id] ?? [];
   List<Publication> get currentPublications => _publications[_currentChannel.id] ?? [];
   List<ForumPost> get currentForumPosts =>
@@ -139,6 +275,7 @@ class NixState extends ChangeNotifier {
   SecurityContext get securityContext => _securityContext;
   UserProfile get userProfile => _userProfile;
   UserSettings get settings => _settings;
+  NixThemeMode get themeMode => _settings.themeMode;
 
   NixPalette get currentPalette => NixPalette.fromType(
         _settings.paletteType,
@@ -149,8 +286,21 @@ class NixState extends ChangeNotifier {
   HomeSubTab get homeSubTab => _homeSubTab;
   List<DirectMessageThread> get directMessages => _directMessages;
   DirectMessageThread? get selectedDm => _selectedDm;
+  DirectMessageThread get savedMessagesThread => _directMessages.firstWhere(
+        (d) => d.isSavedMessages,
+        orElse: () => _directMessages.first,
+      );
+
+  String get activeFolderId => _activeFolderId;
+  ConversationFilter get conversationFilter => _conversationFilter;
+  String get conversationSearchQuery => _conversationSearchQuery;
+  bool get isWindowMaximized => _isWindowMaximized;
+
   List<ContactRequest> get contactRequests => _contactRequests;
   ContactRequest? get hoveredContactRequest => _hoveredContactRequest;
+  PeerCardHoverState get peerHoverState => _peerHoverState;
+  String? get hoverLockoutRequestId => _hoverLockoutRequestId;
+
   List<XmrTransactionRecord> get transactions => _transactions;
   List<SystemUpdateRecord> get systemUpdates => _systemUpdates;
   List<MoneroP2pOrder> get moneroOrders => _moneroOrders;
@@ -160,14 +310,46 @@ class NixState extends ChangeNotifier {
   bool get isSettingsOpenInOverlay => _isSettingsOpenInOverlay;
   SettingsCategory get activeSettingsCategory => _activeSettingsCategory;
   bool get isMembersPanelOpen => _isMembersPanelOpen;
+  bool get isConversationInfoOpen => _isConversationInfoOpen;
+  String get conversationHistorySearch => _conversationHistorySearch;
   int get selectedEphemeralTimer => _selectedEphemeralTimer;
   bool get exploreSortAscending => _exploreSortAscending;
   String get exploreSearchQuery => _exploreSearchQuery;
 
+  Message? get replyingToMessage => _replyingToMessage;
+  Message? get editingMessage => _editingMessage;
+  Set<String> get selectedMessageIds => _selectedMessageIds;
+  String? get highlightedMessageId => _highlightedMessageId;
+
   // Getters Tor Onion
   String get onionAddress => _onionAddress;
   bool get isTorRunning => _isTorRunning;
+  String get torDiagnosticDetail => _torDiagnosticDetail;
   bool get isTorFailClosed => _settings.transportProfile.contains('Fail-Closed');
+
+  /// Diagnóstico real de conectividade ao daemon Tor SOCKS5 (127.0.0.1:9050).
+  Future<bool> checkTorDaemonStatus() async {
+    try {
+      final socket = await Socket.connect(
+        '127.0.0.1',
+        9050,
+        timeout: const Duration(milliseconds: 900),
+      );
+      await socket.close();
+      _isTorRunning = true;
+      _torDiagnosticDetail =
+          'Proxy SOCKS5 (127.0.0.1:9050) conectado · Endpoint: $_onionAddress';
+      notifyListeners();
+      return true;
+    } catch (_) {
+      _isTorRunning = false;
+      _torDiagnosticDetail = isTorFailClosed
+          ? 'Tor indisponível — Fail-Closed ATIVO (Fallback IP direto bloqueado)'
+          : 'Tor indisponível em 127.0.0.1:9050';
+      notifyListeners();
+      return false;
+    }
+  }
 
   // Getters Filtros GitHub
   String get githubSearchQuery => _githubSearchQuery;
@@ -182,10 +364,14 @@ class NixState extends ChangeNotifier {
         final matchesName = repo.name.toLowerCase().contains(q);
         final matchesOwner = repo.owner.toLowerCase().contains(q);
         final matchesDesc = repo.description.toLowerCase().contains(q);
-        if (!matchesName && !matchesOwner && !matchesDesc) return false;
+        final matchesTopic = repo.topics.any((t) => t.toLowerCase().contains(q));
+        if (!matchesName && !matchesOwner && !matchesDesc && !matchesTopic) return false;
       }
       if (_githubSelectedTopic != 'Todos') {
-        if (!repo.topics.contains(_githubSelectedTopic.toLowerCase())) return false;
+        if (!repo.topics.any((t) => t.toLowerCase() == _githubSelectedTopic.toLowerCase()) &&
+            repo.category.toLowerCase() != _githubSelectedTopic.toLowerCase()) {
+          return false;
+        }
       }
       if (_githubSelectedLanguage != 'Todas') {
         if (repo.language != _githubSelectedLanguage) return false;
@@ -193,12 +379,37 @@ class NixState extends ChangeNotifier {
       return true;
     }).toList();
 
-    if (_githubSortBy == 'stars') {
+    if (_githubSortBy == 'trending') {
+      filtered.sort((a, b) => b.starsThisWeek.compareTo(a.starsThisWeek));
+    } else if (_githubSortBy == 'stars') {
       filtered.sort((a, b) => b.starsCount.compareTo(a.starsCount));
     } else {
       filtered.sort((a, b) => b.updatedDate.compareTo(a.updatedDate));
     }
     return filtered;
+  }
+
+  /// Estatísticas reais calculadas diretamente do catálogo Starwire carregado.
+  Map<String, int> get githubLanguageCounts {
+    final counts = <String, int>{};
+    for (final r in _githubRepos) {
+      final lang = r.language.trim().isEmpty ? 'Markdown' : r.language.trim();
+      counts[lang] = (counts[lang] ?? 0) + 1;
+    }
+    final sortedEntries = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return Map<String, int>.fromEntries(sortedEntries.take(8));
+  }
+
+  Map<String, int> get githubCategoryCounts {
+    final counts = <String, int>{};
+    for (final r in _githubRepos) {
+      final cat = r.category.trim().isEmpty ? 'Open Source' : r.category.trim();
+      counts[cat] = (counts[cat] ?? 0) + 1;
+    }
+    final sortedEntries = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return Map<String, int>.fromEntries(sortedEntries.take(6));
   }
 
   // Getters Filtros Monero P2P
@@ -210,6 +421,7 @@ class NixState extends ChangeNotifier {
   List<MoneroP2pOrder> get filteredMoneroOrders {
     final q = _moneroSearchQuery.trim().toLowerCase();
     return _moneroOrders.where((order) {
+      if (order.isExpired) return false;
       if (order.side != _moneroSelectedSide) return false;
       if (order.fiatCurrency != _moneroSelectedFiat) return false;
       if (_moneroSelectedPaymentMethod != 'Todos') {
@@ -225,6 +437,17 @@ class NixState extends ChangeNotifier {
       }
       return true;
     }).toList();
+  }
+
+  bool verifyMoneroOrder(MoneroP2pOrder order) {
+    if (order.isExpired || !order.isSignatureVerified) return false;
+    if (order.nonceHex != null && _seenMoneroNonces.contains('${order.id}:${order.nonceHex}')) {
+      return true; // Já verificado localmente
+    }
+    if (order.nonceHex != null) {
+      _seenMoneroNonces.add('${order.id}:${order.nonceHex}');
+    }
+    return order.signedManifestHash.length >= 8;
   }
 
   /// Lista de grupos públicos filtrada e ordenada (padrão: do menos populoso ao mais populoso).
@@ -243,14 +466,143 @@ class NixState extends ChangeNotifier {
     return filtered;
   }
 
+  /// Lista filtrada/ordenada de conversas diretas (sempre colocando Mensagens Salvas primeiro, depois fixadas).
+  List<DirectMessageThread> get filteredDirectMessages {
+    final q = _conversationSearchQuery.trim().toLowerCase();
+    SpaceFolder? activeFolder;
+    if (_activeFolderId != 'all' && _activeFolderId != 'private') {
+      final fIdx = _folders.indexWhere((f) => f.id == _activeFolderId);
+      if (fIdx != -1) activeFolder = _folders[fIdx];
+    }
+
+    final list = _directMessages.where((dm) {
+      if (activeFolder != null && !dm.isSavedMessages) {
+        if (!activeFolder.conversationIds.contains(dm.id)) return false;
+      }
+      if (q.isNotEmpty) {
+        final match = dm.peerName.toLowerCase().contains(q) ||
+            dm.lastMessagePreview.toLowerCase().contains(q) ||
+            dm.peerPublicId.toLowerCase().contains(q);
+        if (!match) return false;
+      }
+      switch (_conversationFilter) {
+        case ConversationFilter.unread:
+          return dm.unreadCount > 0;
+        case ConversationFilter.pinned:
+          return dm.isPinned;
+        case ConversationFilter.muted:
+          return dm.isMuted;
+        case ConversationFilter.groups:
+        case ConversationFilter.channels:
+          return false;
+        case ConversationFilter.all:
+        case ConversationFilter.privateChats:
+          return true;
+      }
+    }).toList();
+
+    list.sort((a, b) {
+      if (a.isSavedMessages != b.isSavedMessages) return a.isSavedMessages ? -1 : 1;
+      if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+      final ta = a.lastActivityAt ?? DateTime(2000);
+      final tb = b.lastActivityAt ?? DateTime(2000);
+      return tb.compareTo(ta);
+    });
+    return list;
+  }
+
+  List<Space> get visibleSpacesForFolder {
+    if (_activeFolderId == 'private') return const [];
+    final q = _conversationSearchQuery.trim().toLowerCase();
+    Iterable<Space> base = _spaces;
+    if (_activeFolderId != 'all') {
+      final fIdx = _folders.indexWhere((f) => f.id == _activeFolderId);
+      if (fIdx != -1) {
+        final ids = _folders[fIdx].spaceIds;
+        base = base.where((s) => ids.contains(s.id));
+      }
+    }
+    return base.where((s) {
+      if (q.isNotEmpty) {
+        final matchSpace = s.name.toLowerCase().contains(q);
+        final matchChannel = s.channels.any((c) => c.name.toLowerCase().contains(q));
+        if (!matchSpace && !matchChannel) return false;
+      }
+      switch (_conversationFilter) {
+        case ConversationFilter.unread:
+          return s.unreadCount > 0 || s.channels.any((c) => c.unreadCount > 0);
+        case ConversationFilter.pinned:
+          return s.isPinned || s.channels.any((c) => c.isPinned);
+        case ConversationFilter.muted:
+          return s.isMuted || s.channels.any((c) => c.isMuted);
+        case ConversationFilter.privateChats:
+          return false;
+        case ConversationFilter.channels:
+          return s.channels.any((c) => c.type == ChannelType.announcement || c.type == ChannelType.publication);
+        case ConversationFilter.groups:
+        case ConversationFilter.all:
+          return true;
+      }
+    }).toList();
+  }
+
+  /// Privacidade do Card ID aplicada na disponibilização dos dados no estado.
+  AuthorizedPeerCardData getAuthorizedPeerCardData({
+    required String peerName,
+    required String peerPublicId,
+    required NixTrustLevel trustLevel,
+    required bool hasCryptographicShield,
+    required String rawBio,
+    required List<String> rawHighlights,
+    required String ownerVisibility,
+    bool isVerifiedContact = false,
+  }) {
+    if (ownerVisibility == 'Oculto') {
+      return AuthorizedPeerCardData(
+        peerName: peerName,
+        peerPublicId: peerPublicId,
+        trustLevel: trustLevel,
+        hasCryptographicShield: hasCryptographicShield,
+        isAuthorized: false,
+        visibilityLabel: 'Oculto pelo proprietário',
+        bio: 'Dados restritos pelo proprietário (Configurações → Privacidade → Visibilidade do Card ID).',
+        culturalHighlights: const [],
+      );
+    }
+    if (ownerVisibility == 'Apenas Contatos Verificados' && !isVerifiedContact) {
+      return AuthorizedPeerCardData(
+        peerName: peerName,
+        peerPublicId: peerPublicId,
+        trustLevel: trustLevel,
+        hasCryptographicShield: hasCryptographicShield,
+        isAuthorized: false,
+        visibilityLabel: 'Apenas Contatos Verificados',
+        bio: 'Adicione e verifique este par (QR / Chave Pública) para liberar biografia e acervo completo.',
+        culturalHighlights: const [],
+      );
+    }
+    return AuthorizedPeerCardData(
+      peerName: peerName,
+      peerPublicId: peerPublicId,
+      trustLevel: trustLevel,
+      hasCryptographicShield: hasCryptographicShield,
+      isAuthorized: true,
+      visibilityLabel: ownerVisibility,
+      bio: rawBio,
+      culturalHighlights: rawHighlights,
+    );
+  }
+
   // ================= NAVEGAÇÃO DE ÁREAS =================
 
   void openHomePrivateArea({bool resetToCardId = false}) {
     _activeArea = NixActiveArea.homePrivate;
+    _activeFolderId = 'private';
     if (resetToCardId) {
       _homeSubTab = HomeSubTab.cardId;
       _selectedDm = null;
     }
+    _clearTransientMessageModes();
     notifyListeners();
   }
 
@@ -283,12 +635,137 @@ class NixState extends ChangeNotifier {
     if (tab != HomeSubTab.directChat) {
       _selectedDm = null;
     }
+    _clearTransientMessageModes();
     notifyListeners();
   }
 
+  // ================= MÁQUINA DE ESTADOS HOVER CARD ID (ANTI-FLICKERING) =================
+
   void setHoveredContactRequest(ContactRequest? req) {
-    if (_hoveredContactRequest?.id != req?.id) {
+    if (req == null) {
+      _hoveredContactRequest = null;
+      _peerHoverState = PeerCardHoverState.closed;
+    } else {
       _hoveredContactRequest = req;
+      _peerHoverState = PeerCardHoverState.openByHover;
+    }
+    notifyListeners();
+  }
+
+  void onRequestPeerHoverEnter(ContactRequest req) {
+    if (_hoverLockoutRequestId == req.id) return;
+    _hoverDebounceTimer?.cancel();
+    _peerHoverState = PeerCardHoverState.openingPending;
+    _hoveredContactRequest = req;
+    _peerHoverState = PeerCardHoverState.openByHover;
+    notifyListeners();
+  }
+
+  void onRequestPeerHoverExit(ContactRequest req) {
+    if (_hoverLockoutRequestId == req.id) {
+      _hoverLockoutRequestId = null;
+    }
+    _hoverDebounceTimer?.cancel();
+    _hoverDebounceTimer = Timer(const Duration(milliseconds: 90), () {
+      if (!_isCursorOverHoverPreview &&
+          _hoveredContactRequest?.id == req.id &&
+          _peerHoverState != PeerCardHoverState.openByClick) {
+        _hoveredContactRequest = null;
+        _peerHoverState = PeerCardHoverState.closed;
+        notifyListeners();
+      }
+    });
+  }
+
+  void setHoverOverPreviewCard(bool over) {
+    _isCursorOverHoverPreview = over;
+    if (!over) {
+      _hoverDebounceTimer?.cancel();
+      _hoverDebounceTimer = Timer(const Duration(milliseconds: 90), () {
+        if (!_isCursorOverHoverPreview && _peerHoverState == PeerCardHoverState.openByHover) {
+          _hoveredContactRequest = null;
+          _peerHoverState = PeerCardHoverState.closed;
+          notifyListeners();
+        }
+      });
+    }
+  }
+
+  void dismissHoveredPeerCard() {
+    _hoverDebounceTimer?.cancel();
+    if (_hoveredContactRequest != null) {
+      _hoverLockoutRequestId = _hoveredContactRequest!.id;
+    }
+    _peerHoverState = PeerCardHoverState.closingRequested;
+    _hoveredContactRequest = null;
+    _isCursorOverHoverPreview = false;
+    _peerHoverState = PeerCardHoverState.closed;
+    notifyListeners();
+  }
+
+  // ================= PASTAS, FILTROS & CONVERSAS DIRETAS =================
+
+  void selectFolder(String folderId) {
+    _activeFolderId = folderId;
+    if (folderId == 'private') {
+      _activeArea = NixActiveArea.homePrivate;
+    } else if (folderId != 'all') {
+      final fIdx = _folders.indexWhere((f) => f.id == folderId);
+      if (fIdx != -1 && _folders[fIdx].spaceIds.isNotEmpty) {
+        final targetSpaceId = _folders[fIdx].spaceIds.first;
+        final sIdx = _spaces.indexWhere((s) => s.id == targetSpaceId);
+        if (sIdx != -1) {
+          _currentSpace = _spaces[sIdx];
+          if (_currentSpace.channels.isNotEmpty) {
+            _currentChannel = _currentSpace.channels.first;
+          }
+          _activeArea = NixActiveArea.spaces;
+        }
+      }
+    }
+    notifyListeners();
+  }
+
+  void setConversationFilter(ConversationFilter filter) {
+    _conversationFilter = filter;
+    notifyListeners();
+  }
+
+  void setConversationSearchQuery(String query) {
+    _conversationSearchQuery = query;
+    notifyListeners();
+  }
+
+  void openSavedMessages() {
+    selectDirectMessage(savedMessagesThread);
+  }
+
+  void saveToSavedMessages(
+    String text, {
+    List<String> attachments = const [],
+    String? forwardedFrom,
+  }) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty && attachments.isEmpty) return;
+    final target = savedMessagesThread;
+    final msg = Message(
+      id: 'saved_${DateTime.now().millisecondsSinceEpoch}',
+      channelId: target.id,
+      senderName: _userProfile.effectiveDisplayName,
+      senderFingerprint: _securityContext.myFingerprint,
+      isMe: true,
+      text: trimmed.isNotEmpty ? trimmed : 'Anexo salvo',
+      timestamp: DateTime.now(),
+      forwardedFrom: forwardedFrom,
+      attachments: attachments,
+    );
+    final idx = _directMessages.indexWhere((d) => d.id == target.id);
+    if (idx != -1) {
+      final updatedMsgs = List<Message>.from(_directMessages[idx].messages)..add(msg);
+      _directMessages[idx] = _directMessages[idx].copyWith(messages: updatedMsgs);
+      if (_selectedDm?.id == target.id) {
+        _selectedDm = _directMessages[idx];
+      }
       notifyListeners();
     }
   }
@@ -303,11 +780,40 @@ class NixState extends ChangeNotifier {
     } else {
       _selectedDm = dm;
     }
+    _clearTransientMessageModes();
     notifyListeners();
   }
 
-  void sendDirectMessage(String text) {
-    if (_selectedDm == null || text.trim().isEmpty) return;
+  void togglePinDirectMessage(String dmId) {
+    final idx = _directMessages.indexWhere((d) => d.id == dmId);
+    if (idx == -1) return;
+    _directMessages[idx] = _directMessages[idx].copyWith(isPinned: !_directMessages[idx].isPinned);
+    if (_selectedDm?.id == dmId) {
+      _selectedDm = _directMessages[idx];
+    }
+    notifyListeners();
+  }
+
+  void toggleMuteDirectMessage(String dmId) {
+    final idx = _directMessages.indexWhere((d) => d.id == dmId);
+    if (idx == -1) return;
+    _directMessages[idx] = _directMessages[idx].copyWith(isMuted: !_directMessages[idx].isMuted);
+    if (_selectedDm?.id == dmId) {
+      _selectedDm = _directMessages[idx];
+    }
+    notifyListeners();
+  }
+
+  void sendDirectMessage(String text, {List<String> attachments = const []}) {
+    if (_selectedDm == null) return;
+    if (text.trim().isEmpty && attachments.isEmpty) return;
+
+    if (_editingMessage != null) {
+      saveEditedMessage(_editingMessage!.id, text);
+      return;
+    }
+
+    final reply = _replyingToMessage;
     final newMsg = Message(
       id: 'dm_msg_${DateTime.now().millisecondsSinceEpoch}',
       channelId: _selectedDm!.id,
@@ -318,12 +824,17 @@ class NixState extends ChangeNotifier {
       timestamp: DateTime.now(),
       ephemeralSeconds: _selectedEphemeralTimer,
       remainingSeconds: _selectedEphemeralTimer,
+      attachments: attachments,
+      replyToMessageId: reply?.id,
+      replyToSenderName: reply?.senderName,
+      replyToExcerpt: reply?.text,
     );
     final idx = _directMessages.indexWhere((d) => d.id == _selectedDm!.id);
     if (idx != -1) {
       final updatedMsgs = List<Message>.from(_directMessages[idx].messages)..add(newMsg);
       _directMessages[idx] = _directMessages[idx].copyWith(messages: updatedMsgs);
       _selectedDm = _directMessages[idx];
+      _replyingToMessage = null;
       notifyListeners();
     }
   }
@@ -333,6 +844,7 @@ class NixState extends ChangeNotifier {
     if (idx == -1) return;
     final req = _contactRequests.removeAt(idx);
     _hoveredContactRequest = null;
+    _peerHoverState = PeerCardHoverState.closed;
     final newDm = DirectMessageThread(
       id: 'dm_${DateTime.now().millisecondsSinceEpoch}',
       peerName: req.peerName,
@@ -353,13 +865,14 @@ class NixState extends ChangeNotifier {
         ),
       ],
     );
-    _directMessages.insert(0, newDm);
+    _directMessages.insert(1, newDm);
     notifyListeners();
   }
 
   void declineContactRequest(String requestId) {
     _contactRequests.removeWhere((r) => r.id == requestId);
     _hoveredContactRequest = null;
+    _peerHoverState = PeerCardHoverState.closed;
     notifyListeners();
   }
 
@@ -391,7 +904,6 @@ class NixState extends ChangeNotifier {
   }
 
   void openTradeWithOrder(MoneroP2pOrder order) {
-    // Abre canal direto E2EE com o anunciante
     final existingDm = _directMessages.firstWhere(
       (dm) => dm.peerPublicId == order.traderPublicId,
       orElse: () {
@@ -410,19 +922,20 @@ class NixState extends ChangeNotifier {
               senderName: order.traderName,
               senderFingerprint: order.traderPublicId.replaceFirst('NIX-', ''),
               isMe: false,
-              text: 'Iniciando negociação da oferta #${order.id.split('_').last}: ${order.notes}\nLimite: ${order.formattedLimits}',
+              text:
+                  'Iniciando negociação da oferta #${order.id.split('_').last}: ${order.notes}\nLimite: ${order.formattedLimits}',
               timestamp: DateTime.now(),
             ),
           ],
         );
-        _directMessages.insert(0, newDm);
+        _directMessages.insert(1, newDm);
         return newDm;
       },
     );
     selectDirectMessage(existingDm);
   }
 
-  // ================= GITHUB DISCOVERY =================
+  // ================= GITHUB DISCOVERY (STARWIRE) =================
 
   void setGithubSearchQuery(String query) {
     _githubSearchQuery = query;
@@ -453,7 +966,7 @@ class NixState extends ChangeNotifier {
     _githubRepos[idx] = repo.copyWith(isSavedInAcervo: isNowSaved);
 
     if (isNowSaved) {
-      // Adiciona ao acervo do perfil
+      _savedAcervoIds.add(repo.id);
       final culturalItem = CulturalItem(
         id: 'repo_${repo.name}',
         title: repo.name,
@@ -462,7 +975,7 @@ class NixState extends ChangeNotifier {
         rating: repo.formattedStars,
         monogram: repo.name.length >= 2 ? repo.name.substring(0, 2).toUpperCase() : 'GH',
         toneShade: 75,
-        isPublicInCardId: true,
+        isPublicInCardId: false, // Acervo privado por padrão (Seção 16)
         repositoryUrl: repo.htmlUrl,
         starsCount: repo.starsCount,
         language: repo.language,
@@ -471,13 +984,14 @@ class NixState extends ChangeNotifier {
       );
       addCulturalItem(culturalItem);
     } else {
-      // Remove do acervo
+      _savedAcervoIds.remove(repo.id);
       _userProfile = _userProfile.copyWith(
         culturalItems: _userProfile.culturalItems
             .where((i) => i.id != 'repo_${repo.name}' && i.id != repo.id)
             .toList(),
       );
     }
+    _persistState();
     notifyListeners();
   }
 
@@ -526,6 +1040,9 @@ class NixState extends ChangeNotifier {
     String? avatarStyle,
     String? customAvatarPath,
     bool clearCustomAvatar = false,
+    double? avatarCropScale,
+    double? avatarCropOffsetX,
+    double? avatarCropOffsetY,
   }) {
     final cleanBio = bio != null
         ? (bio.trim().length > 180 ? bio.trim().substring(0, 180) : bio.trim())
@@ -543,12 +1060,23 @@ class NixState extends ChangeNotifier {
       avatarStyle: avatarStyle,
       customAvatarPath: customAvatarPath,
       clearCustomAvatar: clearCustomAvatar,
+      avatarCropScale: avatarCropScale,
+      avatarCropOffsetX: avatarCropOffsetX,
+      avatarCropOffsetY: avatarCropOffsetY,
     );
     notifyListeners();
   }
 
   void addCulturalItem(CulturalItem item) {
     final updated = List<CulturalItem>.from(_userProfile.culturalItems)..insert(0, item);
+    _userProfile = _userProfile.copyWith(culturalItems: updated);
+    notifyListeners();
+  }
+
+  void updateCulturalItem(CulturalItem updatedItem) {
+    final updated = _userProfile.culturalItems.map((item) {
+      return item.id == updatedItem.id ? updatedItem : item;
+    }).toList();
     _userProfile = _userProfile.copyWith(culturalItems: updated);
     notifyListeners();
   }
@@ -570,28 +1098,64 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ================= CONFIGURAÇÕES & DISPOSITIVOS =================
+  // ================= CONFIGURAÇÕES, TEMAS & JANELA =================
+
+  void updateThemeMode(NixThemeMode mode) {
+    _settings = _settings.copyWith(themeMode: mode);
+    NixColors.sync(NixSurfaceScheme.resolve(mode), currentPalette);
+    _persistState();
+    notifyListeners();
+  }
 
   void updatePalette(NixPaletteType type, [int? customColor]) {
     _settings = _settings.copyWith(
       paletteType: type,
-      customPaletteColor: customColor,
+      customPaletteColor: customColor ?? _settings.customPaletteColor,
     );
+    NixColors.sync(NixSurfaceScheme.resolve(_settings.themeMode), currentPalette);
+    _persistState();
+    notifyListeners();
+  }
+
+  void updateWindowGeometry({
+    double? width,
+    double? height,
+    double? offsetX,
+    double? offsetY,
+  }) {
+    _settings = _settings.copyWith(
+      windowWidth: width,
+      windowHeight: height,
+      windowOffsetX: offsetX,
+      windowOffsetY: offsetY,
+    );
+    if (_settings.persistWindowGeometry) {
+      _persistState();
+    }
+    notifyListeners();
+  }
+
+  void toggleWindowMaximized() {
+    _isWindowMaximized = !_isWindowMaximized;
     notifyListeners();
   }
 
   void updateCardIdVisibility(String visibility) {
     _settings = _settings.copyWith(cardIdVisibility: visibility);
+    _persistState();
     notifyListeners();
   }
 
   void toggleFloatingWindowMode(bool isFloating) {
     _settings = _settings.copyWith(floatingWindowMode: isFloating);
+    _persistState();
     notifyListeners();
   }
 
   void updateSettings(UserSettings newSettings) {
     _settings = newSettings;
+    NixColors.sync(NixSurfaceScheme.resolve(_settings.themeMode), currentPalette);
+    _persistState();
     notifyListeners();
   }
 
@@ -623,7 +1187,7 @@ class NixState extends ChangeNotifier {
     final newDev = AuthorizedDevice(
       id: 'dev_${DateTime.now().millisecondsSinceEpoch}',
       deviceName: deviceName.trim().isNotEmpty ? deviceName.trim() : 'Novo Dispositivo Nix',
-      clientVersion: 'Nix Client v0.2.0',
+      clientVersion: 'Nix Client v0.4.0-dev',
       lastSeenLabel: 'Agora',
       isCurrent: false,
       fingerprint: fingerprint.trim().isNotEmpty ? fingerprint.trim() : 'NX-7700-AA21',
@@ -643,6 +1207,7 @@ class NixState extends ChangeNotifier {
 
   void selectSpace(Space space) {
     _activeArea = NixActiveArea.spaces;
+    _clearTransientMessageModes();
     if (_currentSpace.id == space.id) {
       notifyListeners();
       return;
@@ -662,41 +1227,66 @@ class NixState extends ChangeNotifier {
     }
   }
 
-  void createSpaceFolder(String name, List<String> spaceIds) {
-    if (name.trim().isEmpty || spaceIds.isEmpty) return;
-    _folders = _folders
-        .map((f) => f.copyWith(
-              spaceIds: f.spaceIds.where((id) => !spaceIds.contains(id)).toList(),
-            ))
-        .where((f) => f.spaceIds.isNotEmpty)
-        .toList();
+  void createSpaceFolder(
+    String name,
+    List<String> spaceIds, {
+    String iconName = 'folder',
+    int colorValue = 0xFFFFC928,
+    List<String> conversationIds = const [],
+  }) {
+    if (name.trim().isEmpty) return;
+    if (spaceIds.isEmpty && conversationIds.isEmpty) return;
 
-    _folders.add(SpaceFolder(
+    final newFolder = SpaceFolder(
       id: 'folder_${DateTime.now().millisecondsSinceEpoch}',
       name: name.trim(),
-      spaceIds: spaceIds,
+      iconName: iconName,
+      colorValue: colorValue,
+      spaceIds: spaceIds.toSet().toList(),
+      conversationIds: conversationIds.toSet().toList(),
       isExpanded: true,
-    ));
+    );
+    _folders.add(newFolder);
+    _persistState();
     notifyListeners();
   }
 
-  /// Arrastar um espaço sobre outro para agrupá-los em uma nova pasta (estilo Discord/Android)
+  void updateSpaceFolder(SpaceFolder updatedFolder) {
+    final idx = _folders.indexWhere((f) => f.id == updatedFolder.id);
+    if (idx == -1) return;
+    _folders[idx] = updatedFolder.copyWith(
+      spaceIds: updatedFolder.spaceIds.toSet().toList(),
+      conversationIds: updatedFolder.conversationIds.toSet().toList(),
+    );
+    _persistState();
+    notifyListeners();
+  }
+
+  void reorderFolders(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= _folders.length) return;
+    if (newIndex > oldIndex) newIndex--;
+    if (newIndex < 0 || newIndex >= _folders.length) return;
+    final moved = _folders.removeAt(oldIndex);
+    _folders.insert(newIndex, moved);
+    _persistState();
+    notifyListeners();
+  }
+
+  /// Arrastar um espaço sobre outro para agrupá-los em uma nova pasta.
   void combineSpacesIntoFolder(String sourceSpaceId, String targetSpaceId, [String? folderName]) {
     if (sourceSpaceId == targetSpaceId) return;
 
-    // Remove ambos de outras pastas se já estiverem
     _folders = _folders
         .map((f) => f.copyWith(
               spaceIds: f.spaceIds
                   .where((id) => id != sourceSpaceId && id != targetSpaceId)
                   .toList(),
             ))
-        .where((f) => f.spaceIds.isNotEmpty)
+        .where((f) => f.spaceIds.isNotEmpty || f.conversationIds.isNotEmpty)
         .toList();
 
     final sourceSpace = _spaces.firstWhere((s) => s.id == sourceSpaceId, orElse: () => _spaces.first);
     final targetSpace = _spaces.firstWhere((s) => s.id == targetSpaceId, orElse: () => _spaces.first);
-
     final defaultName = folderName ?? '${targetSpace.initials} & ${sourceSpace.initials}';
 
     _folders.add(SpaceFolder(
@@ -705,35 +1295,48 @@ class NixState extends ChangeNotifier {
       spaceIds: [targetSpaceId, sourceSpaceId],
       isExpanded: true,
     ));
+    _persistState();
     notifyListeners();
   }
 
-  /// Arrastar um espaço para dentro de uma pasta existente
+  /// Arrastar um espaço para dentro de uma pasta existente (sem duplicatas).
   void addSpaceToFolder(String spaceId, String folderId) {
     final fIdx = _folders.indexWhere((f) => f.id == folderId);
     if (fIdx == -1) return;
-
-    // Se já estiver na pasta, não duplica
     if (_folders[fIdx].spaceIds.contains(spaceId)) return;
 
-    // Remove de outras pastas
-    _folders = _folders
-        .map((f) => f.copyWith(
-              spaceIds: f.spaceIds.where((id) => id != spaceId).toList(),
-            ))
-        .where((f) => f.spaceIds.isNotEmpty)
-        .toList();
-
-    final targetIdx = _folders.indexWhere((f) => f.id == folderId);
-    if (targetIdx != -1) {
-      final updatedList = List<String>.from(_folders[targetIdx].spaceIds)..add(spaceId);
-      _folders[targetIdx] = _folders[targetIdx].copyWith(spaceIds: updatedList, isExpanded: true);
-    }
+    final updatedList = List<String>.from(_folders[fIdx].spaceIds)..add(spaceId);
+    _folders[fIdx] = _folders[fIdx].copyWith(spaceIds: updatedList, isExpanded: true);
+    _persistState();
     notifyListeners();
   }
 
+  /// Arrastar uma conversa privada, grupo ou canal para uma pasta.
+  void assignItemToFolder(String itemId, String folderId) {
+    final fIdx = _folders.indexWhere((f) => f.id == folderId);
+    if (fIdx == -1) return;
+
+    if (_spaces.any((s) => s.id == itemId)) {
+      addSpaceToFolder(itemId, folderId);
+      return;
+    }
+
+    final currentConvs = _folders[fIdx].conversationIds;
+    if (!currentConvs.contains(itemId)) {
+      final updatedConvs = List<String>.from(currentConvs)..add(itemId);
+      _folders[fIdx] = _folders[fIdx].copyWith(conversationIds: updatedConvs, isExpanded: true);
+      _persistState();
+      notifyListeners();
+    }
+  }
+
+  /// Exclui apenas a pasta mantendo intactas todas as conversas e espaços (Seção 4).
   void dissolveFolder(String folderId) {
     _folders.removeWhere((f) => f.id == folderId);
+    if (_activeFolderId == folderId) {
+      _activeFolderId = 'all';
+    }
+    _persistState();
     notifyListeners();
   }
 
@@ -769,23 +1372,221 @@ class NixState extends ChangeNotifier {
     selectSpace(newSpace);
   }
 
-  // ================= CANAIS, MENSAGENS, REAÇÕES & FÓRUM =================
+  // ================= CANAIS, MENSAGENS, EDIÇÃO, FIXAÇÃO & SELEÇÃO =================
 
   void selectChannel(Channel channel) {
     _activeArea = NixActiveArea.spaces;
-    _currentChannel = channel;
+    _currentChannel = channel.copyWith(unreadCount: 0);
+    // Zera badge de não lidas no espaço
+    final sIdx = _spaces.indexWhere((s) => s.id == channel.spaceId);
+    if (sIdx != -1) {
+      final chans = _spaces[sIdx].channels.map((c) {
+        return c.id == channel.id ? c.copyWith(unreadCount: 0) : c;
+      }).toList();
+      _spaces[sIdx] = _spaces[sIdx].copyWith(channels: chans);
+      _currentSpace = _spaces[sIdx];
+    }
     if (channel.type == ChannelType.forum) {
       final posts = currentForumPosts;
-      if (posts.isNotEmpty && (_selectedForumPost == null || _selectedForumPost!.channelId != channel.id)) {
+      if (posts.isNotEmpty &&
+          (_selectedForumPost == null || _selectedForumPost!.channelId != channel.id)) {
         _selectedForumPost = posts.first;
       }
+    }
+    _clearTransientMessageModes();
+    notifyListeners();
+  }
+
+  void togglePinChannel(String channelId) {
+    for (int s = 0; s < _spaces.length; s++) {
+      final chans = _spaces[s].channels;
+      final cIdx = chans.indexWhere((c) => c.id == channelId);
+      if (cIdx != -1) {
+        final updated = List<Channel>.from(chans);
+        updated[cIdx] = updated[cIdx].copyWith(isPinned: !updated[cIdx].isPinned);
+        _spaces[s] = _spaces[s].copyWith(channels: updated);
+        if (_currentChannel.id == channelId) _currentChannel = updated[cIdx];
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
+  void toggleMuteChannel(String channelId) {
+    for (int s = 0; s < _spaces.length; s++) {
+      final chans = _spaces[s].channels;
+      final cIdx = chans.indexWhere((c) => c.id == channelId);
+      if (cIdx != -1) {
+        final updated = List<Channel>.from(chans);
+        updated[cIdx] = updated[cIdx].copyWith(isMuted: !updated[cIdx].isMuted);
+        _spaces[s] = _spaces[s].copyWith(channels: updated);
+        if (_currentChannel.id == channelId) _currentChannel = updated[cIdx];
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
+  void _clearTransientMessageModes() {
+    _replyingToMessage = null;
+    _editingMessage = null;
+    _selectedMessageIds.clear();
+    _highlightedMessageId = null;
+  }
+
+  void startReplyTo(Message message) {
+    _editingMessage = null;
+    _replyingToMessage = message;
+    notifyListeners();
+  }
+
+  void cancelReply() {
+    _replyingToMessage = null;
+    notifyListeners();
+  }
+
+  void startEditMessage(Message message) {
+    if (!message.isMe) return;
+    if (_activeArea == NixActiveArea.spaces && !_currentChannel.permissions.allowEditing) return;
+    _replyingToMessage = null;
+    _editingMessage = message;
+    notifyListeners();
+  }
+
+  void cancelEditMessage() {
+    _editingMessage = null;
+    notifyListeners();
+  }
+
+  void saveEditedMessage(String messageId, String newText) {
+    editMessage(messageId, newText);
+  }
+
+  void editMessage(String messageId, String newText) {
+    final trimmed = newText.trim();
+    if (trimmed.isEmpty) return;
+
+    final channelMsgs = _messages[_currentChannel.id];
+    if (channelMsgs != null) {
+      final idx = channelMsgs.indexWhere((m) => m.id == messageId);
+      if (idx != -1 && channelMsgs[idx].isMe && _currentChannel.permissions.allowEditing) {
+        channelMsgs[idx] = channelMsgs[idx].copyWith(
+          text: trimmed,
+          editedAt: DateTime.now(),
+        );
+        _editingMessage = null;
+        notifyListeners();
+        return;
+      }
+    }
+
+    for (int t = 0; t < _directMessages.length; t++) {
+      final thread = _directMessages[t];
+      final mIdx = thread.messages.indexWhere((m) => m.id == messageId);
+      if (mIdx != -1 && thread.messages[mIdx].isMe) {
+        final updatedMsgs = List<Message>.from(thread.messages);
+        updatedMsgs[mIdx] = updatedMsgs[mIdx].copyWith(
+          text: trimmed,
+          editedAt: DateTime.now(),
+        );
+        _directMessages[t] = thread.copyWith(messages: updatedMsgs);
+        if (_selectedDm?.id == thread.id) {
+          _selectedDm = _directMessages[t];
+        }
+        _editingMessage = null;
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
+  void togglePinMessage(String messageId) {
+    final channelMsgs = _messages[_currentChannel.id];
+    if (channelMsgs != null) {
+      final idx = channelMsgs.indexWhere((m) => m.id == messageId);
+      if (idx != -1) {
+        channelMsgs[idx] = channelMsgs[idx].copyWith(isPinned: !channelMsgs[idx].isPinned);
+        notifyListeners();
+        return;
+      }
+    }
+
+    for (int t = 0; t < _directMessages.length; t++) {
+      final thread = _directMessages[t];
+      final mIdx = thread.messages.indexWhere((m) => m.id == messageId);
+      if (mIdx != -1) {
+        final updatedMsgs = List<Message>.from(thread.messages);
+        updatedMsgs[mIdx] = updatedMsgs[mIdx].copyWith(isPinned: !updatedMsgs[mIdx].isPinned);
+        _directMessages[t] = thread.copyWith(messages: updatedMsgs);
+        if (_selectedDm?.id == thread.id) {
+          _selectedDm = _directMessages[t];
+        }
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
+  void highlightMessage(String? messageId) {
+    _highlightedMessageId = messageId;
+    notifyListeners();
+  }
+
+  void toggleMessageSelection(String messageId) {
+    if (_selectedMessageIds.contains(messageId)) {
+      _selectedMessageIds.remove(messageId);
+    } else {
+      _selectedMessageIds.add(messageId);
     }
     notifyListeners();
   }
 
-  void sendMessage(String text) {
-    if (text.trim().isEmpty) return;
+  void clearMessageSelection() {
+    _selectedMessageIds.clear();
+    notifyListeners();
+  }
 
+  void deleteSelectedMessages({bool forEveryone = false}) {
+    final ids = List<String>.from(_selectedMessageIds);
+    for (final id in ids) {
+      deleteMessage(id, forEveryone: forEveryone);
+    }
+    _selectedMessageIds.clear();
+    notifyListeners();
+  }
+
+  void forwardSelectedMessages({required String targetId, required bool isChannel}) {
+    final msgs = activeConversationMessages
+        .where((m) => _selectedMessageIds.contains(m.id))
+        .toList();
+    for (final m in msgs) {
+      forwardMessage(m, targetId: targetId, isChannel: isChannel);
+    }
+    _selectedMessageIds.clear();
+    notifyListeners();
+  }
+
+  void toggleConversationInfoPanel([bool? open]) {
+    _isConversationInfoOpen = open ?? !_isConversationInfoOpen;
+    notifyListeners();
+  }
+
+  void setConversationHistorySearch(String query) {
+    _conversationHistorySearch = query;
+    notifyListeners();
+  }
+
+  bool sendMessage(String text, {List<String> attachments = const []}) {
+    if (text.trim().isEmpty && attachments.isEmpty) return false;
+    if (!_currentChannel.permissions.allowMessages) return false;
+    if (attachments.isNotEmpty && !_currentChannel.permissions.allowFiles) return false;
+
+    if (_editingMessage != null) {
+      editMessage(_editingMessage!.id, text);
+      return true;
+    }
+
+    final reply = _replyingToMessage;
     final newMessage = Message(
       id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
       channelId: _currentChannel.id,
@@ -797,28 +1598,33 @@ class NixState extends ChangeNotifier {
       ephemeralSeconds: _selectedEphemeralTimer,
       remainingSeconds: _selectedEphemeralTimer,
       isVerified: true,
+      attachments: attachments,
+      replyToMessageId: reply?.id,
+      replyToSenderName: reply?.senderName,
+      replyToExcerpt: reply?.text,
     );
 
     if (!_messages.containsKey(_currentChannel.id)) {
       _messages[_currentChannel.id] = [];
     }
     _messages[_currentChannel.id]!.add(newMessage);
+    _replyingToMessage = null;
     notifyListeners();
+    return true;
   }
 
   void toggleMessageReaction(String messageId, String emoji) {
-    // 1. Procura nas mensagens do canal ativo
     final channelMsgs = _messages[_currentChannel.id];
     if (channelMsgs != null) {
       final idx = channelMsgs.indexWhere((m) => m.id == messageId);
       if (idx != -1) {
+        if (!_currentChannel.permissions.allowReactions) return;
         channelMsgs[idx] = _toggleReactionOnMessage(channelMsgs[idx], emoji);
         notifyListeners();
         return;
       }
     }
 
-    // 2. Procura nas mensagens diretas (DM)
     for (int t = 0; t < _directMessages.length; t++) {
       final thread = _directMessages[t];
       final mIdx = thread.messages.indexWhere((m) => m.id == messageId);
@@ -834,7 +1640,6 @@ class NixState extends ChangeNotifier {
       }
     }
 
-    // 3. Procura nos comentários do fórum
     for (int p = 0; p < _forumPosts.length; p++) {
       final post = _forumPosts[p];
       final cIdx = post.comments.indexWhere((m) => m.id == messageId);
@@ -875,18 +1680,17 @@ class NixState extends ChangeNotifier {
   }
 
   void deleteMessage(String messageId, {bool forEveryone = false}) {
-    // 1. Canal ativo
     final channelMsgs = _messages[_currentChannel.id];
     if (channelMsgs != null) {
       final idx = channelMsgs.indexWhere((m) => m.id == messageId);
       if (idx != -1) {
+        if (forEveryone && !_currentChannel.permissions.allowDeletion) return;
         channelMsgs.removeAt(idx);
         notifyListeners();
         return;
       }
     }
 
-    // 2. DM
     for (int t = 0; t < _directMessages.length; t++) {
       final thread = _directMessages[t];
       final mIdx = thread.messages.indexWhere((m) => m.id == messageId);
@@ -902,15 +1706,21 @@ class NixState extends ChangeNotifier {
     }
   }
 
-  void forwardMessage(Message original, {required String targetId, required bool isChannel}) {
+  bool forwardMessage(Message original, {required String targetId, required bool isChannel}) {
+    if (_activeArea == NixActiveArea.spaces &&
+        (!_currentChannel.permissions.allowForwarding || _currentChannel.permissions.restrictExport)) {
+      return false;
+    }
+
     final fwdMsg = Message(
-      id: 'fwd_${DateTime.now().millisecondsSinceEpoch}',
+      id: 'fwd_${DateTime.now().millisecondsSinceEpoch}_${original.id.hashCode.abs()}',
       channelId: targetId,
       senderName: _userProfile.effectiveDisplayName,
       senderFingerprint: _securityContext.myFingerprint,
       isMe: true,
       text: original.text,
       timestamp: DateTime.now(),
+      forwardedFrom: original.senderName,
       attachments: original.attachments,
     );
 
@@ -930,6 +1740,7 @@ class NixState extends ChangeNotifier {
       }
     }
     notifyListeners();
+    return true;
   }
 
   void updateChannelSettings(Channel updatedChannel) {
@@ -947,6 +1758,61 @@ class NixState extends ChangeNotifier {
         return;
       }
     }
+  }
+
+  void applyAdminAction(Channel channel, {required String targetFingerprint, required String action}) {
+    final admins = List<String>.from(channel.admins);
+    final moderators = List<String>.from(channel.moderators);
+    final muted = List<String>.from(channel.mutedMembers);
+    final banned = List<String>.from(channel.bannedMembers);
+    final logs = List<String>.from(channel.auditLogs);
+
+    switch (action) {
+      case 'toggle_admin':
+        if (admins.contains(targetFingerprint)) {
+          admins.remove(targetFingerprint);
+          logs.insert(0, 'Administração revogada para $targetFingerprint.');
+        } else {
+          admins.add(targetFingerprint);
+          logs.insert(0, 'Promovido a Administrador: $targetFingerprint.');
+        }
+        break;
+      case 'toggle_mod':
+        if (moderators.contains(targetFingerprint)) {
+          moderators.remove(targetFingerprint);
+          logs.insert(0, 'Moderação revogada para $targetFingerprint.');
+        } else {
+          moderators.add(targetFingerprint);
+          logs.insert(0, 'Promovido a Moderador: $targetFingerprint.');
+        }
+        break;
+      case 'toggle_mute':
+        if (muted.contains(targetFingerprint)) {
+          muted.remove(targetFingerprint);
+          logs.insert(0, 'Silenciamento removido para $targetFingerprint.');
+        } else {
+          muted.add(targetFingerprint);
+          logs.insert(0, 'Membro silenciado: $targetFingerprint.');
+        }
+        break;
+      case 'kick':
+        logs.insert(0, 'Membro expulso do canal: $targetFingerprint.');
+        break;
+      case 'ban':
+        if (!banned.contains(targetFingerprint)) {
+          banned.add(targetFingerprint);
+        }
+        logs.insert(0, 'Banimento criptográfico aplicado: $targetFingerprint.');
+        break;
+    }
+
+    updateChannelSettings(channel.copyWith(
+      admins: admins,
+      moderators: moderators,
+      mutedMembers: muted,
+      bannedMembers: banned,
+      auditLogs: logs,
+    ));
   }
 
   void selectForumPost(ForumPost? post) {
@@ -1101,8 +1967,9 @@ class NixState extends ChangeNotifier {
         .take(2)
         .join()
         .toUpperCase();
+    final spaceId = 'space_${DateTime.now().millisecondsSinceEpoch}';
     final newSpace = Space(
-      id: 'space_${DateTime.now().millisecondsSinceEpoch}',
+      id: spaceId,
       name: name.trim(),
       initials: initials.isNotEmpty ? initials : 'NX',
       description: description,
@@ -1110,7 +1977,7 @@ class NixState extends ChangeNotifier {
       channels: [
         Channel(
           id: 'ch_geral_${DateTime.now().millisecondsSinceEpoch}',
-          spaceId: 'space_${DateTime.now().millisecondsSinceEpoch}',
+          spaceId: spaceId,
           name: 'geral',
           topic: 'Tópico principal deste espaço.',
           type: ChannelType.text,
@@ -1129,6 +1996,7 @@ class NixState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _hoverDebounceTimer?.cancel();
     _callTimer?.cancel();
     super.dispose();
   }

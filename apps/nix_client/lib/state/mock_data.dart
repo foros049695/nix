@@ -14,9 +14,9 @@ class MockData {
   static UserProfile getInitialUserProfile() {
     return UserProfile(
       publicId: 'NIX-7E3A-9F01-C45B-289D',
-      displayName: 'GUS',
+      displayName: '', // Username opcional: vazio utiliza identificador determinístico estável NX-7E3A
       bio: 'Arquitetura descentralizada, criptografia aplicada, cinema clássico e acervo cultural privado.',
-      currentActivity: '', // Status redundante removido da exibição visual principal do Card ID
+      currentActivity: '',
       memberSinceYear: '26',
       avatarStyle: 'nyx_emblem',
       culturalItems: [
@@ -225,8 +225,20 @@ class MockData {
     return const [
       SpaceFolder(
         id: 'folder_infra',
-        name: 'Redes & Criptografia',
+        name: 'Infra',
+        iconName: 'shield',
+        colorValue: 0xFFFFC928,
         spaceIds: ['space_offgrid', 'space_monero'],
+        conversationIds: ['dm_sentinela', 'dm_cipher'],
+        isExpanded: false,
+      ),
+      SpaceFolder(
+        id: 'folder_core',
+        name: 'Core',
+        iconName: 'code',
+        colorValue: 0xFF38BDF8,
+        spaceIds: ['space_qg'],
+        conversationIds: ['dm_saved_messages', 'dm_archivist'],
         isExpanded: false,
       ),
     ];
@@ -596,6 +608,41 @@ class MockData {
     final now = DateTime.now();
     return [
       DirectMessageThread(
+        id: 'dm_saved_messages',
+        peerName: 'Mensagens Salvas',
+        peerPublicId: 'NIX-7E3A-9F01-C45B-289D',
+        statusText: 'Cofre Pessoal Cifrado · Local & Sincronização Própria',
+        isOnline: true,
+        isVerified: true,
+        trustLevel: NixTrustLevel.level3Green,
+        isSavedMessages: true,
+        isPinned: true,
+        unreadCount: 0,
+        messages: [
+          Message(
+            id: 'saved_m1',
+            channelId: 'dm_saved_messages',
+            senderName: 'NX-7E3A',
+            senderFingerprint: '7E3A-9F01-C45B-289D',
+            isMe: true,
+            isPinned: true,
+            text: 'Checklist de auditoria Onion v3: confirmar HiddenServicePoWDefensesEnabled=1 e revisar especificações em https://spec.torproject.org',
+            timestamp: now.subtract(const Duration(hours: 6)),
+            attachments: const ['audit_checklist_v4.pdf'],
+          ),
+          Message(
+            id: 'saved_m2',
+            channelId: 'dm_saved_messages',
+            senderName: 'NX-7E3A',
+            senderFingerprint: '7E3A-9F01-C45B-289D',
+            isMe: true,
+            text: 'Captura de arquitetura Dark Yellow & nota de voz de campo anexada.',
+            timestamp: now.subtract(const Duration(minutes: 45)),
+            attachments: const ['topologia_mesh.png', 'nota_audio_campo.ogg'],
+          ),
+        ],
+      ),
+      DirectMessageThread(
         id: 'dm_sentinela',
         peerName: 'Sentinela-Alpha',
         peerPublicId: 'NIX-A1B2-C3D4-E5F6-001A',
@@ -603,6 +650,7 @@ class MockData {
         isOnline: true,
         isVerified: true,
         trustLevel: NixTrustLevel.level3Green,
+        isPinned: true,
         unreadCount: 1,
         messages: [
           Message(
@@ -611,8 +659,10 @@ class MockData {
             senderName: 'Sentinela-Alpha',
             senderFingerprint: 'A1B2-C3D4-E5F6-001A',
             isMe: false,
-            text: 'Verifiquei a assinatura do seu Card ID via QR Code. Sessão par a par validada.',
+            isPinned: true,
+            text: 'Verifiquei a assinatura do seu Card ID via QR Code. Sessão par a par validada via https://relay.nix.onion',
             timestamp: now.subtract(const Duration(minutes: 14)),
+            attachments: const ['ed25519_keyproof.sig', 'qr_snapshot.png'],
             reactions: const {'🛡️': 1},
           ),
         ],
@@ -630,11 +680,12 @@ class MockData {
           Message(
             id: 'dm_m2',
             channelId: 'dm_cipher',
-            senderName: 'GUS',
+            senderName: 'NX-7E3A',
             senderFingerprint: '7E3A-9F01-C45B-289D',
             isMe: true,
             text: 'Os pacotes de rádio estão limitados a 240 bytes no radio.proto.',
             timestamp: now.subtract(const Duration(hours: 2)),
+            attachments: const ['radio.proto'],
           ),
         ],
       ),
@@ -646,6 +697,7 @@ class MockData {
         isOnline: false,
         isVerified: true,
         trustLevel: NixTrustLevel.level3Green,
+        isMuted: true,
         unreadCount: 0,
         messages: [
           Message(
@@ -767,8 +819,10 @@ class MockData {
           senderName: 'Sentinela-Alpha',
           senderFingerprint: 'A1B2-C3D4-E5F6-001A',
           isMe: false,
-          text: 'Bem-vindos ao Nix. Interface atualizada para o padrão NIX LIVING AMOLED com superfícies elevadas e suporte a Tor v3.',
+          isPinned: true,
+          text: 'Bem-vindos ao Nix V4. Visual Dark/Light Yellow com roteamento Tor Onion v3 e transporte fail-closed.',
           timestamp: now.subtract(const Duration(minutes: 50)),
+          attachments: const ['arquitetura_v4.png', 'relay_spec.pdf'],
           reactions: const {'✨': 3, '🛡️': 2},
         ),
         Message(
@@ -777,18 +831,19 @@ class MockData {
           senderName: 'CipherGhost',
           senderFingerprint: 'F891-72A0-B3E4-998C',
           isMe: false,
-          text: 'O Card ID em metal preto reluzente e o Acervo com repositórios GitHub e vinis ficaram impecáveis.',
+          text: 'Catálogo Starwire (4.188 repositórios) e assinatura Ed25519 nos anúncios Monero P2P integrados. Fonte: https://github.com/boffti/starwire',
           timestamp: now.subtract(const Duration(minutes: 42)),
         ),
         Message(
           id: 'msg_3',
           channelId: 'ch_geral',
-          senderName: 'GUS',
+          senderName: 'NX-7E3A',
           senderFingerprint: '7E3A-9F01-C45B-289D',
           isMe: true,
-          text: 'Excelente. Toda a estética foi refinada com fluidez, mantendo nossas garantias criptográficas e zero metadados.',
+          text: 'Estrutura compacta de 3 áreas, Mensagens Salvas e painel de mídia indexado localmente.',
           timestamp: now.subtract(const Duration(minutes: 30)),
           ephemeralSeconds: 240,
+          attachments: const ['voice_sync.ogg'],
         ),
       ],
       'ch_dev_core': [
@@ -817,7 +872,7 @@ class MockData {
         Message(
           id: 'msg_lora_1',
           channelId: 'ch_lora_sync',
-          senderName: 'Eduardo.Op',
+          senderName: 'RelayOp-04',
           senderFingerprint: '445D-119A-B882-3C0F',
           isMe: false,
           text: 'Gateway LoRa ativo em 915.2MHz com modulação SF10. Sincronizando blocos off-grid com sucesso.',
@@ -843,7 +898,7 @@ class MockData {
     return const [
       Member(
         id: 'mem_1',
-        name: 'GUS (Você)',
+        name: 'Operador (NX-7E3A)',
         roleName: 'Arquiteto / Operador',
         role: MemberRole.operator,
         isVerified: true,

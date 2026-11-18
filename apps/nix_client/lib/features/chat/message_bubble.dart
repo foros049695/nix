@@ -18,7 +18,7 @@ class MessageBubble extends StatelessWidget {
 
   Member _resolveMember(NixState state) {
     return state.members.firstWhere(
-      (m) => m.name == message.senderName,
+      (m) => m.name.contains(message.senderName) || m.fingerprint == message.senderFingerprint,
       orElse: () => Member(
         id: message.senderFingerprint,
         name: message.senderName,
@@ -44,10 +44,9 @@ class MessageBubble extends StatelessWidget {
       color: NixColors.surfaceCard,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: accent.withValues(alpha: 0.3)),
+        side: BorderSide(color: accent.withValues(alpha: 0.35)),
       ),
       items: [
-        // Barra Rápida de Reações
         PopupMenuItem<String>(
           enabled: false,
           child: Wrap(
@@ -68,33 +67,88 @@ class MessageBubble extends StatelessWidget {
           ),
         ),
         const PopupMenuDivider(height: 1),
-        const PopupMenuItem<String>(
+        PopupMenuItem<String>(
+          value: 'reply',
+          child: Row(
+            children: [
+              Icon(Icons.reply_rounded, size: 16, color: NixColors.textSecondary),
+              const SizedBox(width: 10),
+              Text('Responder', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
+            ],
+          ),
+        ),
+        if (message.isMe)
+          PopupMenuItem<String>(
+            value: 'edit',
+            child: Row(
+              children: [
+                Icon(Icons.edit_outlined, size: 16, color: NixColors.textSecondary),
+                const SizedBox(width: 10),
+                Text('Editar Mensagem', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
+              ],
+            ),
+          ),
+        PopupMenuItem<String>(
+          value: 'pin',
+          child: Row(
+            children: [
+              Icon(Icons.push_pin_outlined, size: 16, color: NixColors.textSecondary),
+              const SizedBox(width: 10),
+              Text(
+                message.isPinned ? 'Desafixar' : 'Fixar Mensagem',
+                style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
           value: 'copy',
           child: Row(
             children: [
               Icon(Icons.copy_rounded, size: 16, color: NixColors.textSecondary),
-              SizedBox(width: 10),
+              const SizedBox(width: 10),
               Text('Copiar Texto', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
             ],
           ),
         ),
-        const PopupMenuItem<String>(
+        PopupMenuItem<String>(
           value: 'forward',
           child: Row(
             children: [
               Icon(Icons.forward_rounded, size: 16, color: NixColors.textSecondary),
-              SizedBox(width: 10),
+              const SizedBox(width: 10),
               Text('Encaminhar...', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
             ],
           ),
         ),
+        PopupMenuItem<String>(
+          value: 'save_to_saved',
+          child: Row(
+            children: [
+              Icon(Icons.bookmark_outline_rounded, size: 16, color: context.accentTextColor),
+              const SizedBox(width: 10),
+              Text('Salvar em Mensagens Salvas',
+                  style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'select',
+          child: Row(
+            children: [
+              Icon(Icons.check_box_outlined, size: 16, color: NixColors.textSecondary),
+              const SizedBox(width: 10),
+              Text('Selecionar Mensagem', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
+            ],
+          ),
+        ),
         const PopupMenuDivider(height: 1),
-        const PopupMenuItem<String>(
+        PopupMenuItem<String>(
           value: 'delete_me',
           child: Row(
             children: [
-              Icon(Icons.delete_outline_rounded, size: 16, color: Colors.orangeAccent),
-              SizedBox(width: 10),
+              const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.orangeAccent),
+              const SizedBox(width: 10),
               Text('Apagar para mim', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
             ],
           ),
@@ -112,23 +166,34 @@ class MessageBubble extends StatelessWidget {
           ),
       ],
     ).then((value) {
-      if (!context.mounted) return;
-      if (value == 'copy') {
+      if (!context.mounted || value == null) return;
+      if (value == 'reply') {
+        nixState.startReplyTo(message);
+      } else if (value == 'edit') {
+        nixState.startEditMessage(message);
+      } else if (value == 'pin') {
+        nixState.togglePinMessage(message.id);
+      } else if (value == 'copy') {
         Clipboard.setData(ClipboardData(text: message.text));
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: NixColors.surfaceCard,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(color: accent.withValues(alpha: 0.5)),
-            ),
-            content: const Text('Texto copiado com sucesso!', style: TextStyle(color: NixColors.textPrimary)),
-            duration: const Duration(seconds: 2),
+          const SnackBar(
+            content: Text('Texto copiado com sucesso!'),
+            duration: Duration(seconds: 2),
           ),
         );
       } else if (value == 'forward') {
         ForwardMessageDialog.show(context, message);
+      } else if (value == 'save_to_saved') {
+        nixState.saveToSavedMessages(
+          message.text,
+          attachments: message.attachments,
+          forwardedFrom: message.senderName,
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Salvo em Mensagens Salvas.')),
+        );
+      } else if (value == 'select') {
+        nixState.toggleMessageSelection(message.id);
       } else if (value == 'delete_me') {
         nixState.deleteMessage(message.id, forEveryone: false);
       } else if (value == 'delete_all') {
@@ -142,12 +207,16 @@ class MessageBubble extends StatelessWidget {
     final nixState = context.watch<NixState>();
     final settings = nixState.settings;
     final accent = context.accentColor;
+    final accentText = context.accentTextColor;
     final isMe = message.isMe;
+    final isSelected = nixState.selectedMessageIds.contains(message.id);
+    final isHighlighted = nixState.highlightedMessageId == message.id;
 
     final hour = message.timestamp.hour.toString().padLeft(2, '0');
     final minute = message.timestamp.minute.toString().padLeft(2, '0');
 
     return Padding(
+      key: Key('message_bubble_${message.id}'),
       padding: EdgeInsets.symmetric(
         vertical: settings.compactChatMode ? 2 : 5,
         horizontal: 16,
@@ -156,8 +225,12 @@ class MessageBubble extends StatelessWidget {
         mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!isMe) ...[
-            // Avatar com abertura do Card ID por clique
+          if (nixState.selectedMessageIds.isNotEmpty)
+            Checkbox(
+              value: isSelected,
+              onChanged: (_) => nixState.toggleMessageSelection(message.id),
+            ),
+          if (!isMe)
             InkWell(
               onTap: () => PeerCardIdDialog.showForMember(context, _resolveMember(nixState)),
               borderRadius: BorderRadius.circular(16),
@@ -173,8 +246,8 @@ class MessageBubble extends StatelessWidget {
                 child: Center(
                   child: Text(
                     message.senderName.isNotEmpty ? message.senderName[0] : '?',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: NixColors.textPrimary,
                       fontWeight: FontWeight.bold,
                       fontSize: 12.5,
                     ),
@@ -182,13 +255,14 @@ class MessageBubble extends StatelessWidget {
                 ),
               ),
             ),
-          ],
           Flexible(
             child: Column(
               crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
-                // Balão de Mensagem com Detector de Toque Longo / Botão Direito
                 GestureDetector(
+                  onTap: nixState.selectedMessageIds.isNotEmpty
+                      ? () => nixState.toggleMessageSelection(message.id)
+                      : null,
                   onSecondaryTapDown: (details) =>
                       _showContextMenu(context, details.globalPosition, nixState),
                   onLongPressStart: (details) =>
@@ -200,7 +274,9 @@ class MessageBubble extends StatelessWidget {
                       vertical: settings.compactChatMode ? 7 : 10,
                     ),
                     decoration: BoxDecoration(
-                      color: isMe ? NixColors.messageSent : NixColors.messageReceived,
+                      color: isHighlighted || isSelected
+                          ? NixColors.messageHighlight
+                          : (isMe ? NixColors.messageSent : NixColors.messageReceived),
                       borderRadius: BorderRadius.only(
                         topLeft: const Radius.circular(12),
                         topRight: const Radius.circular(12),
@@ -208,15 +284,64 @@ class MessageBubble extends StatelessWidget {
                         bottomRight: Radius.circular(isMe ? 3 : 12),
                       ),
                       border: Border.all(
-                        color: isMe
-                            ? accent.withValues(alpha: 0.3)
-                            : NixColors.surfaceBorder,
-                        width: 1,
+                        color: isHighlighted || isSelected
+                            ? accent
+                            : (isMe ? accent.withValues(alpha: 0.35) : NixColors.surfaceBorder),
+                        width: isHighlighted || isSelected ? 1.5 : 1.0,
                       ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (message.forwardedFrom != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.forward_rounded, size: 12, color: accentText),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Encaminhada de ${message.forwardedFrom}',
+                                  style: TextStyle(
+                                    color: accentText,
+                                    fontSize: 10.5,
+                                    fontStyle: FontStyle.italic,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (message.replyToMessageId != null)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: NixColors.background.withValues(alpha: 0.45),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border(left: BorderSide(color: accent, width: 2.5)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  message.replyToSenderName ?? 'Resposta',
+                                  style: TextStyle(
+                                    color: accentText,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  message.replyToExcerpt ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: NixColors.textMuted, fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ),
                         if (!isMe)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 4),
@@ -229,13 +354,13 @@ class MessageBubble extends StatelessWidget {
                                   Text(
                                     message.senderName,
                                     style: TextStyle(
-                                      color: Colors.white,
+                                      color: NixColors.textPrimary,
                                       fontWeight: FontWeight.w700,
                                       fontSize: 12 * settings.fontScale,
                                     ),
                                   ),
                                   const SizedBox(width: 6),
-                                  const Icon(
+                                  Icon(
                                     Icons.verified_outlined,
                                     size: 11,
                                     color: NixColors.textSecondary,
@@ -245,7 +370,7 @@ class MessageBubble extends StatelessWidget {
                                     message.senderFingerprint.length >= 9
                                         ? message.senderFingerprint.substring(0, 9)
                                         : message.senderFingerprint,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: NixColors.textMuted,
                                       fontSize: 9.5,
                                       fontFamily: 'monospace',
@@ -263,21 +388,53 @@ class MessageBubble extends StatelessWidget {
                             height: 1.38,
                           ),
                         ),
+                        if (message.attachments.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: message.attachments
+                                .map((att) => Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: NixColors.surfaceElevated,
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: NixColors.surfaceBorderStrong),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.attach_file_rounded,
+                                              size: 12, color: accentText),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            att,
+                                            style: TextStyle(
+                                              color: NixColors.textPrimary,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ))
+                                .toList(),
+                          ),
+                        ],
                         const SizedBox(height: 5),
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
+                            if (message.isPinned) ...[
+                              Icon(Icons.push_pin_rounded, size: 11, color: accentText),
+                              const SizedBox(width: 4),
+                            ],
                             if (message.isEphemeral) ...[
-                              const Icon(
-                                Icons.timer_outlined,
-                                size: 11,
-                                color: NixColors.textSecondary,
-                              ),
+                              Icon(Icons.timer_outlined, size: 11, color: NixColors.textSecondary),
                               const SizedBox(width: 3),
                               Text(
                                 '${message.remainingSeconds}s',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: NixColors.textSecondary,
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
@@ -285,16 +442,25 @@ class MessageBubble extends StatelessWidget {
                               ),
                               const SizedBox(width: 8),
                             ],
+                            if (message.isEdited) ...[
+                              Text(
+                                'editada · ',
+                                style: TextStyle(
+                                  color: NixColors.textMuted,
+                                  fontSize: 9.5,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
                             Text(
                               '$hour:$minute',
-                              style: const TextStyle(color: NixColors.textMuted, fontSize: 10),
+                              style: TextStyle(color: NixColors.textMuted, fontSize: 10),
                             ),
                             if (isMe) ...[
                               const SizedBox(width: 4),
-                              Icon(Icons.done_all_rounded, size: 13, color: accent),
+                              Icon(Icons.done_all_rounded, size: 13, color: accentText),
                             ],
                             const SizedBox(width: 6),
-                            // Botão rápido para reagir com Emoji
                             PopupMenuButton<String>(
                               tooltip: 'Reagir com Emoji',
                               padding: EdgeInsets.zero,
@@ -322,7 +488,7 @@ class MessageBubble extends StatelessWidget {
                                   ),
                                 ),
                               ],
-                              child: const Icon(
+                              child: Icon(
                                 Icons.add_reaction_outlined,
                                 size: 13,
                                 color: NixColors.textMuted,
@@ -334,8 +500,6 @@ class MessageBubble extends StatelessWidget {
                     ),
                   ),
                 ),
-
-                // Pílulas de Reações de Emojis Reativas e Alternáveis
                 if (message.reactions.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
@@ -363,15 +527,12 @@ class MessageBubble extends StatelessWidget {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
-                                  entry.key,
-                                  style: const TextStyle(fontSize: 11),
-                                ),
+                                Text(entry.key, style: const TextStyle(fontSize: 11)),
                                 const SizedBox(width: 4),
                                 Text(
                                   '${entry.value}',
                                   style: TextStyle(
-                                    color: isMyReaction ? accent : Colors.white,
+                                    color: isMyReaction ? accentText : NixColors.textPrimary,
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                   ),

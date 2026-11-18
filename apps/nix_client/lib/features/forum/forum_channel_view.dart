@@ -86,8 +86,8 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                                 Expanded(
                                   child: TextField(
                                     onChanged: (v) => setState(() => _searchQuery = v),
-                                    style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                                    decoration: const InputDecoration(
+                                    style: TextStyle(color: NixColors.textPrimary, fontSize: 13.5),
+                                    decoration: InputDecoration(
                                       hintText: 'Pesquisar ou criar um tópico...',
                                       prefixIcon:
                                           Icon(Icons.search_rounded, color: NixColors.textMuted),
@@ -98,7 +98,7 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                                 const SizedBox(width: 10),
                                 ElevatedButton.icon(
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.white,
+                                    backgroundColor: NixColors.textPrimary,
                                     foregroundColor: Colors.black,
                                     padding:
                                         const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -134,10 +134,10 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                                     padding:
                                         const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                     decoration: BoxDecoration(
-                                      color: isSelected ? Colors.white : NixColors.surfaceCard,
+                                      color: isSelected ? NixColors.textPrimary : NixColors.surfaceCard,
                                       borderRadius: BorderRadius.circular(16),
                                       border: Border.all(
-                                        color: isSelected ? Colors.white : NixColors.surfaceBorder,
+                                        color: isSelected ? NixColors.textPrimary : NixColors.surfaceBorder,
                                       ),
                                     ),
                                     child: Text(
@@ -235,9 +235,9 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                     return ChoiceChip(
                       label: Text(t, style: const TextStyle(fontSize: 11.5)),
                       selected: selected,
-                      selectedColor: Colors.white,
+                      selectedColor: NixColors.textPrimary,
                       labelStyle: TextStyle(
-                        color: selected ? Colors.black : Colors.white,
+                        color: selected ? Colors.black : NixColors.textPrimary,
                         fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                       ),
                       onSelected: (_) => setModalState(() => chosenTag = t),
@@ -267,11 +267,11 @@ class _ForumChannelViewState extends State<ForumChannelView> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
+              child: Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
+                backgroundColor: NixColors.textPrimary,
                 foregroundColor: Colors.black,
               ),
               onPressed: () {
@@ -315,7 +315,7 @@ class _ForumPostCard extends StatelessWidget {
           color: isSelected ? NixColors.surfaceCardHover : NixColors.surfaceCard,
           borderRadius: NixTokens.borderMd,
           border: Border.all(
-            color: isSelected ? Colors.white : NixColors.surfaceBorderStrong,
+            color: isSelected ? NixColors.textPrimary : NixColors.surfaceBorderStrong,
             width: isSelected ? 1.4 : 1.0,
           ),
         ),
@@ -328,7 +328,7 @@ class _ForumPostCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     '${post.authorName} · há ${DateTime.now().difference(post.createdAt).inHours.clamp(1, 24)}h',
-                    style: const TextStyle(color: NixColors.textSecondary, fontSize: 11),
+                    style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -336,7 +336,7 @@ class _ForumPostCard extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: NixColors.textPrimary,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: const Text(
@@ -355,8 +355,8 @@ class _ForumPostCard extends StatelessWidget {
               post.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: NixColors.textPrimary,
                 fontSize: 13.5,
                 fontWeight: FontWeight.bold,
               ),
@@ -386,7 +386,7 @@ class _ForumPostCard extends StatelessWidget {
                           end: Alignment.bottomRight,
                           colors: [Color(0xFF1F2024), Color(0xFF0E0F11)],
                         ),
-                        border: Border.all(color: Colors.white12, width: 0.5),
+                        border: Border.all(color: NixColors.surfaceActive, width: 0.5),
                       ),
                       child: Stack(
                         children: [
@@ -394,7 +394,7 @@ class _ForumPostCard extends StatelessWidget {
                             child: Icon(
                               Icons.photo_camera_back_outlined,
                               size: 22,
-                              color: Colors.white.withOpacity(0.25),
+                              color: NixColors.textPrimary.withOpacity(0.25),
                             ),
                           ),
                           Positioned(
@@ -402,7 +402,7 @@ class _ForumPostCard extends StatelessWidget {
                             right: 4,
                             child: Text(
                               img.code,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: NixColors.textMuted,
                                 fontSize: 8.5,
                                 fontFamily: 'monospace',
@@ -417,7 +417,7 @@ class _ForumPostCard extends StatelessWidget {
                               img.label,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: NixColors.textSecondary,
                                 fontSize: 8.5,
                                 fontWeight: FontWeight.bold,
@@ -450,7 +450,7 @@ class _ForumPostCard extends StatelessWidget {
                           post.tags.first,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: NixColors.textSecondary, fontSize: 10),
+                          style: TextStyle(color: NixColors.textSecondary, fontSize: 10),
                         ),
                       ),
                     ),
@@ -458,22 +458,22 @@ class _ForumPostCard extends StatelessWidget {
                 else
                   const Spacer(),
                 const SizedBox(width: 6),
-                const Icon(Icons.mode_comment_outlined, size: 12, color: NixColors.textMuted),
+                Icon(Icons.mode_comment_outlined, size: 12, color: NixColors.textMuted),
                 const SizedBox(width: 3),
                 Text(
                   '${post.comments.length}',
-                  style: const TextStyle(color: NixColors.textSecondary, fontSize: 11),
+                  style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
                 ),
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.white38),
+                    border: Border.all(color: NixColors.surfaceBorderStrong),
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: const Text(
+                  child: Text(
                     'OK',
-                    style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                    style: TextStyle(color: NixColors.textPrimary, fontSize: 9, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
@@ -502,7 +502,7 @@ class _SplitThreadPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: NixColors.surfaceSidebar,
         border: Border(left: BorderSide(color: NixColors.surfaceBorderStrong, width: 1)),
       ),
@@ -513,7 +513,7 @@ class _SplitThreadPanel extends StatelessWidget {
           Container(
             height: 48,
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
             ),
             child: Row(
@@ -521,8 +521,8 @@ class _SplitThreadPanel extends StatelessWidget {
                 Expanded(
                   child: Text(
                     post.title,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: NixColors.textPrimary,
                       fontSize: 13.5,
                       fontWeight: FontWeight.bold,
                     ),
@@ -530,7 +530,7 @@ class _SplitThreadPanel extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 18, color: NixColors.textSecondary),
+                  icon: Icon(Icons.close_rounded, size: 18, color: NixColors.textSecondary),
                   tooltip: 'Fechar Tópico',
                   onPressed: onClose,
                 ),
@@ -545,8 +545,8 @@ class _SplitThreadPanel extends StatelessWidget {
               children: [
                 Text(
                   post.title,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: NixColors.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                   ),
@@ -563,11 +563,11 @@ class _SplitThreadPanel extends StatelessWidget {
                             ),
                             child: Text(t,
                                 style:
-                                    const TextStyle(color: NixColors.textSecondary, fontSize: 11)),
+                                    TextStyle(color: NixColors.textSecondary, fontSize: 11)),
                           ))
                       .toList(),
                 ),
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
                   child: Divider(height: 1, color: NixColors.surfaceBorder),
                 ),
@@ -578,29 +578,29 @@ class _SplitThreadPanel extends StatelessWidget {
                     Container(
                       width: 28,
                       height: 28,
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         color: NixColors.surfaceActive,
                         shape: BoxShape.circle,
                       ),
                       child: Center(
                         child: Text(
                           post.authorName[0],
-                          style: const TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                          style: TextStyle(
+                              color: NixColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 12),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Text(
                       post.authorName,
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                          color: NixColors.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: NixColors.textPrimary,
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: const Text(
@@ -614,7 +614,7 @@ class _SplitThreadPanel extends StatelessWidget {
                 const SizedBox(height: 10),
                 Text(
                   post.description,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: NixColors.textSecondary,
                     fontSize: 13,
                     height: 1.4,
@@ -653,12 +653,12 @@ class _SplitThreadPanel extends StatelessWidget {
                           const Spacer(),
                           Text(
                             img.label,
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                                color: NixColors.textPrimary, fontSize: 10.5, fontWeight: FontWeight.bold),
                           ),
                           Text(
                             img.subtitle,
-                            style: const TextStyle(color: NixColors.textMuted, fontSize: 9.5),
+                            style: TextStyle(color: NixColors.textMuted, fontSize: 9.5),
                           ),
                         ],
                       ),
@@ -685,8 +685,8 @@ class _SplitThreadPanel extends StatelessWidget {
                             children: [
                               Text(
                                 c.senderName,
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: NixColors.textPrimary,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12,
                                 ),
@@ -701,7 +701,7 @@ class _SplitThreadPanel extends StatelessWidget {
                           const SizedBox(height: 4),
                           Text(
                             c.text,
-                            style: const TextStyle(color: NixColors.textSecondary, fontSize: 12.5),
+                            style: TextStyle(color: NixColors.textSecondary, fontSize: 12.5),
                           ),
                         ],
                       ),
@@ -713,7 +713,7 @@ class _SplitThreadPanel extends StatelessWidget {
           // Input inferior do Split-Chat ("Send a message in ...")
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: NixColors.background,
               border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
             ),
@@ -723,7 +723,7 @@ class _SplitThreadPanel extends StatelessWidget {
                   child: TextField(
                     controller: commentController,
                     onSubmitted: (_) => onSendComment(),
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
                     decoration: InputDecoration(
                       hintText: 'Enviar mensagem em "${post.title}"...',
                       isDense: true,
@@ -734,7 +734,7 @@ class _SplitThreadPanel extends StatelessWidget {
                 const SizedBox(width: 8),
                 IconButton(
                   style: IconButton.styleFrom(
-                    backgroundColor: Colors.white,
+                    backgroundColor: NixColors.textPrimary,
                     foregroundColor: Colors.black,
                   ),
                   onPressed: onSendComment,

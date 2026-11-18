@@ -25,7 +25,7 @@ class CallRoomView extends StatelessWidget {
         Container(
           height: 52,
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: NixColors.surfaceSidebar,
             border: Border(bottom: BorderSide(color: NixColors.surfaceBorder, width: 1)),
           ),
@@ -35,7 +35,7 @@ class CallRoomView extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 channel.name,
-                style: const TextStyle(
+                style: TextStyle(
                   color: NixColors.textPrimary,
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
@@ -49,7 +49,7 @@ class CallRoomView extends StatelessWidget {
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(color: NixColors.accentTor.withOpacity(0.3)),
                 ),
-                child: const Text(
+                child: Text(
                   'TOR ONION E2EE · ZERO IP LEAK',
                   style: TextStyle(color: NixColors.accentTor, fontSize: 10, fontWeight: FontWeight.bold),
                 ),
@@ -58,7 +58,7 @@ class CallRoomView extends StatelessWidget {
               if (isCurrentCallActive)
                 Text(
                   'Duração: $minutes:$seconds',
-                  style: const TextStyle(color: NixColors.textSecondary, fontSize: 12, fontFamily: 'monospace'),
+                  style: TextStyle(color: NixColors.textSecondary, fontSize: 12, fontFamily: 'monospace'),
                 ),
             ],
           ),
@@ -130,7 +130,7 @@ class CallRoomView extends StatelessWidget {
                           color: NixColors.surfaceCardHover,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: isSpeaking ? NixColors.accentGreen : Colors.white24,
+                            color: isSpeaking ? NixColors.accentGreen : NixColors.surfaceBorder,
                             width: 2,
                           ),
                         ),
@@ -145,8 +145,8 @@ class CallRoomView extends StatelessWidget {
                       const SizedBox(height: 10),
                       Text(
                         member.name,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: NixColors.textPrimary,
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
                         ),
@@ -154,7 +154,7 @@ class CallRoomView extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         member.roleName,
-                        style: const TextStyle(color: NixColors.textMuted, fontSize: 11),
+                        style: TextStyle(color: NixColors.textMuted, fontSize: 11),
                       ),
                     ],
                   ),
@@ -195,15 +195,15 @@ class CallRoomView extends StatelessWidget {
               shape: BoxShape.circle,
               border: Border.all(color: NixColors.accentVoice.withOpacity(0.4), width: 2),
             ),
-            child: const Icon(Icons.volume_up_rounded, color: NixColors.accentVoice, size: 64),
+            child: Icon(Icons.volume_up_rounded, color: NixColors.accentVoice, size: 64),
           ),
           const SizedBox(height: 20),
           Text(
             'Sala de Voz: ${channel.name}',
-            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(color: NixColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Comunicação por áudio cifrada de ponta a ponta.\nNenhum dado é gravado no relay.',
             textAlign: TextAlign.center,
             style: TextStyle(color: NixColors.textMuted, fontSize: 13),
@@ -212,7 +212,7 @@ class CallRoomView extends StatelessWidget {
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: NixColors.accentVoice,
-              foregroundColor: Colors.white,
+              foregroundColor: NixColors.textPrimary,
               padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
@@ -230,7 +230,7 @@ class CallRoomView extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: NixColors.surfaceSidebar,
         border: Border(top: BorderSide(color: NixColors.surfaceBorder, width: 1)),
       ),
@@ -259,7 +259,7 @@ class CallRoomView extends StatelessWidget {
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: NixColors.accentDanger,
-              foregroundColor: Colors.white,
+              foregroundColor: NixColors.textPrimary,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),

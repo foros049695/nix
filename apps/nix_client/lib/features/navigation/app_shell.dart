@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/channel.dart';
+import '../../core/models/direct_message.dart';
 import '../../core/security/window_privacy_guard.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
 import '../calls/call_room_view.dart';
 import '../chat/chat_view.dart';
+import '../chat/conversation_info_panel.dart';
 import '../discovery/github_discovery_view.dart';
 import '../explore/explore_spaces_view.dart';
 import '../forum/forum_channel_view.dart';
@@ -37,6 +39,12 @@ class AppShell extends StatelessWidget {
       reducedMotion: settings.reducedMotion,
     );
 
+    final showInfoPanel = nixState.isConversationInfoOpen &&
+        ((activeArea == NixActiveArea.spaces) ||
+            (activeArea == NixActiveArea.homePrivate &&
+                nixState.homeSubTab == HomeSubTab.directChat &&
+                nixState.selectedDm != null));
+
     return MediaQuery(
       data: sanitizedMq,
       child: LayoutBuilder(
@@ -54,10 +62,10 @@ class AppShell extends StatelessWidget {
                         Expanded(
                           child: Row(
                             children: [
-                              // 1. Dock de Espaços, Pastas, Home, GitHub, Monero P2P e Explorar
+                              // Área 1: Barra vertical compacta de Pastas & Organização
                               const SpacesDock(),
 
-                              // 2. Barra Lateral Secundária (Home Privada / Ferramentas ou Canais do Espaço)
+                              // Área 2: Lista de Conversas & Navegação Principal
                               if (activeArea == NixActiveArea.homePrivate ||
                                   activeArea == NixActiveArea.github ||
                                   activeArea == NixActiveArea.moneroP2p)
@@ -65,13 +73,23 @@ class AppShell extends StatelessWidget {
                               else if (activeArea == NixActiveArea.spaces)
                                 const ChannelsSidebar(),
 
-                              // 3. Palco Principal
+                              // Área 3: Conversa Ativa / Palco Principal
                               Expanded(
                                 child: _buildActiveStage(activeArea, currentChannel),
                               ),
 
-                              // 4. Painel de Membros (Quando aberto em um Espaço)
-                              if (activeArea == NixActiveArea.spaces && nixState.isMembersPanelOpen)
+                              // Painel Lateral de Informações da Conversa (Seção 10)
+                              if (showInfoPanel)
+                                ConversationInfoPanel(
+                                  directMessage: activeArea == NixActiveArea.homePrivate
+                                      ? nixState.selectedDm
+                                      : null,
+                                  channel: activeArea == NixActiveArea.spaces
+                                      ? currentChannel
+                                      : null,
+                                )
+                              else if (activeArea == NixActiveArea.spaces &&
+                                  nixState.isMembersPanelOpen)
                                 const MembersPanel(),
                             ],
                           ),
@@ -88,19 +106,28 @@ class AppShell extends StatelessWidget {
                         Icon(
                           _getAreaIcon(activeArea, currentChannel),
                           size: 18,
-                          color: Colors.white,
+                          color: NixColors.textPrimary,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            _getAreaTitle(activeArea, currentChannel),
-                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                            _getAreaTitle(activeArea, nixState.selectedDm, currentChannel),
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: NixColors.textPrimary,
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
                     ),
                     actions: [
+                      IconButton(
+                        icon: const Icon(Icons.info_outline_rounded),
+                        tooltip: 'Informações da Conversa',
+                        onPressed: () => nixState.toggleConversationInfoPanel(),
+                      ),
                       IconButton(
                         icon: const Icon(Icons.badge_outlined),
                         tooltip: 'Abrir Card ID & Perfil',
@@ -124,7 +151,7 @@ class AppShell extends StatelessWidget {
                     ],
                   ),
                   drawer: Drawer(
-                    width: 324,
+                    width: 366,
                     backgroundColor: NixColors.surfaceSidebar,
                     child: SafeArea(
                       child: Row(
@@ -141,7 +168,22 @@ class AppShell extends StatelessWidget {
                       ),
                     ),
                   ),
-                  body: _buildActiveStage(activeArea, currentChannel),
+                  body: Stack(
+                    children: [
+                      _buildActiveStage(activeArea, currentChannel),
+                      if (showInfoPanel)
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          bottom: 0,
+                          child: ConversationInfoPanel(
+                            directMessage:
+                                activeArea == NixActiveArea.homePrivate ? nixState.selectedDm : null,
+                            channel: activeArea == NixActiveArea.spaces ? currentChannel : null,
+                          ),
+                        ),
+                    ],
+                  ),
                 );
 
           return Stack(
@@ -170,10 +212,10 @@ class AppShell extends StatelessWidget {
     }
   }
 
-  String _getAreaTitle(NixActiveArea activeArea, Channel channel) {
+  String _getAreaTitle(NixActiveArea activeArea, DirectMessageThread? dm, Channel channel) {
     switch (activeArea) {
       case NixActiveArea.homePrivate:
-        return 'Conversas Privadas & Card ID';
+        return dm != null ? dm.peerName : 'Conversas Privadas & Card ID';
       case NixActiveArea.explore:
         return 'Explorar Comunidades';
       case NixActiveArea.github:

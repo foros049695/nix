@@ -37,7 +37,7 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'ÍCONE DO ESPAÇO',
                 style: TextStyle(color: NixColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
               ),
@@ -67,7 +67,7 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
                 }).toList(),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'NOME DO ESPAÇO',
                 style: TextStyle(color: NixColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
               ),
@@ -79,7 +79,7 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
                 ),
               ),
               const SizedBox(height: 14),
-              const Text(
+              Text(
                 'DESCRIÇÃO / FINALIDADE',
                 style: TextStyle(color: NixColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
               ),
@@ -98,7 +98,7 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
+          child: Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(

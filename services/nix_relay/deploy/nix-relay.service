@@ -1,0 +1,22 @@
+[Unit]
+Description=Nix Relay - Blind Store-and-Forward Node (Tor Onion v3)
+After=network.target tor.service
+Wants=tor.service
+
+[Service]
+Type=simple
+User=nixrelay
+Group=nixrelay
+ExecStart=/usr/local/bin/nix-relay -config /etc/nix_relay/relay.yaml
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/nix_relay
+AmbientCapabilities=
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 
 class PrivacyInfoDialog extends StatelessWidget {
@@ -10,17 +11,17 @@ class PrivacyInfoDialog extends StatelessWidget {
       title: Row(
         children: [
           Container(
-            width: 32,
-            height: 32,
+            width: 34,
+            height: 34,
+            padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: NixColors.accentGreen.withOpacity(0.4)),
+              border: Border.all(color: context.accentColor.withValues(alpha: 0.45)),
             ),
-            clipBehavior: Clip.antiAlias,
             child: Image.asset(
-              'assets/images/nix_logo_128.png',
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const Text('🏴‍☠️'),
+              context.brandLogoAsset128,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(Icons.shield_outlined),
             ),
           ),
           const SizedBox(width: 12),
@@ -79,7 +80,7 @@ class PrivacyInfoDialog extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: NixColors.surfaceBorder),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
                     Icon(Icons.verified_user_outlined, color: NixColors.accentGreen, size: 20),
                     const SizedBox(width: 10),
@@ -100,7 +101,7 @@ class PrivacyInfoDialog extends StatelessWidget {
         ElevatedButton(
           style: ElevatedButton.styleFrom(
             backgroundColor: NixColors.surfaceCardHover,
-            foregroundColor: Colors.white,
+            foregroundColor: NixColors.textPrimary,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
           onPressed: () => Navigator.pop(context),
@@ -139,7 +140,7 @@ class PrivacyInfoDialog extends StatelessWidget {
                     Expanded(
                       child: Text(
                         title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: NixColors.textPrimary,
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
@@ -167,7 +168,7 @@ class PrivacyInfoDialog extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: const TextStyle(color: NixColors.textMuted, fontSize: 11),
+                  style: TextStyle(color: NixColors.textMuted, fontSize: 11),
                 ),
               ],
             ),

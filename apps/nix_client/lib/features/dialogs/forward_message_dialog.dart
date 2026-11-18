@@ -64,7 +64,7 @@ class _ForwardMessageDialogState extends State<ForwardMessageDialog> {
                   children: [
                     Icon(Icons.forward_rounded, color: accent, size: 20),
                     const SizedBox(width: 10),
-                    const Text(
+                    Text(
                       'Encaminhar Mensagem',
                       style: TextStyle(
                         color: NixColors.textPrimary,
@@ -74,14 +74,14 @@ class _ForwardMessageDialogState extends State<ForwardMessageDialog> {
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 18, color: NixColors.textMuted),
+                      icon: Icon(Icons.close_rounded, size: 18, color: NixColors.textMuted),
                       tooltip: 'Fechar (Esc)',
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
                 ),
               ),
-              const Divider(height: 1, color: NixColors.surfaceBorder),
+              Divider(height: 1, color: NixColors.surfaceBorder),
 
               // Prévia da Mensagem Original
               Container(
@@ -110,7 +110,7 @@ class _ForwardMessageDialogState extends State<ForwardMessageDialog> {
                           widget.message.senderFingerprint.length >= 9
                               ? widget.message.senderFingerprint.substring(0, 9)
                               : widget.message.senderFingerprint,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: NixColors.textMuted,
                             fontSize: 9.5,
                             fontFamily: 'monospace',
@@ -123,7 +123,7 @@ class _ForwardMessageDialogState extends State<ForwardMessageDialog> {
                       widget.message.text,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: NixColors.textSecondary,
                         fontSize: 12.5,
                       ),
@@ -152,7 +152,7 @@ class _ForwardMessageDialogState extends State<ForwardMessageDialog> {
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   children: [
                     // Seção Canais
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.symmetric(vertical: 6, horizontal: 8),
                       child: Text(
                         'Canais da Comunidade',
@@ -171,26 +171,26 @@ class _ForwardMessageDialogState extends State<ForwardMessageDialog> {
 
                     const SizedBox(height: 10),
                     // Seção Mensagens Diretas
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.symmetric(vertical: 6, horizontal: 8),
                       child: Text(
                         'Conversas Privadas (DM)',
                         style: TextStyle(color: NixColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600),
                       ),
                     ),
-                    for (final dm in nixState.directMessages)
-                      _buildTargetTile(
-                        id: dm.id,
-                        name: dm.peerName,
-                        icon: Icons.person_outline,
-                        isChannel: false,
-                        accent: accent,
-                      ),
+                      for (final dm in nixState.directMessages)
+                        _buildTargetTile(
+                          id: dm.id,
+                          name: dm.isSavedMessages ? '★ Mensagens Salvas (Cofre Pessoal)' : dm.peerName,
+                          icon: dm.isSavedMessages ? Icons.bookmark_rounded : Icons.person_outline,
+                          isChannel: false,
+                          accent: accent,
+                        ),
                   ],
                 ),
               ),
 
-              const Divider(height: 1, color: NixColors.surfaceBorder),
+              Divider(height: 1, color: NixColors.surfaceBorder),
 
               // Footer com Botão de Envio
               Padding(
@@ -200,13 +200,13 @@ class _ForwardMessageDialogState extends State<ForwardMessageDialog> {
                   children: [
                     TextButton(
                       onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Cancelar', style: TextStyle(color: NixColors.textSecondary)),
+                      child: Text('Cancelar', style: TextStyle(color: NixColors.textSecondary)),
                     ),
                     const SizedBox(width: 10),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: accent,
-                        foregroundColor: Colors.black,
+                        foregroundColor: context.onAccentColor,
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
@@ -229,7 +229,7 @@ class _ForwardMessageDialogState extends State<ForwardMessageDialog> {
                                   ),
                                   content: Text(
                                     'Mensagem encaminhada para $_targetName!',
-                                    style: const TextStyle(color: NixColors.textPrimary),
+                                    style: TextStyle(color: NixColors.textPrimary),
                                   ),
                                 ),
                               );

@@ -14,9 +14,10 @@ class NixQrCodePainter extends CustomPainter {
 
   NixQrCodePainter({
     required this.data,
-    this.foregroundColor = NixColors.textPrimary,
-    this.backgroundColor = NixColors.background,
-  });
+    Color? foregroundColor,
+    Color? backgroundColor,
+  })  : foregroundColor = foregroundColor ?? NixColors.textPrimary,
+        backgroundColor = backgroundColor ?? NixColors.background;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -165,7 +166,7 @@ class _QrCodeZoomModalState extends State<QrCodeZoomModal> {
       backgroundColor: NixColors.surfaceCard,
       shape: RoundedRectangleBorder(
         borderRadius: NixTokens.borderLg,
-        side: const BorderSide(color: NixColors.surfaceBorderStrong, width: 1),
+        side: BorderSide(color: NixColors.surfaceBorderStrong, width: 1),
       ),
       child: Container(
         width: 380,
@@ -175,9 +176,9 @@ class _QrCodeZoomModalState extends State<QrCodeZoomModal> {
           children: [
             Row(
               children: [
-                const Icon(Icons.qr_code_2_rounded, color: NixColors.textPrimary, size: 20),
+                Icon(Icons.qr_code_2_rounded, color: NixColors.textPrimary, size: 20),
                 const SizedBox(width: 8),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Identidade Pública Verificável',
                     style: TextStyle(
@@ -188,7 +189,7 @@ class _QrCodeZoomModalState extends State<QrCodeZoomModal> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, size: 18, color: NixColors.textMuted),
+                  icon: Icon(Icons.close, size: 18, color: NixColors.textMuted),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -214,7 +215,7 @@ class _QrCodeZoomModalState extends State<QrCodeZoomModal> {
             const SizedBox(height: 16),
             Text(
               widget.displayName,
-              style: const TextStyle(
+              style: TextStyle(
                 color: NixColors.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -224,7 +225,7 @@ class _QrCodeZoomModalState extends State<QrCodeZoomModal> {
             const SizedBox(height: 4),
             SelectableText(
               widget.publicId,
-              style: const TextStyle(
+              style: TextStyle(
                 color: NixColors.textSecondary,
                 fontSize: 12,
                 fontFamily: 'monospace',
@@ -238,7 +239,7 @@ class _QrCodeZoomModalState extends State<QrCodeZoomModal> {
                 borderRadius: NixTokens.borderSm,
                 border: Border.all(color: NixColors.surfaceBorder),
               ),
-              child: const Row(
+              child: Row(
                 children: [
                   Icon(Icons.shield_outlined, size: 14, color: NixColors.textMuted),
                   SizedBox(width: 8),
@@ -258,7 +259,7 @@ class _QrCodeZoomModalState extends State<QrCodeZoomModal> {
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: NixColors.textPrimary,
-                      side: const BorderSide(color: NixColors.surfaceBorderStrong),
+                      side: BorderSide(color: NixColors.surfaceBorderStrong),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: NixTokens.borderSm),
                     ),

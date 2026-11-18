@@ -3,26 +3,38 @@ import 'channel.dart';
 class SpaceFolder {
   final String id;
   final String name;
+  final String iconName; // 'folder', 'shield', 'code', 'chat', 'star', 'lock', 'bookmark'
+  final int colorValue;
   final List<String> spaceIds;
+  final List<String> conversationIds; // Suporta DMs, grupos e canais arrastados para a pasta
   final bool isExpanded;
 
   const SpaceFolder({
     required this.id,
     required this.name,
+    this.iconName = 'folder',
+    this.colorValue = 0xFFFFC928,
     required this.spaceIds,
+    this.conversationIds = const [],
     this.isExpanded = false,
   });
 
   SpaceFolder copyWith({
     String? id,
     String? name,
+    String? iconName,
+    int? colorValue,
     List<String>? spaceIds,
+    List<String>? conversationIds,
     bool? isExpanded,
   }) {
     return SpaceFolder(
       id: id ?? this.id,
       name: name ?? this.name,
+      iconName: iconName ?? this.iconName,
+      colorValue: colorValue ?? this.colorValue,
       spaceIds: spaceIds ?? this.spaceIds,
+      conversationIds: conversationIds ?? this.conversationIds,
       isExpanded: isExpanded ?? this.isExpanded,
     );
   }
@@ -40,6 +52,8 @@ class Space {
   final int memberCount;
   final int onlineCount;
   final bool isPublic;
+  final bool isPinned;
+  final bool isMuted;
   final String categoryTag;
 
   const Space({
@@ -54,6 +68,8 @@ class Space {
     this.memberCount = 12,
     this.onlineCount = 5,
     this.isPublic = true,
+    this.isPinned = false,
+    this.isMuted = false,
     this.categoryTag = 'Comunidade',
   });
 
@@ -69,6 +85,8 @@ class Space {
     int? memberCount,
     int? onlineCount,
     bool? isPublic,
+    bool? isPinned,
+    bool? isMuted,
     String? categoryTag,
   }) {
     return Space(
@@ -83,6 +101,8 @@ class Space {
       memberCount: memberCount ?? this.memberCount,
       onlineCount: onlineCount ?? this.onlineCount,
       isPublic: isPublic ?? this.isPublic,
+      isPinned: isPinned ?? this.isPinned,
+      isMuted: isMuted ?? this.isMuted,
       categoryTag: categoryTag ?? this.categoryTag,
     );
   }

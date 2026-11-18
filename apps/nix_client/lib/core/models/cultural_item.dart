@@ -39,6 +39,7 @@ class CulturalItem {
   final int toneShade; // 0-255 tom monocromático para arte de capa / selo de vinil
   final bool isFeatured;
   final String? localImagePath;
+  final double cropScale;
   final bool isPublicInCardId;
   final String? repositoryUrl;
   final int? starsCount;
@@ -56,6 +57,7 @@ class CulturalItem {
     this.toneShade = 42,
     this.isFeatured = false,
     this.localImagePath,
+    this.cropScale = 1.0,
     this.isPublicInCardId = true,
     this.repositoryUrl,
     this.starsCount,
@@ -77,6 +79,8 @@ class CulturalItem {
     int? toneShade,
     bool? isFeatured,
     String? localImagePath,
+    bool clearLocalImage = false,
+    double? cropScale,
     bool? isPublicInCardId,
     String? repositoryUrl,
     int? starsCount,
@@ -93,7 +97,8 @@ class CulturalItem {
       monogram: monogram ?? this.monogram,
       toneShade: toneShade ?? this.toneShade,
       isFeatured: isFeatured ?? this.isFeatured,
-      localImagePath: localImagePath ?? this.localImagePath,
+      localImagePath: clearLocalImage ? null : (localImagePath ?? this.localImagePath),
+      cropScale: cropScale ?? this.cropScale,
       isPublicInCardId: isPublicInCardId ?? this.isPublicInCardId,
       repositoryUrl: repositoryUrl ?? this.repositoryUrl,
       starsCount: starsCount ?? this.starsCount,

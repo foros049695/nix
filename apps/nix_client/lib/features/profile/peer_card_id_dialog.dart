@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../../core/models/member.dart';
 import '../../core/models/direct_message.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
+import '../../state/nix_state.dart';
 import 'qr_code_painter.dart';
 
 class PeerCardIdDialog extends StatelessWidget {
@@ -16,6 +18,7 @@ class PeerCardIdDialog extends StatelessWidget {
   final String bio;
   final List<String> culturalHighlights;
   final String visibility; // 'Público', 'Apenas Contatos Verificados', 'Oculto'
+  final bool isVerifiedContact;
 
   const PeerCardIdDialog({
     super.key,
@@ -27,9 +30,11 @@ class PeerCardIdDialog extends StatelessWidget {
     this.bio = 'Membro soberano da rede descentralizada Nix.',
     this.culturalHighlights = const [],
     this.visibility = 'Público',
+    this.isVerifiedContact = false,
   });
 
   static void showForMember(BuildContext context, Member member) {
+    final nixState = context.read<NixState>();
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -42,7 +47,10 @@ class PeerCardIdDialog extends StatelessWidget {
         hasCryptographicShield: member.hasCryptographicShield,
         bio: 'Ponto de comunicação cifrado no espaço privado Nix.',
         culturalHighlights: const ['Mobile Suit Gundam Hathaway', 'Sousou no Frieren', 'Reticulum Network'],
-        visibility: member.isOnline ? 'Público' : 'Apenas Contatos Verificados',
+        visibility: member.name.contains('NX-7E3A')
+            ? nixState.settings.cardIdVisibility
+            : (member.isOnline ? 'Público' : 'Apenas Contatos Verificados'),
+        isVerifiedContact: member.trustLevel == NixTrustLevel.level3Green,
       ),
     );
   }
@@ -60,7 +68,8 @@ class PeerCardIdDialog extends StatelessWidget {
         hasCryptographicShield: true,
         bio: request.bio.isNotEmpty ? request.bio : request.note,
         culturalHighlights: request.culturalHighlights,
-        visibility: 'Público',
+        visibility: request.cardIdVisibility,
+        isVerifiedContact: request.trustLevel == NixTrustLevel.level3Green,
       ),
     );
   }
@@ -79,14 +88,26 @@ class PeerCardIdDialog extends StatelessWidget {
         bio: 'Conversa privada par a par cifrada com Double Ratchet.',
         culturalHighlights: const ['Nix Sovereign Node', 'Sousou no Frieren', 'Vinyl Classic'],
         visibility: 'Público',
+        isVerifiedContact: dm.isVerified,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final nixState = context.watch<NixState>();
+    final authorizedData = nixState.getAuthorizedPeerCardData(
+      peerName: peerName,
+      peerPublicId: peerPublicId,
+      trustLevel: trustLevel,
+      hasCryptographicShield: hasCryptographicShield,
+      rawBio: bio,
+      rawHighlights: culturalHighlights,
+      ownerVisibility: visibility,
+      isVerifiedContact: isVerifiedContact,
+    );
     final accent = context.accentColor;
-    final isHidden = visibility == 'Oculto';
+    final isHidden = !authorizedData.isAuthorized;
 
     return Shortcuts(
       shortcuts: const {
@@ -161,7 +182,7 @@ class PeerCardIdDialog extends StatelessWidget {
                           ),
                           IconButton(
                             key: const Key('peer_card_id_close_button'),
-                            icon: const Icon(Icons.close, size: 18, color: NixColors.textSecondary),
+                            icon: Icon(Icons.close, size: 18, color: NixColors.textSecondary),
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
                             tooltip: 'Fechar (Esc)',
@@ -170,7 +191,7 @@ class PeerCardIdDialog extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const Divider(height: 1, color: NixColors.surfaceBorderStrong),
+                    Divider(height: 1, color: NixColors.surfaceBorderStrong),
 
                     if (isHidden) ...[
                       // Visibilidade Oculta
@@ -178,7 +199,7 @@ class PeerCardIdDialog extends StatelessWidget {
                         padding: const EdgeInsets.all(32),
                         child: Column(
                           children: [
-                            const Icon(Icons.shield_outlined, size: 48, color: NixColors.textMuted),
+                            Icon(Icons.shield_outlined, size: 48, color: NixColors.textMuted),
                             const SizedBox(height: 16),
                             Text(
                               peerName,
@@ -189,7 +210,7 @@ class PeerCardIdDialog extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            const Text(
+                            Text(
                               'Este usuário configurou seu Card ID como Oculto para pares não autorizados.',
                               textAlign: TextAlign.center,
                               style: TextStyle(color: NixColors.textSecondary, fontSize: 13),
@@ -321,11 +342,11 @@ class PeerCardIdDialog extends StatelessWidget {
                             ),
                             const SizedBox(height: 18),
 
-                            // Biografia
+                            // Biografia (filtrada pelo controle de privacidade do proprietário no estado)
                             const Text(
                               'BIOGRAFIA & INTERESSES',
                               style: TextStyle(
-                                color: NixColors.textMuted,
+                                color: Color(0xFF9CA3AF),
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 1.0,
@@ -333,9 +354,9 @@ class PeerCardIdDialog extends StatelessWidget {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              bio,
+                              authorizedData.bio,
                               style: const TextStyle(
-                                color: NixColors.textSecondary,
+                                color: Color(0xFFB7BAC4),
                                 fontSize: 12.5,
                                 height: 1.4,
                               ),
@@ -343,11 +364,11 @@ class PeerCardIdDialog extends StatelessWidget {
                             const SizedBox(height: 16),
 
                             // Destaques Culturais do Acervo
-                            if (culturalHighlights.isNotEmpty) ...[
+                            if (authorizedData.culturalHighlights.isNotEmpty) ...[
                               const Text(
                                 'DESTAQUES CULTURAIS PÚBLICOS',
                                 style: TextStyle(
-                                  color: NixColors.textMuted,
+                                  color: Color(0xFF9CA3AF),
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                   letterSpacing: 1.0,
@@ -357,13 +378,13 @@ class PeerCardIdDialog extends StatelessWidget {
                               Wrap(
                                 spacing: 8,
                                 runSpacing: 6,
-                                children: culturalHighlights.map((item) {
+                                children: authorizedData.culturalHighlights.map((item) {
                                   return Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: NixColors.surfaceElevated,
+                                      color: const Color(0xFF1E2026),
                                       borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: NixColors.surfaceBorder),
+                                      border: Border.all(color: Colors.white24),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
@@ -392,7 +413,7 @@ class PeerCardIdDialog extends StatelessWidget {
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.fingerprint_rounded, size: 18, color: NixColors.textSecondary),
+                                  Icon(Icons.fingerprint_rounded, size: 18, color: NixColors.textSecondary),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: SelectableText(
@@ -404,7 +425,7 @@ class PeerCardIdDialog extends StatelessWidget {
                                     onTap: () {
                                       Clipboard.setData(ClipboardData(text: peerPublicId));
                                       ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
+                                        SnackBar(
                                           content: Text('ID Soberano copiado para a área de transferência.'),
                                           duration: Duration(seconds: 2),
                                           backgroundColor: NixColors.surfaceElevatedHigh,

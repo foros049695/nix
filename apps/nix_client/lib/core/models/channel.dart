@@ -24,6 +24,7 @@ class ChannelPermissions {
   // Proteção de Conteúdo
   final bool restrictExport;
   final bool restrictMediaSaving;
+  final bool protectPreviews;
   final bool requestScreenshotProtection; // FLAG_SECURE no Android
   final int ephemeralRetentionMinutes; // 0 = permanente, 5, 60, 1440, 10080
 
@@ -50,6 +51,7 @@ class ChannelPermissions {
     this.allowDeletion = true,
     this.restrictExport = false,
     this.restrictMediaSaving = false,
+    this.protectPreviews = false,
     this.requestScreenshotProtection = false,
     this.ephemeralRetentionMinutes = 0,
     this.isPublic = false,
@@ -73,6 +75,7 @@ class ChannelPermissions {
     bool? allowDeletion,
     bool? restrictExport,
     bool? restrictMediaSaving,
+    bool? protectPreviews,
     bool? requestScreenshotProtection,
     int? ephemeralRetentionMinutes,
     bool? isPublic,
@@ -95,6 +98,7 @@ class ChannelPermissions {
       allowDeletion: allowDeletion ?? this.allowDeletion,
       restrictExport: restrictExport ?? this.restrictExport,
       restrictMediaSaving: restrictMediaSaving ?? this.restrictMediaSaving,
+      protectPreviews: protectPreviews ?? this.protectPreviews,
       requestScreenshotProtection: requestScreenshotProtection ?? this.requestScreenshotProtection,
       ephemeralRetentionMinutes: ephemeralRetentionMinutes ?? this.ephemeralRetentionMinutes,
       isPublic: isPublic ?? this.isPublic,
@@ -116,11 +120,16 @@ class Channel {
   final ChannelType type;
   final int unreadCount;
   final bool isEncrypted;
+  final bool isPinned;
+  final bool isMuted;
   final String category;
+  final String? customImagePath;
+  final String? inviteCode;
   final ChannelPermissions permissions;
   final String ownerFingerprint;
   final List<String> admins;
   final List<String> moderators;
+  final List<String> mutedMembers;
   final List<String> bannedMembers;
   final List<String> auditLogs;
 
@@ -133,11 +142,16 @@ class Channel {
     required this.type,
     this.unreadCount = 0,
     this.isEncrypted = true,
+    this.isPinned = false,
+    this.isMuted = false,
     required this.category,
+    this.customImagePath,
+    this.inviteCode,
     this.permissions = const ChannelPermissions(),
     this.ownerFingerprint = '7E3A-9F01-C45B-289D',
     this.admins = const [],
     this.moderators = const [],
+    this.mutedMembers = const [],
     this.bannedMembers = const [],
     this.auditLogs = const [
       'Canal inicializado com criptografia de envelope Ed25519/XChaCha20.',
@@ -170,10 +184,15 @@ class Channel {
     ChannelType? type,
     int? unreadCount,
     bool? isEncrypted,
+    bool? isPinned,
+    bool? isMuted,
     String? category,
+    String? customImagePath,
+    String? inviteCode,
     ChannelPermissions? permissions,
     List<String>? admins,
     List<String>? moderators,
+    List<String>? mutedMembers,
     List<String>? bannedMembers,
     List<String>? auditLogs,
   }) {
@@ -186,11 +205,16 @@ class Channel {
       type: type ?? this.type,
       unreadCount: unreadCount ?? this.unreadCount,
       isEncrypted: isEncrypted ?? this.isEncrypted,
+      isPinned: isPinned ?? this.isPinned,
+      isMuted: isMuted ?? this.isMuted,
       category: category ?? this.category,
+      customImagePath: customImagePath ?? this.customImagePath,
+      inviteCode: inviteCode ?? this.inviteCode,
       permissions: permissions ?? this.permissions,
       ownerFingerprint: ownerFingerprint,
       admins: admins ?? this.admins,
       moderators: moderators ?? this.moderators,
+      mutedMembers: mutedMembers ?? this.mutedMembers,
       bannedMembers: bannedMembers ?? this.bannedMembers,
       auditLogs: auditLogs ?? this.auditLogs,
     );

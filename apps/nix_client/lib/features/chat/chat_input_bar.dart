@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
@@ -22,6 +23,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
   bool _showEmojiPicker = false;
   String _selectedEmojiCategory = 'Sorrisos';
   String _emojiSearchQuery = '';
+  String? _lastLoadedEditId;
   final List<String> _recentEmojis = ['⚡', '🛡️', '🔒', '🔥', '💿', '🤝'];
 
   static const Map<String, List<String>> _categorizedEmojis = {
@@ -29,14 +31,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
       '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🥹', '☺️',
       '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😋',
       '😛', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏',
-      '😒', '😞', '😔', '😟', '😕', '🙁', '🥺', '😢', '😭', '😤',
-      '😠', '😡', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '🤗',
-      '🤔', '🫣', '🤭', '🤫', '🫠', '🫡', '🤐', '😴', '🤤', '😵',
     ],
     'Gestos': [
       '👍', '👎', '👊', '✊', '🤛', '🤜', '👏', '🙌', '👐', '🤲',
-      '🤝', '🙏', '✌️', '🤞', '🫰', '🤟', '🤘', '🤙', '👈', '👉',
-      '👆', '👇', '☝️', '👋', '🤚', '🖐️', '✋', '🖖', '🫱', '🫲',
+      '🤝', '🙏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👋',
     ],
     'Segurança & Símbolos': [
       '🔒', '🔓', '🛡️', '⚔️', '⚡', '👁️', '🔑', '🗝️', '⚙️', '🪙',
@@ -49,6 +47,28 @@ class _ChatInputBarState extends State<ChatInputBar> {
     ],
   };
 
+  static const Map<String, String> _emojiKeywords = {
+    '😀': 'sorriso feliz alegre smile',
+    '😎': 'oculos cool descolado',
+    '👍': 'joinha positivo ok sim',
+    '🤝': 'acordo aperto mao parceria',
+    '🔒': 'cadeado seguro cripto fechado',
+    '🔓': 'aberto desbloqueado',
+    '🛡️': 'escudo seguranca defesa verificado',
+    '⚡': 'raio rapido energia flash',
+    '🔥': 'fogo alta tendencia',
+    '🔑': 'chave acesso senha',
+    '📡': 'antena radio rede tor',
+    '📌': 'fixar pin alfinete',
+    '🎬': 'filme cinema',
+    '📚': 'livros biblioteca estudo',
+    '🎧': 'musica audio fone',
+    '💿': 'disco vinil album',
+    '✓': 'check verificado ok',
+    '✨': 'brilho novo',
+    '👁️': 'olho privacidade',
+  };
+
   @override
   void dispose() {
     _controller.dispose();
@@ -57,11 +77,12 @@ class _ChatInputBarState extends State<ChatInputBar> {
     super.dispose();
   }
 
-  void _send() {
+  void _send(NixState nixState) {
     final text = _controller.text;
     if (text.trim().isNotEmpty) {
-      context.read<NixState>().sendMessage(text);
+      nixState.sendMessage(text);
       _controller.clear();
+      _lastLoadedEditId = null;
       setState(() => _showEmojiPicker = false);
       _focusNode.requestFocus();
     }
@@ -70,7 +91,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
   void _insertEmoji(String emoji) {
     if (!_recentEmojis.contains(emoji)) {
       _recentEmojis.insert(0, emoji);
-      if (_recentEmojis.length > 12) _recentEmojis.removeLast();
+      if (_recentEmojis.length > 14) _recentEmojis.removeLast();
     }
 
     final text = _controller.text;
@@ -86,9 +107,14 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   List<String> get _currentDisplayEmojis {
-    if (_emojiSearchQuery.isNotEmpty) {
+    final q = _emojiSearchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
       final all = _categorizedEmojis.values.expand((e) => e).toSet().toList();
-      return all;
+      final matches = all.where((e) {
+        final kw = _emojiKeywords[e] ?? '';
+        return kw.contains(q) || e == q;
+      }).toList();
+      return matches.isNotEmpty ? matches : all;
     }
     if (_selectedEmojiCategory == 'Recentes') {
       return _recentEmojis;
@@ -101,27 +127,35 @@ class _ChatInputBarState extends State<ChatInputBar> {
     final nixState = context.watch<NixState>();
     final ephemeralTimer = nixState.selectedEphemeralTimer;
     final enterToSend = nixState.settings.enterToSend;
+    final editing = nixState.editingMessage;
+    final replying = nixState.replyingToMessage;
+    final accent = context.accentColor;
+    final accentText = context.accentTextColor;
+
+    if (editing != null && _lastLoadedEditId != editing.id) {
+      _lastLoadedEditId = editing.id;
+      _controller.text = editing.text;
+      _controller.selection = TextSelection.collapsed(offset: editing.text.length);
+    } else if (editing == null && _lastLoadedEditId != null) {
+      _lastLoadedEditId = null;
+    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Seletor de Emojis Completo com Categorias e Busca
+        // Seletor de Emojis Completo com Categorias, Busca e Inserção no Cursor
         if (_showEmojiPicker)
           Container(
-            height: 240,
+            height: 256,
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               color: NixColors.surfaceElevatedHigh,
-              border: const Border(top: BorderSide(color: NixColors.surfaceBorderStrong, width: 1)),
-              boxShadow: const [
-                BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, -4)),
-              ],
+              border: Border(top: BorderSide(color: NixColors.surfaceBorderStrong, width: 1)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Barra de Categorias de Emojis Rolável
                 Row(
                   children: [
                     Expanded(
@@ -129,26 +163,37 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         scrollDirection: Axis.horizontal,
                         child: Row(
                           children: [
-                            _categoryChip('Recentes', Icons.history_rounded),
-                            _categoryChip('Sorrisos', Icons.mood_rounded),
-                            _categoryChip('Gestos', Icons.pan_tool_outlined),
-                            _categoryChip('Segurança & Símbolos', Icons.shield_outlined),
-                            _categoryChip('Cultura & Objetos', Icons.album_outlined),
+                            _categoryChip(context, 'Recentes', Icons.history_rounded),
+                            _categoryChip(context, 'Sorrisos', Icons.mood_rounded),
+                            _categoryChip(context, 'Gestos', Icons.pan_tool_outlined),
+                            _categoryChip(context, 'Segurança & Símbolos', Icons.shield_outlined),
+                            _categoryChip(context, 'Cultura & Objetos', Icons.album_outlined),
                           ],
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     IconButton(
-                      icon: const Icon(Icons.close, size: 16, color: NixColors.textMuted),
+                      icon: Icon(Icons.close, size: 16, color: NixColors.textMuted),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       onPressed: () => setState(() => _showEmojiPicker = false),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                // Grade de Emojis Rolável
+                const SizedBox(height: 6),
+                TextField(
+                  key: const Key('emoji_search_input'),
+                  controller: _emojiSearchController,
+                  onChanged: (v) => setState(() => _emojiSearchQuery = v),
+                  style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
+                  decoration: const InputDecoration(
+                    hintText: 'Pesquisar emoji (ex: escudo, fogo, livro, chave)...',
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
+                ),
+                const SizedBox(height: 6),
                 Expanded(
                   child: GridView.builder(
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -179,54 +224,87 @@ class _ChatInputBarState extends State<ChatInputBar> {
             ),
           ),
 
+        // Banner Responder / Editar
+        if (replying != null || editing != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: NixColors.surfaceCard,
+              border: Border(
+                top: BorderSide(color: NixColors.surfaceBorder),
+                left: BorderSide(color: accent, width: 3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  editing != null ? Icons.edit_outlined : Icons.reply_rounded,
+                  size: 16,
+                  color: accentText,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    editing != null
+                        ? 'Editando mensagem: ${editing.text}'
+                        : 'Respondendo a ${replying!.senderName}: ${replying.text}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: NixColors.textSecondary, fontSize: 11.5),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close_rounded, size: 15, color: NixColors.textMuted),
+                  onPressed: () {
+                    if (editing != null) {
+                      nixState.cancelEditMessage();
+                      _controller.clear();
+                    } else {
+                      nixState.cancelReply();
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+
         // Barra Principal de Entrada
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: const BoxDecoration(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
             color: NixColors.surfaceElevated,
             border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // Botão de Anexo com Notificação de EXIF Strip
               IconButton(
-                icon: const Icon(Icons.add_circle_outline, color: NixColors.textSecondary, size: 20),
-                tooltip: 'Anexar Mídia (EXIF Sanitizado)',
+                icon: Icon(Icons.attach_file_rounded, color: NixColors.textSecondary, size: 20),
+                tooltip: 'Anexar Mídia / Arquivo (EXIF Sanitizado)',
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Seletor de arquivos ativo: Metadados EXIF sanitizados automaticamente.'),
-                      duration: Duration(seconds: 2),
-                    ),
+                  nixState.sendMessage(
+                    'Arquivo verificado anexado.',
+                    attachments: ['anexo_${DateTime.now().second}.png'],
                   );
                 },
               ),
               const SizedBox(width: 4),
-
-              // Seletor de Temporizador de Mensagem Efêmera
               _EphemeralTimerSelector(
                 currentTimer: ephemeralTimer,
                 onChanged: (seconds) => nixState.setEphemeralTimer(seconds),
               ),
-              const SizedBox(width: 8),
-
-              // Botão Seletor de Emojis
+              const SizedBox(width: 6),
               IconButton(
                 key: const Key('emoji_picker_toggle_button'),
                 icon: Icon(
                   _showEmojiPicker ? Icons.keyboard_rounded : Icons.sentiment_satisfied_alt_rounded,
-                  color: _showEmojiPicker ? Colors.white : NixColors.textSecondary,
+                  color: _showEmojiPicker ? accentText : NixColors.textSecondary,
                   size: 20,
                 ),
-                tooltip: 'Inserir Emoji',
-                onPressed: () {
-                  setState(() => _showEmojiPicker = !_showEmojiPicker);
-                },
+                tooltip: 'Seletor de Emojis',
+                onPressed: () => setState(() => _showEmojiPicker = !_showEmojiPicker),
               ),
               const SizedBox(width: 8),
-
-              // Campo de Texto de Mensagem Cifrada
               Expanded(
                 child: KeyboardListener(
                   focusNode: FocusNode(),
@@ -235,31 +313,34 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         event is KeyDownEvent &&
                         event.logicalKey == LogicalKeyboardKey.enter &&
                         !HardwareKeyboard.instance.isShiftPressed) {
-                      _send();
+                      _send(nixState);
                     }
                   },
                   child: TextField(
+                    key: const Key('chat_message_input'),
                     controller: _controller,
                     focusNode: _focusNode,
                     minLines: 1,
                     maxLines: 4,
-                    style: const TextStyle(color: Colors.white, fontSize: 13.5),
+                    style: TextStyle(color: NixColors.textPrimary, fontSize: 13.5),
                     decoration: InputDecoration(
-                      hintText: 'Mensagem cifrada em #${widget.channelName}...',
-                      hintStyle: const TextStyle(color: NixColors.textMuted, fontSize: 13),
+                      hintText: editing != null
+                          ? 'Editar mensagem...'
+                          : 'Mensagem cifrada em #${widget.channelName}...',
+                      hintStyle: TextStyle(color: NixColors.textMuted, fontSize: 13),
                       filled: true,
                       fillColor: NixColors.surfaceInput,
                       border: OutlineInputBorder(
                         borderRadius: NixTokens.borderMd,
-                        borderSide: const BorderSide(color: NixColors.surfaceBorder),
+                        borderSide: BorderSide(color: NixColors.surfaceBorder),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: NixTokens.borderMd,
-                        borderSide: const BorderSide(color: NixColors.surfaceBorder),
+                        borderSide: BorderSide(color: NixColors.surfaceBorder),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: NixTokens.borderMd,
-                        borderSide: const BorderSide(color: NixColors.textPrimary, width: 1.2),
+                        borderSide: BorderSide(color: accent, width: 1.4),
                       ),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     ),
@@ -267,18 +348,20 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 ),
               ),
               const SizedBox(width: 10),
-
-              // Botão Enviar
               Container(
-                decoration: const BoxDecoration(
-                  color: Colors.white,
+                decoration: BoxDecoration(
+                  color: accent,
                   shape: BoxShape.circle,
                 ),
                 child: IconButton(
                   key: const Key('chat_send_button'),
-                  icon: const Icon(Icons.arrow_upward_rounded, color: Colors.black, size: 18),
-                  tooltip: 'Transmitir Envelope Cifrado (Enter)',
-                  onPressed: _send,
+                  icon: Icon(
+                    editing != null ? Icons.check_rounded : Icons.arrow_upward_rounded,
+                    color: context.onAccentColor,
+                    size: 18,
+                  ),
+                  tooltip: editing != null ? 'Salvar Edição' : 'Transmitir Envelope Cifrado (Enter)',
+                  onPressed: () => _send(nixState),
                 ),
               ),
             ],
@@ -288,8 +371,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
     );
   }
 
-  Widget _categoryChip(String title, IconData icon) {
+  Widget _categoryChip(BuildContext context, String title, IconData icon) {
     final selected = _selectedEmojiCategory == title;
+    final accent = context.accentColor;
     return Padding(
       padding: const EdgeInsets.only(right: 6),
       child: InkWell(
@@ -298,19 +382,19 @@ class _ChatInputBarState extends State<ChatInputBar> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
-            color: selected ? Colors.white : NixColors.surfaceCard,
+            color: selected ? accent : NixColors.surfaceCard,
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: selected ? Colors.white : NixColors.surfaceBorder),
+            border: Border.all(color: selected ? accent : NixColors.surfaceBorder),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 12, color: selected ? Colors.black : Colors.white70),
+              Icon(icon, size: 12, color: selected ? context.onAccentColor : NixColors.textSecondary),
               const SizedBox(width: 4),
               Text(
                 title,
                 style: TextStyle(
-                  color: selected ? Colors.black : NixColors.textSecondary,
+                  color: selected ? context.onAccentColor : NixColors.textSecondary,
                   fontSize: 10.5,
                   fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                 ),
@@ -342,14 +426,14 @@ class _EphemeralTimerSelector extends StatelessWidget {
       color: NixColors.surfaceCard,
       shape: RoundedRectangleBorder(
         borderRadius: NixTokens.borderSm,
-        side: const BorderSide(color: NixColors.surfaceBorderStrong),
+        side: BorderSide(color: NixColors.surfaceBorderStrong),
       ),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
-          color: isTimerActive ? NixColors.surfaceActive : Colors.transparent,
+          color: isTimerActive ? context.accentColor.withValues(alpha: 0.16) : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
-          border: isTimerActive ? Border.all(color: Colors.white38) : null,
+          border: isTimerActive ? Border.all(color: context.accentColor) : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -357,14 +441,14 @@ class _EphemeralTimerSelector extends StatelessWidget {
             Icon(
               isTimerActive ? Icons.timer_outlined : Icons.timer_off_outlined,
               size: 18,
-              color: isTimerActive ? Colors.white : NixColors.textSecondary,
+              color: isTimerActive ? context.accentTextColor : NixColors.textSecondary,
             ),
             if (isTimerActive) ...[
               const SizedBox(width: 4),
               Text(
                 _formatSeconds(currentTimer),
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: context.accentTextColor,
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
                 ),
@@ -373,13 +457,13 @@ class _EphemeralTimerSelector extends StatelessWidget {
           ],
         ),
       ),
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 0, child: Text('Desativado (Permanente)', style: TextStyle(color: Colors.white, fontSize: 12))),
-        PopupMenuItem(value: 30, child: Text('30 segundos', style: TextStyle(color: Colors.white, fontSize: 12))),
-        PopupMenuItem(value: 60, child: Text('1 minuto', style: TextStyle(color: Colors.white, fontSize: 12))),
-        PopupMenuItem(value: 300, child: Text('5 minutos', style: TextStyle(color: Colors.white, fontSize: 12))),
-        PopupMenuItem(value: 3600, child: Text('1 hora', style: TextStyle(color: Colors.white, fontSize: 12))),
-        PopupMenuItem(value: 86400, child: Text('24 horas', style: TextStyle(color: Colors.white, fontSize: 12))),
+      itemBuilder: (context) => [
+        PopupMenuItem(value: 0, child: Text('Desativado (Permanente)', style: TextStyle(color: NixColors.textPrimary, fontSize: 12))),
+        PopupMenuItem(value: 30, child: Text('30 segundos', style: TextStyle(color: NixColors.textPrimary, fontSize: 12))),
+        PopupMenuItem(value: 60, child: Text('1 minuto', style: TextStyle(color: NixColors.textPrimary, fontSize: 12))),
+        PopupMenuItem(value: 300, child: Text('5 minutos', style: TextStyle(color: NixColors.textPrimary, fontSize: 12))),
+        PopupMenuItem(value: 3600, child: Text('1 hora', style: TextStyle(color: NixColors.textPrimary, fontSize: 12))),
+        PopupMenuItem(value: 86400, child: Text('24 horas', style: TextStyle(color: NixColors.textPrimary, fontSize: 12))),
       ],
     );
   }

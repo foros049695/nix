@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/user_settings.dart';
-import '../../core/security/window_privacy_guard.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
 
-/// Barra de título e controles de janela Desktop com indicador de proteção Antifingerprinting (Seção 7).
+/// Barra de título e controles responsivos de janela Desktop (Seção 5).
 class WindowTitleBar extends StatelessWidget {
   const WindowTitleBar({super.key});
 
@@ -13,23 +13,26 @@ class WindowTitleBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
     final settings = nixState.settings;
-    final rawSize = MediaQuery.of(context).size;
-    final reportedSize = settings.quantizeViewportDimensions
-        ? WindowPrivacyGuard.quantizeSize(rawSize)
-        : rawSize;
+    final size = MediaQuery.of(context).size;
 
     return Container(
-      height: 30,
+      height: 32,
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: NixColors.surfaceDock,
         border: Border(bottom: BorderSide(color: NixColors.surfaceBorder, width: 1)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.shield_moon_outlined, size: 13, color: NixColors.textSecondary),
-          const SizedBox(width: 6),
-          const Text(
+          Image.asset(
+            context.brandLogoAsset128,
+            width: 16,
+            height: 16,
+            errorBuilder: (_, __, ___) =>
+                Icon(Icons.shield_moon_outlined, size: 14, color: context.accentTextColor),
+          ),
+          const SizedBox(width: 7),
+          Text(
             'NIX',
             style: TextStyle(
               color: NixColors.textPrimary,
@@ -42,11 +45,11 @@ class WindowTitleBar extends StatelessWidget {
           Container(width: 1, height: 11, color: NixColors.surfaceBorderStrong),
           const SizedBox(width: 10),
 
-          // Indicador de Viewport Discretizado (Anti-Fingerprinting)
+          // Indicador honesto de dimensões e atalho para Aparência
           InkWell(
             onTap: () => nixState.openProfileOverlay(
               startInSettings: true,
-              category: SettingsCategory.survival,
+              category: SettingsCategory.appearance,
             ),
             borderRadius: BorderRadius.circular(4),
             child: Padding(
@@ -55,18 +58,18 @@ class WindowTitleBar extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    settings.quantizeViewportDimensions
-                        ? Icons.aspect_ratio_rounded
-                        : Icons.crop_free_rounded,
+                    nixState.isWindowMaximized
+                        ? Icons.fullscreen_rounded
+                        : Icons.aspect_ratio_rounded,
                     size: 12,
                     color: NixColors.textMuted,
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    settings.quantizeViewportDimensions
-                        ? 'Viewport Protegido: ${reportedSize.width.toInt()}×${reportedSize.height.toInt()}'
-                        : 'Janela Livre',
-                    style: const TextStyle(
+                    nixState.isWindowMaximized
+                        ? 'Janela Maximizada · ${size.width.toInt()}×${size.height.toInt()}'
+                        : 'Janela Redimensionável · ${size.width.toInt()}×${size.height.toInt()}',
+                    style: TextStyle(
                       color: NixColors.textMuted,
                       fontSize: 10,
                       fontFamily: 'monospace',
@@ -79,28 +82,74 @@ class WindowTitleBar extends StatelessWidget {
 
           const Spacer(),
 
-          // Controles de Janela (Minimizar, Restaurar/Maximizar, Fechar)
-          _WindowControlIcon(
-            icon: Icons.remove_rounded,
-            tooltip: 'Minimizar Janela',
-            onTap: () {},
+          // Indicador rápido Tor Onion
+          InkWell(
+            onTap: () => nixState.openProfileOverlay(
+              startInSettings: true,
+              category: SettingsCategory.connections,
+            ),
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: context.accentColor.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: context.accentColor.withValues(alpha: 0.35)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: nixState.isTorRunning ? NixColors.trustLevel3Green : NixColors.accentDanger,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    nixState.isTorRunning ? 'ONION V3' : 'FAIL-CLOSED',
+                    style: TextStyle(
+                      color: context.accentTextColor,
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
+
+          // Alternar Modo Janela Flutuante / Restrita
           _WindowControlIcon(
-            icon: Icons.crop_square_rounded,
-            tooltip: 'Alternar Modo Janela Padrão (1152×720)',
+            icon: settings.floatingWindowMode ? Icons.crop_square_rounded : Icons.fit_screen_rounded,
+            tooltip: settings.floatingWindowMode
+                ? (nixState.isWindowMaximized ? 'Restaurar Janela' : 'Maximizar Janela')
+                : 'Ativar Janela Flutuante Redimensionável',
             onTap: () {
-              nixState.updateSettings(
-                settings.copyWith(
-                  quantizeViewportDimensions: !settings.quantizeViewportDimensions,
-                ),
-              );
+              if (!settings.floatingWindowMode) {
+                nixState.toggleFloatingWindowMode(true);
+              } else {
+                nixState.toggleWindowMaximized();
+              }
             },
           ),
           _WindowControlIcon(
-            icon: Icons.close_rounded,
-            tooltip: 'Fechar',
-            onTap: () {},
+            icon: Icons.palette_outlined,
+            tooltip: 'Configurações → Aparência → Temas',
+            onTap: () => nixState.openProfileOverlay(
+              startInSettings: true,
+              category: SettingsCategory.appearance,
+            ),
           ),
+          if (nixState.isWindowMaximized)
+            _WindowControlIcon(
+              icon: Icons.fullscreen_exit_rounded,
+              tooltip: 'Sair do Modo Maximizado',
+              onTap: () => nixState.toggleWindowMaximized(),
+            ),
         ],
       ),
     );
@@ -137,11 +186,14 @@ class _WindowControlIconState extends State<_WindowControlIcon> {
           child: Container(
             width: 28,
             height: 24,
-            color: _hovered ? NixColors.surfaceActive : Colors.transparent,
+            decoration: BoxDecoration(
+              color: _hovered ? NixColors.surfaceActive : Colors.transparent,
+              borderRadius: BorderRadius.circular(4),
+            ),
             child: Icon(
               widget.icon,
               size: 13,
-              color: _hovered ? Colors.white : NixColors.textMuted,
+              color: _hovered ? NixColors.textPrimary : NixColors.textMuted,
             ),
           ),
         ),

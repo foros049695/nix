@@ -88,7 +88,7 @@ class _CreateChannelDialogState extends State<CreateChannelDialog> {
                   hintText: _selectedType == ChannelType.voice
                       ? 'ex: Voz 3 · Alinhamento'
                       : 'ex: analises-e-achados',
-                  prefixIcon: const Icon(Icons.tag_rounded, size: 18, color: NixColors.textSecondary),
+                  prefixIcon: Icon(Icons.tag_rounded, size: 18, color: NixColors.textSecondary),
                 ),
               ),
               const SizedBox(height: 14),
@@ -108,11 +108,11 @@ class _CreateChannelDialogState extends State<CreateChannelDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
+          child: Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.white,
+            backgroundColor: NixColors.textPrimary,
             foregroundColor: Colors.black,
             shape: RoundedRectangleBorder(borderRadius: NixTokens.borderSm),
           ),
@@ -156,13 +156,13 @@ class _CreateChannelDialogState extends State<CreateChannelDialog> {
           color: isSelected ? NixColors.surfaceActive : NixColors.surfaceSidebar,
           borderRadius: NixTokens.borderSm,
           border: Border.all(
-            color: isSelected ? Colors.white : NixColors.surfaceBorder,
+            color: isSelected ? NixColors.textPrimary : NixColors.surfaceBorder,
             width: isSelected ? 1.4 : 1,
           ),
         ),
         child: Row(
           children: [
-            Icon(icon, color: isSelected ? Colors.white : NixColors.textSecondary, size: 22),
+            Icon(icon, color: isSelected ? NixColors.textPrimary : NixColors.textSecondary, size: 22),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -171,7 +171,7 @@ class _CreateChannelDialogState extends State<CreateChannelDialog> {
                   Text(
                     title,
                     style: TextStyle(
-                      color: isSelected ? Colors.white : NixColors.textPrimary,
+                      color: isSelected ? NixColors.textPrimary : NixColors.textPrimary,
                       fontWeight: FontWeight.w600,
                       fontSize: 13.5,
                     ),
@@ -179,7 +179,7 @@ class _CreateChannelDialogState extends State<CreateChannelDialog> {
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: const TextStyle(color: NixColors.textMuted, fontSize: 11),
+                    style: TextStyle(color: NixColors.textMuted, fontSize: 11),
                   ),
                 ],
               ),

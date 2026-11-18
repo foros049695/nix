@@ -144,7 +144,7 @@ class _ProfileOverlayState extends State<ProfileOverlay>
                                           Container(
                                             height: 50,
                                             padding: const EdgeInsets.symmetric(horizontal: 18),
-                                            decoration: const BoxDecoration(
+                                            decoration: BoxDecoration(
                                               color: NixColors.surfaceSidebar,
                                               border: Border(
                                                 bottom: BorderSide(color: NixColors.surfaceBorder),
@@ -152,13 +152,13 @@ class _ProfileOverlayState extends State<ProfileOverlay>
                                             ),
                                             child: Row(
                                               children: [
-                                                const Icon(
+                                                Icon(
                                                   Icons.badge_outlined,
                                                   color: NixColors.textPrimary,
                                                   size: 18,
                                                 ),
                                                 const SizedBox(width: 8),
-                                                const Expanded(
+                                                Expanded(
                                                   child: Text(
                                                     'PERFIL & IDENTIDADE SOBERANA (CARD ID)',
                                                     style: TextStyle(
@@ -186,7 +186,7 @@ class _ProfileOverlayState extends State<ProfileOverlay>
                                                 const SizedBox(width: 6),
                                                 IconButton(
                                                   key: const Key('close_profile_overlay_button'),
-                                                  icon: const Icon(
+                                                  icon: Icon(
                                                     Icons.close_rounded,
                                                     color: NixColors.textSecondary,
                                                     size: 20,

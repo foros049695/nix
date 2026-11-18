@@ -1,0 +1,17 @@
+name: nix_transport
+description: >-
+  Camada de transporte privado fail-closed para o Project Nix: conector SOCKS5
+  sem vazamento de DNS local, cliente ControlPort Tor, política estrita .onion v3
+  e cliente HTTP para caixas postais cegas no Nix Relay.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  crypto: ^3.0.3
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.25.0

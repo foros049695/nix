@@ -4,7 +4,7 @@
 
 [![Licença: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Status: Protótipo Experimental](https://img.shields.io/badge/Status-Protótipo%20Experimental-FFA000.svg)](ROADMAP.md)
-[![Design: Living AMOLED](https://img.shields.io/badge/Design-Living%20AMOLED-000000.svg)](docs/AUDIT_REPORT_V2.md)
+[![Design: V4 Dark & Light Yellow](https://img.shields.io/badge/Design-Nix%20Yellow%20V4-FFC928.svg)](docs/AUDIT_REPORT_V4.md)
 [![Tor: Fail-Closed](https://img.shields.io/badge/Network-Tor%20Onion%20v3-purple.svg)](docs/DEPLOYMENT_ONION_V3.md)
 [![Criptografia: XMR Only](https://img.shields.io/badge/Finan%C3%A7as-Monero%20(XMR)-FF6600.svg)](docs/WALLET.md)
 
@@ -28,7 +28,8 @@ flutter build linux --release
 flutter build apk --release
 ```
 
-- **Documentação de Auditoria Técnica:** [`docs/AUDIT_REPORT_V2.md`](docs/AUDIT_REPORT_V2.md)
+- **Relatório de Auditoria Técnica V4:** [`docs/AUDIT_REPORT_V4.md`](docs/AUDIT_REPORT_V4.md) (histórico anterior: [`docs/AUDIT_REPORT_V2.md`](docs/AUDIT_REPORT_V2.md))
+- **Histórico de Alterações:** [`CHANGELOG.md`](CHANGELOG.md)
 - **Guia de Implantação Tor Onion v3:** [`docs/DEPLOYMENT_ONION_V3.md`](docs/DEPLOYMENT_ONION_V3.md)
 
 ---
