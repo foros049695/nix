@@ -1,0 +1,164 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../core/theme/nix_colors.dart';
+import '../../core/models/member.dart';
+import '../../state/nix_state.dart';
+
+class MembersPanel extends StatelessWidget {
+  const MembersPanel({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final nixState = context.watch<NixState>();
+    final members = nixState.members;
+
+    return Container(
+      width: 240,
+      decoration: const BoxDecoration(
+        color: NixColors.surfaceSidebar,
+        border: Border(
+          left: BorderSide(color: NixColors.surfaceBorder, width: 1),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            alignment: Alignment.centerLeft,
+            child: Row(
+              children: [
+                const Text(
+                  'PARTICIPANTES',
+                  style: TextStyle(
+                    color: NixColors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: NixColors.surfaceCardHover,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${members.length}',
+                    style: const TextStyle(color: NixColors.textSecondary, fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: NixColors.surfaceBorder),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+              itemCount: members.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 4),
+              itemBuilder: (context, index) {
+                final member = members[index];
+                return _MemberTile(member: member);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MemberTile extends StatelessWidget {
+  final Member member;
+
+  const _MemberTile({required this.member});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        children: [
+          // Avatar com badge de online
+          Stack(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: NixColors.surfaceCard,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: member.isSpeaking ? NixColors.accentGreen : NixColors.surfaceBorder,
+                    width: member.isSpeaking ? 1.5 : 1,
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    member.name[0],
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: member.isOnline ? NixColors.accentGreen : NixColors.textDim,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: NixColors.surfaceSidebar, width: 1.5),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        member.name,
+                        style: TextStyle(
+                          color: member.isOnline ? NixColors.textPrimary : NixColors.textMuted,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (member.isVerified)
+                      const Tooltip(
+                        message: 'Fingerprint verificado fora de banda',
+                        child: Icon(Icons.verified, size: 12, color: NixColors.accentGreen),
+                      ),
+                  ],
+                ),
+                Text(
+                  member.fingerprint.substring(0, 9),
+                  style: const TextStyle(
+                    color: NixColors.textMuted,
+                    fontSize: 9,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
