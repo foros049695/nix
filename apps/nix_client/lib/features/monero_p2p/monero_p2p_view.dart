@@ -444,9 +444,12 @@ class _MoneroOrderCard extends StatelessWidget {
                         color: order.isOnline ? NixColors.accentGreen : NixColors.textMuted,
                       ),
                     ),
-                    Text(
-                      order.traderName,
-                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                    Flexible(
+                      child: Text(
+                        order.traderName,
+                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     _orderTrustIndicator(order.trustLevel),

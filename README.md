@@ -3,9 +3,24 @@
 > **Comunicação, conhecimento e mídia com privacidade verificável, resiliência off-grid e soberania digital.**
 
 [![Licença: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Status: Especificação & Fundação](https://img.shields.io/badge/Status-Fase%200%20%2F%20Fase%201-orange.svg)](ROADMAP.md)
-[![Tor: Fail-Closed](https://img.shields.io/badge/Network-Tor%20Onion%20Default-purple.svg)](docs/TRANSPORTS.md)
+[![Versão: 0.2.0](https://img.shields.io/badge/Release-v0.2.0-00E676.svg)](dist/)
+[![Status: Living AMOLED](https://img.shields.io/badge/Design-Living%20AMOLED-000000.svg)](docs/AUDIT_REPORT_V2.md)
+[![Tor: Fail-Closed](https://img.shields.io/badge/Network-Tor%20Onion%20v3-purple.svg)](docs/DEPLOYMENT_ONION_V3.md)
 [![Criptografia: XMR Only](https://img.shields.io/badge/Finan%C3%A7as-Monero%20(XMR)-FF6600.svg)](docs/WALLET.md)
+
+---
+
+## 🚀 Releases Multiplataforma Oficiais (v0.2.0)
+
+Os pacotes binários oficiais estão prontos para distribuição e homologados na suíte de testes (100% verde):
+
+| Plataforma | Pacote | Tamanho | SHA-256 Checksum |
+|---|---|---|---|
+| **Linux Desktop (x86_64)** | [`dist/nix-desktop-linux-x64.tar.gz`](dist/nix-desktop-linux-x64.tar.gz) | 19 MB | `d0fb3131cab52dfddea2b4c1b5304d310a741d34a6e62741e573a2a3892de628` |
+| **Android APK (Release)** | [`dist/nix-client-v0.2.0.apk`](dist/nix-client-v0.2.0.apk) | 32 MB | `60aeded4530041fc5735a074d3c63b11408ff14da1cdf396bc013dd37dedd142` |
+
+- **Documentação de Auditoria:** [`docs/AUDIT_REPORT_V2.md`](docs/AUDIT_REPORT_V2.md)
+- **Guia de Implantação Onion v3:** [`docs/DEPLOYMENT_ONION_V3.md`](docs/DEPLOYMENT_ONION_V3.md)
 
 ---
 

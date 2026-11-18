@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/direct_message.dart';
 import '../../core/models/member.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../chat/message_bubble.dart';
 import '../profile/card_id_widget.dart';
+import '../profile/peer_card_id_dialog.dart';
 
 /// Área Principal de Conversas Privadas (Home).
 /// Quando vazia (sem conversa/aba secundária selecionada), é preenchida pelo CARD ID.
@@ -21,6 +24,7 @@ class HomePrivateView extends StatefulWidget {
 
 class _HomePrivateViewState extends State<HomePrivateView> {
   final TextEditingController _dmInputController = TextEditingController();
+  String? _hoverLockoutRequestId;
 
   @override
   void dispose() {
@@ -41,29 +45,53 @@ class _HomePrivateViewState extends State<HomePrivateView> {
     final nixState = context.watch<NixState>();
     final activeTab = nixState.homeSubTab;
 
-    return Container(
-      color: NixColors.background,
-      child: Stack(
-        children: [
-          AnimatedSwitcher(
-            duration: NixTokens.motionMedium,
-            switchInCurve: NixTokens.curveStandard,
-            switchOutCurve: NixTokens.curveStandard,
-            child: _buildStageContent(nixState, activeTab),
+    return Shortcuts(
+      shortcuts: const {
+        SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
+      },
+      child: Actions(
+        actions: {
+          DismissIntent: CallbackAction<DismissIntent>(
+            onInvoke: (_) {
+              if (nixState.hoveredContactRequest != null) {
+                setState(() => _hoverLockoutRequestId = nixState.hoveredContactRequest?.id);
+                nixState.setHoveredContactRequest(null);
+              }
+              return null;
+            },
           ),
-          // Painel Flutuante Animado de Card ID (Hover Preview em Solicitações)
-          if (activeTab == HomeSubTab.requests &&
-              nixState.hoveredContactRequest != null &&
-              nixState.settings.cardIdVisibility != 'Oculto')
-            Positioned(
-              top: 70,
-              right: 28,
-              child: _FloatingPeerCardIdPreview(
-                request: nixState.hoveredContactRequest!,
-                onDismiss: () => nixState.setHoveredContactRequest(null),
+        },
+        child: Container(
+          color: NixColors.background,
+          child: Stack(
+            children: [
+              AnimatedSwitcher(
+                duration: NixTokens.motionMedium,
+                switchInCurve: NixTokens.curveStandard,
+                switchOutCurve: NixTokens.curveStandard,
+                child: _buildStageContent(nixState, activeTab),
               ),
-            ),
-        ],
+              // Painel Flutuante Animado de Card ID (Hover Preview em Solicitações)
+              // Posicionado de forma inteligente para NUNCA cobrir os botões de ação na direita
+              if (activeTab == HomeSubTab.requests &&
+                  nixState.hoveredContactRequest != null &&
+                  nixState.settings.cardIdVisibility != 'Oculto')
+                Positioned(
+                  top: 76,
+                  left: 24,
+                  child: _FloatingPeerCardIdPreview(
+                    request: nixState.hoveredContactRequest!,
+                    onDismiss: () {
+                      setState(() {
+                        _hoverLockoutRequestId = nixState.hoveredContactRequest?.id;
+                      });
+                      nixState.setHoveredContactRequest(null);
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -298,63 +326,130 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (context, idx) {
                     final req = state.contactRequests[idx];
-                    return MouseRegion(
-                      onEnter: (_) => state.setHoveredContactRequest(req),
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: NixColors.surfaceCard,
-                          borderRadius: NixTokens.borderMd,
-                          border: Border.all(
-                            color: state.hoveredContactRequest?.id == req.id
-                                ? Colors.white54
-                                : NixColors.surfaceBorder,
+                    final isHovered = state.hoveredContactRequest?.id == req.id;
+                    final accent = context.accentColor;
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: NixColors.surfaceCard,
+                        borderRadius: NixTokens.borderMd,
+                        border: Border.all(
+                          color: isHovered
+                              ? accent.withValues(alpha: 0.6)
+                              : NixColors.surfaceBorder,
+                          width: isHovered ? 1.2 : 1.0,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          // 1. ZONA EXCLUSIVA DE HOVER E CLIQUE: Avatar + Nome
+                          MouseRegion(
+                            onEnter: (_) {
+                              if (_hoverLockoutRequestId != req.id) {
+                                state.setHoveredContactRequest(req);
+                              }
+                            },
+                            onExit: (_) {
+                              if (state.hoveredContactRequest?.id == req.id) {
+                                state.setHoveredContactRequest(null);
+                              }
+                              if (_hoverLockoutRequestId == req.id) {
+                                _hoverLockoutRequestId = null;
+                              }
+                            },
+                            child: InkWell(
+                              onTap: () => PeerCardIdDialog.showForRequest(context, req),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: NixColors.surfaceElevated,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: accent.withValues(alpha: 0.5)),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          req.peerName.isNotEmpty ? req.peerName[0].toUpperCase() : '?',
+                                          style: TextStyle(
+                                            color: accent,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
+                                              req.peerName,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Icon(Icons.badge_outlined, size: 12, color: accent),
+                                          ],
+                                        ),
+                                        const SizedBox(width: 4),
+                                        _TrustLevelIndicator(level: req.trustLevel),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(req.peerName,
-                                          style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.bold)),
-                                      const SizedBox(width: 8),
-                                      _TrustLevelIndicator(level: req.trustLevel),
-                                    ],
+                          const SizedBox(width: 16),
+
+                          // 2. Informações Públicas (Sem ativar hover do Card ID)
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(req.peerPublicId, style: NixTokens.monoCode(size: 11)),
+                                const SizedBox(height: 4),
+                                Text(
+                                  req.note,
+                                  style: const TextStyle(
+                                    color: NixColors.textSecondary,
+                                    fontSize: 12,
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(req.peerPublicId, style: NixTokens.monoCode()),
-                                  const SizedBox(height: 6),
-                                  Text(req.note,
-                                      style: const TextStyle(
-                                          color: NixColors.textSecondary, fontSize: 12.5)),
-                                ],
-                              ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 12),
-                            TextButton(
-                              onPressed: () => state.declineContactRequest(req.id),
-                              child: const Text('Recusar',
-                                  style: TextStyle(color: NixColors.textMuted, fontSize: 12)),
+                          ),
+                          const SizedBox(width: 12),
+
+                          // 3. Botões de Ação (100% Desobstruídos, sem ativar hover)
+                          TextButton(
+                            onPressed: () => state.declineContactRequest(req.id),
+                            child: const Text('Recusar',
+                                style: TextStyle(color: NixColors.textMuted, fontSize: 12)),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: accent,
+                              foregroundColor: Colors.black,
                             ),
-                            const SizedBox(width: 8),
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: Colors.black,
-                              ),
-                              onPressed: () => state.acceptContactRequest(req.id),
-                              child: const Text('Aceitar Chave',
-                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                            ),
-                          ],
-                        ),
+                            onPressed: () => state.acceptContactRequest(req.id),
+                            child: const Text('Aceitar Chave',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
                       ),
                     );
                   },
@@ -381,12 +476,26 @@ class _HomePrivateViewState extends State<HomePrivateView> {
             children: [
               const Icon(Icons.lock_rounded, size: 16, color: NixColors.accentGreen),
               const SizedBox(width: 8),
-              Text(
-                dm.peerName,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
+              InkWell(
+                onTap: () => PeerCardIdDialog.showForDirectMessage(context, dm),
+                borderRadius: BorderRadius.circular(4),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        dm.peerName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.badge_outlined, size: 12, color: context.accentColor),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -749,11 +858,16 @@ class _FloatingPeerCardIdPreview extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: NixTokens.amoledMetalGradient,
           borderRadius: NixTokens.borderLg,
-          border: Border.all(color: Colors.white38, width: 1.2),
-          boxShadow: const [
+          border: Border.all(color: context.accentColor.withValues(alpha: 0.5), width: 1.2),
+          boxShadow: [
             BoxShadow(
-              color: Colors.black87,
+              color: context.accentColor.withValues(alpha: 0.15),
               blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+            const BoxShadow(
+              color: Colors.black,
+              blurRadius: 20,
               offset: Offset(0, 8),
             ),
           ],
@@ -802,9 +916,11 @@ class _FloatingPeerCardIdPreview extends StatelessWidget {
                   ),
                 ),
                 IconButton(
+                  key: const Key('floating_card_id_close_button'),
                   icon: const Icon(Icons.close_rounded, size: 16, color: NixColors.textMuted),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
+                  tooltip: 'Fechar (Esc)',
                   onPressed: onDismiss,
                 ),
               ],

@@ -1,7 +1,7 @@
 name: nix_client
 description: "Cliente soberano e seguro do Projeto Nix — Mensageria E2EE, Archive, Media e Wallet XMR."
 publish_to: "none"
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -25,3 +25,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    - assets/data/
+    - assets/brand/

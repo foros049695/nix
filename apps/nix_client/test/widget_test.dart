@@ -166,8 +166,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 1. Abre o GitHub Discovery pelo dock lateral
-    await tester.tap(find.byKey(const Key('dock_github_button')));
+    // 1. Abre a Área Inicial e depois o GitHub Discovery pela navegação principal (HomeSidebar)
+    await tester.tap(find.byKey(const Key('dock_home_private_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('home_nav_github')));
     await tester.pumpAndSettle();
     expect(find.text('GITHUB DISCOVERY · ACERVO ABERTO DE CÓDIGO'), findsOneWidget);
     expect(find.text('rust-anything'), findsAtLeastNWidgets(1));
@@ -180,8 +182,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(state.userProfile.culturalItems.length, initialAcervoCount + 1);
 
-    // 2. Abre o Mercado Monero P2P pelo dock lateral
-    await tester.tap(find.byKey(const Key('dock_monero_button')));
+    // 2. Abre o Mercado Monero P2P pela navegação principal (HomeSidebar)
+    // Retorna para a Home se necessário ou clica diretamente
+    await tester.tap(find.byKey(const Key('home_nav_monero')));
     await tester.pumpAndSettle();
     expect(find.text('MERCADO MONERO P2P DESCENTRALIZADO (NON-CUSTODIAL)'), findsOneWidget);
     expect(find.text('SovereignNode_SP'), findsOneWidget);
@@ -240,5 +243,120 @@ void main() {
     // Testa Username Opcional determinístico
     final emptyNameProfile = state.userProfile.copyWith(displayName: '');
     expect(emptyNameProfile.effectiveDisplayName.startsWith('NX-'), true);
+  });
+
+  testWidgets('6. Universal Peer Card ID by click, hover lockout, and non-obstructive positioning',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final state = NixState();
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: state,
+        child: const NixApp(skipSplash: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Testa abertura do Card ID de membro da lista de participantes
+    state.toggleMembersPanel();
+    await tester.pumpAndSettle();
+    expect(find.text('PARTICIPANTES'), findsOneWidget);
+
+    // Clica no membro Sentinela-Alpha na lista de participantes
+    await tester.tap(find.text('Sentinela-Alpha').first);
+    await tester.pumpAndSettle();
+
+    // Deve abrir o diálogo modal do Peer Card ID
+    expect(find.text('NIX SOVEREIGN CARD ID'), findsOneWidget);
+    expect(find.text('Sentinela-Alpha'), findsAtLeastNWidgets(1));
+
+    // Fecha via botão X
+    await tester.tap(find.byTooltip('Fechar (Esc)'));
+    await tester.pumpAndSettle();
+    expect(find.text('NIX SOVEREIGN CARD ID'), findsNothing);
+
+    // 2. Vai para a Home (Solicitações de contato)
+    await tester.tap(find.byKey(const Key('dock_home_private_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Solicitações'));
+    await tester.pumpAndSettle();
+
+    // Os botões "Recusar" e "Aceitar Chave" devem estar acessíveis
+    expect(find.text('Recusar'), findsAtLeastNWidgets(1));
+    expect(find.text('Aceitar Chave'), findsAtLeastNWidgets(1));
+
+    // Ativa preview em hover sobre o peer
+    final req = state.contactRequests.first;
+    state.setHoveredContactRequest(req);
+    await tester.pumpAndSettle();
+    expect(find.text('DESTAQUES CULTURAIS PÚBLICOS'), findsOneWidget);
+
+    // Limpa hover
+    state.setHoveredContactRequest(null);
+    await tester.pumpAndSettle();
+    expect(find.text('DESTAQUES CULTURAIS PÚBLICOS'), findsNothing);
+  });
+
+  testWidgets('7. Message actions (toggleable reactions, context menu, forward, delete) and Channel settings',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final state = NixState();
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: state,
+        child: const NixApp(skipSplash: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Envia mensagem no canal ativo
+    final initialCount = state.currentMessages.length;
+    state.sendMessage('Mensagem de teste de release v0.2.0');
+    expect(state.currentMessages.length, initialCount + 1);
+    final msg = state.currentMessages.last;
+
+    // 2. Testa alternar reação (toggleMessageReaction)
+    expect(msg.reactions.containsKey('⚡'), false);
+    state.toggleMessageReaction(msg.id, '⚡');
+    expect(state.currentMessages.last.reactions['⚡'], 1);
+    expect(state.currentMessages.last.myReactions.contains('⚡'), true);
+
+    // Desmarca a reação (toggle off)
+    state.toggleMessageReaction(msg.id, '⚡');
+    expect(state.currentMessages.last.reactions.containsKey('⚡'), false);
+    expect(state.currentMessages.last.myReactions.contains('⚡'), false);
+
+    // 3. Testa encaminhamento de mensagem
+    final fwdTargetChannel = state.spaces.first.channels.last;
+    state.forwardMessage(msg, targetId: fwdTargetChannel.id, isChannel: true);
+    // Mensagem foi encaminhada no state
+    expect(msg.text, contains('Mensagem de teste'));
+
+    // 4. Testa deleção de mensagem
+    final beforeDeleteCount = state.currentMessages.length;
+    state.deleteMessage(msg.id, forEveryone: true);
+    expect(state.currentMessages.length, beforeDeleteCount - 1);
+
+    // 5. Testa configurações de canal e permissões
+    final currentChan = state.currentChannel;
+    final updatedChan = currentChan.copyWith(
+      description: 'Canal de alta segurança auditado.',
+      permissions: currentChan.permissions.copyWith(
+        requestScreenshotProtection: true,
+        slowModeSeconds: 5,
+        restrictExport: true,
+      ),
+    );
+    state.updateChannelSettings(updatedChan);
+    expect(state.currentChannel.description, 'Canal de alta segurança auditado.');
+    expect(state.currentChannel.permissions.requestScreenshotProtection, true);
+    expect(state.currentChannel.permissions.slowModeSeconds, 5);
+    expect(state.currentChannel.permissions.restrictExport, true);
   });
 }

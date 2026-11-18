@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/direct_message.dart';
 import '../../core/models/member.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
@@ -85,12 +86,14 @@ class _HomeSidebarState extends State<HomeSidebar> {
                   onTap: () => nixState.selectHomeSubTab(HomeSubTab.requests),
                 ),
                 _navTile(
+                  key: const Key('home_nav_monero'),
                   icon: Icons.currency_exchange_rounded,
                   label: 'Mercado Monero P2P',
                   isSelected: nixState.activeArea == NixActiveArea.moneroP2p,
                   onTap: () => nixState.openMoneroP2pArea(),
                 ),
                 _navTile(
+                  key: const Key('home_nav_github'),
                   icon: Icons.code_rounded,
                   label: 'GitHub Discovery',
                   isSelected: nixState.activeArea == NixActiveArea.github,
@@ -127,13 +130,14 @@ class _HomeSidebarState extends State<HomeSidebar> {
                   final isSelected = nixState.activeArea == NixActiveArea.homePrivate &&
                       activeTab == HomeSubTab.directChat &&
                       selectedDm?.id == dm.id;
+                  final accent = context.accentColor;
                   return Container(
                     margin: const EdgeInsets.only(bottom: 2),
                     decoration: BoxDecoration(
-                      color: isSelected ? NixColors.surfaceActive : Colors.transparent,
+                      color: isSelected ? accent.withValues(alpha: 0.14) : Colors.transparent,
                       borderRadius: NixTokens.borderSm,
                       border: isSelected
-                          ? Border.all(color: NixColors.surfaceBorderStrong)
+                          ? Border.all(color: accent.withValues(alpha: 0.45), width: 1.0)
                           : null,
                     ),
                     child: ListTile(
@@ -195,7 +199,7 @@ class _HomeSidebarState extends State<HomeSidebar> {
                           ? Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: context.accentColor,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text(
@@ -234,18 +238,23 @@ class _HomeSidebarState extends State<HomeSidebar> {
   }
 
   Widget _navTile({
+    Key? key,
     required IconData icon,
     required String label,
     required bool isSelected,
     int badgeCount = 0,
     required VoidCallback onTap,
   }) {
+    final accent = context.accentColor;
     return Container(
+      key: key,
       margin: const EdgeInsets.only(bottom: 2),
       decoration: BoxDecoration(
-        color: isSelected ? NixColors.surfaceActive : Colors.transparent,
+        color: isSelected ? accent.withValues(alpha: 0.16) : Colors.transparent,
         borderRadius: NixTokens.borderSm,
-        border: isSelected ? Border.all(color: NixColors.surfaceBorderStrong) : null,
+        border: isSelected
+            ? Border.all(color: accent.withValues(alpha: 0.5), width: 1.0)
+            : null,
       ),
       child: ListTile(
         dense: true,
@@ -255,12 +264,12 @@ class _HomeSidebarState extends State<HomeSidebar> {
         leading: Icon(
           icon,
           size: 18,
-          color: isSelected ? NixColors.textPrimary : NixColors.iconSecondary,
+          color: isSelected ? accent : NixColors.iconSecondary,
         ),
         title: Text(
           label,
           style: TextStyle(
-            color: isSelected ? NixColors.textPrimary : NixColors.textSecondary,
+            color: isSelected ? Colors.white : NixColors.textSecondary,
             fontSize: 12.5,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
           ),
@@ -269,7 +278,7 @@ class _HomeSidebarState extends State<HomeSidebar> {
             ? Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: accent,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(

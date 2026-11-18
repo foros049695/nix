@@ -11,6 +11,7 @@ class Message {
   final bool isVerified;
   final List<String> attachments;
   final Map<String, int> reactions;
+  final Set<String> myReactions;
 
   const Message({
     required this.id,
@@ -25,12 +26,14 @@ class Message {
     this.isVerified = true,
     this.attachments = const [],
     this.reactions = const {},
+    this.myReactions = const {},
   });
 
   bool get isEphemeral => ephemeralSeconds > 0;
 
   Message copyWith({
     Map<String, int>? reactions,
+    Set<String>? myReactions,
   }) {
     return Message(
       id: id,
@@ -45,6 +48,7 @@ class Message {
       isVerified: isVerified,
       attachments: attachments,
       reactions: reactions ?? this.reactions,
+      myReactions: myReactions ?? this.myReactions,
     );
   }
 }
