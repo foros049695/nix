@@ -43,6 +43,9 @@ apps/nix_client/windows/flutter/ephemeral/
 # Go
 services/nix_relay/bin/
 services/nix_relay/dist/
+dist/
+*.apk
+*.tar.gz
 *.exe
 *.exe~
 *.dll
