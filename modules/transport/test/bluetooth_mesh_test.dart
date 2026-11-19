@@ -97,7 +97,7 @@ void main() {
         rssi: -70,
       );
 
-      await Future.delayed(const Duration(milliseconds: 50));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(discoveredPeers.length, equals(1));
       expect(discoveredPeers.first.peerPublicCardId, equals('NX-CHARLIE-999'));
 
