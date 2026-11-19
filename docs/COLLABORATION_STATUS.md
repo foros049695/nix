@@ -1,10 +1,10 @@
 # 📋 STATUS DE COLABORAÇÃO TÉCNICA E AUDITORIA DE PRs / ISSUES
 ## Projeto Nix — Governança e Relatório Contínuo de Integração
 
-**Data da verificação:** 19 de Novembro de 2026 (01:05 BRT)  
+**Data da verificação:** 19 de Novembro de 2026  
 **Commit base anterior (`origin/main` antes dos merges):** `742533cadd3ef9a2468597fbafd74f33153d2295`  
-**Commits de integração na `main` local:** `8618b79` a `1799597` (+ commits pós-merge de #11, #12 e documentação)  
-**Auditor:** Antigravity (Google DeepMind) sob autorização explícita do Proprietário  
+**Commits principais na `main`:** `8618b79`..`1799597` (`#1`–`#10`), `1dea5f3` (Fases 0–9), `807e93b`..`f2effa4` (`#13`–`#18`), `1b21f65`  
+**Escopo:** Auditoria Técnica de Contribuições, CI e Integração  
 **Contribuidores ativos:** @foros049695 (Proprietário), @gabrielmaialva33 (Colaborador)
 
 ---
@@ -14,9 +14,9 @@
 | Categoria | Quantidade | Observações |
 |---|:---:|---|
 | **Pull Requests Abertos** | 0 | PRs #1 a #18 totalmente integrados na branch `main` (últimos merges: `#13`–`#18`) |
-| **Pull Requests Integrados** | 16 (do #1 ao #10 + #13 ao #18; sem #11/#12 pois eram Issues) | PRs `#1`–`#10` + implementação Fases 0–9 (`1dea5f3`) + PRs `#13`–`#18` (`ab308e7` / `f2effa4`) |
+| **Pull Requests Integrados** | 16 (do #1 ao #10 + #13 ao #18; sem #11/#12 pois eram Issues) | PRs `#1`–`#10` + implementação Fases 0–9 (`1dea5f3`) + PRs `#13`–`#18` (`807e93b`–`f2effa4`) |
 | **Issues Rastreáveis** | 2 resolvidas e encerradas | **Issue #11** (TLS real sobre SOCKS5, fechada em `completed`) · **Issue #12** (PVR ativo, fechada) |
-| **GitHub Actions Remoto** | ✅ GREEN em `1dea5f3` (Run `44463390129`) | Todos os 5 jobs verdes em `1dea5f3`; nova rodada automática após push de `#13`–`#18` |
+| **GitHub Actions Remoto** | ✅ GREEN em `1b21f65` (Run `44464220218`) | Todos os 5 jobs verdes (`Privacy`, `Flutter Client`, `Relay Go`, `Transport`, `Core Crypto`) |
 | **Suites Locais Combinadas** | ✅ 100% GREEN | Privacy gate (com #13 I-A/I-S), Relay Go (`vet` + `test -race` com PG 17 Docker & Onion v3 Tor `0.4.9.15`), Crypto (`10/10`), Transport (`22/22`), Client (`68/68` com SQLCipher `4.10.0` e `$HOME` isolado) |
 
 ---
