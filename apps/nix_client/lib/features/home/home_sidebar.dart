@@ -262,41 +262,44 @@ class HomeSidebar extends StatelessWidget {
             ? Border.all(color: accent.withValues(alpha: 0.5), width: 1.0)
             : null,
       ),
-      child: ListTile(
-        dense: true,
-        visualDensity: const VisualDensity(vertical: -3),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-        onTap: onTap,
-        leading: Icon(
-          icon,
-          size: 17,
-          color: isSelected ? accentText : NixColors.iconSecondary,
-        ),
-        title: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? NixColors.textPrimary : NixColors.textSecondary,
-            fontSize: 12.5,
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+      child: Material(
+        type: MaterialType.transparency,
+        child: ListTile(
+          dense: true,
+          visualDensity: const VisualDensity(vertical: -3),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+          onTap: onTap,
+          leading: Icon(
+            icon,
+            size: 17,
+            color: isSelected ? accentText : NixColors.iconSecondary,
           ),
-        ),
-        trailing: badgeCount > 0
-            ? Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: accent,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  '$badgeCount',
-                  style: TextStyle(
-                    color: context.onAccentColor,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
+          title: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? NixColors.textPrimary : NixColors.textSecondary,
+              fontSize: 12.5,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+          trailing: badgeCount > 0
+              ? Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: accent,
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                ),
-              )
-            : null,
+                  child: Text(
+                    '$badgeCount',
+                    style: TextStyle(
+                      color: context.onAccentColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                )
+              : null,
+        ),
       ),
     );
   }
@@ -510,111 +513,114 @@ class _DirectChatItemTile extends StatelessWidget {
           borderRadius: NixTokens.borderSm,
           border: isSelected ? Border.all(color: accent.withValues(alpha: 0.5)) : null,
         ),
-        child: ListTile(
-          dense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          onTap: onTap,
-          leading: dm.isSavedMessages
-              ? Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: accent,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.bookmark_rounded, size: 20, color: context.onAccentColor),
-                )
-              : Stack(
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: NixColors.surfaceCard,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: NixColors.surfaceBorderStrong),
-                      ),
-                      child: Center(
-                        child: Text(
-                          dm.peerName.isNotEmpty ? dm.peerName[0].toUpperCase() : '?',
-                          style: TextStyle(
-                            color: NixColors.textPrimary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
+        child: Material(
+          type: MaterialType.transparency,
+          child: ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            onTap: onTap,
+            leading: dm.isSavedMessages
+                ? Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.bookmark_rounded, size: 20, color: context.onAccentColor),
+                  )
+                : Stack(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: NixColors.surfaceCard,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: NixColors.surfaceBorderStrong),
+                        ),
+                        child: Center(
+                          child: Text(
+                            dm.peerName.isNotEmpty ? dm.peerName[0].toUpperCase() : '?',
+                            style: TextStyle(
+                              color: NixColors.textPrimary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: _getTrustColor(dm.trustLevel),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: NixColors.surfaceSidebar, width: 1.5),
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: _getTrustColor(dm.trustLevel),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: NixColors.surfaceSidebar, width: 1.5),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  dm.peerName,
-                  style: TextStyle(
-                    color: NixColors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: isSelected || dm.isSavedMessages ? FontWeight.w700 : FontWeight.w600,
+                    ],
                   ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (dm.isMuted)
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: Icon(Icons.volume_off_rounded, size: 12, color: NixColors.textMuted),
-                ),
-              if (timeStr.isNotEmpty)
-                Text(
-                  timeStr,
-                  style: TextStyle(color: NixColors.textMuted, fontSize: 10),
-                ),
-            ],
-          ),
-          subtitle: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  dm.lastMessagePreview,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
-                ),
-              ),
-              if (dm.isPinned && dm.unreadCount == 0)
-                Icon(Icons.push_pin_rounded, size: 12, color: NixColors.textMuted),
-              if (dm.unreadCount > 0)
-                Container(
-                  margin: const EdgeInsets.only(left: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: dm.isMuted ? NixColors.surfaceElevatedHigh : accent,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+            title: Row(
+              children: [
+                Expanded(
                   child: Text(
-                    '${dm.unreadCount}',
+                    dm.peerName,
                     style: TextStyle(
-                      color: dm.isMuted ? NixColors.textSecondary : context.onAccentColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                      color: NixColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: isSelected || dm.isSavedMessages ? FontWeight.w700 : FontWeight.w600,
                     ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-            ],
+                if (dm.isMuted)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Icon(Icons.volume_off_rounded, size: 12, color: NixColors.textMuted),
+                  ),
+                if (timeStr.isNotEmpty)
+                  Text(
+                    timeStr,
+                    style: TextStyle(color: NixColors.textMuted, fontSize: 10),
+                  ),
+              ],
+            ),
+            subtitle: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    dm.lastMessagePreview,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
+                  ),
+                ),
+                if (dm.isPinned && dm.unreadCount == 0)
+                  Icon(Icons.push_pin_rounded, size: 12, color: NixColors.textMuted),
+                if (dm.unreadCount > 0)
+                  Container(
+                    margin: const EdgeInsets.only(left: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: dm.isMuted ? NixColors.surfaceElevatedHigh : accent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${dm.unreadCount}',
+                      style: TextStyle(
+                        color: dm.isMuted ? NixColors.textSecondary : context.onAccentColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

@@ -190,7 +190,6 @@ void main() {
     late Directory tempDir;
     late LocalDatabase db;
     late IdentityRepository idRepo;
-    late ContactRepository contactRepo;
     late ConversationRepository convRepo;
     late MessageRepository msgRepo;
     late OutboxRepository outboxRepo;
@@ -208,7 +207,6 @@ void main() {
       );
 
       idRepo = IdentityRepository(db);
-      contactRepo = ContactRepository(db);
       convRepo = ConversationRepository(db);
       msgRepo = MessageRepository(db);
       outboxRepo = OutboxRepository(db);
