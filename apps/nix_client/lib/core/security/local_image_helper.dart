@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 /// Utilitário local para seleção, validação e remoção de metadados (EXIF/chunks) de imagens
-/// (PNG, JPEG, WebP) para Avatar e Capas Culturais do Card ID.
+/// (PNG, JPEG, WebP, GIF) para Avatar e Capas Culturais do Card ID.
 class LocalImageHelper {
   static const List<String> supportedExtensions = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
   static const List<String> supportedMediaExtensions = [
@@ -116,14 +116,19 @@ class LocalImageHelper {
     return null;
   }
 
-  /// Copia a imagem para área isolada local removendo metadados JPEG (APP1-APP15/COM) e PNG (eXIf/tEXt/iTXt/zTXt).
+  /// Copia a imagem para área isolada após sanitização; recusa contêiner malformado.
   static Future<String?> sanitizeAndStoreImage(String sourcePath) async {
     final file = File(sourcePath.trim());
     if (!await file.exists()) return null;
     if (!isSupportedExtension(sourcePath)) return null;
 
     final raw = await file.readAsBytes();
-    final cleaned = stripMetadataBytes(raw);
+    final Uint8List cleaned;
+    try {
+      cleaned = stripMetadataBytes(raw);
+    } on FormatException {
+      return null;
+    }
 
     final home = Platform.environment['HOME'] ?? '/tmp';
     final cacheDir = Directory('$home/.local/share/nix/sanitized_media');
@@ -136,78 +141,211 @@ class LocalImageHelper {
     return outPath;
   }
 
-  /// Remove segmentos EXIF/XMP/IPTC de JPEG e chunks textuais/EXIF de PNG em memória pura.
+  /// Remove metadados dos contêineres suportados sem decodificar pixels.
+  /// Estruturas truncadas/desconhecidas são recusadas, nunca copiadas em aberto.
   static Uint8List stripMetadataBytes(Uint8List data) {
-    if (data.length < 12) return data;
+    if (_matches(data, 0, [0xff, 0xd8])) return _stripJpeg(data);
+    if (_matches(data, 0, [137, 80, 78, 71, 13, 10, 26, 10])) {
+      return _stripPng(data);
+    }
+    if (_matches(data, 0, 'RIFF'.codeUnits) &&
+        _matches(data, 8, 'WEBP'.codeUnits)) {
+      return _stripWebp(data);
+    }
+    if (_matches(data, 0, 'GIF87a'.codeUnits) ||
+        _matches(data, 0, 'GIF89a'.codeUnits)) {
+      return _stripGif(data);
+    }
+    throw const FormatException('Formato de imagem inválido ou não suportado.');
+  }
 
-    // JPEG: SOI (FF D8) ... remove APP1..APP15 (FF E1..FF EF) e COM (FF FE)
-    if (data[0] == 0xFF && data[1] == 0xD8) {
-      final out = BytesBuilder();
-      out.add([0xFF, 0xD8]);
-      int i = 2;
-      while (i + 1 < data.length) {
-        if (data[i] != 0xFF) {
-          out.add(data.sublist(i));
+  static bool _matches(Uint8List data, int offset, List<int> expected) {
+    if (offset + expected.length > data.length) return false;
+    for (var i = 0; i < expected.length; i++) {
+      if (data[offset + i] != expected[i]) return false;
+    }
+    return true;
+  }
+
+  static void _require(bool condition) {
+    if (!condition) {
+      throw const FormatException('Contêiner de imagem malformado.');
+    }
+  }
+
+  static Uint8List _stripJpeg(Uint8List data) {
+    final out = BytesBuilder()..add([0xff, 0xd8]);
+    var i = 2;
+    var inScan = false;
+    while (i < data.length) {
+      if (inScan) {
+        final start = i;
+        // FF00 e restart markers pertencem aos dados comprimidos. Outros
+        // marcadores encerram o scan, inclusive em JPEG progressivo.
+        while (i < data.length) {
+          if (data[i] != 0xff) {
+            i++;
+            continue;
+          }
+          var next = i + 1;
+          while (next < data.length && data[next] == 0xff) {
+            next++;
+          }
+          _require(next < data.length);
+          final marker = data[next];
+          if (marker == 0 || (marker >= 0xd0 && marker <= 0xd7)) {
+            i = next + 1;
+            continue;
+          }
           break;
         }
-        final marker = data[i + 1];
-        if (marker == 0xDA || marker == 0xD9) {
-          // SOS (dados da imagem) ou EOI: copia restante intacto
-          out.add(data.sublist(i));
-          break;
-        }
-        if (marker == 0x00 || (marker >= 0xD0 && marker <= 0xD7)) {
-          out.add([data[i], marker]);
-          i += 2;
+        out.add(data.sublist(start, i));
+        inScan = false;
+      }
+      _require(i < data.length && data[i] == 0xff);
+      final start = i;
+      while (i < data.length && data[i] == 0xff) {
+        i++;
+      }
+      _require(i < data.length);
+      final marker = data[i++];
+      if (marker == 0xd9) {
+        out.add(data.sublist(start, i));
+        return out.toBytes();
+      }
+      _require(
+          marker != 0 && marker != 0xd8 && !(marker >= 0xd0 && marker <= 0xd7));
+      if (marker == 0x01) {
+        // TEM não possui campo de comprimento.
+        out.add(data.sublist(start, i));
+        continue;
+      }
+      _require(i + 2 <= data.length);
+      final length = (data[i] << 8) | data[i + 1];
+      _require(length >= 2 && i + length <= data.length);
+      final end = i + length;
+      if (!((marker >= 0xe1 && marker <= 0xef) || marker == 0xfe)) {
+        out.add(data.sublist(start, end));
+      }
+      inScan = marker == 0xda;
+      i = end;
+    }
+    throw const FormatException('JPEG sem EOI.');
+  }
+
+  static Uint8List _stripPng(Uint8List data) {
+    final out = BytesBuilder()..add(data.sublist(0, 8));
+    final view = ByteData.sublistView(data);
+    var i = 8;
+    // iCCP também permite nomes e descrições identificadoras do perfil.
+    const stripTypes = {'eXIf', 'tEXt', 'zTXt', 'iTXt', 'tIME', 'iCCP'};
+    while (i < data.length) {
+      _require(i + 12 <= data.length);
+      final length = view.getUint32(i, Endian.big);
+      final end = i + 12 + length;
+      _require(end <= data.length);
+      final type = String.fromCharCodes(data.sublist(i + 4, i + 8));
+      _require(RegExp(r'^[a-zA-Z]{4}$').hasMatch(type));
+      if (i == 8) _require(type == 'IHDR' && length == 13);
+      if (type == 'IEND') _require(length == 0);
+      if (!stripTypes.contains(type)) out.add(data.sublist(i, end));
+      if (type == 'IEND') return out.toBytes();
+      i = end;
+    }
+    throw const FormatException('PNG sem IEND.');
+  }
+
+  static Uint8List _stripWebp(Uint8List data) {
+    final view = ByteData.sublistView(data);
+    final end = view.getUint32(4, Endian.little) + 8;
+    _require(end >= 12 && end <= data.length);
+    final chunks = BytesBuilder();
+    var i = 12;
+    while (i < end) {
+      _require(i + 8 <= end);
+      final type = String.fromCharCodes(data.sublist(i, i + 4));
+      final length = view.getUint32(i + 4, Endian.little);
+      final next = i + 8 + length + (length & 1);
+      _require(next <= end);
+      if (length.isOdd) _require(data[next - 1] == 0);
+      if (type == 'VP8X') {
+        _require(length == 10);
+        final chunk = data.sublist(i, next);
+        chunk[8] &= ~0x0c; // Limpa somente flags EXIF (0x08) e XMP (0x04).
+        chunks.add(chunk);
+      } else if (type != 'EXIF' && type != 'XMP ') {
+        chunks.add(data.sublist(i, next));
+      }
+      i = next;
+    }
+    final body = chunks.takeBytes();
+    _require(body.isNotEmpty);
+    final header = data.sublist(0, 12);
+    ByteData.sublistView(header).setUint32(4, body.length + 4, Endian.little);
+    return (BytesBuilder()
+          ..add(header)
+          ..add(body))
+        .toBytes();
+  }
+
+  static Uint8List _stripGif(Uint8List data) {
+    _require(data.length >= 13);
+    var i = 13;
+    if (data[10] & 0x80 != 0) {
+      i += 3 * (1 << ((data[10] & 7) + 1));
+    }
+    _require(i <= data.length);
+    final out = BytesBuilder()..add(data.sublist(0, i));
+    while (i < data.length) {
+      final start = i;
+      final block = data[i++];
+      if (block == 0x3b) {
+        out.add([0x3b]);
+        return out.toBytes();
+      }
+      var strip = false;
+      if (block == 0x2c) {
+        _require(i + 9 <= data.length);
+        final packed = data[i + 8];
+        i += 9;
+        if (packed & 0x80 != 0) i += 3 * (1 << ((packed & 7) + 1));
+        _require(i < data.length && data[i] >= 2 && data[i] <= 8);
+        i++; // Tamanho mínimo de código LZW.
+      } else if (block == 0x21) {
+        _require(i + 1 < data.length);
+        final label = data[i++];
+        if (label == 0xf9) {
+          _require(data[i] == 4 && i + 6 <= data.length && data[i + 5] == 0);
+          i += 6;
+          out.add(data.sublist(start, i));
           continue;
+        } else if (label == 0xfe) {
+          strip = true;
+        } else if (label == 0xff || label == 0x01) {
+          final headerSize = label == 0xff ? 11 : 12;
+          _require(data[i] == headerSize && i + 1 + headerSize <= data.length);
+          if (label == 0xff) {
+            // Só extensões de controle de animação podem sobreviver.
+            strip = !_matches(data, i + 1, 'NETSCAPE2.0'.codeUnits) &&
+                !_matches(data, i + 1, 'ANIMEXTS1.0'.codeUnits);
+          }
+          i += 1 + headerSize;
+        } else {
+          throw const FormatException('Extensão GIF desconhecida.');
         }
-        if (i + 3 >= data.length) {
-          out.add(data.sublist(i));
-          break;
-        }
-        final segLen = (data[i + 2] << 8) | data[i + 3];
-        final endIdx = i + 2 + segLen;
-        if (segLen < 2 || endIdx > data.length) {
-          out.add(data.sublist(i));
-          break;
-        }
-        final isSensitiveMeta = (marker >= 0xE1 && marker <= 0xEF) || marker == 0xFE;
-        if (!isSensitiveMeta) {
-          out.add(data.sublist(i, endIdx));
-        }
-        i = endIdx;
+      } else {
+        throw const FormatException('Bloco GIF inválido.');
       }
-      return out.toBytes();
-    }
-
-    // PNG: assinatura 89 50 4E 47 0D 0A 1A 0A -> remove eXIf, tEXt, zTXt, iTXt, tIME
-    if (data[0] == 0x89 &&
-        data[1] == 0x50 &&
-        data[2] == 0x4E &&
-        data[3] == 0x47) {
-      final out = BytesBuilder();
-      out.add(data.sublist(0, 8));
-      int i = 8;
-      const stripTypes = {'eXIf', 'tEXt', 'zTXt', 'iTXt', 'tIME'};
-      while (i + 12 <= data.length) {
-        final len = (data[i] << 24) |
-            (data[i + 1] << 16) |
-            (data[i + 2] << 8) |
-            data[i + 3];
-        final type = String.fromCharCodes(data.sublist(i + 4, i + 8));
-        final totalLen = 12 + len;
-        if (len < 0 || i + totalLen > data.length) {
-          out.add(data.sublist(i));
-          break;
-        }
-        if (!stripTypes.contains(type)) {
-          out.add(data.sublist(i, i + totalLen));
-        }
-        i += totalLen;
+      // Dados de imagem, comentários e aplicações usam sub-blocos terminados em 0.
+      while (true) {
+        _require(i < data.length);
+        final length = data[i++];
+        _require(i + length <= data.length);
+        i += length;
+        if (length == 0) break;
       }
-      return out.toBytes();
+      if (!strip) out.add(data.sublist(start, i));
     }
-
-    return data;
+    throw const FormatException('GIF sem trailer.');
   }
 }
