@@ -443,55 +443,58 @@ class _ChannelItem extends StatelessWidget {
               ? Border.all(color: accent.withValues(alpha: 0.45), width: 1)
               : null,
         ),
-        child: ListTile(
-          dense: true,
-          visualDensity: const VisualDensity(vertical: -2, horizontal: -4),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-          onTap: onTap,
-          leading: Icon(
-            channel.icon,
-            size: 17,
-            color: isSelected ? accentText : NixColors.iconMuted,
-          ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  channel.name,
-                  style: TextStyle(
-                    color: isSelected ? NixColors.textPrimary : NixColors.textSecondary,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    fontSize: 13,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (channel.isMuted)
-                Icon(Icons.volume_off_rounded, size: 12, color: NixColors.textMuted),
-              if (channel.isPinned)
-                Padding(
-                  padding: const EdgeInsets.only(left: 3),
-                  child: Icon(Icons.push_pin_rounded, size: 12, color: NixColors.textMuted),
-                ),
-            ],
-          ),
-          trailing: channel.unreadCount > 0
-              ? Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: channel.isMuted ? NixColors.surfaceElevatedHigh : accent,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+        child: Material(
+          type: MaterialType.transparency,
+          child: ListTile(
+            dense: true,
+            visualDensity: const VisualDensity(vertical: -2, horizontal: -4),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+            onTap: onTap,
+            leading: Icon(
+              channel.icon,
+              size: 17,
+              color: isSelected ? accentText : NixColors.iconMuted,
+            ),
+            title: Row(
+              children: [
+                Expanded(
                   child: Text(
-                    '${channel.unreadCount}',
+                    channel.name,
                     style: TextStyle(
-                      color: channel.isMuted ? NixColors.textSecondary : context.onAccentColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                      color: isSelected ? NixColors.textPrimary : NixColors.textSecondary,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      fontSize: 13,
                     ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                )
-              : null,
+                ),
+                if (channel.isMuted)
+                  Icon(Icons.volume_off_rounded, size: 12, color: NixColors.textMuted),
+                if (channel.isPinned)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 3),
+                    child: Icon(Icons.push_pin_rounded, size: 12, color: NixColors.textMuted),
+                  ),
+              ],
+            ),
+            trailing: channel.unreadCount > 0
+                ? Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: channel.isMuted ? NixColors.surfaceElevatedHigh : accent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${channel.unreadCount}',
+                      style: TextStyle(
+                        color: channel.isMuted ? NixColors.textSecondary : context.onAccentColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  )
+                : null,
+          ),
         ),
       ),
     );

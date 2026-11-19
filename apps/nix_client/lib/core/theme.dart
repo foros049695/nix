@@ -122,7 +122,7 @@ class NixTheme {
         ),
         iconTheme: IconThemeData(color: scheme.iconSecondary, size: 20),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: scheme.surfaceCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
@@ -130,7 +130,7 @@ class NixTheme {
           side: BorderSide(color: scheme.surfaceBorder, width: 1),
         ),
       ),
-      dialogTheme: DialogTheme(
+      dialogTheme: DialogThemeData(
         backgroundColor: scheme.surfaceCard,
         elevation: 20,
         shape: RoundedRectangleBorder(

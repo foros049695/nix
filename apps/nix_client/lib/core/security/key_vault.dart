@@ -232,7 +232,6 @@ class KeyVault {
     }
 
     final path = customPath ?? getDefaultBootstrapPath();
-    final file = File(path);
 
     final newSalt = PassphraseKdf.generateSalt(saltLength);
     const kdf = PassphraseKdf.strong();

@@ -404,23 +404,26 @@ class _SettingsCenterState extends State<SettingsCenter> {
         borderRadius: NixTokens.borderSm,
         border: isSelected ? Border.all(color: NixColors.surfaceBorderStrong) : null,
       ),
-      child: ListTile(
-        dense: true,
-        visualDensity: const VisualDensity(vertical: -2),
-        leading: Icon(
-          icon,
-          size: 18,
-          color: isSelected ? NixColors.textPrimary : NixColors.iconSecondary,
-        ),
-        title: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? NixColors.textPrimary : NixColors.textSecondary,
-            fontSize: 12.5,
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+      child: Material(
+        type: MaterialType.transparency,
+        child: ListTile(
+          dense: true,
+          visualDensity: const VisualDensity(vertical: -2),
+          leading: Icon(
+            icon,
+            size: 18,
+            color: isSelected ? NixColors.textPrimary : NixColors.iconSecondary,
           ),
+          title: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? NixColors.textPrimary : NixColors.textSecondary,
+              fontSize: 12.5,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+          onTap: () => nixState.selectSettingsCategory(category),
         ),
-        onTap: () => nixState.selectSettingsCategory(category),
       ),
     );
   }
@@ -1034,15 +1037,18 @@ class _SettingsCenterState extends State<SettingsCenter> {
                 ],
               ),
               const SizedBox(height: 8),
-              ...s.blockedUserIds.map((id) => ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.block, size: 16, color: NixColors.textMuted),
-                    title: Text(id, style: NixTokens.monoCode()),
-                    trailing: TextButton(
-                      onPressed: () => state.unblockUser(id),
-                      child: Text('Desbloquear',
-                          style: TextStyle(color: NixColors.textSecondary, fontSize: 11)),
+              ...s.blockedUserIds.map((id) => Material(
+                    type: MaterialType.transparency,
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.block, size: 16, color: NixColors.textMuted),
+                      title: Text(id, style: NixTokens.monoCode()),
+                      trailing: TextButton(
+                        onPressed: () => state.unblockUser(id),
+                        child: Text('Desbloquear',
+                            style: TextStyle(color: NixColors.textSecondary, fontSize: 11)),
+                      ),
                     ),
                   )),
             ],
