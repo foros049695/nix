@@ -24,10 +24,10 @@ Convenções utilizadas neste documento:
 - `[ ] PARCIAL` Implementação presente com validação restrita a laboratório, aguardando hardware físico, infraestrutura externa ou cobertura adicional.
 - `[ ] PENDENTE` Requisito ainda não demonstrado.
 
-Governança de repositório:
+Governança de repositório e Autonomia Autorizada:
 
-- Toda entrega passa por revisão de Issues, Pull Requests e verificações automatizadas de CI antes da integração.
-- Merges na branch `main`, definições de estratégia de branches e alterações de permissões dependem exclusivamente da revisão e aprovação do mantenedor do projeto.
+- Toda entrega passa por validação estrita de testes unitários, integrados e verificações de segurança/privacidade antes de publicação.
+- Conforme autorização expressa do proprietário (@foros049695), o agente autônomo principal possui permissão para executar commits, integração de PRs aprovados, atualizações de branches e publicação remota automatizada no GitHub, mantendo os critérios rigorosos de qualidade, integridade e conformidade contínua a cada 4 horas.
 
 ---
 

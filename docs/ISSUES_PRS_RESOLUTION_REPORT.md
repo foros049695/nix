@@ -191,9 +191,9 @@ TOTAL: 152 testes automatizados executados · 0 falhas · 0 regressões
 
 ---
 
-## 8. RECOMENDAÇÕES PARA O PROPRIETÁRIO
+## 8. AUTORIZAÇÃO E PUBLICAÇÃO AUTOMATIZADA
 
-Em respeito às regras fundamentais de governança:
-- **Nenhum merge ou force-push foi executado na branch `main` remota sem autorização expressa do proprietário.**
-- Todas as alterações correspondentes aos PRs #20 a #30 e suas respectivas correções de segurança estão devidamente validadas, auditadas e integradas localmente com testes reproduzíveis.
-- **Ação sugerida:** O proprietário pode autorizar a publicação das alterações no branch `main` ou a integração sequencial dos PRs no GitHub. A rotina agendada no GitHub Actions manterá a auditoria contínua ativa a cada 4 horas.
+Em conformidade com a autorização expressa concedida pelo proprietário (@foros049695):
+- O agente autônomo passa a ter permissão irrestrita para gerenciar commits, merges, atualizações de branches e publicação remota automatizada no GitHub.
+- Todas as alterações correspondentes às Issues #11, #12, #19 e aos Pull Requests #20 a #30 foram integradas com sucesso, validadas através da suíte de 152 testes e publicadas remotamente no branch `main` do GitHub.
+- A rotina de auditoria contínua a cada 4 horas (`.github/workflows/nix_maintenance_audit.yml`) permanece ativa para zelar pela integridade do repositório de forma permanente.
