@@ -8,6 +8,7 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../core/theme/nix_palette.dart';
 import '../../state/nix_state.dart';
+import '../dialogs/sovereign_onboarding_dialog.dart';
 
 /// Central de Configurações Modular (V2 — Aparência Living AMOLED, Privacidade, Dispositivos e Módulos).
 class SettingsCenter extends StatefulWidget {
@@ -1338,6 +1339,138 @@ class _SettingsCenterState extends State<SettingsCenter> {
           ),
         ),
         const SizedBox(height: 16),
+        // DAEMON TOR EMBUTIDO (ZERO-CONFIGURATION)
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: NixColors.surfaceCard,
+            borderRadius: NixTokens.borderSm,
+            border: Border.all(color: NixColors.surfaceBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.shield_outlined, color: NixColors.textPrimary, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        'DAEMON TOR EMBUTIDO (SEM ORBOT)',
+                        style: TextStyle(color: NixColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: NixColors.textPrimary,
+                      side: BorderSide(color: NixColors.surfaceBorderStrong),
+                    ),
+                    onPressed: state.isTorRunning ? null : () => state.startEmbeddedTor(),
+                    icon: Icon(state.isTorRunning ? Icons.check_circle_rounded : Icons.play_arrow_rounded,
+                        size: 14, color: state.isTorRunning ? NixColors.accentYellow : NixColors.textPrimary),
+                    label: Text(state.isTorRunning ? 'Ativo' : 'Iniciar Tor Embutido', style: const TextStyle(fontSize: 11)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Executa a infraestrutura Tor embutida diretamente no app (Desktop e Android), sem necessidade de instalar o Orbot ou configurar portas manualmente. O circuito opera em modo estrito fail-closed.',
+                style: TextStyle(color: NixColors.textMuted, fontSize: 11.5, height: 1.35),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: NixColors.background,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: NixColors.surfaceBorder),
+                ),
+                child: Text(
+                  'Estado: ${state.torDiagnosticDetail}',
+                  style: NixTokens.monoCode(size: 11, color: state.isTorRunning ? NixColors.accentYellow : NixColors.textSecondary),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const Key('open_sovereign_onboarding_button'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: NixColors.accentYellow,
+                    padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
+                  ),
+                  icon: const Icon(Icons.verified_user_outlined, size: 16),
+                  label: const Text('Abrir Assistente de Onboarding Soberano & Seed no Papel',
+                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                  onPressed: () => SovereignOnboardingDialog.show(context, state),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // MALHA PEER-TO-PEER POR PROXIMIDADE BLUETOOTH (ESTILO BRIAR)
+        Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: NixColors.surfaceCard,
+            borderRadius: NixTokens.borderSm,
+            border: Border.all(color: NixColors.surfaceBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.bluetooth_searching_rounded, color: NixColors.textPrimary, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        'MALHA BLUETOOTH OFFLINE (MODO BRIAR BTP)',
+                        style: TextStyle(color: NixColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                  Switch(
+                    key: const Key('bluetooth_mesh_switch'),
+                    value: state.isBluetoothMeshEnabled,
+                    onChanged: (v) => state.setBluetoothMeshEnabled(v),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Permite comunicação e entrega de envelopes cifrados diretamente pelo ar entre pares do Nix próximos (10 a 30m), funcionando totalmente offline sem internet, dados móveis ou rede Tor.',
+                style: TextStyle(color: NixColors.textMuted, fontSize: 11.5, height: 1.35),
+              ),
+              if (state.isBluetoothMeshEnabled) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: NixColors.background,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: NixColors.surfaceBorder),
+                  ),
+                  child: Text(
+                    'Pares em alcance: ${state.bluetoothMesh.activePeers.length} nó(s) ativos · UUID: 0000ff01-0000-1000-8000-00805f9b34fb',
+                    style: NixTokens.monoCode(size: 11, color: NixColors.accentYellow),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+
         Text('CONECTORES EXTERNOS (SANDBOX ISOLADO)', style: NixTokens.labelUppercase()),
         const SizedBox(height: 8),
         ...s.connectors.map((c) => Container(
@@ -1667,7 +1800,106 @@ class _SettingsCenterState extends State<SettingsCenter> {
           description:
               'Acordo de chaves resistente a adversários quânticos com prevenção de downgrade na camada de sessão.',
         ),
+        const SizedBox(height: 24),
+        // BOTÃO DE PÂNICO & DESTRUIÇÃO ANTI-FORENSE (ESTILO BLEACHBIT)
+        _buildPanicButtonSection(context, state),
       ],
+    );
+  }
+
+  Widget _buildPanicButtonSection(BuildContext context, NixState state) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E0E0E),
+        borderRadius: NixTokens.borderSm,
+        border: Border.all(color: const Color(0xFF8B0000), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.warning_amber_rounded, color: Color(0xFFFF4D4D), size: 20),
+              SizedBox(width: 8),
+              Text(
+                'BOTÃO DE PÂNICO & APAGAMENTO ANTI-FORENSE',
+                style: TextStyle(
+                  color: Color(0xFFFF4D4D),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Sobrescreve destrutivamente em 3 passagens (CSPRNG, padrão 0x55 e zeros 0x00) todo o banco de dados SQLCipher, logs de transação WAL/SHM, preferências e cofre de chaves (estilo BleachBit / DoD 5220.22-M), zerando a memória RAM e apagando a conta sem deixar rastros.',
+            style: TextStyle(color: Color(0xFFE0B0B0), fontSize: 11.5, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          ElevatedButton.icon(
+            key: const Key('panic_wipe_button'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF8B0000),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+            icon: const Icon(Icons.delete_forever_rounded, size: 18),
+            label: const Text(
+              'DESTRUIR CONTA E DADOS LOCAIS AGORA (PÂNICO)',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+            ),
+            onPressed: () => _showPanicConfirmationDialog(context, state),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPanicConfirmationDialog(BuildContext context, NixState state) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: NixColors.surfaceElevatedHigh,
+        title: Row(
+          children: const [
+            Icon(Icons.dangerous_rounded, color: Color(0xFFFF4D4D), size: 22),
+            SizedBox(width: 8),
+            Text('CONFIRMAR DESTRUIÇÃO TOTAL', style: TextStyle(color: Color(0xFFFF4D4D), fontSize: 15)),
+          ],
+        ),
+        content: const Text(
+          'Esta operação é irreversível. Todos os dados serão sobrescritos com ruído aleatório em 3 passagens (estilo BleachBit) e não poderão ser recuperados nem por análise forense de disco.\n\nDeseja prosseguir com o pânico?',
+          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            child: const Text('Cancelar', style: TextStyle(color: Colors.white60)),
+            onPressed: () => Navigator.of(ctx).pop(),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF8B0000)),
+            child: const Text('SIM, DESTRUIR TUDO', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              final report = await state.panicWipeAllData();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: const Color(0xFF8B0000),
+                    content: Text(
+                      'Apagamento anti-forense concluído: ${report.filesOverwritten} arquivos sobrescritos (${(report.totalBytesWiped / 1024).toStringAsFixed(1)} KB limpos).',
+                    ),
+                  ),
+                );
+              }
+            },
+          ),
+        ],
+      ),
     );
   }
 

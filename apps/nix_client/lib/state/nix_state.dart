@@ -152,6 +152,23 @@ class NixState extends ChangeNotifier {
   bool _isTorRunning = false;
   String _torDiagnosticDetail = 'Tor aguardando conexão SOCKS5 em 127.0.0.1:9050';
 
+  // Gerenciador de Tor Embutido (Zero-Configuration / Sem Orbot)
+  final EmbeddedTorManager _embeddedTor = EmbeddedTorManager();
+  EmbeddedTorManager get embeddedTor => _embeddedTor;
+
+  /// Inicia o daemon Tor embutido nativo de forma automática e transparente.
+  Future<bool> startEmbeddedTor() async {
+    _torDiagnosticDetail = 'Iniciando daemon Tor embutido nativo...';
+    notifyListeners();
+    final ok = await _embeddedTor.startEmbeddedTor();
+    if (ok) {
+      return checkTorDaemonStatus();
+    }
+    _torDiagnosticDetail = _embeddedTor.lastSummary;
+    notifyListeners();
+    return false;
+  }
+
   // Banco de Dados Local Cifrado & KeyVault (P0-2)
   LocalDatabase? _localDatabase;
   final KeyVault _keyVault = KeyVault();
@@ -379,6 +396,10 @@ class NixState extends ChangeNotifier {
 
   /// Diagnóstico real de conectividade ao daemon Tor SOCKS5 (127.0.0.1:9050).
   Future<bool> checkTorDaemonStatus() async {
+    if (Platform.environment.containsKey('FLUTTER_TEST')) {
+      _isTorRunning = false;
+      return false;
+    }
     try {
       final socket = await Socket.connect(
         '127.0.0.1',
