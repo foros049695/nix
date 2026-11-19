@@ -61,6 +61,8 @@ func NewMux(cfg buffer.Config, store *buffer.BlindMailboxStore, pruner *buffer.A
 				env, err := store.Store(mailboxID, req.PayloadB64, req.TTLSeconds, quotaToken, pruner.State(), time.Now().UTC())
 				if err != nil {
 					switch {
+					case errors.Is(err, buffer.ErrPersistence):
+						http.Error(w, buffer.ErrPersistence.Error(), http.StatusInternalServerError)
 					case errors.Is(err, buffer.ErrInvalidMailbox):
 						http.Error(w, err.Error(), http.StatusBadRequest)
 					case errors.Is(err, buffer.ErrPayloadTooLarge):
@@ -92,7 +94,7 @@ func NewMux(cfg buffer.Config, store *buffer.BlindMailboxStore, pruner *buffer.A
 
 				envs, err := store.Fetch(mailboxID, time.Now().UTC())
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
+					writeStoreError(w, err)
 					return
 				}
 				writeJSON(w, http.StatusOK, map[string]any{"envelopes": envs})
@@ -124,7 +126,7 @@ func NewMux(cfg buffer.Config, store *buffer.BlindMailboxStore, pruner *buffer.A
 			}
 			deleted, err := store.Ack(mailboxID, req.IDs)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeStoreError(w, err)
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
@@ -167,6 +169,14 @@ func parseBearerToken(r *http.Request) (string, error) {
 		return "", errors.New("esquema de autorização inválido; esperado Bearer <token>")
 	}
 	return strings.TrimSpace(parts[1]), nil
+}
+
+func writeStoreError(w http.ResponseWriter, err error) {
+	if errors.Is(err, buffer.ErrPersistence) {
+		http.Error(w, buffer.ErrPersistence.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusBadRequest)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
