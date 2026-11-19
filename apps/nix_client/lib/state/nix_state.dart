@@ -896,6 +896,10 @@ class NixState extends ChangeNotifier {
       _activeMasterKey = null;
     }
     _primaryIdentity = null;
+    _moneroMarketIdentity = null;
+    _fallbackArchiveIdentity = null;
+    _inMemoryArchiveObjects.clear();
+    _consumedMoneroNonces.clear();
     _localDeviceId = 'dev_primary';
     _localDatabase = null;
     _sovereignMessenger = null;
