@@ -16,6 +16,20 @@ class TransportBlockedException implements Exception {
   String toString() => 'TransportBlockedException: $message';
 }
 
+/// Esquema de URI ainda não suportado sobre o túnel SOCKS5 (fail-closed, Issue #11).
+/// É um [TransportBlockedException]: quem já trata bloqueios de política
+/// continua falhando fechado sem precisar de código novo.
+class UnsupportedTransportSchemeException extends TransportBlockedException {
+  final String scheme;
+  UnsupportedTransportSchemeException(this.scheme)
+      : super('Esquema "$scheme" não suportado via SOCKS5: TLS sobre o túnel '
+            'ainda não está implementado (Issue #11). Use http:// para serviços '
+            '.onion v3; não há fallback para HTTP em claro nem conexão direta.');
+
+  @override
+  String toString() => 'UnsupportedTransportSchemeException: $message';
+}
+
 enum TransportMode {
   /// Permite exclusivamente endereços `.onion` v3 via proxy SOCKS5 Tor. Bloqueia qualquer clearnet/IP direto.
   torFailClosed,
@@ -657,18 +671,19 @@ class RelayClient {
     String? body,
     Duration timeout = const Duration(seconds: 30),
   }) async {
-    final connector = Socks5Connector(proxyHost: policy.socksHost, proxyPort: policy.socksPort);
-    final port = uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
-    Socket socket = await connector.connect(uri.host, port, requireOnionV3: true, timeout: timeout);
-
-    // Negociação TLS explícita para HTTPS sobre túnel SOCKS5 (Marco P0-3 / NET02)
-    if (uri.scheme == 'https') {
-      socket = await SecureSocket.secure(
-        socket,
-        host: uri.host,
-        onBadCertificate: (cert) => false,
-      ).timeout(timeout);
+    // Issue #11: `SecureSocket.secure` exige o `_Socket` interno do SDK e falha
+    // com `NoSuchMethodError: _detachRaw` ao receber o [SocksSocket]. Até existir
+    // um handshake SOCKS em `RawSocket` + `RawSecureSocket`, HTTPS via SOCKS é
+    // recusado explicitamente, ANTES de abrir qualquer socket. Nunca há downgrade
+    // para HTTP nem caminho direto. Destinos `.onion` v3 já possuem canal
+    // cifrado e autenticado pela própria chave do serviço.
+    if (uri.scheme != 'http') {
+      throw UnsupportedTransportSchemeException(uri.scheme);
     }
+
+    final connector = Socks5Connector(proxyHost: policy.socksHost, proxyPort: policy.socksPort);
+    final port = uri.hasPort ? uri.port : 80;
+    final Socket socket = await connector.connect(uri.host, port, requireOnionV3: true, timeout: timeout);
 
     try {
       final bodyBytes = body != null ? utf8.encode(body) : const <int>[];
