@@ -5,26 +5,28 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUNDLE_DIR="$PROJECT_ROOT/apps/nix_client/build/linux/x64/release/bundle"
 LOCAL_BUNDLE="$HOME/.local/share/nix/bundle"
+BUILD_LIB_APP="$PROJECT_ROOT/apps/nix_client/build/lib/libapp.so"
 
-echo "=== Empacotando Tor Embutido no Bundle Linux ==="
+echo "=== Empacotando Tor Embutido e Atualizando Bundle Linux ==="
 
-# 1. Garante que o diretório ~/.local/share/nix/bundle existe
-mkdir -p "$LOCAL_BUNDLE"
+mkdir -p "$LOCAL_BUNDLE/lib"
+mkdir -p "$BUNDLE_DIR/lib"
 
-# 2. Se o bundle de release existir, injeta o executável tor e dependências
-if [ -d "$BUNDLE_DIR" ]; then
-  mkdir -p "$BUNDLE_DIR/lib"
-  
-  if [ -f "$LOCAL_BUNDLE/tor" ]; then
-    cp -f "$LOCAL_BUNDLE/tor" "$BUNDLE_DIR/tor"
-    chmod 0755 "$BUNDLE_DIR/tor"
-    echo " -> Binário tor copiado para: $BUNDLE_DIR/tor"
-  fi
-
-  if [ -d "$LOCAL_BUNDLE/lib" ]; then
-    cp -rf "$LOCAL_BUNDLE/lib/"* "$BUNDLE_DIR/lib/" || true
-    echo " -> Bibliotecas dinâmicas copiadas para: $BUNDLE_DIR/lib"
-  fi
+# 1. Se a nova compilação AOT gerou build/lib/libapp.so, atualiza o bundle
+if [ -f "$BUILD_LIB_APP" ]; then
+  cp -f "$BUILD_LIB_APP" "$BUNDLE_DIR/lib/libapp.so"
+  echo " -> Compilação AOT atualizada: $BUNDLE_DIR/lib/libapp.so"
 fi
 
-echo "=== Empacotamento concluído com sucesso ==="
+# 2. Injeta o binário do Tor
+if [ -f "$LOCAL_BUNDLE/tor" ]; then
+  cp -f "$LOCAL_BUNDLE/tor" "$BUNDLE_DIR/tor"
+  chmod 0755 "$BUNDLE_DIR/tor"
+  echo " -> Binário tor embutido no bundle: $BUNDLE_DIR/tor"
+fi
+
+# 3. Sincroniza bundle completo compilado para ~/.local/share/nix/bundle/
+cp -rf "$BUNDLE_DIR/"* "$LOCAL_BUNDLE/"
+chmod 0755 "$LOCAL_BUNDLE/nix_client" "$LOCAL_BUNDLE/tor"
+
+echo "=== Bundle perfeitamente sincronizado para $LOCAL_BUNDLE ==="
