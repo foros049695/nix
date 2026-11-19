@@ -105,6 +105,7 @@ class LocalDatabase {
     String? path,
     Uint8List? rawCipherKey,
     DatabaseFactory? customFactory,
+    // Overrides explícitos são SQL confiável de testes, fora dos arquivos oficiais.
     String? migration001Sql,
     String? migration002Sql,
   }) async {
@@ -153,9 +154,11 @@ class LocalDatabase {
         cipherVersion = null;
       }
 
+      final isEncrypted =
+          cipherVersion != null && cipherVersion.trim().isNotEmpty;
       cipherInfo = DatabaseCipherInfo(
-        isEncrypted: true,
-        cipherEngine: cipherVersion != null ? 'SQLCipher' : 'SQLite-Encrypted-Pragma',
+        isEncrypted: isEncrypted,
+        cipherEngine: isEncrypted ? 'SQLCipher' : 'SQLite-Development-Clearnet',
         cipherVersion: cipherVersion,
       );
     } else {
@@ -172,10 +175,15 @@ class LocalDatabase {
 
     // 3. Executa Runner de Migrações
     final instance = LocalDatabase._(db, cipherInfo);
-    await instance._runMigrations(
-      migration001Override: migration001Sql,
-      migration002Override: migration002Sql,
-    );
+    try {
+      await instance._runMigrations(
+        migration001Override: migration001Sql,
+        migration002Override: migration002Sql,
+      );
+    } catch (_) {
+      await db.close();
+      rethrow;
+    }
 
     return instance;
   }
@@ -199,9 +207,24 @@ class LocalDatabase {
       return;
     }
 
+    // Valida TODOS os arquivos pendentes antes de aplicar a primeira migração.
+    // Overrides são entradas confiáveis e explícitas para testes sintéticos.
+    final sql001 = currentVersion == 0
+        ? migration001Override ??
+            await _loadMigrationFile('local_001_initial.sql')
+        : null;
+    final sql002 = migration002Override ??
+        await _loadMigrationFile('local_002_lookup_indexes.sql');
+    if (sql001 != null && migration001Override == null) {
+      _verifyChecksum(sql001, checksumMigration001, 1);
+    }
+    if (migration002Override == null) {
+      _verifyChecksum(sql002, checksumMigration002, 2);
+    }
+
     // Migração 0 -> 1: Schema Inicial Completo
     if (currentVersion == 0) {
-      final sql = migration001Override ?? await _loadMigrationFile('local_001_initial.sql');
+      final sql = sql001!;
       final computedChecksum = sha256.convert(utf8.encode(sql)).toString();
 
       // Executa em transação estrita
@@ -230,7 +253,7 @@ class LocalDatabase {
     // Migração 1 -> 2: Índices de Busca e Performance
     final v1Check = await _db.rawQuery('PRAGMA user_version;');
     if ((v1Check.first['user_version'] as int? ?? 0) == 1) {
-      final sql = migration002Override ?? await _loadMigrationFile('local_002_lookup_indexes.sql');
+      final sql = sql002;
       final computedChecksum = sha256.convert(utf8.encode(sql)).toString();
 
       await _db.transaction((txn) async {
@@ -255,13 +278,18 @@ class LocalDatabase {
     }
   }
 
+  static void _verifyChecksum(String sql, String expected, int version) {
+    if (sha256.convert(utf8.encode(sql)).toString() != expected) {
+      throw StateError('Checksum inválido para a migração local $version.');
+    }
+  }
+
   /// Carrega o script SQL a partir do diretório de migrações do repositório ou assets.
   static Future<String> _loadMigrationFile(String filename) async {
     // Procura em caminhos padrão
     final candidates = [
       'database/migrations/$filename',
       '../../database/migrations/$filename',
-      '/home/gus/.gemini/antigravity/scratch/nix/database/migrations/$filename',
     ];
 
     for (final candidate in candidates) {
