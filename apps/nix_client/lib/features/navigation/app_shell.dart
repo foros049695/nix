@@ -435,6 +435,47 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
                 : const Icon(Icons.vpn_key_outlined, size: 17),
             label: const Text('Desbloquear & Montar SQLCipher'),
           ),
+          const SizedBox(height: 10),
+          TextButton(
+            onPressed: _busy
+                ? null
+                : () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        backgroundColor: NixColors.surfaceCard,
+                        title: Text(
+                          'Resetar cofre local e reiniciar onboarding?',
+                          style: TextStyle(color: NixColors.textPrimary, fontSize: 15),
+                        ),
+                        content: Text(
+                          'Isso apagará o cofre bloqueado deste dispositivo para que você possa criar uma nova identidade ou restaurar uma conta existente usando suas 24 palavras (Seed A).',
+                          style: TextStyle(color: NixColors.textSecondary, fontSize: 12.5),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(ctx).pop(false),
+                            child: const Text('Cancelar'),
+                          ),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                            onPressed: () => Navigator.of(ctx).pop(true),
+                            child: const Text('Resetar Cofre'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) {
+                      setState(() => _busy = true);
+                      await widget.nixState.panicWipeAllData();
+                    }
+                  },
+            child: Text(
+              'Esqueceu a frase-passe? Resetar perfil ou recuperar via Seed A',
+              style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
+              textAlign: TextAlign.center,
+            ),
+          ),
         ],
       ),
     );

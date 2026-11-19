@@ -183,6 +183,7 @@ class NixState extends ChangeNotifier {
   NixIdentity? _primaryIdentity;
   String _localDeviceId = 'dev_primary';
   bool _requiresPassphraseUnlock = false;
+  String? _lastDatabaseInitError;
 
   IdentityRepository? _identityRepo;
   ContactRepository? _contactRepo;
@@ -199,6 +200,7 @@ class NixState extends ChangeNotifier {
 
   bool get isDatabaseReady => _localDatabase != null;
   bool get requiresPassphraseUnlock => _requiresPassphraseUnlock;
+  String? get lastDatabaseInitError => _lastDatabaseInitError;
   NixIdentity? get primaryIdentity => _primaryIdentity;
   String get localDeviceId => _localDeviceId;
   LocalDatabase? get localDatabase => _localDatabase;
@@ -435,9 +437,17 @@ class NixState extends ChangeNotifier {
     String? duressPassphrase,
   }) async {
     if (_disposed) return false;
+    _lastDatabaseInitError = null;
+    final resolvedVaultPath = customVaultPath ?? KeyVault.getDefaultBootstrapPath();
+    final resolvedDbPath = customDbPath ?? LocalDatabase.getDefaultDatabasePath();
+    final existedVaultBefore =
+        await _keyVault.isInitialized(customPath: customVaultPath) ||
+            await File(resolvedVaultPath).exists();
+    final existedDbBefore =
+        resolvedDbPath != ':memory:' && await File(resolvedDbPath).exists();
     try {
       Uint8List masterKey;
-      if (await _keyVault.isInitialized(customPath: customVaultPath)) {
+      if (existedVaultBefore) {
         final unlockResult = await _keyVault.unlockOrDuress(
           passphrase: passphrase,
           customPath: customVaultPath,
@@ -488,7 +498,22 @@ class NixState extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      if (_disposed) _keyVault.lock();
+      _lastDatabaseInitError = e.toString();
+      if (!existedVaultBefore) {
+        await _keyVault.rollbackFreshBootstrap(customPath: customVaultPath);
+      } else if (_disposed) {
+        _keyVault.lock();
+      }
+      if (!existedDbBefore && resolvedDbPath != ':memory:') {
+        for (final suffix in const ['', '-wal', '-shm']) {
+          final f = File('$resolvedDbPath$suffix');
+          if (await f.exists() && (await f.length()) == 0) {
+            try {
+              await f.delete();
+            } catch (_) {}
+          }
+        }
+      }
       debugPrint('[NixState] Erro ao inicializar banco de dados cifrado: $e');
       return false;
     }

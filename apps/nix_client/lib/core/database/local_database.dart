@@ -7,6 +7,8 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqlite3/open.dart' as sqlite_open;
 import 'android_sqlcipher_stub.dart'
     if (dart.library.ui) 'android_sqlcipher_flutter.dart';
+import 'migration_asset_stub.dart'
+    if (dart.library.ui) 'migration_asset_flutter.dart';
 
 /// Informações de versão e integridade de uma migração do banco de dados local.
 class SchemaMigrationRecord {
@@ -313,12 +315,17 @@ class LocalDatabase {
     }
   }
 
-  /// Carrega o script SQL a partir do diretório de migrações do repositório ou assets.
+  /// Carrega o script SQL a partir do diretório de migrações do repositório, bundle ou assets.
   static Future<String> _loadMigrationFile(String filename) async {
-    // Procura em caminhos padrão
+    // 1. Mantém prioridade em caminhos locais de repositório/teste (necessário para tamper tests)
+    final exeDir = File(Platform.resolvedExecutable).parent.path;
     final candidates = [
       'database/migrations/$filename',
       '../../database/migrations/$filename',
+      'assets/migrations/$filename',
+      '$exeDir/data/flutter_assets/assets/migrations/$filename',
+      '$exeDir/data/migrations/$filename',
+      '$exeDir/../../database/migrations/$filename',
     ];
 
     for (final candidate in candidates) {
@@ -328,7 +335,14 @@ class LocalDatabase {
       }
     }
 
-    throw FileSystemException('Arquivo de migração obrigatório não encontrado: $filename');
+    // 2. Fallback para flutter_assets embutidos no executável Linux / Android APK
+    final bundled = await loadBundledMigrationSql(filename);
+    if (bundled != null && bundled.isNotEmpty) {
+      return bundled;
+    }
+
+    throw FileSystemException(
+        'Arquivo de migração obrigatório não encontrado: $filename');
   }
 
   /// Separa declarações SQL preservando blocos BEGIN ... END em triggers e transações.

@@ -431,6 +431,19 @@ class KeyVault {
     _isUnlocked = false;
   }
 
+  /// Remove um arquivo bootstrap recém-criado quando a inicialização subsequente do SQLCipher falha.
+  Future<void> rollbackFreshBootstrap({String? customPath}) async {
+    lock();
+    final path = customPath ?? getDefaultBootstrapPath();
+    try {
+      await _osKeyStorage.deleteSecret(_keyringKey(path));
+    } catch (_) {}
+    final file = File(path);
+    if (await file.exists()) {
+      await file.delete();
+    }
+  }
+
   static String _keyringKey(String path) =>
       '${osKeyringPassphraseSlot}_${path.hashCode.toUnsigned(32)}';
 

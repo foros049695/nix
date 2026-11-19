@@ -35,3 +35,4 @@ flutter:
     - assets/images/
     - assets/data/
     - assets/brand/
+    - assets/migrations/

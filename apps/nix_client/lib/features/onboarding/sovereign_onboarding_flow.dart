@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -78,6 +79,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
 
   // Identidade Privada (Seed A)
   bool _isGeneratingIdentity = false;
+  String? _identityErrorMessage;
   List<String> _seedWords = [];
   bool _paperBackupConfirmed = false;
   
@@ -304,70 +306,103 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
   }
 
   Future<void> _generatePrivateIdentity() async {
-    setState(() {
-      _isGeneratingIdentity = true;
-      _diagnosticsLogs.add('[Cripto] Gerando entropia CSPRNG para a Seed A (24 palavras c/ checksum)...');
-    });
-
-    // 1. Gera 24 palavras criptograficamente seguras (23 bytes entropia + 1 byte SHA-256 checksum)
-    final generatedSeed = SeedRecoveryManager.generateMnemonic();
-
-    // 2. Deriva deterministicamente o par real Ed25519 + X25519 e o Public ID (ADR-0003: Seed A isolada)
-    final identity = await SeedRecoveryManager.deriveIdentityFromMnemonic(generatedSeed);
-
-    // 3. Inicializa o cofre KeyVault (Argon2id + XChaCha20-Poly1305) e banco SQLCipher
     final userPassphrase = _passphraseController.text.trim();
-    final effectivePassphrase = userPassphrase.isNotEmpty
-        ? userPassphrase
-        : _generateRandomHexPassphrase();
-    final effectiveBindKeyring = userPassphrase.isEmpty ? true : _bindToOsKeyring;
     final duressPin = _duressPinController.text.trim();
-
-    final dbOk = await widget.nixState.initializeEncryptedDatabase(
-      passphrase: effectivePassphrase,
-      bindToOsKeyring: effectiveBindKeyring,
-      duressPassphrase: duressPin.isNotEmpty ? duressPin : null,
-    );
-    if (!dbOk) {
-      if (!mounted) return;
+    if (userPassphrase.isNotEmpty &&
+        duressPin.isNotEmpty &&
+        userPassphrase == duressPin) {
       setState(() {
-        _isGeneratingIdentity = false;
-        _diagnosticsLogs.add('[Erro] Falha ao inicializar KeyVault / SQLCipher.');
+        _identityErrorMessage =
+            'O PIN de coação deve ser diferente da frase-passe principal.';
+      });
+      return;
+    }
+    if (!Platform.environment.containsKey('FLUTTER_TEST') &&
+        userPassphrase.isEmpty &&
+        !widget.nixState.keyVault.osKeyStorage.isHardwareOrOsBacked) {
+      setState(() {
+        _identityErrorMessage =
+            'Chaveiro nativo do SO indisponível nesta sessão. Informe uma frase-passe manual acima.';
       });
       return;
     }
 
-    // 4. Grava identidade pública em `identities`, material privado envelopado em `key_material`,
-    //    dispositivo com grant assinado e perfil inicial no SQLCipher
-    await widget.nixState.persistPrimaryIdentity(
-      identity: identity,
-      displayName: _displayNameController.text.trim(),
-      avatarStyle: _selectedAvatarStyle,
-      bio: _bioController.text.trim(),
-    );
-
-    final pubId = identity.publicId;
-    if (!mounted) return;
-
     setState(() {
-      _isGeneratingIdentity = false;
-      _generatedIdentity = identity;
-      _seedWords = generatedSeed;
-      _derivedPublicId = pubId;
-      _challengeWordIndices = [
-        Random.secure().nextInt(7),       // entre 0 e 6
-        8 + Random.secure().nextInt(7),   // entre 8 e 14
-        16 + Random.secure().nextInt(7),  // entre 16 e 22
-      ];
-      _userChallengeAnswers.clear();
-      _challengePassed = false;
-      _diagnosticsLogs.add(
-        '[Cripto] Chaves Ed25519/X25519 derivadas da Seed A (${widget.nixState.localDatabase?.cipherInfo.cipherEngine ?? "SQLite"} · Storage: ${widget.nixState.keyVault.osKeyStorage.backendName}). ID: $pubId (pub=${_generatedIdentity?.ed25519PublicHex.substring(0, 8) ?? ""})',
-      );
+      _isGeneratingIdentity = true;
+      _identityErrorMessage = null;
+      _diagnosticsLogs.add('[Cripto] Gerando entropia CSPRNG para a Seed A (24 palavras c/ checksum)...');
     });
 
-    await _persistCheckpoint();
-    _goToStep(OnboardingStep.recoveryBackup);
+    try {
+      // 1. Gera 24 palavras criptograficamente seguras (23 bytes entropia + 1 byte SHA-256 checksum)
+      final generatedSeed = SeedRecoveryManager.generateMnemonic();
+
+      // 2. Deriva deterministicamente o par real Ed25519 + X25519 e o Public ID (ADR-0003: Seed A isolada)
+      final identity = await SeedRecoveryManager.deriveIdentityFromMnemonic(generatedSeed);
+
+      // 3. Inicializa o cofre KeyVault (Argon2id + XChaCha20-Poly1305) e banco SQLCipher
+      final effectivePassphrase = userPassphrase.isNotEmpty
+          ? userPassphrase
+          : _generateRandomHexPassphrase();
+      final effectiveBindKeyring = userPassphrase.isEmpty ? true : _bindToOsKeyring;
+
+      final dbOk = await widget.nixState.initializeEncryptedDatabase(
+        passphrase: effectivePassphrase,
+        bindToOsKeyring: effectiveBindKeyring,
+        duressPassphrase: duressPin.isNotEmpty ? duressPin : null,
+      );
+      if (!dbOk) {
+        if (!mounted) return;
+        final reason = widget.nixState.lastDatabaseInitError ??
+            'Falha ao inicializar KeyVault / SQLCipher.';
+        setState(() {
+          _isGeneratingIdentity = false;
+          _identityErrorMessage = reason;
+          _diagnosticsLogs.add('[Erro] $reason');
+        });
+        return;
+      }
+
+      // 4. Grava identidade pública em `identities`, material privado envelopado em `key_material`,
+      //    dispositivo com grant assinado e perfil inicial no SQLCipher
+      await widget.nixState.persistPrimaryIdentity(
+        identity: identity,
+        displayName: _displayNameController.text.trim(),
+        avatarStyle: _selectedAvatarStyle,
+        bio: _bioController.text.trim(),
+      );
+
+      final pubId = identity.publicId;
+      if (!mounted) return;
+
+      setState(() {
+        _isGeneratingIdentity = false;
+        _identityErrorMessage = null;
+        _generatedIdentity = identity;
+        _seedWords = generatedSeed;
+        _derivedPublicId = pubId;
+        _challengeWordIndices = [
+          Random.secure().nextInt(7),       // entre 0 e 6
+          8 + Random.secure().nextInt(7),   // entre 8 e 14
+          16 + Random.secure().nextInt(7),  // entre 16 e 22
+        ];
+        _userChallengeAnswers.clear();
+        _challengePassed = false;
+        _diagnosticsLogs.add(
+          '[Cripto] Chaves Ed25519/X25519 derivadas da Seed A (${widget.nixState.localDatabase?.cipherInfo.cipherEngine ?? "SQLite"} · Storage: ${widget.nixState.keyVault.osKeyStorage.backendName}). ID: $pubId (pub=${_generatedIdentity?.ed25519PublicHex.substring(0, 8) ?? ""})',
+        );
+      });
+
+      await _persistCheckpoint();
+      _goToStep(OnboardingStep.recoveryBackup);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isGeneratingIdentity = false;
+        _identityErrorMessage = 'Erro ao gerar identidade: $e';
+        _diagnosticsLogs.add('[Erro] Exceção na geração de identidade: $e');
+      });
+    }
   }
 
   Future<void> _showRestoreFromSeedDialog() async {
@@ -1051,6 +1086,31 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
           ),
         ),
         const SizedBox(height: 12),
+        if (_identityErrorMessage != null) ...[
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.redAccent.withOpacity(0.14),
+              borderRadius: NixTokens.borderSm,
+              border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.redAccent, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _identityErrorMessage!,
+                    style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         Center(
           child: _isGeneratingIdentity
               ? Column(
@@ -1519,31 +1579,39 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
     final canAdvance = _canAdvanceFromCurrentStep();
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       color: NixColors.surfaceCard,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              if (_currentStep != OnboardingStep.welcome && _currentStep != OnboardingStep.ready)
-                OutlinedButton(
-                  onPressed: _goBack,
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: NixColors.surfaceBorderStrong),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          Flexible(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (_currentStep != OnboardingStep.welcome && _currentStep != OnboardingStep.ready)
+                  OutlinedButton(
+                    onPressed: _goBack,
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: NixColors.surfaceBorderStrong),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    child: const Text('Voltar'),
                   ),
-                  child: const Text('Voltar'),
+                TextButton.icon(
+                  onPressed: () => setState(() => _showDiagnostics = !_showDiagnostics),
+                  icon: Icon(Icons.terminal_rounded, size: 14, color: NixColors.textMuted),
+                  label: Text(_showDiagnostics ? 'Ocultar Logs' : 'Diagnóstico', style: TextStyle(color: NixColors.textMuted, fontSize: 11)),
                 ),
-              const SizedBox(width: 8),
-              TextButton.icon(
-                onPressed: () => setState(() => _showDiagnostics = !_showDiagnostics),
-                icon: Icon(Icons.terminal_rounded, size: 14, color: NixColors.textMuted),
-                label: Text(_showDiagnostics ? 'Ocultar Logs' : 'Diagnóstico', style: TextStyle(color: NixColors.textMuted, fontSize: 11)),
-              ),
-            ],
+              ],
+            ),
           ),
-          Row(
+          const SizedBox(width: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               if (_currentStep == OnboardingStep.torBootstrap && _bootstrapFailed)
                 ElevatedButton.icon(
@@ -1552,7 +1620,6 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
                   label: const Text('Tentar Novamente'),
                   style: ElevatedButton.styleFrom(backgroundColor: NixColors.surfaceCard),
                 ),
-              const SizedBox(width: 10),
               if (_currentStep != OnboardingStep.ready)
                 ElevatedButton(
                   key: const Key('onboarding_next_button'),
@@ -1562,7 +1629,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
                     foregroundColor: Colors.black,
                     disabledBackgroundColor: NixColors.surfaceElevated,
                     disabledForegroundColor: NixColors.textMuted,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
                   child: Text(_getNextButtonLabel(_currentStep), style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),

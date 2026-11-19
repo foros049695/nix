@@ -187,5 +187,36 @@ void main() {
       expect(recoveryState.isOnboarded, isFalse);
       expect(recoveryState.primaryIdentity, isNull);
     });
+
+    test('rollback atômico remove bootstrap órfão e keyring se SQLCipher falhar na criação',
+        () async {
+      final keyring = InMemoryOsKeyStorage();
+      final vaultPath = '${tempDir.path}/rollback_vault.json';
+      final dbPath = '${tempDir.path}/rollback_empty.db';
+      final state = NixState(
+        loadMockData: false,
+        keyVault: KeyVault(osKeyStorage: keyring),
+      );
+      addTearDown(state.dispose);
+
+      final ok = await state.initializeEncryptedDatabase(
+        passphrase: 'senha-teste-rollback',
+        customDbPath: dbPath,
+        customVaultPath: vaultPath,
+        bindToOsKeyring: true,
+        migration001Sql: 'INVALID SQL STATEMENT;',
+        migration002Sql: '',
+      );
+      expect(ok, isFalse);
+      expect(state.lastDatabaseInitError, isNotNull);
+      expect(await File(vaultPath).exists(), isFalse);
+      expect(
+        await KeyVault(osKeyStorage: keyring).tryUnlockWithOsKeyring(
+          customPath: vaultPath,
+        ),
+        isNull,
+      );
+      expect(await File(dbPath).exists(), isFalse);
+    });
   });
 }

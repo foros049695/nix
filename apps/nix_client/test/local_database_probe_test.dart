@@ -95,4 +95,22 @@ CREATE TABLE probe(value INTEGER);
     expect((await db.rawDatabase.query('probe')).single['value'], 42);
     expect((await db.getAppliedMigrations()).length, 2);
   });
+
+  test('carrega migrações via flutter_assets mesmo quando cwd é externo ao repo',
+      () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    final previous = Directory.current;
+    Directory.current = temp;
+    try {
+      final db = await LocalDatabase.open(
+        path: path,
+        rawCipherKey: Uint8List(32),
+        customFactory: databaseFactoryFfi,
+      );
+      addTearDown(db.close);
+      expect((await db.getAppliedMigrations()).length, 2);
+    } finally {
+      Directory.current = previous;
+    }
+  });
 }
