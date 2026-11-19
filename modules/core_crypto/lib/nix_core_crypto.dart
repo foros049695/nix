@@ -642,7 +642,7 @@ class DoubleRatchet {
     while (candRecvMessageNumber < header.messageNumber) {
       final step = await _kdfChainKey(candRecvChainKey!);
       candRecvChainKey = step.$1;
-      final keyId = _skipMapKey(candDhRemote!.bytes, candRecvMessageNumber);
+      final keyId = _skipMapKey(candDhRemote.bytes, candRecvMessageNumber);
       if (candSkipped.length >= maxSkippedKeys) {
         candSkipped.remove(candSkipped.keys.first);
       }
@@ -674,47 +674,6 @@ class DoubleRatchet {
     _skippedMessageKeys.addAll(candSkipped);
 
     return clear;
-  }
-
-  Future<void> _skipMessageKeys(int until) async {
-    if (_recvChainKey == null) return;
-    if (_recvMessageNumber + maxSkippedKeys < until) {
-      throw StateError('Salto de mensagens além do limite seguro ($maxSkippedKeys).');
-    }
-    while (_recvMessageNumber < until) {
-      final step = await _kdfChainKey(_recvChainKey!);
-      _recvChainKey = step.$1;
-      final keyId = _skipMapKey(_dhRemote!.bytes, _recvMessageNumber);
-      if (_skippedMessageKeys.length >= maxSkippedKeys) {
-        _skippedMessageKeys.remove(_skippedMessageKeys.keys.first);
-      }
-      _skippedMessageKeys[keyId] = step.$2;
-      _recvMessageNumber += 1;
-    }
-  }
-
-  Future<void> _dhRatchet(SimplePublicKey newRemotePub) async {
-    _previousChainLength = _sendMessageNumber;
-    _sendMessageNumber = 0;
-    _recvMessageNumber = 0;
-    _dhRemote = newRemotePub;
-
-    final dhRecv = await _x25519.sharedSecretKey(
-      keyPair: _dhSelf,
-      remotePublicKey: _dhRemote!,
-    );
-    final recvStep = await _kdfRootKey(_rootKey, Uint8List.fromList(await dhRecv.extractBytes()));
-    _rootKey = recvStep.$1;
-    _recvChainKey = recvStep.$2;
-
-    _dhSelf = await (await _x25519.newKeyPair()).extract();
-    final dhSend = await _x25519.sharedSecretKey(
-      keyPair: _dhSelf,
-      remotePublicKey: _dhRemote!,
-    );
-    final sendStep = await _kdfRootKey(_rootKey, Uint8List.fromList(await dhSend.extractBytes()));
-    _rootKey = sendStep.$1;
-    _sendChainKey = sendStep.$2;
   }
 
   static Future<(Uint8List, Uint8List)> _kdfRootKey(Uint8List rootKey, Uint8List dhOutput) async {
