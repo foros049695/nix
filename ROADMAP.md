@@ -39,7 +39,7 @@ Governança de repositório e Autonomia Autorizada:
 
 - [x] ADRs estruturais formalizados (`ADR-0001` a `ADR-0006`, incluindo PR `#27`).
 - [x] Documentação de placeholders dos módulos estruturais (`archive`, `index`, `media`, `offgrid`, `wallet`) e setup do cliente em `apps/nix_client/README.md` (PR `#25` e `#26`).
-- [x] Rotina automatizada persistente de auditoria e integridade a cada 4 horas (`.github/workflows/nix_maintenance_audit.yml` e `scripts/run_maintenance_audit.py`).
+- [x] Ferramenta de auditoria e integridade sob demanda (`scripts/run_maintenance_audit.py`; rotina agendada de 4h desativada).
 - [x] Documentação de arquitetura e resposta a incidentes (`docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/INCIDENT_RESPONSE.md`).
 - [x] Canal confidencial para divulgação de vulnerabilidades habilitado via **GitHub Private Vulnerability Reporting** (`docs/SECURITY.md` §3 / Issue `#12`).
 - [x] Matriz de privacidade de 21 células vinculada a verificações estáticas e testes (`docs/PRIVACY_MATRIX.md` e `scripts/verify_privacy_matrix.sh`).
@@ -224,7 +224,7 @@ Governança de repositório e Autonomia Autorizada:
 **Objetivo:** assegurar rastreabilidade de dependências, integridade de artefatos, layouts mobile-first e empacotamento nativo Android (Fases 17, 21, 22, 23).
 
 - [x] Pipeline CI em `.github/workflows/ci.yml` executando jobs independentes e portão estático de privacidade (`scripts/verify_privacy_matrix.sh`).
-- [x] Rotina automatizada persistente de manutenção e auditoria a cada 4 horas (`scripts/run_maintenance_audit.py` e `.github/workflows/nix_maintenance_audit.yml`).
+- [x] Resolução e encerramento integral de todas as Issues e PRs abertos; rotina agendada de 4h desativada a pedido do proprietário.
 - [x] Interface adaptativa mobile-first validada nas resoluções 360×800, 393×852, 412×915 e 800×1280 (tablet) com touch targets >= 48dp e ausência de dados fictícios apresentados como reais (`docs/ANDROID_UI_TEST_REPORT.md`).
 - [x] Build APK de produção gerado e validado: `build/app/outputs/flutter-apk/app-release.apk` (54.5 MB) integrando NDK, SQLCipher, TEE e Tor móvel.
 - [x] Documentação técnica completa em `docs/` (7 especificações formais de arquitetura, metadados, protocolo de atualização, relatórios Android, discussões e replicação).

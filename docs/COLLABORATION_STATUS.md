@@ -331,10 +331,11 @@ graph TD
 
 ---
 
-## 9. ROTINA AUTOMATIZADA PERSISTENTE A CADA 4 HORAS (FASE 16)
+## 9. ROTINA DE AUDITORIA E DESATIVAÇÃO DO AGENDAMENTO PERIÓDICO (19/11/2026)
 
-- **Workflow GitHub Actions:** `.github/workflows/nix_maintenance_audit.yml` (agendamento `0 */4 * * *` e manual via `workflow_dispatch`).
-- **Auditor Autônomo:** `scripts/run_maintenance_audit.py` com relatórios em `docs/automation/MAINTENANCE_REPORT.md` e snapshots em `docs/automation/history/`.
+- **Status da Rotina Agendada:** Desativada a pedido do proprietário após a resolução integral de 100% das Issues e PRs pendentes.
+- **Remoção de Workflow:** O workflow agendado `.github/workflows/nix_maintenance_audit.yml` foi descontinuado e removido do repositório.
+- **Ferramenta de Auditoria Sob Demanda:** `scripts/run_maintenance_audit.py` e `./scripts/verify_privacy_matrix.sh` permanecem preservados para execuções e validações manuais pontuais.
 - **Relatório Completo de Resolução:** [`docs/ISSUES_PRS_RESOLUTION_REPORT.md`](ISSUES_PRS_RESOLUTION_REPORT.md).
 
 ---

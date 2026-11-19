@@ -29,7 +29,7 @@ Run a single test:
 
 Privacy gate, from the repo root: `./scripts/verify_privacy_matrix.sh`. It greps the whole tree, excluding `assets/`, for analytics and crash-reporting SDK names (the list is `FORBIDDEN_PATTERNS` in the script itself), and fails if any `.go` file under `services/nix_relay` mentions `r.RemoteAddr`, `X-Forwarded-For`, or `X-Real-IP`. Even a comment or doc line that names one of those forbidden patterns breaks the build, this file included: don't write the names here.
 
-Automated maintenance and audit routine: `./scripts/run_maintenance_audit.py` runs a 4-hour persistent check of PRs, issues, CI token permissions/SHAs, static analysis, and privacy invariants, logging outputs to `docs/automation/MAINTENANCE_REPORT.md` and triggering via `.github/workflows/nix_maintenance_audit.yml` and local schedule.
+On-demand audit tool: `./scripts/run_maintenance_audit.py` can be executed locally on demand to verify PRs, issues, static analysis, and privacy invariants, logging outputs to `docs/automation/MAINTENANCE_REPORT.md`.
 
 CI (`.github/workflows/ci.yml`, Go 1.23 and Flutter stable) runs the privacy gate, relay `go vet` + `go test -race`, `dart analyze` + `dart test` for both modules, and `flutter analyze` + `flutter test` for the client. Actions are pinned to immutable commit SHAs, permissions are scoped to `contents: read`, and concurrency is managed with PR auto-cancellation.
 
