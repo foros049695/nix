@@ -13,9 +13,8 @@
 *.yaml text eol=lf
 *.yml text eol=lf
 *.json text eol=lf
-*.sh text eol=lf
 
-# Shell scripts must be executable
+# Shell scripts use LF line endings (executable bit is tracked in the Git index, not via gitattributes)
 *.sh text eol=lf
 
 # Binary files
