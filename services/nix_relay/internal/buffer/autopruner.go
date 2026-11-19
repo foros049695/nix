@@ -144,7 +144,12 @@ func (ap *AutoPruner) EvaluateNow(now time.Time) (string, int) {
 	removed := 0
 	if store != nil {
 		capDur := MaxTTLForState(next, baseTTL)
-		removed = store.SweepExpired(now, capDur)
+		var err error
+		removed, err = store.SweepExpired(now, capDur)
+		if err != nil {
+			// Não registra identificadores de mailbox nem payloads.
+			log.Printf("[AUTOPRUNER] Falha de persistência no expurgo; nova tentativa no próximo ciclo")
+		}
 	}
 	return next, removed
 }

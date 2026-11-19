@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 )
 
 var (
+	ErrPersistence      = errors.New("falha de persistência em disco no relay")
 	ErrInvalidMailbox   = errors.New("mailbox_id inválido")
 	ErrPayloadTooLarge  = errors.New("payload excede limite máximo permitido")
 	ErrQuotaExceeded    = errors.New("cota máxima em trânsito excedida para o token")
@@ -167,7 +169,7 @@ func (s *BlindMailboxStore) Store(
 		if quotaToken != "" {
 			s.quotaUsage[quotaToken] -= byteSize
 		}
-		return Envelope{}, errors.New("falha de persistência em disco no relay: " + err.Error())
+		return Envelope{}, fmt.Errorf("%w: %v", ErrPersistence, err)
 	}
 	return env, nil
 }
@@ -186,23 +188,19 @@ func (s *BlindMailboxStore) Fetch(mailboxID string, now time.Time) ([]Envelope, 
 
 	nowUnix := now.Unix()
 	active := make([]Envelope, 0, len(list))
-	changed := false
+	removed := make([]Envelope, 0)
 	for _, env := range list {
 		if env.ExpiresAt <= nowUnix {
-			s.subtractAccountingLocked(env)
-			s.totalPruned++
-			changed = true
+			removed = append(removed, env)
 			continue
 		}
 		active = append(active, env)
 	}
-	if changed {
-		if len(active) == 0 {
-			delete(s.mailboxes, mailboxID)
-		} else {
-			s.mailboxes[mailboxID] = active
+	if len(removed) > 0 {
+		if err := s.removeEnvelopesLocked(mailboxID, active, removed); err != nil {
+			return nil, err
 		}
-		s.persistMailboxLocked(mailboxID)
+		s.totalPruned += int64(len(removed))
 	}
 	out := make([]Envelope, len(active))
 	copy(out, active)
@@ -226,29 +224,25 @@ func (s *BlindMailboxStore) Ack(mailboxID string, ids []string) (int, error) {
 		return 0, nil
 	}
 	kept := make([]Envelope, 0, len(list))
-	deleted := 0
+	removed := make([]Envelope, 0)
 	for _, env := range list {
 		if _, found := idSet[env.ID]; found {
-			s.subtractAccountingLocked(env)
-			s.totalAcked++
-			deleted++
+			removed = append(removed, env)
 			continue
 		}
 		kept = append(kept, env)
 	}
-	if deleted > 0 {
-		if len(kept) == 0 {
-			delete(s.mailboxes, mailboxID)
-		} else {
-			s.mailboxes[mailboxID] = kept
+	if len(removed) > 0 {
+		if err := s.removeEnvelopesLocked(mailboxID, kept, removed); err != nil {
+			return 0, err
 		}
-		s.persistMailboxLocked(mailboxID)
+		s.totalAcked += int64(len(removed))
 	}
-	return deleted, nil
+	return len(removed), nil
 }
 
 // SweepExpired remove envelopes expirados ou que ultrapassem a idade máxima ditada pela pressão do disco.
-func (s *BlindMailboxStore) SweepExpired(now time.Time, maxAgeCap time.Duration) int {
+func (s *BlindMailboxStore) SweepExpired(now time.Time, maxAgeCap time.Duration) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -261,29 +255,45 @@ func (s *BlindMailboxStore) SweepExpired(now time.Time, maxAgeCap time.Duration)
 	removed := 0
 	for mboxID, list := range s.mailboxes {
 		kept := make([]Envelope, 0, len(list))
-		dirty := false
+		expired := make([]Envelope, 0)
 		for _, env := range list {
 			expiredByTTL := env.ExpiresAt <= nowUnix
 			expiredByPressure := cutoffCreated > 0 && env.CreatedAt <= cutoffCreated
 			if expiredByTTL || expiredByPressure {
-				s.subtractAccountingLocked(env)
-				s.totalPruned++
-				removed++
-				dirty = true
+				expired = append(expired, env)
 				continue
 			}
 			kept = append(kept, env)
 		}
-		if dirty {
-			if len(kept) == 0 {
-				delete(s.mailboxes, mboxID)
-			} else {
-				s.mailboxes[mboxID] = kept
+		if len(expired) > 0 {
+			if err := s.removeEnvelopesLocked(mboxID, kept, expired); err != nil {
+				// Mailboxes anteriores já foram confirmadas em disco.
+				return removed, err
 			}
-			s.persistMailboxLocked(mboxID)
+			removed += len(expired)
+			s.totalPruned += int64(len(expired))
 		}
 	}
-	return removed
+	return removed, nil
+}
+
+// Confirma a persistência antes de alterar cotas e contadores. A lista original
+// permanece intacta para rollback, inclusive quando a mailbox fica vazia.
+func (s *BlindMailboxStore) removeEnvelopesLocked(mailboxID string, kept, removed []Envelope) error {
+	original := s.mailboxes[mailboxID]
+	if len(kept) == 0 {
+		delete(s.mailboxes, mailboxID)
+	} else {
+		s.mailboxes[mailboxID] = kept
+	}
+	if err := s.persistMailboxLocked(mailboxID); err != nil {
+		s.mailboxes[mailboxID] = original
+		return fmt.Errorf("%w: %v", ErrPersistence, err)
+	}
+	for _, env := range removed {
+		s.subtractAccountingLocked(env)
+	}
+	return nil
 }
 
 func (s *BlindMailboxStore) Metrics() StoreMetrics {
@@ -324,8 +334,11 @@ func (s *BlindMailboxStore) persistMailboxLocked(mailboxID string) error {
 	path := filepath.Join(s.dataDir, mailboxID+".json")
 	list := s.mailboxes[mailboxID]
 	if len(list) == 0 {
-		_ = os.Remove(path)
-		return nil
+		err := os.Remove(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
 	}
 	data, err := json.Marshal(list)
 	if err != nil {
