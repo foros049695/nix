@@ -31,6 +31,15 @@ Privacy gate, from the repo root: `./scripts/verify_privacy_matrix.sh`. It greps
 
 On-demand audit tool: `./scripts/run_maintenance_audit.py` can be executed locally on demand to verify PRs, issues, static analysis, and privacy invariants, logging outputs to `docs/automation/MAINTENANCE_REPORT.md`.
 
+**REGRA PERMANENTE — PROIBIDO REATIVAR O WORKFLOW DE QUATRO HORAS:**
+O proprietário determinou expressamente a desativação permanente da automação periódica de quatro horas (commit `557f51deba9f`, que removeu `.github/workflows/nix_maintenance_audit.yml`).
+É estritamente proibido a qualquer agente ou colaborador:
+- Recriar `.github/workflows/nix_maintenance_audit.yml` ou automação equivalente.
+- Adicionar cron jobs, timers de sistema ou bots externos para manutenção recorrente do Nix.
+- Restaurar agendamentos periódicos para consulta de Issues/PRs.
+- Interpretar qualquer instrução legada como autorização para reativação.
+O CI (`ci.yml`) executa `./scripts/verify_automation_policy.sh` a cada push/PR para barrar qualquer reintrodução. O script `scripts/run_maintenance_audit.py` é exclusivamente manual/sob demanda.
+
 CI (`.github/workflows/ci.yml`, Go 1.23 and Flutter stable) runs the privacy gate, relay `go vet` + `go test -race`, `dart analyze` + `dart test` for both modules, and `flutter analyze` + `flutter test` for the client. Actions are pinned to immutable commit SHAs, permissions are scoped to `contents: read`, and concurrency is managed with PR auto-cancellation.
 
 ## Architecture
@@ -87,6 +96,7 @@ Changes that break these are rejected:
 - No homemade crypto primitives; audited libraries only.
 - The messenger identity (**Seed A**) must never derive from, share keys with, or talk to the Monero wallet key (**Seed B**). See ADR 0003.
 - Private network traffic fails closed. Never add a fallback that bypasses Tor or the proxy.
+- Permanent prohibition: The 4-hour automated maintenance workflow is decommissioned per owner instruction; never reactivate, schedule, or re-introduce recurring maintenance.
 - New external dependencies need an ADR in `docs/adr/` first.
 
 Regression probes (`*_probe_test.dart`, `probe_test.go`) reproduce audit findings such as the CRY01 ratchet corruption, the SOCKS stream re-listen bug, and sensitive derived identity zeroization. Keep them passing, and when you fix an audit finding, add a probe for it.

@@ -35,4 +35,4 @@
 - **Isolamento Seed A / Seed B:** Preservado na separação de mensageria e carteira.
 - **Anti-Forense:** Encerramento prévio do Tor antes de destruição de arquivos locais.
 
-_Relatório gerado automaticamente pela rotina de auditoria a cada 4 horas._
+_Relatório gerado sob demanda pela ferramenta de auditoria de integridade._

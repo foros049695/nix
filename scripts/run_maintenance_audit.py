@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-Nix Project - 4-Hour Automated Maintenance & Integrity Auditor
+Nix Project - On-Demand Integrity & Security Auditor
 Executes deterministic privacy checks, test suites, and generates
 audit reports for docs/automation/MAINTENANCE_REPORT.md and docs/automation/history/.
+Note: Automated 4-hour scheduled maintenance was permanently decommissioned per owner directive.
+This script is strictly intended for manual, on-demand execution.
 """
 
 import os
@@ -234,7 +236,7 @@ def run_audit():
         "- **Isolamento Seed A / Seed B:** Preservado na separação de mensageria e carteira.",
         "- **Anti-Forense:** Encerramento prévio do Tor antes de destruição de arquivos locais.",
         "",
-        "_Relatório gerado automaticamente pela rotina de auditoria a cada 4 horas._"
+        "_Relatório gerado sob demanda pela ferramenta de auditoria de integridade._"
     ])
 
     report_content = "\n".join(report_lines) + "\n"

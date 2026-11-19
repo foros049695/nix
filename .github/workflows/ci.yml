@@ -29,6 +29,11 @@ jobs:
           chmod +x scripts/verify_privacy_matrix.sh
           ./scripts/verify_privacy_matrix.sh
 
+      - name: Verify Automation Policy (Decommissioned 4-Hour Maintenance)
+        run: |
+          chmod +x scripts/verify_automation_policy.sh
+          ./scripts/verify_automation_policy.sh
+
   relay-go:
     name: Relay Go Lint & Test
     timeout-minutes: 10

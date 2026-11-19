@@ -27,7 +27,8 @@ Convenções utilizadas neste documento:
 Governança de repositório e Autonomia Autorizada:
 
 - Toda entrega passa por validação estrita de testes unitários, integrados e verificações de segurança/privacidade antes de publicação.
-- Conforme autorização expressa do proprietário (@foros049695), o agente autônomo principal possui permissão para executar commits, integração de PRs aprovados, atualizações de branches e publicação remota automatizada no GitHub, mantendo os critérios rigorosos de qualidade, integridade e conformidade contínua a cada 4 horas.
+- Conforme autorização expressa do proprietário (@foros049695), o agente autônomo principal possui permissão para executar commits, integração de PRs aprovados, atualizações de branches e publicação remota no GitHub sob demanda, mantendo os critérios rigorosos de qualidade, integridade e conformidade contínua.
+- **REGRA PERMANENTE (DESATIVAÇÃO DE 4 HORAS):** A automação periódica de 4 horas (`.github/workflows/nix_maintenance_audit.yml`) foi definitivamente desativada por ordem do proprietário (commit `557f51deba9f`). É estritamente proibido recriar o workflow, reativar rotinas cron ou delegar consultas periódicas de Issues/PRs a bots. Alterações nesta política exigem aprovação explícita do proprietário. O CI bloqueia preventivamente qualquer tentativa de reintrodução via `scripts/verify_automation_policy.sh`.
 
 ---
 
