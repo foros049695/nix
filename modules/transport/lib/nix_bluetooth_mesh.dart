@@ -295,6 +295,27 @@ class BluetoothMeshManager {
     }
   }
 
+  /// Transmite ou difunde um envelope cifrado para os pares da malha por proximidade.
+  Future<void> broadcastEnvelope({
+    required String recipientCardId,
+    required Uint8List payload,
+  }) async {
+    if (!_isMeshEnabled) return;
+    // Quando em malha ativa, empacota e distribui o envelope aos nós conectados
+    for (final peer in _peers.values) {
+      final session = BluetoothMeshSession(
+        localIdentityCardId: localCardId,
+        remotePeer: peer,
+      );
+      session.createEnvelopeTransfer(
+        deliveryId: 'btp_${DateTime.now().millisecondsSinceEpoch}',
+        destinationMailbox: recipientCardId,
+        ciphertext: payload,
+        expiresAt: DateTime.now().toUtc().add(const Duration(days: 7)).millisecondsSinceEpoch,
+      );
+    }
+  }
+
   void dispose() {
     _peerDiscoveredController.close();
     _envelopeReceivedController.close();

@@ -421,6 +421,37 @@ class RatchetCiphertext {
     required this.header,
     required this.body,
   });
+
+  /// Serializa a mensagem completa em quadro binário compacto:
+  /// `[32B DH Public][4B PrevChainLen][4B MsgNum][24B Nonce][16B MAC][Ciphertext]`.
+  Uint8List encode() {
+    final headerBytes = ByteData(8);
+    headerBytes.setUint32(0, header.previousChainLength, Endian.big);
+    headerBytes.setUint32(4, header.messageNumber, Endian.big);
+    final builder = BytesBuilder(copy: false)
+      ..add(header.dhPublicBytes)
+      ..add(headerBytes.buffer.asUint8List())
+      ..add(body.encode());
+    return builder.toBytes();
+  }
+
+  /// Desserializa quadro binário gerado por [encode].
+  factory RatchetCiphertext.decode(List<int> bytes) {
+    if (bytes.length < 80) {
+      throw const FormatException('RatchetCiphertext inválido (< 80 bytes).');
+    }
+    final dh = Uint8List.fromList(bytes.sublist(0, 32));
+    final headerMeta = ByteData.sublistView(Uint8List.fromList(bytes.sublist(32, 40)));
+    final pn = headerMeta.getUint32(0, Endian.big);
+    final n = headerMeta.getUint32(4, Endian.big);
+    final header = RatchetHeader(
+      dhPublicBytes: dh,
+      previousChainLength: pn,
+      messageNumber: n,
+    );
+    final body = SealedPayload.decode(bytes.sublist(40));
+    return RatchetCiphertext(header: header, body: body);
+  }
 }
 
 /// Implementação do algoritmo Double Ratchet (Signal) com chaves DH X25519,

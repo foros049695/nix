@@ -127,8 +127,16 @@ void main() {
       final c1 = await aliceRatchet.encrypt(utf8.encode('msg-1'));
       final c2 = await aliceRatchet.encrypt(utf8.encode('msg-2'));
 
+      // Serialização binária compacta de RatchetCiphertext (P0-5)
+      final rawBytes = c1.encode();
+      final decodedC1 = RatchetCiphertext.decode(rawBytes);
+      expect(decodedC1.header.messageNumber, equals(c1.header.messageNumber));
+      expect(decodedC1.header.previousChainLength, equals(c1.header.previousChainLength));
+      expect(decodedC1.header.dhPublicBytes, equals(c1.header.dhPublicBytes));
+      expect(decodedC1.body.encode(), equals(c1.body.encode()));
+
       final d2 = await bobRatchet.decrypt(c2);
-      final d1 = await bobRatchet.decrypt(c1);
+      final d1 = await bobRatchet.decrypt(decodedC1);
       expect(utf8.decode(d2), 'msg-2');
       expect(utf8.decode(d1), 'msg-1');
 
