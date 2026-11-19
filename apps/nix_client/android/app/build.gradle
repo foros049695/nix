@@ -4,6 +4,12 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('key.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.projetonix.nix_client"
     compileSdk = flutter.compileSdkVersion
@@ -34,11 +40,35 @@ android {
         }
     }
 
+    signingConfigs {
+        release {
+            def storePath = System.getenv("NIX_KEYSTORE_PATH") ?: keystoreProperties['storeFile']
+            def storePass = System.getenv("NIX_KEYSTORE_PASSWORD") ?: keystoreProperties['storePassword']
+            def keyAliasVal = System.getenv("NIX_KEY_ALIAS") ?: keystoreProperties['keyAlias']
+            def keyPass = System.getenv("NIX_KEY_PASSWORD") ?: keystoreProperties['keyPassword']
+
+            if (storePath != null && (file(storePath).exists() || rootProject.file(storePath).exists())) {
+                storeFile file(storePath).exists() ? file(storePath) : rootProject.file(storePath)
+                storePassword storePass
+                keyAlias keyAliasVal
+                keyPassword keyPass
+            } else if (file('release-keystore.jks').exists()) {
+                storeFile file('release-keystore.jks')
+                storePassword storePass ?: 'nix-release-pass'
+                keyAlias keyAliasVal ?: 'nix-release-key'
+                keyPassword keyPass ?: 'nix-release-pass'
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Assinatura de desenvolvimento para testes em dispositivos físicos;
-            // substitua por keystore dedicada de release antes de distribuição pública.
-            signingConfig = signingConfigs.debug
+            // Configuração protegida de release: rejeita debug keystore para distribuição
+            if (signingConfigs.release.storeFile != null && signingConfigs.release.storeFile.exists()) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig null
+            }
             minifyEnabled false
             shrinkResources false
         }

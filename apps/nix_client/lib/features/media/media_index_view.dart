@@ -315,8 +315,12 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
 
   Future<void> _openCatalogUpdateDialog() async {
     final updateManager = _nixState.catalogUpdateManager;
-    int currentVer = await updateManager.getInstalledVersion();
-    List<CatalogVersionEntry> history = await updateManager.getVersionHistory();
+    int currentVer = 0;
+    List<CatalogVersionEntry> history = [];
+    try {
+      currentVer = await updateManager.getInstalledVersion();
+      history = await updateManager.getVersionHistory();
+    } catch (_) {}
 
     if (!mounted) return;
 
@@ -374,12 +378,14 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                                   children: [
                                     const Icon(Icons.inventory_2_outlined, size: 16, color: Colors.amber),
                                     const SizedBox(width: 6),
-                                    Text(
-                                      'Versão Instalada: ${currentVer > 0 ? "v$currentVer" : "Catálogo Inicial"}',
-                                      style: TextStyle(
-                                        color: NixColors.textPrimary,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold,
+                                    Expanded(
+                                      child: Text(
+                                        'Versão Instalada: ${currentVer > 0 ? "v$currentVer" : "Catálogo Inicial"}',
+                                        style: TextStyle(
+                                          color: NixColors.textPrimary,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -389,11 +395,13 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                                   children: [
                                     const Icon(Icons.vpn_lock_rounded, size: 16, color: Colors.greenAccent),
                                     const SizedBox(width: 6),
-                                    Text(
-                                      'Transporte: Tor SOCKS5 (Zero vazamento pessoal)',
-                                      style: TextStyle(
-                                        color: NixColors.textSecondary,
-                                        fontSize: 12,
+                                    Expanded(
+                                      child: Text(
+                                        'Transporte: Tor SOCKS5 (Zero vazamento pessoal)',
+                                        style: TextStyle(
+                                          color: NixColors.textSecondary,
+                                          fontSize: 12,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -518,22 +526,20 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                             ),
                           ],
                           const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              TextButton.icon(
-                                icon: const Icon(Icons.cleaning_services_outlined, size: 14),
-                                label: const Text('Limpar Cache / Temporários', style: TextStyle(fontSize: 11)),
-                                onPressed: () async {
-                                  final freed = await updateManager.cleanupStorage();
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Armazenamento limpo: ${(freed / 1024).toStringAsFixed(1)} KB liberados.')),
-                                    );
-                                  }
-                                },
-                              ),
-                            ],
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              icon: const Icon(Icons.cleaning_services_outlined, size: 14),
+                              label: const Text('Limpar Cache / Temporários', style: TextStyle(fontSize: 11)),
+                              onPressed: () async {
+                                final freed = await updateManager.cleanupStorage();
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Armazenamento limpo: ${(freed / 1024).toStringAsFixed(1)} KB liberados.')),
+                                  );
+                                }
+                              },
+                            ),
                           ),
                         ],
                       ),
@@ -773,28 +779,30 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
 
   Widget _buildEmptyState() {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.search_off_rounded, size: 48, color: NixColors.textSecondary),
-            const SizedBox(height: 12),
-            Text(
-              'Nenhuma obra encontrada no catálogo local',
-              style: TextStyle(
-                color: NixColors.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.search_off_rounded, size: 48, color: NixColors.textSecondary),
+              const SizedBox(height: 12),
+              Text(
+                'Nenhuma obra encontrada no catálogo local',
+                style: TextStyle(
+                  color: NixColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Tente termos mais amplos ou altere o filtro de categoria. A busca é 100% offline via FTS5.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
-            ),
-          ],
+              const SizedBox(height: 6),
+              Text(
+                'Tente termos mais amplos ou altere o filtro de categoria. A busca é 100% offline via FTS5.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -943,28 +951,30 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
   Widget _buildAcervoTab(bool isCompact) {
     if (_userAcervo.isEmpty) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.bookmarks_outlined, size: 48, color: NixColors.textSecondary),
-              const SizedBox(height: 12),
-              Text(
-                'Seu Acervo Cultural Pessoal está vazio',
-                style: TextStyle(
-                  color: NixColors.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.bookmarks_outlined, size: 48, color: NixColors.textSecondary),
+                const SizedBox(height: 12),
+                Text(
+                  'Seu Acervo Cultural Pessoal está vazio',
+                  style: TextStyle(
+                    color: NixColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Adicione filmes, séries, animes, mangás e livros pelo Catálogo Offline. Todas as suas avaliações e anotações são cifradas localmente com SQLCipher.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
-              ),
-            ],
+                const SizedBox(height: 6),
+                Text(
+                  'Adicione filmes, séries, animes, mangás e livros pelo Catálogo Offline. Todas as suas avaliações e anotações são cifradas localmente com SQLCipher.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                ),
+              ],
+            ),
           ),
         ),
       );

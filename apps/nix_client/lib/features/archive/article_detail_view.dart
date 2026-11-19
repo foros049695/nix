@@ -405,12 +405,14 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
                     children: [
                       const Icon(Icons.gavel_rounded, size: 18, color: Colors.amber),
                       const SizedBox(width: 8),
-                      Text(
-                        'Alegações Auditáveis e Refutações (${_claims.length})',
-                        style: TextStyle(
-                          color: NixColors.textPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                      Expanded(
+                        child: Text(
+                          'Alegações Auditáveis e Refutações (${_claims.length})',
+                          style: TextStyle(
+                            color: NixColors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
@@ -553,12 +555,14 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
                     children: [
                       const Icon(Icons.forum_rounded, size: 18, color: Colors.amber),
                       const SizedBox(width: 8),
-                      Text(
-                        'Discussões Encadeadas (${_comments.length})',
-                        style: TextStyle(
-                          color: NixColors.textPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                      Expanded(
+                        child: Text(
+                          'Discussões Encadeadas (${_comments.length})',
+                          style: TextStyle(
+                            color: NixColors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
