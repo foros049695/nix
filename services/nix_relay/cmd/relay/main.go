@@ -5,7 +5,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +20,7 @@ import (
 
 func NewMux(cfg buffer.Config, store *buffer.BlindMailboxStore, pruner *buffer.AutoPruner) *http.ServeMux {
 	mux := http.NewServeMux()
+	bodyLimit := attachmentBodyLimit(cfg.MaxAttachmentSizeBytes)
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -53,8 +56,25 @@ func NewMux(cfg buffer.Config, store *buffer.BlindMailboxStore, pruner *buffer.A
 					PayloadB64 string `json:"payload_b64"`
 					TTLSeconds int64  `json:"ttl_seconds"`
 				}
-				if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024*1024)).Decode(&req); err != nil {
-					http.Error(w, "json inválido", http.StatusBadRequest)
+				decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, bodyLimit))
+				err := decoder.Decode(&req)
+				if err == nil {
+					// Exige um único objeto e consome o corpo inteiro, inclusive espaços.
+					var extra any
+					err = decoder.Decode(&extra)
+					if errors.Is(err, io.EOF) {
+						err = nil
+					} else if err == nil {
+						err = errors.New("objeto JSON adicional")
+					}
+				}
+				if err != nil {
+					var tooLarge *http.MaxBytesError
+					if errors.As(err, &tooLarge) {
+						http.Error(w, "corpo excede limite máximo permitido", http.StatusRequestEntityTooLarge)
+					} else {
+						http.Error(w, "json inválido", http.StatusBadRequest)
+					}
 					return
 				}
 				quotaToken := r.Header.Get("X-Nix-Quota-Token")
@@ -155,6 +175,22 @@ func NewAdminMux(store *buffer.BlindMailboxStore) *http.ServeMux {
 		fmt.Fprintf(w, "# TYPE nix_relay_total_pruned counter\nnix_relay_total_pruned %d\n", m.TotalPruned)
 	})
 	return mux
+}
+
+// Reserva espaço para nomes dos campos, TTL e formatação além do base64.
+func attachmentBodyLimit(maxBytes int64) int64 {
+	if maxBytes <= 0 {
+		maxBytes = buffer.DefaultConfig().MaxAttachmentSizeBytes
+	}
+	const overhead int64 = 1024
+	groups := maxBytes / 3
+	if maxBytes%3 != 0 {
+		groups++
+	}
+	if groups > (math.MaxInt64-overhead)/4 {
+		return math.MaxInt64
+	}
+	return groups*4 + overhead
 }
 
 func parseBearerToken(r *http.Request) (string, error) {
