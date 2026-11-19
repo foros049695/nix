@@ -1,163 +1,315 @@
 # 🧭 ROADMAP — PROJETO NIX
+## Desenvolvimento, integração e colaboração técnica
 
-> **Comunicação, conhecimento e mídia com soberania, privacidade verificável e resiliência off-grid.**  
-> Base de especificações: `README_NIX.md` · Revisão de Engenharia: Novembro/2026.
+**Repositório oficial:** https://github.com/foros049695/nix
 
----
+**Referência inicial:** `742533c`  
+**Atualização de referência:** 19/11/2026  
+**Estado do produto:** Pre-alpha, com desenvolvimento ativo e validação de segurança pendente.
 
-## 🎯 Visão Geral do Roadmap
-
-O desenvolvimento do **Nix** é orientado por **marcos verificáveis** e **critérios rígidos de aceite (gates)**, e não por cronogramas arbitrários. Nenhuma caixa marcada é aceita sem teste correspondente, documentação e auditoria de limites de segurança.
-
-O caminho crítico inicial prioriza o **núcleo de mensageria E2EE com privacidade rígida, suporte a Tor e infraestrutura enxuta para 50 usuários simultâneos**, isolando rádio LoRa, carteira Monero, Nix Archive e Nix Media até que o núcleo esteja estável e validado.
-
-```mermaid
-flowchart LR
-    F0[Fase 0: Specs & ADRs] --> F1[Fase 1: Núcleo Local]
-    F1 --> F2[Fase 2: Infra Relay & TTL]
-    F2 --> F3[Fase 3: E2EE & Sync]
-    F3 --> F4[Fase 4: Benchmark 50 Users]
-    F4 --> F5[Fase 5: LoRa & ATAK]
-    F4 --> F6[Fase 6: Carteira Monero]
-    F4 --> F7[Fase 7: Nix Archive]
-    F4 --> F8[Fase 8: Nix Media & Index]
-    F5 & F6 & F7 & F8 --> F9[Fase 9: Hardening & Pós-Quântico]
-```
+> O Projeto Nix será desenvolvido por múltiplos colaboradores e agentes de programação, incluindo Google Antigravity, Gemini, Codex, Claude e outros agentes autorizados. As contribuições deverão ser integradas de maneira verificável, preservando a estabilidade, a segurança, a privacidade e o histórico do projeto.
 
 ---
 
-## 📅 Detalhamento das Fases
+# 0. DIRETRIZES GERAIS DO ROADMAP
 
-### 🔷 Fase 0 — Especificação, Ameaças e Fronteiras Arquiteturais
-*Foco: Formalizar as decisões de engenharia, definir os limites do sistema e garantir alinhamento com a Matriz de Privacidade.*
+O roadmap utiliza três níveis de maturidade:
 
-- [ ] **Inventário de Escopo e Licenças:** Mapeamento de bibliotecas (libsodium, SQLCipher, protobuf) e compatibilidade com licença GPL-3.0.
-- [ ] **ADRs Fundamentais:**
-  - `ADR-0001`: Registro formal de decisões de arquitetura.
-  - `ADR-0002`: Definição de bibliotecas criptográficas e primitivas (XChaCha20-Poly1305, Ed25519, X25519, Argon2id).
-  - `ADR-0003`: Arquitetura de isolamento absoluto entre **Seed A** (mensageiro) e **Seed B** (Monero).
-- [ ] **Modelagem de Ameaças:** Formalização de `docs/SECURITY.md` cobrindo apreensão de VPS, operadores desonestos, análise de tráfego e coerção.
-- [ ] **Registro da Matriz de Privacidade (The Hated One):** Setup dos 21 IDs (`L-A` a `C-S`) em `docs/PRIVACY_MATRIX.md`.
-- [ ] **Política de Transporte "Fail-Closed":** Especificação da regra que proíbe fallback para IP direto se o Tor falhar.
-- **Critério de Aceite (Gate 0):** Documentação técnica revisada, matriz com todas as 21 células mapeadas para testes futuros, sem alegações de segurança absoluta.
+- **IMPLEMENTADO:** funcionalidade existe no código.
+- **VALIDADO:** funcionalidade passou nos testes definidos para seu escopo.
+- **GATE CONCLUÍDO:** todos os critérios de aceite da fase foram atendidos e documentados.
 
----
+Uma implementação não será considerada pronta para produção apenas porque existe uma interface, um commit ou um teste unitário.
 
-### 🔷 Fase 1 — Núcleo Local do Mensageiro (Cliente Flutter)
-*Foco: Criar a base de dados local segura, UI tática e identidade descentralizada no aparelho.*
+Convenções:
 
-- [ ] **UI Flutter Base:** Interface em tons escuros/táticos (OLED-friendly, alta legibilidade e acessibilidade).
-- [ ] **Identidade Local Soberana:** Geração de chaves locais sem telefone, SMS, e-mail ou envio de lista de contatos (`I-A`).
-- [ ] **Persistência Segura (SQLCipher):** Banco de dados local cifrado com chave de 256 bits derivada via Argon2id.
-- [ ] **Isolamento de Memória:** Implementação de rotinas de limpeza (`sodium_memzero`) para buffers sensíveis na fronteira Dart/FFI.
-- [ ] **Exclusão Criptográfica:** Mecanismo de deleção de chaves locais que inviabiliza recuperação do banco.
-- [ ] **PIN de Coação (Duress PIN):** Mecanismo opcional para acionar limpeza local sem comprometer a carteira financeira.
-- **Critério de Aceite (Gate 1):** Demonstração de ausência total de texto claro em dumps de disco/RAM, desbloqueio e restauração via mnemônico testados, zero bibliotecas de telemetria/rastreamento (`L-S`).
+- `[x]` Implementação ou documentação comprovadamente existente.
+- `[ ] PARCIAL` Implementação incompleta ou ainda sem validação suficiente.
+- `[ ] PENDENTE` Requisito ainda não demonstrado.
+
+A revisão do GitHub, das Issues e dos Pull Requests deverá fazer parte de cada ciclo de desenvolvimento.
+
+O Antigravity não deverá realizar merges, criar estratégias de branches ou alterar permissões de colaboradores sem as instruções correspondentes do proprietário.
 
 ---
 
-### 🔷 Fase 2 — Infraestrutura Enxuta e Armazenamento Dinâmico (Relay)
-*Foco: Backend em Go/Rust para buffers temporários sem retenção durável e com proteção estrita de metadados.*
+# FASE 0 — ESPECIFICAÇÕES, ARQUITETURA E DOCUMENTAÇÃO
 
-- [ ] **Relay Enxuto:** Servidor em Go ou Rust projetado para rodar em VPS de referência (2 vCPU, 2 GB RAM, 40 GB NVMe).
-- [ ] **Conexão Onion Service:** O relay opera exclusivamente como Hidden Service Tor (v3) no modo privado (`L-U`, `I-U`).
-- [ ] **Armazenamento com TTL Base de 7 Dias:** Mensagens e anexos privados expiram automaticamente (`expires_at = created_at + 7d`).
-- [ ] **AutoPruner Dinâmico com Histerese:**
-  - `< 75%`: Operação normal, TTL 7 dias.
-  - `≥ 75%`: Teto reduzido para 4 dias para pendências antigas.
-  - `≥ 85%`: Teto reduzido para 48h; upload limitado a 10 MB.
-  - `≥ 92%`: Rejeição de novas mídias; reserva exclusiva para texto.
-- [ ] **Quotas por Token Anônimo:** 500 MB em trânsito por identidade de quota e 50 MB por anexo.
-- [ ] **Métricas Minimizadas (Prometheus):** Coleta de CPU, RAM e contagem agregada de conexões; **zero** labels de IPs, IDs de mensagens ou endereços XMR (`D-S`).
-- **Critério de Aceite (Gate 2):** Simulação de pressão de disco validando a histerese sem corrupção; reinício limpo sem ressuscitar mensagens expurgadas; auditoria de logs confirmando zero PII gravado em `/var/log` ou journal.
+**Objetivo:** manter a arquitetura formalizada, coerente e verificável.
 
----
+### Estado atual
 
-### 🔷 Fase 3 — Protocolo Criptográfico e Sincronização Assíncrona
-*Foco: Comunicação ponto a ponto autenticada, anexos cifrados e resiliência de entrega.*
+- [x] ADR-0001 — Registro de decisões arquiteturais.
+- [x] ADR-0002 — Primitivas criptográficas.
+- [x] ADR-0003 — Isolamento da identidade de mensageria e da identidade financeira.
+- [x] ADR-0004 — Estado criptográfico, canonicalização e proteção do Double Ratchet.
+- [x] Documentação inicial de arquitetura (`docs/ARCHITECTURE.md`, `SECURITY.md`, `docs/INCIDENT_RESPONSE.md`).
+- [x] Canal confidencial de divulgação de vulnerabilidades ativado via **GitHub Private Vulnerability Reporting** (`SECURITY.md` §3 / Issue #12).
+- [x] Matriz de privacidade com 21 requisitos (`docs/PRIVACY_MATRIX.md`).
+- [x] Documentação da política fail-closed.
+- [x] Arquivos `AGENTS.md`, `GEMINI.md` e `CLAUDE.md` adicionados pelo PR #1 (`789cf92`).
 
-- [ ] **Sessões Assíncronas (X3DH / Double Ratchet):** Implementação formal de catracas de chaves com Forward Secrecy e PCS.
-- [ ] **Verificação Fora de Banda:** Comparação de contatos por QR Code ou fingerprints e alerta visual de troca de chaves (`DD-A`).
-- [ ] **Anexos e Mídias Cifrados:** Cifra simétrica ponta a ponta (XChaCha20-Poly1305) com remoção prévia de metadados EXIF.
-- [ ] **Sender Keys para Grupos:** Distribuição eficiente de chaves de remetente com re-keying ao adicionar/remover membros.
-- [ ] **Fila Store-and-Forward:** Fila assíncrona local para suportar envio offline e entrega quando destinatário conectar.
-- [ ] **Temporizadores de Mensagens Efêmeras:** Apagamento automático sincronizado de mensagens visualizadas.
-- **Critério de Aceite (Gate 3):** Testes automatizados de ataque replay, reordenação de pacotes, corrupção de mensagens e troca forçada de transporte sem vazamento de chaves.
+### O que falta
 
----
+- [ ] PARCIAL Revisar divergências entre documentação e código (README vs relay JSON x PostgreSQL).
+- [ ] PENDENTE Atualizar as descrições do relay e do PostgreSQL conforme a implementação real.
+- [ ] PARCIAL Revisar a utilização efetiva das bibliotecas criptográficas.
+- [ ] PENDENTE Verificar licenças e dependências (compatibilidade GPL-3.0).
+- [ ] PARCIAL Relacionar todos os requisitos da matriz de privacidade a testes reproduzíveis (`./scripts/verify_privacy_matrix.sh`).
+- [x] Avaliar e integrar as correções documentais propostas no PR #10 (integrado em `1799597`; `AGENTS.md` atualizado com isolamento de `$HOME` em testes e status da Issue #11).
 
-### 🔷 Fase 4 — Benchmark e Validação de Carga (50 Usuários Simultâneos)
-*Foco: Validar empiricamente a hipótese da VPS de US$ 5-10/mês sob tráfego real.*
+**Gate 0:** documentação consistente com o código atual e requisitos rastreáveis.
 
-- [ ] **Bot de Carga Distribuído:** Simulador de 50 nós trocando mensagens de texto, imagens de 2 MB, reconectando e saturando filas.
-- [ ] **SLO de Latência e Consumo:**
-  - RSS do processo relay: `< 500 MB` sob carga estável.
-  - Latência p50 e p95 sob rede Tor monitoradas e documentadas.
-- [ ] **Teste de Estresse de 60 Minutos:** Ensaio contínuo de 1 hora sem perda de mensagens, vazamento de memória ou pânico de concorrência.
-- **Critério de Aceite (Gate 4):** Relatório reproduzível publicado em `docs/PERFORMANCE.md` com logs de métricas e limites medidos.
+**Situação: PARCIAL.**
 
 ---
 
-### 🔷 Fase 5 — Redes Off-Grid: Rádio LoRa, Reticulum e Mapas Offline
-*Foco: Comunicação tática em áreas sem conectividade de internet celular ou cabeada.*
+# FASE 1 — NÚCLEO LOCAL DO CLIENTE FLUTTER
 
-- [ ] **Adaptadores de Hardware:** Suporte a transceivers LoRa via Bluetooth Low Energy (BLE) para Meshtastic e nós Reticulum (RNode/KISS).
-- [ ] **Filtro Estrito de Rádio (Protobuf):** Serialização de pacotes pequenos (< 240 bytes); bloqueio automático de imagens e anexos (`radio.proto`).
-- [ ] **Gestão de Airtime e Hops:** Controle de ciclo de trabalho regulatório (duty cycle), limites de saltos (TTL de rede) e deduplicação.
-- [ ] **Mapas Offline (MapLibre / MBTiles):** Renderização de mapas locais sem requisições HTTP a serviços de tiles de satélite/rua.
-- [ ] **Ponte ATAK-CIV (Cursor-on-Target):** Servidor local UDP (`127.0.0.1:4242`) traduzindo pontos de interesse para CoT XML/binário sob consentimento explícito.
-- **Critério de Aceite (Gate 5):** Transmissão bem-sucedida em hardware real (ex: RAK4631 / Heltec); bloqueio de mídia garantido antes da camada de fragmentação; compartilhamento de localização estritamente por clique do usuário.
+**Objetivo:** construir uma aplicação local-first com identidade, persistência e experiência de utilização reais.
 
----
+### Estado atual
 
-### 🔷 Fase 6 — Nix Wallet: Pagamentos e Mural P2P em Monero (XMR)
-*Foco: Soberania financeira e transações descentralizadas sem custódia.*
+- [x] Interface Flutter implementada (Flutter 3.27+ / Dart 3.6+).
+- [x] Temas Dark Yellow, Light Yellow e AMOLED com contraste aprimorado.
+- [x] Layout de três painéis com divisórias redimensionáveis.
+- [x] Card ID e Acervo Cultural em protótipo limpo sem dados fictícios na produção.
+- [x] KeyVault criado com Argon2id + XChaCha20-Poly1305.
+- [x] Banco local e repositórios de domínio implementados (`IdentityRepository`, `OutboxRepository`, etc.).
+- [x] Migrações SQLite definidas (`001_initial.sql`, `002_lookup_indexes.sql`).
+- [x] Fluxo de onboarding de nove etapas criado (transacional, resistente a fechamento e reinício).
+- [x] Código de sincronização visual de perfis e avatares (Dock, Sidebar, Card ID).
+- [x] Persistência inicial de itens do Acervo adicionada (`culturalItems` JSON).
 
-- [ ] **Processo e Seed Isolados:** **Seed B** gerada em processo separado; total isolamento de chaves de chat ou personas (`L-A`).
-- [ ] **Integração de Biblioteca Monero:** Conexão nativa C++/Go/Rust com verificação de integridade e compilação reproduzível.
-- [ ] **Suporte a Nós Remotos Onion / Locais:** Escolha do nó pelo usuário, com roteamento forçado via Tor.
-- [ ] **Subendereços Descartáveis:** Geração de novos subendereços para cada transação e contraparte.
-- [ ] **Mural P2P Efêmero:** Ofertas locais/ponto a ponto assinadas sem custódia central, sem tokens e sem reputação global compartilhada.
-- **Critério de Aceite (Gate 6):** Suíte de testes em `stagenet` completada; tentativa deliberada de um processo de mensageiro assinar uma transação é rejeitada; zero seeds em backups gerais.
+### O que falta
 
----
+- [ ] PARCIAL Confirmar SQLCipher verdadeiro no runtime distribuído. O PR #6 (integrado) faz o app reportar honestamente `SQLite-Development-Clearnet` quando `cipher_version` está ausente; o bundle Linux ainda não foi verificado com SQLCipher real.
+- [x] Corrigir a identificação incorreta de SQLite comum como banco criptografado (PR #6, `test/local_database_probe_test.dart`).
+- [x] Validar migrações e respectivos checksums SHA-256 antes de aplicar qualquer SQL (PR #6).
+- [ ] PENDENTE Concluir proteção das chaves pelo mecanismo adequado de cada sistema operacional (Secure Storage / Keyring nativo).
+- [ ] PARCIAL Validar backup e recuperação da identidade: o estado de onboarding persiste sem gravar a Seed A em claro; a restauração completa a partir do mnemônico em outra instalação ainda não foi testada.
+- [ ] PARCIAL Testar onboarding completo sem atalhos: o teste de widget percorre WELCOME → TOR_CONSENT e conclui via `completeOnboarding()`; as etapas TOR_BOOTSTRAP → PROFILE_SETUP com Tor real não têm teste automatizado.
+- [ ] PARCIAL Garantir carregamento da conta existente após reinicialização (restauração do snapshot transacional testada; reabertura do banco cifrado com a conta real ainda sem teste ponta a ponta).
+- [x] Corrigir os erros do analisador Flutter (PR #3: 0 erros, 0 warnings; 100 `info` restantes sob `--no-fatal-infos`).
+- [ ] PARCIAL Testar layouts, navegação e ações de interface (48 testes de widget/unidade; não cobrem todas as ações).
+- [x] Confinar o apagamento local ao diretório alvo e sobrescrever arquivos in-place (PR #4, `test/shredder_confinement_probe_test.dart`).
+- [ ] PENDENTE Documentar limites do apagamento em SSD/flash (wear leveling torna a sobrescrita não garantida; a proteção real é a destruição da chave).
+- [ ] PENDENTE Avaliar PIN de coação, mantendo riscos e limitações explícitos contra análise forense de flash/SSD.
 
-### 🔷 Fase 7 — Nix Archive: Publicações Canônicas, Claims e Refutações
-*Foco: Plataforma de publicação de conhecimento resistente à adulteração.*
+### Pull Requests relacionados (integrados em 19/11/2026)
 
-- [ ] **Editor Markdown Seguro:** Sanitização rigorosa de tags HTML/SVG, rascunhos locais cifrados no cliente.
-- [ ] **Esquema de Objeto Canônico v1:** Hash/CID calculado sobre bytes canônicos (`schema: nix.archive.article.v1`).
-- [ ] **Grafo de Refutações e Afirmações (Claims):** Refutações atreladas a trechos específicos e versões exatas via `claim_id`.
-- [ ] **Votos e Avaliação de Evidência:** Distinção explícita entre integridade criptográfica do objeto e opinião coletiva (votos não provam fatos).
-- [ ] **Réplicas Opt-in (S3 / IPFS Seguro):** Armazenamento voluntário fora do relay transitório; ausência de conexão desprotegida a DHT pública.
-- **Critério de Aceite (Gate 7):** Detecção de qualquer byte adulterado em artigo histórico; integridade das referências `supersedes`; prova de que publicação no Archive não revela a chave de chat.
+- PR #3 — Compatibilidade Flutter e CI. `ALREADY_INTEGRATED`
+- PR #4 — Correções na exclusão local e confinamento do shredder. `ALREADY_INTEGRATED`
+- PR #6 — SQLCipher honesto e verificação de checksums. `ALREADY_INTEGRATED`
+- PR #9 — Sanitização fail-closed de imagens (JPEG/PNG/WebP/GIF). `ALREADY_INTEGRATED`
 
----
+**Gate 1:** instalação limpa, identidade persistente, armazenamento cifrado comprovado e recuperação funcional.
 
-### 🔷 Fase 8 — Nix Media e Nix Index
-*Foco: Catálogo unificado de mídia e descoberta de fontes de informação.*
-
-- [ ] **Catálogo Pessoal e Seguro:** Listas de filmes, séries, animes, mangás e livros salvas localmente no SQLCipher.
-- [ ] **Conectores em Sandbox:** TMDB, AniList e Jellyfin acessados com controle de cookies, sem rastreadores e sem pixels de rastreamento.
-- [ ] **Indexador de Magnets e Manifests:**
-  - Separação mandatória entre **Pesquisar Metadados**, **Resolver Magnet** e **Transferir Arquivo**.
-  - Pesquisa não conecta a swarms BitTorrent nem ativa DHT pública no perfil privado.
-- **Critério de Aceite (Gate 8):** Captura de tráfego de rede durante busca de mídia confirmando zero vazamento de IP; conectores desativados imediatamente revogam conexões.
+**Situação: PARCIAL.**
 
 ---
 
-### 🔷 Fase 9 — Endurecimento, Criptografia Pós-Quântica e Expansão
-*Foco: Maturidade de longo prazo e segurança avançada.*
+# FASE 2 — RELAY, PERSISTÊNCIA E INFRAESTRUTURA
 
-- [ ] **Trilha Pós-Quântica (PQXDH / ML-KEM):** Implementação de acordo de chaves híbrido pós-quântico com proteção contra downgrade.
-- [ ] **Builds Reproduzíveis e SBOM:** Compilação auditável bit a bit de todos os binários (relay e cliente) com Software Bill of Materials.
-- [ ] **Assinatura Criptográfica de Releases:** Chaves de release verificadas via minisign / signifies.
-- [ ] **Topologia Multi-Relay e Partição:** Testes de rede federada/descentralizada com tolerância a partições de rede e nós maliciosos.
-- **Critério de Aceite (Gate 9):** Auditoria externa independente publicada em `docs/SECURITY.md`; conformidade integral com as 21 células da matriz `docs/PRIVACY_MATRIX.md`.
+**Objetivo:** proporcionar entrega assíncrona de envelopes criptografados com armazenamento temporário.
+
+### Estado atual
+
+- [x] Relay Go criado (`services/nix_relay`).
+- [x] API de mailboxes presente (`/v1/mailboxes/{id}/envelopes`, `/v1/mailboxes/{id}/ack`).
+- [x] TTL padrão de sete dias no código.
+- [x] AutoPruner com histerese (75%, 85%, 92% de disco).
+- [x] Controle de quotas implementado (`X-Nix-Quota-Token`, 500 MB in-flight).
+- [x] Verificação estática de privacidade no CI (proibição estrita de log de IP).
+- [x] Testes Go executados com sucesso no workflow principal (`services/nix_relay/internal/buffer`).
+- [x] Schema PostgreSQL e migrações iniciais documentados (`database/schema/relay.sql`).
+
+### O que falta
+
+- [ ] PENDENTE Integrar o relay ao PostgreSQL real (atualmente persiste JSON por mailbox em disco).
+- [ ] PARCIAL Executar testes de concorrência e persistência (`go test -race` aprovado; falhas de disco simuladas via `chmod` no PR #7; sem teste de carga concorrente).
+- [ ] PENDENTE Validar autenticação de capabilities com assinatura e prazo.
+- [x] Confirmar que erros de disco não produzem confirmações falsas: store/fetch/ack retornam HTTP 500 sem expor caminhos e revertem cotas (PR #7, `persistence_probe_test.go`).
+- [x] Validar limites de anexos e do corpo HTTP: limite derivado do teto de anexo, 413 em excesso, JSON único (PR #8, `attachment_probe_test.go`).
+- [ ] PARCIAL Validar expiração e limpeza após reinicialização.
+- [ ] PENDENTE Testar backup e restauração automatizados.
+- [ ] PENDENTE Implantar em laboratório um Onion Service v3 em Debian 13.
+- [ ] PENDENTE Validar isolamento do listener administrativo (`admin_listen_addr`).
+- [ ] PENDENTE Preparar uma VPS com configuração reproduzível via Ansible/Docker.
+
+### Pull Requests relacionados (integrados em 19/11/2026)
+
+- PR #7 — Persistência e propagação de erros. `ALREADY_INTEGRATED`
+- PR #8 — Limites de upload e dimensionamento de corpo HTTP. `ALREADY_INTEGRATED`
+
+**Verificado:** ambos modificam `cmd/relay/main.go`; o merge combinado foi automático e `go vet ./...` + `go test -race ./...` passaram localmente (Go 1.23.4) sobre o resultado integrado.
+
+**Gate 2:** relay persistente, recuperável, autenticado e validado em rede Tor.
+
+**Situação: PARCIAL.**
 
 ---
 
-## 📊 Matriz de Rastreabilidade (Gates vs Módulos)
+# FASE 3 — MENSAGERIA E2EE E SINCRONIZAÇÃO
+
+**Objetivo:** estabelecer comunicação real entre clientes independentes.
+
+### Estado atual
+
+- [x] Módulo criptográfico Dart criado (`modules/core_crypto`).
+- [x] Implementações X3DH e Double Ratchet presentes (Forward Secrecy e Break-in Recovery).
+- [x] ReplayGuard e envelopes autenticados (`SignedRecord`).
+- [x] Conector SOCKS5 com resolução remota de DNS (sem vazamento).
+- [x] RelayClient com framing de envelopes.
+- [x] Outbox e inbox locais persistidos em SQLite.
+- [x] Deduplicação de mensagens atômica (`inbox_dedup`).
+- [x] Pesquisa FTS5 local indexada.
+- [x] Testes sintéticos do pipeline adicionados (`test/e2e_messaging_pipeline_test.dart`).
+- [x] Gerenciador de Tor embutido implementado em código (`modules/transport/lib/nix_embedded_tor.dart`).
+
+### O que falta
+
+- [x] Corrigir os erros de análise no módulo de transporte e crypto (PR #2: `dart analyze --fatal-infos` sem issues nos dois módulos).
+- [ ] PARCIAL Revisar a integração do Tor embutido nos instaladores e empacotamento Linux/Android.
+- [ ] PARCIAL Testar bootstrap e conexão Onion real em rede Tor ao vivo.
+- [ ] PARCIAL Issue #11 (HTTPS via SOCKS): o `NoSuchMethodError: _detachRaw` foi substituído por `UnsupportedTransportSchemeException` (fail-closed, antes de abrir socket, sem downgrade; `test/https_over_socks_probe_test.dart`). TLS real sobre o túnel (`RawSocket` → `RawSecureSocket`) continua pendente.
+- [ ] PENDENTE Integrar autenticação de contatos e sessões fora de banda (QR Code recíproco).
+- [ ] PENDENTE Testar comunicação entre dois clientes independentes em instâncias separadas.
+- [ ] PARCIAL Validar mensagens fora de ordem e duplicadas: validado em testes sintéticos (`core_crypto_test.dart`, `e2e_messaging_pipeline_test.dart`); entre dois clientes reais, pendente.
+- [ ] PENDENTE Testar recuperação após perda de conexão de rede.
+- [ ] PENDENTE Implementar transferência completa de anexos E2EE fragmentados com manifesto.
+- [ ] PENDENTE Implementar rotação de chaves em grupos (Sender Keys).
+- [ ] PENDENTE Validar mensagens temporárias distribuídas.
+- [ ] PARCIAL Executar testes de falha e recuperação de transporte (timeout do Tor encerra o processo filho; probes isolados de portas reais — PR #5).
+
+### Pull Requests relacionados (integrados em 19/11/2026)
+
+- PR #2 — Correções dos módulos criptográfico e de transporte. `ALREADY_INTEGRATED`
+- PR #5 — Isolamento dos testes e encerramento em timeout do Tor. `ALREADY_INTEGRATED`
+- PR #9 — Sanitização de metadados antes do envio de imagens. `ALREADY_INTEGRATED`
+
+**Gate 3:** Alice e Bob conseguem trocar mensagens reais através do Tor, com autenticação, persistência, entrega offline e recuperação após falha.
+
+**Situação: PARCIAL.**
+
+---
+
+# FASE 4 — BENCHMARK E CAPACIDADE DE 50 USUÁRIOS
+
+**Objetivo:** determinar a capacidade real da infraestrutura.
+
+- [x] Documento de objetivos de desempenho existente (`docs/PERFORMANCE.md`).
+- [ ] PENDENTE Criar simulador de 50 clientes simultâneos.
+- [ ] PENDENTE Simular mensagens e anexos de 2 MB.
+- [ ] PENDENTE Simular reconexões em lote e tempestade de sincronização.
+- [ ] PENDENTE Medir CPU e memória (meta: RSS < 500 MB no relay).
+- [ ] PENDENTE Medir latência p50 e p95 sob circuito Tor.
+- [ ] PENDENTE Executar teste contínuo de 60 minutos sob saturação.
+- [ ] PENDENTE Avaliar crescimento do armazenamento e impacto prático do AutoPruner.
+- [ ] PENDENTE Publicar resultados reproduzíveis.
+- [ ] PENDENTE Dimensionar VPS com base em medições reais comprovadas.
+
+**Gate 4: PENDENTE.**
+
+---
+
+# FASE 5 — COMUNICAÇÃO OFF-GRID
+
+**Objetivo:** permitir comunicação local sem conectividade convencional.
+
+- [x] Código experimental de malha Bluetooth (`modules/transport/lib/nix_bluetooth_mesh.dart`).
+- [x] Testes iniciais de software com framing mágico `NIXB`.
+- [ ] PENDENTE Validar comunicação Bluetooth em dispositivos físicos Android/Linux.
+- [ ] PENDENTE Implementar adaptadores Meshtastic/LoRa via BLE/Serial.
+- [ ] PENDENTE Integrar Reticulum (RNode/KISS).
+- [ ] PENDENTE Implementar controle de airtime e limites regulatórios (`radio.proto`).
+- [ ] PENDENTE Implementar mapas offline em formato MBTiles/MapLibre.
+- [ ] PENDENTE Integrar ATAK-CIV via UDP `127.0.0.1:4242` sob consentimento explícito.
+- [ ] PENDENTE Testar distribuição offline do APK real, com assinatura e checksum.
+
+**Gate 5: PENDENTE.**
+
+---
+
+# FASE 6 — MONERO P2P
+
+**Objetivo:** permitir integração financeira não custodial, preservando o isolamento entre mensageria e finanças.
+
+- [x] Interface experimental de mercado Monero.
+- [ ] PENDENTE Revisar a arquitetura da carteira interna descrita no roadmap original.
+- [ ] PENDENTE Formalizar a integração externa não custodial (Seed B isolada).
+- [ ] PENDENTE Verificar assinaturas reais dos anúncios (Ed25519).
+- [ ] PENDENTE Implementar negociação pelo canal apropriado.
+- [ ] PENDENTE Testar filtros, expiração e atualização de anúncios.
+- [ ] PENDENTE Verificar separação de dados financeiros e de mensageria.
+- [ ] PENDENTE Documentar o modelo de confiança das contrapartes.
+
+**Gate 6: PENDENTE.**
+
+---
+
+# FASE 7 — NIX ARCHIVE
+
+**Objetivo:** criar publicação verificável de conhecimento, artigos e refutações.
+
+- [x] Documentação inicial (`docs/ARCHIVE.md`).
+- [x] Interfaces preliminares (`PublicationRoomView`).
+- [ ] PENDENTE Editor Markdown seguro e persistente com sanitização rigorosa de HTML.
+- [ ] PENDENTE Objetos canônicos com CID (`schema: nix.archive.article.v1`).
+- [ ] PENDENTE Histórico de revisões canônico.
+- [ ] PENDENTE Assinaturas de publicações por autor/persona.
+- [ ] PENDENTE Claims e refutações atreladas a trechos específicos.
+- [ ] PENDENTE Grafo de referências `supersedes`.
+- [ ] PENDENTE Replicação opt-in (S3/IPFS seguro sem DHT pública no perfil privado).
+- [ ] PENDENTE Pesquisa e indexação local.
+- [ ] PENDENTE Testes de integridade e detecção de adulteração de bytes.
+
+**Gate 7: PENDENTE.**
+
+---
+
+# FASE 8 — NIX MEDIA, INDEX E GITHUB DISCOVERY
+
+**Objetivo:** integrar catálogos, pesquisa e acervo pessoal.
+
+- [x] Interfaces de mídia e indexação.
+- [x] Catálogo estático Starwire com 4.188 entradas no protótipo.
+- [x] Código inicial de Acervo Cultural persistente (`culturalItems` JSON).
+- [ ] PENDENTE Integrar catálogos ao banco local definitivo (SQLCipher).
+- [ ] PENDENTE Implementar conectores externos em sandbox isolada (TMDB, AniList, Jellyfin).
+- [ ] PENDENTE Implementar indexação real de metadados.
+- [ ] PENDENTE Separar formalmente pesquisa de metadados, resolução de magnet e transferência.
+- [ ] PENDENTE Atualizar o catálogo Starwire a partir de fontes verificáveis.
+- [ ] PENDENTE Validar downloads, permissões e tratamento de falhas.
+- [ ] PENDENTE Verificar o comportamento de rede no perfil privado (zero vazamento clearnet).
+
+**Gate 8: PENDENTE.**
+
+---
+
+# FASE 9 — HARDENING E RELEASE
+
+**Objetivo:** preparar uma versão distribuível, auditável e recuperável.
+
+- [x] GitHub Actions configurado (`.github/workflows/ci.yml`).
+- [x] Verificação estática de privacidade (`scripts/verify_privacy_matrix.sh`).
+- [x] Documentação de contribuição para agentes (`AGENTS.md`, `GEMINI.md`, `CLAUDE.md`).
+- [x] Suítes locais verdes após integração combinada (#2–#10 + fix #11 + isolamento de snapshot de onboarding): `verify_privacy_matrix.sh`, Go `vet`/`test -race`, Dart `analyze --fatal-infos`/`test` e Flutter `analyze --no-fatal-infos`/`test` (48/48).
+- [ ] PARCIAL Confirmar pipeline completo verde no GitHub Actions após push da `main` integrada.
+- [ ] PENDENTE Implementar testes distribuídos de segurança.
+- [ ] PENDENTE Gerar SBOM (Software Bill of Materials).
+- [ ] PENDENTE Preparar builds reproduzíveis.
+- [ ] PENDENTE Assinar artefatos de release com chaves oficiais (`minisign` / `signify`).
+- [ ] PENDENTE Validar atualização e rollback transacional.
+- [ ] PENDENTE Implementar testes multi-relay com tolerância a partições de rede.
+- [ ] PENDENTE Planejar evolução pós-quântica (PQXDH / ML-KEM).
+- [ ] PENDENTE Solicitar auditoria externa independente.
+
+**Gate 9: PENDENTE.**
+
+---
+
+## 📊 Matriz de Rastreabilidade (Gates vs Módulos — Estrutura Original)
 
 | Fase | Módulo Principal | Arquivo de Documentação | Alinhamento Matriz de Privacidade |
 |---|---|---|---|
@@ -170,28 +322,224 @@ flowchart LR
 | **Fase 6** | Nix Wallet (Monero) | `docs/WALLET.md` | `L-A`, `I-A`, `DD-A` |
 | **Fase 7** | Nix Archive | `docs/ARCHIVE.md`, `REPLICATION.md` | `N-A`, `DD-U` |
 | **Fase 8** | Nix Media & Index | `docs/MEDIA.md`, `INDEX.md` | `U-U`, `C-U` |
+
 ---
 
-## 🏁 Marco Anterior: Protótipo v0.2.0 (Living AMOLED & Starwire)
+## 🏁 Histórico de Protótipos (Referência Preservada — Não Substitui Gates P0)
 
-- [x] **Design System Nix Living AMOLED:** Fundo `#000000` AMOLED absoluto, paletas reativas dinâmicas (`context.accentColor`), superfícies elevadas e contraste refinado.
-- [x] **Card ID & Passaporte Cultural:** Abertura universal por clique, hover isolado exclusivamente no peer com lockout anti-reabertura no `X`, posicionamento lateral não-obstrutivo e destaques culturais.
-- [x] **Organização de Navegação:** Dock dedicado exclusivamente a Espaços e Pastas combinadas; HomeSidebar agregando Conversas Diretas, Solicitações, Mercado Monero P2P e GitHub Discovery.
-- [x] **Ações de Mensagens Completas:** Menu de contexto desktop/mobile, cópia segura UTF-8, encaminhamento com seletor de destino (`ForwardMessageDialog`), deleção local/geral e reações com emojis toggleable.
-- [x] **Configurações Avançadas de Canal:** Painel multi-categoria com permissões de mensagens, segurança anti-spam (slow mode), expurgo efêmero e suporte a `FLAG_SECURE` contra screenshots.
-- [x] **Catálogo Starwire Integrado:** Ingestão de 4.188 repositórios sob licença CC0-1.0 com métricas de crescimento semanal, busca instantânea e salvamento de 1 clique no Acervo Cultural.
+### Protótipo v0.2.0 (Living AMOLED & Starwire)
+- UI AMOLED inicial, Card ID visual, pastas combinadas no Dock, ações de mensagem em memória e catálogo Starwire estático (4.188 entradas CC0-1.0).
 
-## 🚀 Marco Atual: Protótipo Experimental v0.4.0-dev (V4 Telegram Layout & Yellow)
+### Protótipo Experimental v0.4.0-dev (V4 Telegram Layout & Yellow)
+- Pipeline visual `scripts/brand/process_logo.py`, temas V4 (Dark Yellow, Light Yellow, AMOLED), layout redimensionável de 3 áreas, protótipos iniciais de `core_crypto`, `transport` e `nix_relay` (em evolução contínua nas Fases 1–3).
 
-- [x] **Identidade Visual & Emblema Vetorizado Transparente:** Pipeline em `scripts/brand/process_logo.py` gerando variantes transparentes (`ink`, `light`, `medallion`), splash, desktop e ícones Android.
-- [x] **Design System V4:** Dois temas oficiais (**Nix Dark Yellow** `#08090B`/`#17191E`/`#292C33`/`#FFC928` padrão inicial e **Nix Light Yellow** `#FFFFFF`/`#F6F7F9`/`#E9EBEF`/`#FFC928`), variação **AMOLED** `#000000`, modo **Sistema** e seletor reativo de cor de destaque.
-- [x] **Layout 3 Áreas & Janela Desktop Redimensionável:** Dock esquerdo com pastas personalizáveis e drag-and-drop (sem apagar chats), lista de conversas com filtros/busca e **Mensagens Salvas**, além de bordas redimensionáveis (mínimo `720x500`, início não maximizado).
-- [x] **Card ID Limpo & Privacidade:** Remoção de QR duplicado e status "Assistindo", fallback determinístico `NX-XXXX`, upload local (PNG/JPEG/WebP) com recorte e sanitização EXIF/chunks, correção de hover sem flickering em Solicitações e bloqueio real por `Visibilidade do Card ID`.
-- [x] **Mensageria, Starwire Analytics, Monero P2P e Share Offline:** Edição/resposta/fixação/multi-seleção/encaminhamento, `ConversationInfoPanel` clicando no cabeçalho, gráficos Starwire com dados reais, proteção fail-closed para download ZIP, verificação Ed25519 + expiração no P2P Monero e modal `Compartilhar Nix Offline` estilo Briar.
-- [x] **Módulos Criptográficos, Transporte & Relay Go:**
-  - `modules/core_crypto`: `Ed25519`, `X25519`, `XChaCha20-Poly1305`, `Argon2id`, `X3DH`, `DoubleRatchet`, `SignedRecord` & `ReplayGuard` (5/5 testes unitários).
-  - `modules/transport`: política *fail-closed* para `.onion` v3, conector `SOCKS5` sem vazamento de DNS (`ATYP 0x03`), `TorControlClient` e `RelayClient` (4/4 testes unitários).
-  - `services/nix_relay`: API Store-and-Forward em Go com TTL base de 7 dias e `AutoPruner` em 4 bandas com histerese (2/2 suítes Go aprovadas + smoke test do binário).
-- [x] **Validação Multiplataforma de Protótipos (Não Lançamento Oficial):**
-  - 7/7 testes de widgets Flutter (`flutter test`), 5/5 `core_crypto`, 4/4 `transport`, 2/2 pacotes Go `nix_relay`.
-  - Protótipos compilados localmente em Linux x86_64 e Android APK (assinatura `debug` para desenvolvimento local).
+---
+
+# FASE TRANSVERSAL — GOVERNANÇA DE ISSUES E PULL REQUESTS
+
+## Objetivo
+
+Garantir que o desenvolvimento realizado por colaboradores e agentes de IA seja acompanhado, revisado, testado e incorporado sem comprometer o código existente.
+
+O Antigravity deverá consultar o repositório e identificar contribuições novas, modificadas, encerradas e integradas antes de iniciar cada nova tarefa relevante.
+
+## A. Auditoria das Issues
+
+Para cada Issue:
+
+1. Ler título, descrição e comentários.
+2. Identificar o autor.
+3. Determinar o módulo afetado.
+4. Verificar se o comportamento continua reproduzível no código atual.
+5. Relacionar a Issue à fase correspondente do roadmap.
+6. Identificar PRs relacionados.
+7. Verificar dependências.
+8. Classificar a prioridade.
+9. Sugerir a ação seguinte.
+
+Classificações recomendadas:
+
+- `bug`
+- `security`
+- `documentation`
+- `enhancement`
+- `needs-reproduction`
+- `needs-tests`
+- `blocked`
+- `P0`
+- `P1`
+- `P2`
+
+Não criar labels duplicadas sem verificar as existentes.
+
+Uma Issue não deverá ser encerrada apenas porque um PR foi aberto.
+
+O fechamento requer resolução demonstrada ou justificativa explícita.
+
+## B. Auditoria dos Pull Requests
+
+Para cada PR aberto:
+
+1. Identificar autor, branch de origem e destino.
+2. Ler descrição, commits e comentários.
+3. Inspecionar o diff completo.
+4. Identificar arquivos modificados.
+5. Verificar se a mesma funcionalidade foi alterada depois da abertura.
+6. Identificar conflitos ou sobreposição com outros PRs.
+7. Verificar dependências declaradas.
+8. Inspecionar o estado dos checks.
+9. Executar testes apropriados em ambiente isolado.
+10. Comparar comportamento anterior e proposto.
+11. Verificar compatibilidade com o modelo de privacidade.
+12. Verificar regressões.
+13. Produzir um parecer de integração.
+
+O parecer deverá utilizar:
+
+- `READY_FOR_REVIEW`
+- `NEEDS_CHANGES`
+- `BLOCKED_BY_DEPENDENCY`
+- `CI_FAILED`
+- `READY_TO_INTEGRATE`
+- `ALREADY_INTEGRATED`
+
+**Um PR não deverá ser considerado aprovado apenas porque seu autor declara que os testes passaram.**
+
+## C. Pull Requests identificados (auditoria e integração em 19/11/2026)
+
+| PR | Área | Autor | Commit Merge (`main`) | Parecer Técnico |
+|---|---|---|---|---|
+| #1 | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` | @gabrielmaialva33 | `789cf92` | `ALREADY_INTEGRATED` |
+| #2 | Crypto/Transport CI (`dart analyze`) | @gabrielmaialva33 | `8618b79` | `ALREADY_INTEGRATED` (Desbloqueador Dart CI) |
+| #3 | Flutter CI (`analyze` & `Material`) | @gabrielmaialva33 | `f54b857` | `ALREADY_INTEGRATED` (Desbloqueador Flutter CI) |
+| #5 | Tor embutido (Isolamento & timeout) | @gabrielmaialva33 | `c7dd88d` | `ALREADY_INTEGRATED` (Dependeu de #2) |
+| #4 | Exclusão local (`panicWipeAccount`) | @gabrielmaialva33 | `5d83e77` | `ALREADY_INTEGRATED` (Dependeu de #3) |
+| #6 | SQLCipher honesto & checksums | @gabrielmaialva33 | `7677a0b` | `ALREADY_INTEGRATED` (Dependeu de #3) |
+| #9 | Sanitização fail-closed de imagens | @gabrielmaialva33 | `6199fc7` | `ALREADY_INTEGRATED` (Dependeu de #3) |
+| #7 | Persistência & erros do Relay (Go) | @gabrielmaialva33 | `4a13daa` | `ALREADY_INTEGRATED` (Combinado com #8) |
+| #8 | Limites de corpo HTTP do Relay (Go) | @gabrielmaialva33 | `f1dffd1` | `ALREADY_INTEGRATED` (Combinado com #7) |
+| #10 | Atualização `AGENTS.md` e test safety | @gabrielmaialva33 | `1799597` | `ALREADY_INTEGRATED` |
+
+A classificação representa o estado consultado e integrado mediante autorização explícita do proprietário, com suítes reexecutadas localmente sobre o conjunto combinado.
+
+## D. Issues identificadas
+
+### Issue #11 — [BUG] HTTPS over SOCKS fails with NoSuchMethodError (_detachRaw)
+- **Módulo:** `modules/transport` (`nix_transport.dart`)
+- **Classificação:** `bug`, `P0`, `needs-implementation` (mitigação fail-closed aplicada; TLS real pendente)
+- **Diagnóstico e Mitigação Atual:** O erro em tempo de execução `NoSuchMethodError: _detachRaw` ocorreu porque `SecureSocket.secure` não aceita wrappers `SocksSocket`. Foi implementada a exceção tipada `UnsupportedTransportSchemeException` (subclasse de `TransportBlockedException`) recusando esquemas diferentes de `http` antes da abertura de socket no caminho SOCKS, com 4 testes de regressão em `modules/transport/test/https_over_socks_probe_test.dart`.
+- **Pendência Remanescente:** Implementar handshake SOCKS sobre `RawSocket` + upgrade para `RawSecureSocket` caso o transporte sobre Tor venha a exigir HTTPS (atualmente serviços `.onion` v3 autenticam na camada Onion).
+
+### Issue #12 — Request: private channel for security reports (SECURITY.md §3)
+- **Módulo:** Governança / Segurança
+- **Classificação:** `security`, `P1`, concluída administrativamente
+- **Ação Executada (com autorização do proprietário):** Recurso oficial **GitHub Private Vulnerability Reporting** ativado no repositório (`enabled: true` via API GitHub) e documentado em `SECURITY.md` e `docs/INCIDENT_RESPONSE.md` (`https://github.com/foros049695/nix/security/advisories/new`).
+
+## E. Ordem de integração executada (19/11/2026)
+
+Seguindo exatamente a ordem de análise de dependências aprovada pelo proprietário:
+
+1. **Camada Base de CI (Passo 1):** #2 (`8618b79`) e #3 (`f54b857`) integrados em conjunto via `--no-ff`.
+2. **Hardening de Transporte (Passo 2):** #5 (`c7dd88d`).
+3. **Hardening Local do Cliente (Passo 3):** #4 (`5d83e77`), #6 (`7677a0b`) e #9 (`6199fc7`).
+4. **Hardening do Relay Go (Passo 4):** #7 (`4a13daa`) e #8 (`f1dffd1`) combinados sem conflito em `cmd/relay/main.go`.
+5. **Documentação (Passo 5):** #10 (`1799597`).
+6. **Correções Pós-Merge (Passo 6):**
+   - Mitigação fail-closed e testes da Issue #11 em `nix_transport.dart` e `https_over_socks_probe_test.dart`.
+   - Ativação e documentação do canal privado de vulnerabilidades (Issue #12).
+   - Isolamento por PID do snapshot de onboarding em testes paralelos (`sovereign_onboarding_model.dart`).
+
+## F. Verificação de integração
+
+Após cada integração autorizada, o Antigravity deverá:
+
+1. Confirmar o commit integrado.
+2. Verificar se o PR foi efetivamente incorporado.
+3. Executar os testes novamente sobre o resultado integrado.
+4. Verificar regressões.
+5. Conferir dependências e outros PRs afetados.
+6. Atualizar o estado das Issues relacionadas.
+7. Atualizar o roadmap com evidências.
+8. Registrar qualquer falha não resolvida.
+
+Não marcar uma fase como concluída simplesmente porque todos os PRs relacionados foram integrados.
+
+---
+
+# FLUXO ESTRUTURAL DE CONTRIBUIÇÕES
+
+```mermaid
+flowchart TD
+    A["Colaborador envia Issue ou PR"] --> B["Antigravity consulta GitHub"]
+    B --> C["Analisa descrição, código e evidências"]
+    C --> D{"Existe relação com trabalho em andamento?"}
+    D -->|Sim| E["Mapear dependências e sobreposições"]
+    D -->|Não| F["Classificar prioridade e módulo"]
+    E --> F
+    F --> G["Executar testes em ambiente isolado"]
+    G --> H{"Critérios atendidos?"}
+    H -->|Não| I["Registrar pendências e solicitar correções"]
+    H -->|Sim| J["Produzir parecer técnico"]
+    J --> K["Aguardar autorização de integração"]
+    K --> L["Integração autorizada"]
+    L --> M["Executar testes sobre resultado integrado"]
+    M --> N["Atualizar Issue, PR e ROADMAP"]
+```
+
+---
+
+# AUTOMATIZAÇÃO DE AUDITORIA COLABORATIVA
+
+O Antigravity deverá consultar o GitHub usando ferramentas oficiais, como GitHub CLI ou APIs autenticadas:
+
+```bash
+gh issue list --repo foros049695/nix --state all --limit 100
+gh pr list --repo foros049695/nix --state all --limit 100
+gh pr checks <NUMERO> --repo foros049695/nix
+gh pr diff <NUMERO> --repo foros049695/nix
+gh pr view <NUMERO> --repo foros049695/nix --json title,body,state,author,files,reviews,comments
+```
+
+A auditoria deve utilizar informações atuais, não dados fixados em documentação antiga.
+
+Gerar e manter o relatório contínuo em:
+`docs/COLLABORATION_STATUS.md`
+
+---
+
+# CRITÉRIOS PARA ATUALIZAR O ROADMAP
+
+Uma tarefa poderá receber `[x]` somente quando sua descrição corresponder exatamente ao trabalho comprovado.
+
+Para fechar um gate completo:
+
+1. Implementação presente.
+2. Testes adequados aprovados.
+3. Dependências integradas.
+4. Critérios de aceitação verificados.
+5. Documentação coerente.
+6. Nenhum bloqueio crítico conhecido dentro do escopo.
+
+Se um componente funcionar apenas em laboratório, registrar essa limitação.
+Se a implementação estiver em um PR aberto, classificar como **proposta, ainda não integrada**.
+Se o CI estiver falhando, registrar o bloqueio.
+Se não houver evidência suficiente, manter a tarefa pendente.
+
+---
+
+# PRÓXIMA EXECUÇÃO DO ANTIGRAVITY
+
+A ordem recomendada para o próximo ciclo (após publicação e confirmação do CI verde no GitHub Actions) é:
+
+1. Triar relatórios confidenciais recebidos pelo Private Vulnerability Reporting (Issue #12).
+2. Confirmar runtime verdadeiro de **SQLCipher** (`cipher_version != null`) e keyrings nativos no bundle Linux e APK Android (Fase 1).
+3. Decidir na Issue #11 se TLS sobre SOCKS (`RawSocket` + `RawSecureSocket`) será priorizado agora ou mantido fora de escopo enquanto relays usarem Onion v3.
+4. Revalidar onboarding de 9 etapas, Tor embutido ao vivo e reconexão após reinicialização em duas instâncias reais (Fase 1 & Fase 3).
+5. Demonstrar mensageria E2EE real entre dois clientes independentes via relay/Tor (Gate 3).
+6. Prosseguir para adaptação de persistência **PostgreSQL** e autenticação por capabilities no `nix_relay` (Fase 2).
+7. Preparar simulação e benchmarking reproduzível de 50 usuários simultâneos (Fase 4).
+8. Atualizar os gates e o relatório `docs/COLLABORATION_STATUS.md` a cada novo ciclo.
+
+Não modificar o fluxo Git definido pelo proprietário.
+
+**Objetivo:** transformar o Nix em um projeto colaborativo no qual cada contribuição tenha rastreabilidade, testes, revisão técnica e critérios claros de conclusão.

@@ -2,7 +2,12 @@
 
 ## 1. Contato & Triagem
 
-- Relatos de vulnerabilidades devem ser enviados aos canais seguros dos mantenedores (chave PGP/Age oficial).
+- **Canal oficial (ativo):** relatos de vulnerabilidade devem ser enviados pelo **GitHub Private Vulnerability Reporting**:
+  **https://github.com/foros049695/nix/security/advisories/new**
+  (aba *Security* → *Report a vulnerability*). O relato fica visível apenas aos mantenedores e ao autor até a divulgação coordenada.
+- **Nunca** use Issues, Pull Requests, Discussions ou comentários públicos para descrever falhas ainda não corrigidas.
+- Uma chave PGP/Age oficial dos mantenedores **ainda não foi publicada**. Até lá, o canal acima é o único canal privado suportado; não envie relatos por outros meios.
+- Não inclua seeds, chaves privadas, tokens, endereços IP reais ou dados pessoais no relato; use dados sintéticos na prova de conceito.
 - A equipe de mantenedores realiza a triagem em até 48 horas úteis, classificando a severidade de acordo com o padrão CVSS v3.1.
 
 ---

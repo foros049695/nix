@@ -37,7 +37,7 @@ O Nix adota uma abordagem honesta de segurança por projeto (*Security by Design
 Se você identificar uma falha de segurança, vulnerabilidade criptográfica ou possibilidade de vazamento de metadados no Projeto Nix:
 
 1. **Não abra issues públicas no GitHub** relatando detalhes exploráveis de vulnerabilidades ainda não corrigidas.
-2. Envie um relatório confidencial para a equipe de segurança através dos canais de divulgação responsável documentados em [`docs/INCIDENT_RESPONSE.md`](docs/INCIDENT_RESPONSE.md).
+2. Envie um relatório confidencial pelo **GitHub Private Vulnerability Reporting**: <https://github.com/foros049695/nix/security/advisories/new> (aba *Security* → *Report a vulnerability*). Detalhes e regras de triagem em [`docs/INCIDENT_RESPONSE.md`](docs/INCIDENT_RESPONSE.md).
 3. Inclua no relatório:
    * Versão do software e commit do repositório afetado.
    * Descrição detalhada do vetor de ataque e impacto esperado.
