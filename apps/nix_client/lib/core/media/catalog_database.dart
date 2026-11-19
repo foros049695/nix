@@ -153,6 +153,14 @@ class CatalogDatabase {
       );
     ''');
 
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_catalog_works_kind_year ON catalog_works(kind, release_year DESC);
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_catalog_works_year ON catalog_works(release_year DESC);
+    ''');
+
     // FTS5 para busca unificada
     await db.execute('''
       CREATE VIRTUAL TABLE IF NOT EXISTS catalog_search USING fts5(

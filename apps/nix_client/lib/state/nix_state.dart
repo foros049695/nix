@@ -35,6 +35,7 @@ import '../core/security/anti_forensic_shredder.dart';
 import '../core/messaging/sovereign_messenger.dart';
 import '../core/p2p/monero_ad_verifier.dart';
 import '../core/archive/nix_archive_service.dart';
+import '../core/replication/replication_coordinator.dart';
 import '../core/media/media_catalog_service.dart';
 import '../core/media/catalog_database.dart';
 import '../core/media/media_index_updater.dart';
@@ -42,6 +43,12 @@ import '../features/calls/call_view_model.dart';
 import '../features/home/peer_hover_view_model.dart';
 import '../features/discovery/starwire_filter_view_model.dart';
 import '../features/monero_p2p/monero_order_filter_view_model.dart';
+import '../features/navigation/navigation_view_model.dart';
+import '../features/settings/settings_view_model.dart';
+import '../features/chat/chat_view_model.dart';
+import '../features/identity/identity_view_model.dart';
+import '../features/media/media_view_model.dart';
+import '../features/archive/archive_view_model.dart';
 import 'package:nix_transport/nix_transport.dart';
 import '../features/onboarding/sovereign_onboarding_model.dart';
 import 'mock_data.dart';
@@ -125,6 +132,26 @@ class NixState extends ChangeNotifier {
   PeerHoverViewModel get peerHover => _peerHover;
   StarwireFilterViewModel get starwireFilters => _starwireFilters;
   MoneroOrderFilterViewModel get moneroFilters => _moneroFilters;
+
+  // ViewModels especializados (Etapa 8 - Desacoplamento de Estado)
+  late final NavigationViewModel _navigation;
+  late final SettingsViewModel _settingsVm;
+  late final ChatViewModel _chatVm;
+  late final IdentityViewModel _identityVm;
+  late final MediaViewModel _mediaVm;
+  late final ArchiveViewModel _archiveVm;
+
+  NavigationViewModel get navigation => _navigation;
+  SettingsViewModel get settingsVm => _settingsVm;
+  SettingsViewModel get settingsViewModel => _settingsVm;
+  ChatViewModel get chatVm => _chatVm;
+  ChatViewModel get chatViewModel => _chatVm;
+  IdentityViewModel get identityVm => _identityVm;
+  IdentityViewModel get identityViewModel => _identityVm;
+  MediaViewModel get mediaVm => _mediaVm;
+  MediaViewModel get mediaViewModel => _mediaVm;
+  ArchiveViewModel get archiveVm => _archiveVm;
+  ArchiveViewModel get archiveViewModel => _archiveVm;
 
   SecurityContext _securityContext = const SecurityContext(myPersona: 'NX-7E3A');
 
@@ -432,6 +459,7 @@ class NixState extends ChangeNotifier {
   String? _lastMessagingError;
   final Map<String, String> _consumedMoneroNonces = {};
   NixArchiveService? _archiveService;
+  NixReplicationCoordinator? _replicationCoordinator;
   MediaCatalogService? _mediaCatalogService;
   String? _connectedMoneroRemoteNode;
   double? _moneroNonCustodialBalanceXmr;
@@ -459,6 +487,7 @@ class NixState extends ChangeNotifier {
   SovereignMessenger? get sovereignMessenger => _sovereignMessenger;
   String? get lastMessagingError => _lastMessagingError;
   NixArchiveService? get archiveService => _archiveService;
+  NixReplicationCoordinator? get replicationCoordinator => _replicationCoordinator;
   MediaCatalogService? get mediaCatalogService => _mediaCatalogService;
 
   void clearLastMessagingError() {
@@ -505,6 +534,8 @@ class NixState extends ChangeNotifier {
     _archiveRepo = repo;
     _archiveService = service;
     _primaryIdentity = identity;
+    _archiveVm.attachServices(archiveService: service, archiveRepo: repo);
+    _identityVm.setPrimaryIdentity(identity);
   }
 
   Future<void> ensureCatalogDatabaseOpened() async {
@@ -515,6 +546,10 @@ class NixState extends ChangeNotifier {
         _mediaCatalogService =
             MediaCatalogService(_mediaRepo!, catalogRepo: _catalogRepo);
       }
+      _mediaVm.attachServices(
+        catalogService: _mediaCatalogService,
+        catalogDatabase: _catalogDatabase,
+      );
       notifyListeners();
     }
   }
@@ -530,6 +565,10 @@ class NixState extends ChangeNotifier {
       _mediaCatalogService =
           MediaCatalogService(_mediaRepo!, catalogRepo: _catalogRepo);
     }
+    _mediaVm.attachServices(
+      catalogService: _mediaCatalogService,
+      catalogDatabase: _catalogDatabase,
+    );
     notifyListeners();
   }
 
@@ -1841,6 +1880,37 @@ class NixState extends ChangeNotifier {
     }
     _starwireFilters = StarwireFilterViewModel(initialRepos: _githubRepos);
     _moneroFilters = MoneroOrderFilterViewModel(initialOrders: _moneroOrders);
+    _navigation = NavigationViewModel(
+      initialArea: _activeArea,
+      initialSubTab: _homeSubTab,
+      initialFolderId: _activeFolderId,
+      initialFilter: _conversationFilter,
+    );
+    _settingsVm = SettingsViewModel(
+      initialSettings: _settings,
+    );
+    _chatVm = ChatViewModel(
+      initialDirectMessages: _directMessages,
+      initialMessages: _messages,
+    );
+    _identityVm = IdentityViewModel(
+      initialIdentity: _primaryIdentity,
+      initialProfile: _userProfile,
+      initialSecurityContext: _securityContext,
+      localDeviceId: _localDeviceId,
+    );
+    _mediaVm = MediaViewModel(
+      catalogService: _mediaCatalogService,
+      catalogDatabase: _catalogDatabase,
+      updateManager: _catalogUpdateManager,
+      initialSavedIds: _savedAcervoIds,
+    );
+    _archiveVm = ArchiveViewModel(
+      archiveService: _archiveService,
+      archiveRepo: _archiveRepo,
+      replicationCoordinator: _replicationCoordinator,
+      initialPublications: _publications,
+    );
     NixColors.sync(
       NixSurfaceScheme.resolve(_settings.themeMode),
       currentPalette,
@@ -4843,6 +4913,12 @@ class NixState extends ChangeNotifier {
     _peerHover.dispose();
     _starwireFilters.dispose();
     _moneroFilters.dispose();
+    _navigation.dispose();
+    _settingsVm.dispose();
+    _chatVm.dispose();
+    _identityVm.dispose();
+    _mediaVm.dispose();
+    _archiveVm.dispose();
     _torWatchdogTimer?.cancel();
     _torBootstrapSub?.cancel();
     _blePeerSub?.cancel();
