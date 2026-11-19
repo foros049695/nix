@@ -2201,12 +2201,14 @@ class _SettingsCenterState extends State<SettingsCenter> {
             onPressed: () async {
               Navigator.of(ctx).pop();
               final report = await state.panicWipeAllData();
-                  if (context.mounted) {
+              if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     backgroundColor: const Color(0xFF8B0000),
                     content: Text(
-                      'Apagamento anti-forense concluído: ${report.filesOverwritten} arquivos sobrescritos (${(report.totalBytesWiped / 1024).toStringAsFixed(1)} KB limpos).',
+                      report.errors.isEmpty
+                          ? 'Apagamento anti-forense concluído: ${report.filesOverwritten} arquivos sobrescritos (${(report.totalBytesWiped / 1024).toStringAsFixed(1)} KB limpos).'
+                          : 'Apagamento anti-forense incompleto: ${report.errors.length} alvos com falha; ${report.filesOverwritten} arquivos sobrescritos.',
                     ),
                   ),
                 );
