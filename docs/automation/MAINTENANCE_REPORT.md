@@ -1,10 +1,10 @@
 # RELATÓRIO PERIÓDICO DE MANUTENÇÃO E INTEGRIDADE — PROJETO NIX
 
-**Execução:** 2026-11-19 16:55:10 UTC  
+**Execução:** 2026-11-19 18:33:39 UTC  
 **Status Geral:** 🟢 ÍNTEGRO (100% PASSING)  
-**Commit HEAD:** `1bc27ff788a64851b2367bfb010d7c7521fbdd7d`  
+**Commit HEAD:** `b0963617fc01e0367f31f79eb557158f6ad0a118`  
 **Branch:** `main`  
-**Último Commit:** 1bc27ff - feat(media,archive,android): implement offline-first media index, archive discussions, replication and mobile responsive ui (2026-11-19 12:03:49 -0300)  
+**Último Commit:** b096361 - chore(audit): update 4-hour automated maintenance report [skip ci] (2026-11-19 16:56:38 +0000)  
 
 ---
 
@@ -12,11 +12,11 @@
 
 | Componente / Verificação | Status | Duração | Resumo / Detalhes |
 |---|---|---|---|
-| Privacy Matrix Gate (scripts/verify_privacy_matrix.sh) | ✅ PASS | 0.05s | Passagem de verificadores L-S, I-S, I-A e ausência de telemetria. |
-| Nix Relay (services/nix_relay: go vet & test -race) | ✅ PASS | 24.06s | Suítes de buffer, relay HTTP, stores e race condition aprovados. |
-| Core Crypto (modules/core_crypto: dart analyze & test) | ✅ PASS | 5.00s | PQXDH, Ratchet, Ed25519, XChaCha20 e layout público preservados. |
-| Transport (modules/transport: dart analyze & test) | ✅ PASS | 4.35s | HTTPS sobre SOCKS5 (Issue #11), isolamento Tor e frames NIXB aprovados. |
-| Client Flutter (apps/nix_client: analyze & test) | ✅ PASS | 53.36s | 117/117 testes do cliente (onboarding, cofre, pânico, E2EE, FTS5) aprovados. |
+| Privacy Matrix Gate (scripts/verify_privacy_matrix.sh) | ✅ PASS | 0.40s | Passagem de verificadores L-S, I-S, I-A e ausência de telemetria. |
+| Nix Relay (services/nix_relay: go vet & test -race) | ✅ PASS | 11.81s | Suítes de buffer, relay HTTP, stores e race condition aprovados. |
+| Core Crypto (modules/core_crypto: dart analyze & test) | ✅ PASS | 3.57s | PQXDH, Ratchet, Ed25519, XChaCha20 e layout público preservados. |
+| Transport (modules/transport: dart analyze & test) | ✅ PASS | 4.02s | HTTPS sobre SOCKS5 (Issue #11), isolamento Tor e frames NIXB aprovados. |
+| Client Flutter (apps/nix_client: analyze & test) | ✅ PASS | 115.01s | 117/117 testes do cliente (onboarding, cofre, pânico, E2EE, FTS5) aprovados. |
 
 ---
 

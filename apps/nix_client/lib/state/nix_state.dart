@@ -37,6 +37,10 @@ import '../core/p2p/monero_ad_verifier.dart';
 import '../core/archive/nix_archive_service.dart';
 import '../core/media/media_catalog_service.dart';
 import '../core/media/catalog_database.dart';
+import '../features/calls/call_view_model.dart';
+import '../features/home/peer_hover_view_model.dart';
+import '../features/discovery/starwire_filter_view_model.dart';
+import '../features/monero_p2p/monero_order_filter_view_model.dart';
 import 'package:nix_transport/nix_transport.dart';
 import '../features/onboarding/sovereign_onboarding_model.dart';
 import 'mock_data.dart';
@@ -110,7 +114,17 @@ class NixState extends ChangeNotifier {
   late List<GithubRepository> _githubRepos;
   UserSettings _settings = const UserSettings();
 
-  CallState _callState = const CallState();
+  // ViewModels extraídos (Issue #35: decomposição incremental)
+  final CallViewModel _calls = CallViewModel();
+  final PeerHoverViewModel _peerHover = PeerHoverViewModel();
+  late final StarwireFilterViewModel _starwireFilters;
+  late final MoneroOrderFilterViewModel _moneroFilters;
+
+  CallViewModel get calls => _calls;
+  PeerHoverViewModel get peerHover => _peerHover;
+  StarwireFilterViewModel get starwireFilters => _starwireFilters;
+  MoneroOrderFilterViewModel get moneroFilters => _moneroFilters;
+
   SecurityContext _securityContext = const SecurityContext(myPersona: 'NX-7E3A');
 
   NixActiveArea _activeArea = NixActiveArea.spaces;
@@ -123,13 +137,6 @@ class NixState extends ChangeNotifier {
   ConversationFilter _conversationFilter = ConversationFilter.all;
   String _conversationSearchQuery = '';
   bool _isWindowMaximized = false;
-
-  // Máquina de estados explícita para Hover/Clique de Card ID em Solicitações
-  ContactRequest? _hoveredContactRequest;
-  PeerCardHoverState _peerHoverState = PeerCardHoverState.closed;
-  String? _hoverLockoutRequestId;
-  bool _isCursorOverHoverPreview = false;
-  Timer? _hoverDebounceTimer;
 
   bool _isProfileOverlayOpen = false;
   bool _isSettingsOpenInOverlay = false;
@@ -148,20 +155,8 @@ class NixState extends ChangeNotifier {
   final Set<String> _selectedMessageIds = {};
   String? _highlightedMessageId;
 
-  // Filtros GitHub Discovery
-  String _githubSearchQuery = '';
-  String _githubSelectedTopic = 'Todos';
-  String _githubSelectedLanguage = 'Todas';
-  String _githubSortBy = 'stars'; // 'stars', 'trending', 'updated'
+  // Acervo Ids salvos localmente
   final Set<String> _savedAcervoIds = {};
-
-  // Filtros Monero P2P
-  MoneroP2pSide _moneroSelectedSide = MoneroP2pSide.sell;
-  String _moneroSelectedFiat = 'BRL';
-  String _moneroSelectedPaymentMethod = 'Todos';
-  String _moneroSearchQuery = '';
-
-  Timer? _callTimer;
 
   // Estado Tor Onion v3 & Gate Fail-Closed de Inicialização
   String _onionAddress = 'aguardando-circuito-onion-v3';
@@ -908,6 +903,11 @@ class NixState extends ChangeNotifier {
       _torBootstrapSub = null;
       await _embeddedTor.stop();
     } catch (_) {}
+    _calls.reset();
+    _peerHover.reset();
+    _starwireFilters.resetFilters();
+    _moneroFilters.resetFilters();
+
     final report = await AntiForensicShredder.panicWipeAccount(
       activeDatabase: _localDatabase,
       activeVault: _keyVault,
@@ -918,6 +918,10 @@ class NixState extends ChangeNotifier {
       _activeMasterKey = null;
     }
     _primaryIdentity = null;
+    _moneroMarketIdentity = null;
+    _fallbackArchiveIdentity = null;
+    _inMemoryArchiveObjects.clear();
+    _consumedMoneroNonces.clear();
     _localDeviceId = 'dev_primary';
     _localDatabase = null;
     _sovereignMessenger = null;
@@ -934,6 +938,7 @@ class NixState extends ChangeNotifier {
     _sessionRepo = null;
     _objectChunkRepo = null;
     _mediaRepo = null;
+    _catalogRepo = null;
     _archiveRepo = null;
     _isOnboarded = false;
     _requiresPassphraseUnlock = false;
@@ -1410,6 +1415,7 @@ class NixState extends ChangeNotifier {
         _githubRepos = _githubRepos
             .map((r) => r.copyWith(isSavedInAcervo: _savedAcervoIds.contains(r.id)))
             .toList();
+        _starwireFilters.updateRepos(_githubRepos);
       } catch (_) {}
     }
 
@@ -1426,6 +1432,7 @@ class NixState extends ChangeNotifier {
             }
           }
         }
+        _moneroFilters.updateOrders(_moneroOrders);
       } catch (_) {}
     }
 
@@ -1806,6 +1813,8 @@ class NixState extends ChangeNotifier {
     } else {
       _initializeProductionCleanState();
     }
+    _starwireFilters = StarwireFilterViewModel(initialRepos: _githubRepos);
+    _moneroFilters = MoneroOrderFilterViewModel(initialOrders: _moneroOrders);
     NixColors.sync(
       NixSurfaceScheme.resolve(_settings.themeMode),
       currentPalette,
@@ -2111,6 +2120,7 @@ class NixState extends ChangeNotifier {
             .toList();
         if (parsed.isNotEmpty) {
           _githubRepos = parsed;
+          _starwireFilters.updateRepos(parsed);
           notifyListeners();
         }
       }
@@ -2140,7 +2150,7 @@ class NixState extends ChangeNotifier {
       _forumPosts.where((p) => p.channelId == _currentChannel.id).toList();
   ForumPost? get selectedForumPost => _selectedForumPost;
   List<Member> get members => _members;
-  CallState get callState => _callState;
+  CallState get callState => _calls.callState;
   SecurityContext get securityContext => _securityContext;
   UserProfile get userProfile => _userProfile;
   UserSettings get settings => _settings;
@@ -2166,9 +2176,7 @@ class NixState extends ChangeNotifier {
   bool get isWindowMaximized => _isWindowMaximized;
 
   List<ContactRequest> get contactRequests => _contactRequests;
-  ContactRequest? get hoveredContactRequest => _hoveredContactRequest;
-  PeerCardHoverState get peerHoverState => _peerHoverState;
-  String? get hoverLockoutRequestId => _hoverLockoutRequestId;
+  String? get hoverLockoutRequestId => _peerHover.hoverLockoutRequestId;
 
   List<XmrTransactionRecord> get transactions => _transactions;
   List<SystemUpdateRecord> get systemUpdates => _systemUpdates;
@@ -2245,93 +2253,21 @@ class NixState extends ChangeNotifier {
     }
   }
 
-  // Getters Filtros GitHub
-  String get githubSearchQuery => _githubSearchQuery;
-  String get githubSelectedTopic => _githubSelectedTopic;
-  String get githubSelectedLanguage => _githubSelectedLanguage;
-  String get githubSortBy => _githubSortBy;
+  // Getters Filtros GitHub (delegados para StarwireFilterViewModel)
+  String get githubSearchQuery => _starwireFilters.searchQuery;
+  String get githubSelectedTopic => _starwireFilters.selectedTopic;
+  String get githubSelectedLanguage => _starwireFilters.selectedLanguage;
+  String get githubSortBy => _starwireFilters.sortBy;
+  List<GithubRepository> get filteredGithubRepos => _starwireFilters.filteredRepos;
+  Map<String, int> get githubLanguageCounts => _starwireFilters.languageCounts;
+  Map<String, int> get githubCategoryCounts => _starwireFilters.categoryCounts;
 
-  List<GithubRepository> get filteredGithubRepos {
-    final q = _githubSearchQuery.trim().toLowerCase();
-    final filtered = _githubRepos.where((repo) {
-      if (q.isNotEmpty) {
-        final matchesName = repo.name.toLowerCase().contains(q);
-        final matchesOwner = repo.owner.toLowerCase().contains(q);
-        final matchesDesc = repo.description.toLowerCase().contains(q);
-        final matchesTopic = repo.topics.any((t) => t.toLowerCase().contains(q));
-        if (!matchesName && !matchesOwner && !matchesDesc && !matchesTopic) return false;
-      }
-      if (_githubSelectedTopic != 'Todos') {
-        if (!repo.topics.any((t) => t.toLowerCase() == _githubSelectedTopic.toLowerCase()) &&
-            repo.category.toLowerCase() != _githubSelectedTopic.toLowerCase()) {
-          return false;
-        }
-      }
-      if (_githubSelectedLanguage != 'Todas') {
-        if (repo.language != _githubSelectedLanguage) return false;
-      }
-      return true;
-    }).toList();
-
-    if (_githubSortBy == 'trending') {
-      filtered.sort((a, b) => b.starsThisWeek.compareTo(a.starsThisWeek));
-    } else if (_githubSortBy == 'stars') {
-      filtered.sort((a, b) => b.starsCount.compareTo(a.starsCount));
-    } else {
-      filtered.sort((a, b) => b.updatedDate.compareTo(a.updatedDate));
-    }
-    return filtered;
-  }
-
-  /// Estatísticas reais calculadas diretamente do catálogo Starwire carregado.
-  Map<String, int> get githubLanguageCounts {
-    final counts = <String, int>{};
-    for (final r in _githubRepos) {
-      final lang = r.language.trim().isEmpty ? 'Markdown' : r.language.trim();
-      counts[lang] = (counts[lang] ?? 0) + 1;
-    }
-    final sortedEntries = counts.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    return Map<String, int>.fromEntries(sortedEntries.take(8));
-  }
-
-  Map<String, int> get githubCategoryCounts {
-    final counts = <String, int>{};
-    for (final r in _githubRepos) {
-      final cat = r.category.trim().isEmpty ? 'Open Source' : r.category.trim();
-      counts[cat] = (counts[cat] ?? 0) + 1;
-    }
-    final sortedEntries = counts.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    return Map<String, int>.fromEntries(sortedEntries.take(6));
-  }
-
-  // Getters Filtros Monero P2P
-  MoneroP2pSide get moneroSelectedSide => _moneroSelectedSide;
-  String get moneroSelectedFiat => _moneroSelectedFiat;
-  String get moneroSelectedPaymentMethod => _moneroSelectedPaymentMethod;
-  String get moneroSearchQuery => _moneroSearchQuery;
-
-  List<MoneroP2pOrder> get filteredMoneroOrders {
-    final q = _moneroSearchQuery.trim().toLowerCase();
-    return _moneroOrders.where((order) {
-      if (order.isExpired) return false;
-      if (order.side != _moneroSelectedSide) return false;
-      if (order.fiatCurrency != _moneroSelectedFiat) return false;
-      if (_moneroSelectedPaymentMethod != 'Todos') {
-        if (!order.paymentMethod.toLowerCase().contains(_moneroSelectedPaymentMethod.toLowerCase())) {
-          return false;
-        }
-      }
-      if (q.isNotEmpty) {
-        final matchesTrader = order.traderName.toLowerCase().contains(q);
-        final matchesMethod = order.paymentMethod.toLowerCase().contains(q);
-        final matchesNotes = order.notes.toLowerCase().contains(q);
-        if (!matchesTrader && !matchesMethod && !matchesNotes) return false;
-      }
-      return true;
-    }).toList();
-  }
+  // Getters Filtros Monero P2P (delegados para MoneroOrderFilterViewModel)
+  MoneroP2pSide get moneroSelectedSide => _moneroFilters.selectedSide;
+  String get moneroSelectedFiat => _moneroFilters.selectedFiat;
+  String get moneroSelectedPaymentMethod => _moneroFilters.selectedPaymentMethod;
+  String get moneroSearchQuery => _moneroFilters.searchQuery;
+  List<MoneroP2pOrder> get filteredMoneroOrders => _moneroFilters.filteredOrders;
 
   bool verifyMoneroOrder(MoneroP2pOrder order) {
     return SignedMoneroAd.verifyOrderSync(
@@ -2542,69 +2478,23 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ================= MÁQUINA DE ESTADOS HOVER CARD ID (ANTI-FLICKERING) =================
+  // ================= MÁQUINA DE ESTADOS HOVER CARD ID (DELEGADA PARA PEERHOVERVIEWMODEL) =================
+
+  ContactRequest? get hoveredContactRequest => _peerHover.hoveredContactRequest;
+  PeerCardHoverState get peerHoverState => _peerHover.peerHoverState;
 
   void setHoveredContactRequest(ContactRequest? req) {
     if (req == null) {
-      _hoveredContactRequest = null;
-      _peerHoverState = PeerCardHoverState.closed;
+      _peerHover.dismissHoveredPeerCard();
     } else {
-      _hoveredContactRequest = req;
-      _peerHoverState = PeerCardHoverState.openByHover;
-    }
-    notifyListeners();
-  }
-
-  void onRequestPeerHoverEnter(ContactRequest req) {
-    if (_hoverLockoutRequestId == req.id) return;
-    _hoverDebounceTimer?.cancel();
-    _peerHoverState = PeerCardHoverState.openingPending;
-    _hoveredContactRequest = req;
-    _peerHoverState = PeerCardHoverState.openByHover;
-    notifyListeners();
-  }
-
-  void onRequestPeerHoverExit(ContactRequest req) {
-    if (_hoverLockoutRequestId == req.id) {
-      _hoverLockoutRequestId = null;
-    }
-    _hoverDebounceTimer?.cancel();
-    _hoverDebounceTimer = Timer(const Duration(milliseconds: 90), () {
-      if (!_isCursorOverHoverPreview &&
-          _hoveredContactRequest?.id == req.id &&
-          _peerHoverState != PeerCardHoverState.openByClick) {
-        _hoveredContactRequest = null;
-        _peerHoverState = PeerCardHoverState.closed;
-        notifyListeners();
-      }
-    });
-  }
-
-  void setHoverOverPreviewCard(bool over) {
-    _isCursorOverHoverPreview = over;
-    if (!over) {
-      _hoverDebounceTimer?.cancel();
-      _hoverDebounceTimer = Timer(const Duration(milliseconds: 90), () {
-        if (!_isCursorOverHoverPreview && _peerHoverState == PeerCardHoverState.openByHover) {
-          _hoveredContactRequest = null;
-          _peerHoverState = PeerCardHoverState.closed;
-          notifyListeners();
-        }
-      });
+      _peerHover.onRequestPeerHoverEnter(req);
     }
   }
 
-  void dismissHoveredPeerCard() {
-    _hoverDebounceTimer?.cancel();
-    if (_hoveredContactRequest != null) {
-      _hoverLockoutRequestId = _hoveredContactRequest!.id;
-    }
-    _peerHoverState = PeerCardHoverState.closingRequested;
-    _hoveredContactRequest = null;
-    _isCursorOverHoverPreview = false;
-    _peerHoverState = PeerCardHoverState.closed;
-    notifyListeners();
-  }
+  void onRequestPeerHoverEnter(ContactRequest req) => _peerHover.onRequestPeerHoverEnter(req);
+  void onRequestPeerHoverExit(ContactRequest req) => _peerHover.onRequestPeerHoverExit(req);
+  void setHoverOverPreviewCard(bool over) => _peerHover.setHoverOverPreviewCard(over);
+  void dismissHoveredPeerCard() => _peerHover.dismissHoveredPeerCard();
 
   // ================= PASTAS, FILTROS & CONVERSAS DIRETAS =================
 
@@ -3209,8 +3099,7 @@ class NixState extends ChangeNotifier {
     final idx = _contactRequests.indexWhere((r) => r.id == requestId);
     if (idx == -1) return;
     final req = _contactRequests.removeAt(idx);
-    _hoveredContactRequest = null;
-    _peerHoverState = PeerCardHoverState.closed;
+    _peerHover.reset();
     final newDm = DirectMessageThread(
       id: 'dm_${DateTime.now().millisecondsSinceEpoch}',
       peerName: req.peerName,
@@ -3237,8 +3126,7 @@ class NixState extends ChangeNotifier {
 
   void declineContactRequest(String requestId) {
     _contactRequests.removeWhere((r) => r.id == requestId);
-    _hoveredContactRequest = null;
-    _peerHoverState = PeerCardHoverState.closed;
+    _peerHover.reset();
     notifyListeners();
   }
 
@@ -3267,27 +3155,28 @@ class NixState extends ChangeNotifier {
   }
 
   void setMoneroSide(MoneroP2pSide side) {
-    _moneroSelectedSide = side;
+    _moneroFilters.setSelectedSide(side);
     notifyListeners();
   }
 
   void setMoneroFiat(String fiat) {
-    _moneroSelectedFiat = fiat;
+    _moneroFilters.setSelectedFiat(fiat);
     notifyListeners();
   }
 
   void setMoneroPaymentMethod(String method) {
-    _moneroSelectedPaymentMethod = method;
+    _moneroFilters.setSelectedPaymentMethod(method);
     notifyListeners();
   }
 
   void setMoneroSearchQuery(String query) {
-    _moneroSearchQuery = query;
+    _moneroFilters.setSearchQuery(query);
     notifyListeners();
   }
 
   void createMoneroOrder(MoneroP2pOrder order) {
     _moneroOrders.insert(0, order);
+    _moneroFilters.updateOrders(_moneroOrders);
     notifyListeners();
   }
 
@@ -3341,6 +3230,7 @@ class NixState extends ChangeNotifier {
     }
 
     _moneroOrders.insert(0, order);
+    _moneroFilters.updateOrders(_moneroOrders);
     if (_preferencesRepo != null) {
       final localOrders = _moneroOrders
           .where((o) => o.publicationState == 'local_signed')
@@ -3390,22 +3280,22 @@ class NixState extends ChangeNotifier {
   // ================= GITHUB DISCOVERY (STARWIRE) =================
 
   void setGithubSearchQuery(String query) {
-    _githubSearchQuery = query;
+    _starwireFilters.setSearchQuery(query);
     notifyListeners();
   }
 
   void setGithubTopic(String topic) {
-    _githubSelectedTopic = topic;
+    _starwireFilters.setSelectedTopic(topic);
     notifyListeners();
   }
 
   void setGithubLanguage(String language) {
-    _githubSelectedLanguage = language;
+    _starwireFilters.setSelectedLanguage(language);
     notifyListeners();
   }
 
   void setGithubSortBy(String sortBy) {
-    _githubSortBy = sortBy;
+    _starwireFilters.setSortBy(sortBy);
     notifyListeners();
   }
 
@@ -3416,6 +3306,7 @@ class NixState extends ChangeNotifier {
     final repo = _githubRepos[idx];
     final isNowSaved = !repo.isSavedInAcervo;
     _githubRepos[idx] = repo.copyWith(isSavedInAcervo: isNowSaved);
+    _starwireFilters.updateRepos(_githubRepos);
 
     if (isNowSaved) {
       _savedAcervoIds.add(repo.id);
@@ -4793,51 +4684,22 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ================= CHAMADAS DE VOZ =================
+  // ================= CHAMADAS DE VOZ (DELEGADAS PARA CALLVIEWMODEL) =================
 
   void joinCall(Channel channel) {
-    if (_callState.isConnected && _callState.activeChannelId == channel.id) {
-      return;
-    }
-
-    _callTimer?.cancel();
-    _callState = CallState(
-      activeChannelId: channel.id,
-      activeChannelName: channel.name,
-      isConnected: true,
-      isMuted: false,
-      isDeafened: false,
-      participants: _members.where((m) => m.isOnline).toList(),
-      durationSeconds: 0,
-    );
-
-    _callTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      _callState = _callState.copyWith(
-        durationSeconds: _callState.durationSeconds + 1,
-      );
-      notifyListeners();
-    });
-
-    notifyListeners();
+    _calls.joinCall(channel, onlineMembers: _members.where((m) => m.isOnline).toList());
   }
 
   void leaveCall() {
-    _callTimer?.cancel();
-    _callState = const CallState();
-    notifyListeners();
+    _calls.leaveCall();
   }
 
   void toggleMute() {
-    _callState = _callState.copyWith(isMuted: !_callState.isMuted);
-    notifyListeners();
+    _calls.toggleMute();
   }
 
   void toggleDeafen() {
-    _callState = _callState.copyWith(
-      isDeafened: !_callState.isDeafened,
-      isMuted: !_callState.isDeafened ? true : _callState.isMuted,
-    );
-    notifyListeners();
+    _calls.toggleDeafen();
   }
 
   void toggleMembersPanel() {
@@ -4951,12 +4813,14 @@ class NixState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _calls.dispose();
+    _peerHover.dispose();
+    _starwireFilters.dispose();
+    _moneroFilters.dispose();
     _torWatchdogTimer?.cancel();
     _torBootstrapSub?.cancel();
     _blePeerSub?.cancel();
     _bleRxSub?.cancel();
-    _hoverDebounceTimer?.cancel();
-    _callTimer?.cancel();
     unawaited(_disposeServices());
     super.dispose();
   }

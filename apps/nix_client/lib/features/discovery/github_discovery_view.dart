@@ -41,12 +41,16 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
     final nixState = context.watch<NixState>();
     final accent = context.accentColor;
     final accentText = context.accentTextColor;
-    final repos = nixState.filteredGithubRepos;
-    final langCounts = nixState.githubLanguageCounts;
-    final catCounts = nixState.githubCategoryCounts;
-    final totalTrending = nixState.githubRepos.where((r) => r.isTrending).length;
 
-    return Container(
+    return ListenableBuilder(
+      listenable: nixState.starwireFilters,
+      builder: (context, _) {
+        final repos = nixState.starwireFilters.filteredRepos;
+        final langCounts = nixState.starwireFilters.languageCounts;
+        final catCounts = nixState.starwireFilters.categoryCounts;
+        final totalTrending = nixState.githubRepos.where((r) => r.isTrending).length;
+
+        return Container(
       color: NixColors.background,
       child: Column(
         children: [
@@ -309,6 +313,8 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
           ),
         ],
       ),
+    );
+      },
     );
   }
 

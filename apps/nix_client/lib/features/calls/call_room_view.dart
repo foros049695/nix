@@ -12,73 +12,79 @@ class CallRoomView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nixState = context.watch<NixState>();
-    final call = nixState.callState;
-    final isCurrentCallActive = call.isConnected && call.activeChannelId == channel.id;
+    final nixState = context.read<NixState>();
 
-    final minutes = (call.durationSeconds ~/ 60).toString().padLeft(2, '0');
-    final seconds = (call.durationSeconds % 60).toString().padLeft(2, '0');
+    return ListenableBuilder(
+      listenable: nixState.calls,
+      builder: (context, _) {
+        final call = nixState.calls.callState;
+        final isCurrentCallActive = call.isConnected && call.activeChannelId == channel.id;
 
-    return Column(
-      children: [
-        // Cabeçalho da Sala de Call
-        Container(
-          height: 52,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: NixColors.surfaceSidebar,
-            border: Border(bottom: BorderSide(color: NixColors.surfaceBorder, width: 1)),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.volume_up_rounded, color: NixColors.accentVoice, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                channel.name,
-                style: TextStyle(
-                  color: NixColors.textPrimary,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                ),
+        final minutes = (call.durationSeconds ~/ 60).toString().padLeft(2, '0');
+        final seconds = (call.durationSeconds % 60).toString().padLeft(2, '0');
+
+        return Column(
+          children: [
+            // Cabeçalho da Sala de Call
+            Container(
+              height: 52,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: NixColors.surfaceSidebar,
+                border: Border(bottom: BorderSide(color: NixColors.surfaceBorder, width: 1)),
               ),
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: NixColors.accentTor.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: NixColors.accentTor.withOpacity(0.3)),
-                ),
-                child: Text(
-                  'TOR ONION E2EE · ZERO IP LEAK',
-                  style: TextStyle(color: NixColors.accentTor, fontSize: 10, fontWeight: FontWeight.bold),
-                ),
+              child: Row(
+                children: [
+                  Icon(Icons.volume_up_rounded, color: NixColors.accentVoice, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    channel.name,
+                    style: TextStyle(
+                      color: NixColors.textPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: NixColors.accentTor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: NixColors.accentTor.withOpacity(0.3)),
+                    ),
+                    child: Text(
+                      'TOR ONION E2EE · ZERO IP LEAK',
+                      style: TextStyle(color: NixColors.accentTor, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const Spacer(),
+                  if (isCurrentCallActive)
+                    Text(
+                      'Duração: $minutes:$seconds',
+                      style: TextStyle(color: NixColors.textSecondary, fontSize: 12, fontFamily: 'monospace'),
+                    ),
+                ],
               ),
-              const Spacer(),
-              if (isCurrentCallActive)
-                Text(
-                  'Duração: $minutes:$seconds',
-                  style: TextStyle(color: NixColors.textSecondary, fontSize: 12, fontFamily: 'monospace'),
-                ),
-            ],
-          ),
-        ),
+            ),
 
-        // Área Central: Grid de Participantes
-        Expanded(
-          child: Container(
-            color: NixColors.background,
-            padding: const EdgeInsets.all(24),
-            child: isCurrentCallActive
-                ? _buildActiveCallGrid(call.participants, call.isMuted)
-                : _buildJoinCallPrompt(context, nixState),
-          ),
-        ),
+            // Área Central: Grid de Participantes
+            Expanded(
+              child: Container(
+                color: NixColors.background,
+                padding: const EdgeInsets.all(24),
+                child: isCurrentCallActive
+                    ? _buildActiveCallGrid(call.participants, call.isMuted)
+                    : _buildJoinCallPrompt(context, nixState),
+              ),
+            ),
 
-        // Barra de Controles da Call (se conectado)
-        if (isCurrentCallActive)
-          _buildControlBar(context, nixState),
-      ],
+            // Barra de Controles da Call (se conectado)
+            if (isCurrentCallActive)
+              _buildControlBar(context, nixState),
+          ],
+        );
+      },
     );
   }
 

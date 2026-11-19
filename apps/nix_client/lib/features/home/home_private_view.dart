@@ -68,21 +68,29 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                     switchOutCurve: NixTokens.curveStandard,
                     child: _buildStageContent(nixState, activeTab),
                   ),
-                  if (activeTab == HomeSubTab.requests &&
-                      nixState.hoveredContactRequest != null &&
-                      nixState.peerHoverState != PeerCardHoverState.closingRequested &&
-                      nixState.settings.cardIdVisibility != 'Oculto')
-                    Positioned(
-                      top: 74,
-                      left: safeLeft,
-                      child: MouseRegion(
-                        onEnter: (_) => nixState.setHoverOverPreviewCard(true),
-                        onExit: (_) => nixState.setHoverOverPreviewCard(false),
-                        child: _FloatingPeerCardIdPreview(
-                          request: nixState.hoveredContactRequest!,
-                          onDismiss: () => nixState.dismissHoveredPeerCard(),
-                        ),
-                      ),
+                  if (activeTab == HomeSubTab.requests)
+                    ListenableBuilder(
+                      listenable: nixState.peerHover,
+                      builder: (context, _) {
+                        final hover = nixState.peerHover;
+                        if (hover.hoveredContactRequest == null ||
+                            hover.peerHoverState == PeerCardHoverState.closingRequested ||
+                            nixState.settings.cardIdVisibility == 'Oculto') {
+                          return const SizedBox.shrink();
+                        }
+                        return Positioned(
+                          top: 74,
+                          left: safeLeft,
+                          child: MouseRegion(
+                            onEnter: (_) => hover.setHoverOverPreviewCard(true),
+                            onExit: (_) => hover.setHoverOverPreviewCard(false),
+                            child: _FloatingPeerCardIdPreview(
+                              request: hover.hoveredContactRequest!,
+                              onDismiss: () => hover.dismissHoveredPeerCard(),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                 ],
               ),

@@ -301,7 +301,7 @@ class EmbeddedTorManager {
         }
       });
 
-      process.exitCode.then((code) {
+      unawaited(process.exitCode.then((code) {
         if (!identical(_torProcess, process)) return;
         _torProcess = null;
         if (!completer.isCompleted) {
@@ -311,7 +311,7 @@ class EmbeddedTorManager {
         } else {
           _status = EmbeddedTorStatus.stopped;
         }
-      });
+      }));
 
       // Timeout de segurança para o bootstrap
       return await completer.future.timeout(

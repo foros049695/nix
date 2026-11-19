@@ -208,6 +208,8 @@ class Socks5Connector {
       final deadline = DateTime.now().add(timeout);
       pumpRead();
       while (buffer.length < count) {
+        // Preserva o objeto recebido do stream, sem alterar a propagação do erro.
+        // ignore: only_throw_errors
         if (socketError != null) throw socketError!;
         if (closed) {
           throw const SocketException('Conexão encerrada antes de completar o handshake SOCKS5.');
@@ -228,6 +230,8 @@ class Socks5Connector {
       final deadline = DateTime.now().add(timeout);
       int offset = 0;
       while (offset < data.length) {
+        // Preserva o objeto recebido do stream, sem alterar a propagação do erro.
+        // ignore: only_throw_errors
         if (socketError != null) throw socketError!;
         if (closed) {
           throw const SocketException('Conexão encerrada durante handshake SOCKS5.');
@@ -301,7 +305,7 @@ class Socks5Connector {
       return SocksRawConnection(socket: raw, subscription: subscription);
     } catch (_) {
       await subscription.cancel();
-      raw.close();
+      unawaited(raw.close());
       rethrow;
     }
   }
@@ -360,6 +364,8 @@ class Socks5Connector {
     Future<Uint8List> readExact(int count, {Duration timeout = const Duration(seconds: 15)}) async {
       final deadline = DateTime.now().add(timeout);
       while (buffer.length < count) {
+        // Preserva o objeto recebido do stream, sem alterar a propagação do erro.
+        // ignore: only_throw_errors
         if (socketError != null) throw socketError!;
         if (closed) {
           throw const SocketException('Conexão encerrada antes de completar o handshake SOCKS5.');

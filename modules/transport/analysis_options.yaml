@@ -2,5 +2,12 @@ include: package:lints/recommended.yaml
 
 analyzer:
   language:
+    strict-inference: true
     strict-casts: true
     strict-raw-types: true
+
+linter:
+  rules:
+    - unawaited_futures
+    - only_throw_errors
+    - avoid_dynamic_calls

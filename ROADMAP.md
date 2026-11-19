@@ -308,11 +308,28 @@ Para cada Pull Request:
 | #16 | Desativação de `allowBackup` e `fullBackupContent` no Android | @gabrielmaialva33 | `98c2228` | `ALREADY_INTEGRATED` |
 | #17 | Remoção de caminhos locais e expansão de `~` em `nix_relay` | @gabrielmaialva33 | `f2effa4` | `ALREADY_INTEGRATED` |
 | #18 | Sanitização de nomes em arquivos ZIP contra *path traversal* | @gabrielmaialva33 | `54b6f2a` | `ALREADY_INTEGRATED` |
+| #20 | Relato honesto de falhas parciais de destruição no botão de pânico | @gabrielmaialva33 | `afb6f5e` | `ALREADY_INTEGRATED` |
+| #21 | Extensão da destruição anti-forense a diretórios sem seguir symlinks | @gabrielmaialva33 | `afb6f5e` | `ALREADY_INTEGRATED` |
+| #22 | Proteção contra gaps assíncronos de BuildContext | @gabrielmaialva33 | `afb6f5e` | `ALREADY_INTEGRATED` |
+| #23 | Rejeição fail-closed no Relay Go caso arquivo de config falhe | @gabrielmaialva33 | `afb6f5e` | `ALREADY_INTEGRATED` |
+| #24 | Roteamento de relatos de vulnerabilidades para Private Advisories | @gabrielmaialva33 | `afb6f5e` | `ALREADY_INTEGRATED` |
+| #25 | Documentação de diretórios placeholder e correção de comentário | @gabrielmaialva33 | `afb6f5e` | `ALREADY_INTEGRATED` |
+| #26 | README detalhado do nix_client com setup Linux | @gabrielmaialva33 | `afb6f5e` | `ALREADY_INTEGRATED` |
+| #27 | ADR 0005 (driver PostgreSQL) e ADR 0006 (FFI SQLCipher e QR offline) | @gabrielmaialva33 | `afb6f5e` | `ALREADY_INTEGRATED` |
+| #28 | Reorganização de core_crypto com implementações em lib/src | @gabrielmaialva33 | `afb6f5e` | `ALREADY_INTEGRATED` |
+| #29 | Separação dos repositórios SQLite sob barrel repositories.dart | @gabrielmaialva33 | `afb6f5e` | `ALREADY_INTEGRATED` |
+| #30 | Rollback atômico do cofre caso vínculo com chaveiro do SO falhe | @gabrielmaialva33 | `afb6f5e` | `ALREADY_INTEGRATED` |
+| #31 | Fixação de GitHub Actions por commit SHA, contents: read e concorrência | @gabrielmaialva33 | `HEAD` | `ALREADY_INTEGRATED` |
+| #32 | Análise estática estrita em Dart (strict-inference, unawaited_futures) | @gabrielmaialva33 | `HEAD` | `ALREADY_INTEGRATED` |
+| #33 | Limpeza e zeramento incondicional de identidades derivadas em pânico | @gabrielmaialva33 | `HEAD` | `ALREADY_INTEGRATED` |
+| #34 | Sincronização técnica do AGENTS.md com drivers, repos e rotina 4h | @gabrielmaialva33 | `HEAD` | `ALREADY_INTEGRATED` |
 
 ## D. Issues Resolvidas
 
 - **Issue `#11` (`bug`, `P0` — HTTPS via SOCKS5):** resolvida com `Socks5Connector.connectRaw` + `RawSecureSocket.secure` em `modules/transport/lib/nix_transport.dart`, preservando validação estrita de certificados e rejeição antecipada via `UnsupportedTransportSchemeException` (`cc3fc4f`). Encerrada em `completed`.
 - **Issue `#12` (`security`, `P1` — Canal confidencial de vulnerabilidades):** atendida com ativação oficial do **GitHub Private Vulnerability Reporting** e atualização de `docs/SECURITY.md` e `docs/INCIDENT_RESPONSE.md` (`090c18c`). Encerrada em `completed`.
+- **Issue `#19` (`security`, `P0` — Falha no chaveiro do SO e cofre):** resolvida com rollback atômico e prevenção de criação de cofre sem chaveiro ou senha explícita (`afb6f5e`). Encerrada em `completed`.
+- **Issue `#35` (`refactor`, `P1` — Decomposição Incremental de NixState):** resolvida com a extração de `CallViewModel`, `PeerHoverViewModel`, `StarwireFilterViewModel` e `MoneroOrderFilterViewModel`, eliminando recomposições da árvore global durante chamadas e hovers, com cobertura de testes unitários dedicada (`HEAD`). Encerrada em `completed`.
 
 ## E. Verificação Pós-Merge
 

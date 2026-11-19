@@ -337,3 +337,16 @@ graph TD
 - **Auditor Autônomo:** `scripts/run_maintenance_audit.py` com relatórios em `docs/automation/MAINTENANCE_REPORT.md` e snapshots em `docs/automation/history/`.
 - **Relatório Completo de Resolução:** [`docs/ISSUES_PRS_RESOLUTION_REPORT.md`](ISSUES_PRS_RESOLUTION_REPORT.md).
 
+---
+
+## 10. AUDITORIA E IMPLEMENTAÇÃO DOS PULL REQUESTS #31 A #34 E ISSUE #35 (19/11/2026)
+
+| Item | Tipo | Autor | Escopo / Mudanças | Status da Auditoria & Implementação |
+|---|---|---|---|---|
+| **#31** | PR | @gabrielmaialva33 | Fixação de versões de GitHub Actions por commit SHA imutável, permissões mínimas (`contents: read`), cancelamento de concorrência em PRs e timeouts explícitos | **INTEGRADO E VALIDADO** (Hardening aplicado em `ci.yml`, `security-audit.yml` e `nix_maintenance_audit.yml`) |
+| **#32** | PR | @gabrielmaialva33 | Ativação de análise estática estrita em Dart (`strict-inference: true`, `unawaited_futures`, `only_throw_errors`, `avoid_dynamic_calls`) nos módulos `core_crypto` e `transport` | **INTEGRADO E TESTADO** (0 erros, 0 warnings; 13/13 testes em crypto e 22/22 em transport aprovados) |
+| **#33** | PR | @gabrielmaialva33 | Limpeza e zeramento incondicional de estado sensível em memória (`panicWipeAllData`): descarte de identidades derivadas (`_moneroMarketIdentity`, `_fallbackArchiveIdentity`), caches e cancelamento de timers | **INTEGRADO E TESTADO** (10/10 pontos do ciclo de vida aprovados em `panic_derived_identities_probe_test.dart`) |
+| **#34** | PR | @gabrielmaialva33 | Sincronização técnica completa do `AGENTS.md` com driver PostgreSQL `lib/pq`, relay local, API pública crypto, repositórios SQL, ViewModels e rotina 4h | **INTEGRADO E SINCRONIZADO** (`AGENTS.md` 100% atualizado) |
+| **#35** | Issue | @foros049695 | Decomposição incremental de `NixState`: extração de `CallViewModel`, `PeerHoverViewModel`, `StarwireFilterViewModel` e `MoneroOrderFilterViewModel` mantendo fachada compatível | **RESOLVIDO E TESTADO** (11/11 testes em `view_models_test.dart`, isolamento comprovado de timers e recomposições) |
+
+

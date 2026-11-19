@@ -16,11 +16,15 @@ class MoneroP2pView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
-    final orders = nixState.filteredMoneroOrders;
     final accent = context.accentColor;
     final accentText = context.accentTextColor;
 
-    return LayoutBuilder(
+    return ListenableBuilder(
+      listenable: nixState.moneroFilters,
+      builder: (context, _) {
+        final orders = nixState.moneroFilters.filteredOrders;
+
+        return LayoutBuilder(
       builder: (context, constraints) {
         final isNarrow = constraints.maxWidth < 740;
 
@@ -349,6 +353,8 @@ class MoneroP2pView extends StatelessWidget {
             ],
           ),
         );
+      },
+    );
       },
     );
   }
