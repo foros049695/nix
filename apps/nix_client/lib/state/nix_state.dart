@@ -19,6 +19,9 @@ import '../core/models/github_repo.dart';
 import '../core/theme/nix_colors.dart';
 import '../core/theme/nix_palette.dart';
 import '../core/security/security_context.dart';
+import '../core/database/local_database.dart';
+import '../core/database/repositories.dart';
+import '../core/security/key_vault.dart';
 import 'mock_data.dart';
 
 enum NixActiveArea {

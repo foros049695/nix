@@ -567,7 +567,7 @@ class DoubleRatchet {
           throw StateError('Salto de mensagens além do limite seguro ($maxSkippedKeys).');
         }
         while (candRecvMessageNumber < header.previousChainLength) {
-          final step = await _kdfChainKey(candRecvChainKey);
+          final step = await _kdfChainKey(candRecvChainKey!);
           candRecvChainKey = step.$1;
           final keyId = _skipMapKey(candDhRemote!.bytes, candRecvMessageNumber);
           if (candSkipped.length >= maxSkippedKeys) {
@@ -609,7 +609,7 @@ class DoubleRatchet {
       throw StateError('Salto de mensagens além do limite seguro ($maxSkippedKeys).');
     }
     while (candRecvMessageNumber < header.messageNumber) {
-      final step = await _kdfChainKey(candRecvChainKey);
+      final step = await _kdfChainKey(candRecvChainKey!);
       candRecvChainKey = step.$1;
       final keyId = _skipMapKey(candDhRemote!.bytes, candRecvMessageNumber);
       if (candSkipped.length >= maxSkippedKeys) {
@@ -619,7 +619,7 @@ class DoubleRatchet {
       candRecvMessageNumber += 1;
     }
 
-    final step = await _kdfChainKey(candRecvChainKey);
+    final step = await _kdfChainKey(candRecvChainKey!);
     final nextRecvCk = step.$1;
     final messageKey = step.$2;
 
