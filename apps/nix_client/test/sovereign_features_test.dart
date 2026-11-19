@@ -9,7 +9,7 @@ import 'package:nix_client/core/models/user_settings.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('SovereignOnboardingDialog guia o usuário através do Tor, Seed no Papel e Card ID', (tester) async {
+  testWidgets('SovereignOnboardingDialog guia o usuário através da máquina de estados em 9 etapas', (tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -34,49 +34,37 @@ void main() {
     await tester.tap(find.text('Abrir Onboarding'));
     await tester.pumpAndSettle();
 
-    // Etapa 0: Consentimento Tor
-    expect(find.text('CONSENTIMENTO DA REDE TOR (FAIL-CLOSED)'), findsOneWidget);
-    expect(find.byKey(const Key('tor_consent_checkbox_tile')), findsOneWidget);
+    // Etapa 1: WELCOME
+    expect(find.text('Bem-vindo ao Projeto Nix'), findsOneWidget);
+    expect(find.text('ETAPA 1 DE 9'), findsOneWidget);
 
-    // Garante que o tile está visível e clica no consentimento
-    await tester.ensureVisible(find.byKey(const Key('tor_consent_checkbox_tile')));
-    await tester.tap(find.byKey(const Key('tor_consent_checkbox_tile')));
+    // Avança para Etapa 2: TOR_CONSENT
+    await tester.tap(find.byKey(const Key('onboarding_next_button')));
     await tester.pumpAndSettle();
 
-    // Avança para o bootstrap Tor
-    expect(find.byKey(const Key('accept_tor_and_continue_button')), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const Key('accept_tor_and_continue_button')));
-    await tester.tap(find.byKey(const Key('accept_tor_and_continue_button')));
-    await tester.pump(const Duration(milliseconds: 50));
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('Consentimento da Rede Tor (Fail-Closed)'), findsOneWidget);
+    expect(find.text('ETAPA 2 DE 9'), findsOneWidget);
 
-    // Avança o tempo virtual para cobrir o bootstrap (300ms + 400ms) e transicionar para o Step 2
-    await tester.pump(const Duration(milliseconds: 350));
-    await tester.pump(const Duration(milliseconds: 450));
+    // Tentar avançar sem consentimento não altera a etapa (botão desativado)
+    await tester.tap(find.byKey(const Key('onboarding_next_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('ETAPA 2 DE 9'), findsOneWidget);
+
+    // Clica no consentimento
+    await tester.tap(find.byType(Checkbox));
     await tester.pumpAndSettle();
 
-    // Etapa 2: Exibição da Seed Soberana de 24 palavras
-    expect(find.text('ANOTE SUA SEED PRIVADA NO PAPEL'), findsOneWidget);
-    expect(find.byKey(const Key('seed_written_checkbox_tile')), findsOneWidget);
+    // Alterna painel de diagnóstico
+    await tester.tap(find.text('Diagnóstico'));
+    await tester.pumpAndSettle();
+    expect(find.text('DIAGNÓSTICO TÉCNICO:'), findsOneWidget);
 
-    // Marca confirmação de anotação no papel
-    await tester.ensureVisible(find.byKey(const Key('seed_written_checkbox_tile')));
-    await tester.tap(find.byKey(const Key('seed_written_checkbox_tile')));
+    // Fecha o assistente de onboarding com segurança
+    await tester.tap(find.byTooltip('Pausar Configuração'));
     await tester.pumpAndSettle();
 
-    // Avança para o Card ID Público
-    expect(find.byKey(const Key('confirm_seed_written_button')), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const Key('confirm_seed_written_button')));
-    await tester.tap(find.byKey(const Key('confirm_seed_written_button')));
-    await tester.pumpAndSettle();
-
-    // Etapa 3: Exibição da Chave Pública
-    expect(find.text('SUA IDENTIDADE PÚBLICA (CARD ID)'), findsOneWidget);
-    expect(find.byKey(const Key('finish_onboarding_button')), findsOneWidget);
-
-    // Finaliza o onboarding
-    await tester.ensureVisible(find.byKey(const Key('finish_onboarding_button')));
-    await tester.tap(find.byKey(const Key('finish_onboarding_button')));
+    expect(find.text('Pausar Configuração Soberana?'), findsOneWidget);
+    await tester.tap(find.text('Pausar e Sair'));
     await tester.pumpAndSettle();
 
     expect(find.byType(SovereignOnboardingDialog), findsNothing);

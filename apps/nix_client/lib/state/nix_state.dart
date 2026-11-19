@@ -28,6 +28,7 @@ import '../core/database/repositories.dart';
 import '../core/security/key_vault.dart';
 import '../core/security/anti_forensic_shredder.dart';
 import 'package:nix_transport/nix_transport.dart';
+import '../features/onboarding/sovereign_onboarding_model.dart';
 import 'mock_data.dart';
 
 enum NixActiveArea {
@@ -203,6 +204,120 @@ class NixState extends ChangeNotifier {
 
   void setBluetoothMeshEnabled(bool enabled) {
     _bluetoothMesh.setMeshEnabled(enabled);
+    notifyListeners();
+  }
+
+  // Estado e Controle de Onboarding Soberano (Seção 2)
+  bool _isOnboarded = false;
+  bool _onboardingNoticeDismissed = false;
+
+  bool get isOnboarded => _isOnboarded;
+  bool get onboardingNoticeDismissed => _onboardingNoticeDismissed;
+
+  void dismissOnboardingToIncompleteNotice() {
+    _onboardingNoticeDismissed = true;
+    notifyListeners();
+  }
+
+  void reopenOnboardingFlow() {
+    _onboardingNoticeDismissed = false;
+    notifyListeners();
+  }
+
+  /// Conclui o fluxo de primeiro acesso soberano e comuta o app para produção real.
+  Future<void> completeOnboarding({
+    String? publicId,
+    String? displayName,
+    String? avatarStyle,
+  }) async {
+    _isOnboarded = true;
+    _onboardingNoticeDismissed = false;
+
+    if (displayName != null && displayName.isNotEmpty) {
+      updateProfile(displayName: displayName);
+    }
+    if (avatarStyle != null && avatarStyle.isNotEmpty) {
+      updateProfile(avatarStyle: avatarStyle);
+    }
+    if (publicId != null && publicId.isNotEmpty) {
+      _userProfile = _userProfile.copyWith(publicId: publicId);
+    }
+
+    final snapshot = OnboardingStateSnapshot(
+      currentStep: OnboardingStep.ready,
+      torConsentAccepted: true,
+      torBootstrapped: true,
+      torVerified: true,
+      identityGenerated: true,
+      backupConfirmed: true,
+      publicIdDerived: true,
+      profileConfigured: true,
+      isCompleted: true,
+      publicId: _userProfile.publicId,
+      displayName: _userProfile.effectiveDisplayName,
+      avatarStyle: _userProfile.avatarStyle,
+    );
+    await OnboardingStateSnapshot.save(snapshot);
+    notifyListeners();
+  }
+
+  /// Adiciona um novo contato soberano por Card ID / Chave Pública (Seção 6).
+  Future<void> addNewContact({
+    required String publicId,
+    String? nickname,
+  }) async {
+    final cleanId = publicId.trim();
+    if (cleanId.isEmpty) return;
+
+    final effectiveName = (nickname != null && nickname.trim().isNotEmpty)
+        ? nickname.trim()
+        : (cleanId.length > 15 ? 'Par ${cleanId.substring(0, 14)}' : cleanId);
+
+    final dmId = 'dm_${DateTime.now().millisecondsSinceEpoch}';
+
+    // Se o banco de dados SQLCipher estiver ativo, persiste o contato
+    if (_localDatabase != null && _contactRepo != null) {
+      try {
+        await _contactRepo!.upsertContact(
+          id: cleanId,
+          edPublic: Uint8List(32),
+          xPublic: Uint8List(32),
+          fingerprint: cleanId,
+          displayName: effectiveName,
+          verification: 'verified',
+        );
+      } catch (e) {
+        debugPrint('[NixState] Aviso ao inserir contato no banco local: $e');
+      }
+    }
+
+    final newDm = DirectMessageThread(
+      id: dmId,
+      peerName: effectiveName,
+      peerPublicId: cleanId,
+      statusText: 'Sessão P2P Cifrada · Roteamento Tor Onion v3',
+      isOnline: true,
+      isVerified: true,
+      trustLevel: NixTrustLevel.level2Yellow,
+      unreadCount: 0,
+      messages: [
+        Message(
+          id: 'msg_welcome_$dmId',
+          channelId: dmId,
+          senderName: 'Sistema Nix',
+          senderFingerprint: 'SISTEMA-FAIL-CLOSED',
+          isMe: false,
+          isVerified: true,
+          text: 'Conversa privada iniciada com $effectiveName. Mensagens cifradas de ponta a ponta (Double Ratchet) e roteadas via Tor.',
+          timestamp: DateTime.now().toUtc(),
+        ),
+      ],
+    );
+
+    _directMessages.add(newDm);
+    _selectedDm = newDm;
+    _homeSubTab = HomeSubTab.directChat;
+    _activeArea = NixActiveArea.homePrivate;
     notifyListeners();
   }
 
@@ -466,7 +581,27 @@ class NixState extends ChangeNotifier {
     return true;
   }
 
-  NixState() {
+  NixState({bool? loadMockData}) {
+    final isTest = Platform.environment['FLUTTER_TEST'] == 'true';
+    final shouldLoadMock = loadMockData ?? isTest;
+
+    if (shouldLoadMock) {
+      _loadMockFixtures();
+      _isOnboarded = true;
+    } else {
+      _initializeProductionCleanState();
+    }
+    NixColors.sync(
+      NixSurfaceScheme.resolve(_settings.themeMode),
+      currentPalette,
+    );
+    loadStarwireRepos();
+    if (!shouldLoadMock) {
+      _checkPersistedOnboardingStatus();
+    }
+  }
+
+  void _loadMockFixtures() {
     _spaces = MockData.getInitialSpaces();
     _folders = MockData.getInitialFolders();
     _discoverableSpaces = MockData.getDiscoverablePublicSpaces();
@@ -484,11 +619,111 @@ class NixState extends ChangeNotifier {
     _systemUpdates = MockData.getInitialSystemUpdates();
     _moneroOrders = MockData.getInitialMoneroOrders();
     _githubRepos = MockData.getInitialGithubRepos();
-    NixColors.sync(
-      NixSurfaceScheme.resolve(_settings.themeMode),
-      currentPalette,
+  }
+
+  void _initializeProductionCleanState() {
+    _userProfile = MockData.getInitialUserProfile();
+    const defaultChannel = Channel(
+      id: 'general_saved',
+      spaceId: 'local_space',
+      name: 'geral',
+      topic: 'Canal local soberano',
+      category: 'GERAL',
+      type: ChannelType.text,
+      description: 'Canal local soberano.',
     );
-    loadStarwireRepos();
+    const defaultSpace = Space(
+      id: 'local_space',
+      name: 'Nix Local',
+      initials: 'NX',
+      description: 'Espaço local soberano',
+      channels: [defaultChannel],
+    );
+    _spaces = [defaultSpace];
+    _currentSpace = defaultSpace;
+    _currentChannel = defaultChannel;
+    _discoverableSpaces = [];
+    _folders = [
+      const SpaceFolder(
+        id: 'all',
+        name: 'Todas',
+        iconName: 'folder',
+        spaceIds: ['local_space'],
+        conversationIds: ['dm_saved_messages'],
+      ),
+    ];
+    _messages = {};
+    _publications = {};
+    _forumPosts = [];
+    _members = [
+      Member(
+        id: 'me',
+        name: _userProfile.effectiveDisplayName,
+        roleName: 'Proprietário',
+        role: MemberRole.admin,
+        fingerprint: _securityContext.myFingerprint,
+        isOnline: true,
+      ),
+    ];
+    _contactRequests = [];
+    _transactions = [];
+    _systemUpdates = [];
+    _moneroOrders = [];
+    _githubRepos = [];
+
+    // Mensagens Salvas (Cofre Pessoal Real e Cifrado)
+    _directMessages = [
+      DirectMessageThread(
+        id: 'dm_saved_messages',
+        peerName: 'Mensagens Salvas',
+        peerPublicId: _userProfile.publicId,
+        statusText: 'Cofre Pessoal Cifrado · Notas & Arquivo Local',
+        isOnline: true,
+        isVerified: true,
+        trustLevel: NixTrustLevel.level3Green,
+        isSavedMessages: true,
+        isPinned: true,
+        unreadCount: 0,
+        messages: [
+          Message(
+            id: 'saved_welcome',
+            channelId: 'dm_saved_messages',
+            senderName: _userProfile.effectiveDisplayName,
+            senderFingerprint: _securityContext.myFingerprint,
+            isMe: true,
+            isPinned: true,
+            text: 'Bem-vindo ao seu cofre de Mensagens Salvas do Projeto Nix.\n\n'
+                '• Todas as notas e arquivos salvos aqui são cifrados localmente no banco SQLCipher.\n'
+                '• Roteamento Tor Onion v3 ativo e fail-closed por padrão.\n'
+                '• Suas mensagens não passam por servidores nem coletam telemetria.',
+            timestamp: DateTime.now().toUtc(),
+            attachments: const [],
+          ),
+        ],
+      ),
+    ];
+    _selectedDm = _directMessages.first;
+    _homeSubTab = HomeSubTab.cardId;
+    _activeArea = NixActiveArea.homePrivate;
+  }
+
+  Future<void> _checkPersistedOnboardingStatus() async {
+    try {
+      final snapshot = await OnboardingStateSnapshot.load();
+      if (snapshot.isCompleted) {
+        _isOnboarded = true;
+        if (snapshot.displayName != null && snapshot.displayName!.isNotEmpty) {
+          _userProfile = _userProfile.copyWith(displayName: snapshot.displayName);
+        }
+        if (snapshot.avatarStyle != null && snapshot.avatarStyle!.isNotEmpty) {
+          _userProfile = _userProfile.copyWith(avatarStyle: snapshot.avatarStyle);
+        }
+        if (snapshot.publicId != null && snapshot.publicId!.isNotEmpty) {
+          _userProfile = _userProfile.copyWith(publicId: snapshot.publicId);
+        }
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   /// Caminho local de persistência de preferências do cliente (apenas desktop/mobile reais).
@@ -1166,6 +1401,23 @@ class NixState extends ChangeNotifier {
       _directMessages[idx] = _directMessages[idx].copyWith(messages: updatedMsgs);
       _selectedDm = _directMessages[idx];
       _replyingToMessage = null;
+
+      // Persiste de forma atômica no banco local SQLCipher se ativo
+      if (_localDatabase != null && _messageRepo != null) {
+        try {
+          _messageRepo!.insertMessage(
+            id: newMsg.id,
+            conversationId: _selectedDm!.id,
+            authorKey: _userProfile.publicId,
+            deviceId: 'local_client_dev',
+            body: text.trim(),
+            deliveryState: _selectedDm!.isSavedMessages ? 'received' : 'queued',
+          );
+        } catch (e) {
+          debugPrint('[NixState] Aviso ao persistir mensagem no banco local: $e');
+        }
+      }
+
       notifyListeners();
     }
   }

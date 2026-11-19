@@ -2,8 +2,37 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
+
+/// Renderizador de QR Code interoperável (ISO/IEC 18004) para o Identificador Público do Nix.
+class NixQrCodeWidget extends StatelessWidget {
+  final String data;
+  final double size;
+  final Color backgroundColor;
+  final Color foregroundColor;
+
+  const NixQrCodeWidget({
+    super.key,
+    required this.data,
+    this.size = 120.0,
+    this.backgroundColor = Colors.white,
+    this.foregroundColor = Colors.black,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return QrImageView(
+      data: data,
+      version: QrVersions.auto,
+      size: size,
+      backgroundColor: backgroundColor,
+      eyeStyle: QrEyeStyle(eyeShape: QrEyeShape.square, color: foregroundColor),
+      dataModuleStyle: QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: foregroundColor),
+    );
+  }
+}
 
 /// Renderizador determinístico de QR Code para o Identificador Público do Nix.
 /// Representa estritamente o payload público (`nix://id/...`), sem incluir chaves privadas ou seeds.
@@ -195,21 +224,19 @@ class _QrCodeZoomModalState extends State<QrCodeZoomModal> {
               ],
             ),
             const SizedBox(height: 16),
-            // Moldura do QR Code
+            // Moldura do QR Code interoperável real
             Container(
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: NixColors.background,
+                color: Colors.white,
                 borderRadius: NixTokens.borderMd,
                 border: Border.all(color: NixColors.surfaceBorderStrong, width: 1.5),
               ),
-              child: CustomPaint(
-                size: const Size(220, 220),
-                painter: NixQrCodePainter(
-                  data: widget.qrPayload,
-                  foregroundColor: Colors.white,
-                  backgroundColor: Colors.black,
-                ),
+              child: NixQrCodeWidget(
+                data: widget.qrPayload,
+                size: 210,
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
               ),
             ),
             const SizedBox(height: 16),

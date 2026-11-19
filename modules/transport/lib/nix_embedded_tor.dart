@@ -67,18 +67,30 @@ class EmbeddedTorManager {
 
   /// Procura o executável do Tor embutido no bundle da aplicação ou nos caminhos padrão do sistema.
   Future<String?> locateTorBinary() async {
-    if (customTorBinary != null && await File(customTorBinary!).exists()) {
-      return customTorBinary;
+    if (customTorBinary != null) {
+      if (await File(customTorBinary!).exists()) {
+        return customTorBinary;
+      }
+      return null;
     }
     if (Platform.environment.containsKey('FLUTTER_TEST')) {
       return null;
     }
 
-    // Candidatos no pacote da aplicação e no SO
+    // Diretório base do executável atual (bundle)
+    String exeDir = '';
+    try {
+      exeDir = File(Platform.resolvedExecutable).parent.path;
+    } catch (_) {}
+
+    final home = Platform.environment['HOME'] ?? '';
+
+    // Candidatos ordenados: pacote local do app > ~/.local > sistema
     final candidates = [
-      // Linux Bundle local
-      '${Platform.environment['HOME']}/.local/share/nix/bundle/tor',
-      '${Platform.environment['HOME']}/.local/bin/tor',
+      if (exeDir.isNotEmpty) '$exeDir/tor',
+      if (exeDir.isNotEmpty) '$exeDir/data/tor',
+      if (home.isNotEmpty) '$home/.local/share/nix/bundle/tor',
+      if (home.isNotEmpty) '$home/.local/bin/tor',
       '/usr/bin/tor',
       '/usr/local/bin/tor',
       // Android / Termux / JNI paths
@@ -87,7 +99,14 @@ class EmbeddedTorManager {
     ];
 
     for (final path in candidates) {
-      if (await File(path).exists()) {
+      final file = File(path);
+      if (await file.exists()) {
+        try {
+          // Garante permissão de execução em ambientes POSIX
+          if (!Platform.isWindows) {
+            await Process.run('chmod', ['+x', path]);
+          }
+        } catch (_) {}
         return path;
       }
     }
@@ -112,6 +131,12 @@ class EmbeddedTorManager {
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
+    // Tor exige permissão estrita 0700 no DataDirectory
+    try {
+      if (!Platform.isWindows) {
+        await Process.run('chmod', ['0700', dir.path]);
+      }
+    } catch (_) {}
 
     final torrcFile = File('${dir.path}/torrc');
     final configContent = StringBuffer()
@@ -164,7 +189,15 @@ class EmbeddedTorManager {
     final completer = Completer<bool>();
 
     try {
-      _torProcess = await Process.start(binary, ['-f', torrc.path]);
+      final binDir = File(binary).parent.path;
+      final home = Platform.environment['HOME'] ?? '';
+      final ldPath = '$binDir/lib:$binDir:$home/.local/lib:${Platform.environment['LD_LIBRARY_PATH'] ?? ''}';
+
+      _torProcess = await Process.start(
+        binary,
+        ['-f', torrc.path],
+        environment: {'LD_LIBRARY_PATH': ldPath},
+      );
 
       _torProcess!.stdout
           .transform(utf8.decoder)
@@ -211,16 +244,18 @@ class EmbeddedTorManager {
 
   /// Analisa linhas de log do Tor procurando eventos de progresso de bootstrap.
   void _parseTorLogLine(String line, Completer<bool> completer) {
-    if (line.contains('Bootstrapped')) {
-      // Exemplo: [notice] Bootstrapped 50% (loading_descriptors): Loading relay descriptors
-      final regex = RegExp(r'Bootstrapped (\d+)% (?:\((.*?)\): )?(.*)');
-      final match = regex.firstMatch(line);
-      if (match != null) {
-        final percent = int.tryParse(match.group(1) ?? '0') ?? _currentProgress;
-        final summary = match.group(3) ?? match.group(2) ?? 'Conectando à rede Onion...';
+    if (line.contains('Bootstrapped ')) {
+      final percentMatch = RegExp(r'Bootstrapped (\d+)%').firstMatch(line);
+      if (percentMatch != null) {
+        final percent = int.tryParse(percentMatch.group(1) ?? '0') ?? _currentProgress;
+        String summary = 'Conectando à rede Onion...';
+        final colonIdx = line.lastIndexOf(': ');
+        if (colonIdx != -1 && colonIdx + 2 < line.length) {
+          summary = line.substring(colonIdx + 2).trim();
+        }
 
         _currentProgress = percent;
-        _lastSummary = summary.trim();
+        _lastSummary = summary;
         _status = percent == 100 ? EmbeddedTorStatus.ready : EmbeddedTorStatus.bootstrapping;
 
         _bootstrapController.add(TorBootstrapEvent(

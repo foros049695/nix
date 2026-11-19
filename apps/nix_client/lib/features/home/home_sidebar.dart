@@ -158,7 +158,26 @@ class HomeSidebar extends StatelessWidget {
                 const SizedBox(height: 10),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Text('CONVERSAS & MENSAGENS SALVAS', style: NixTokens.labelUppercase()),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'CONVERSAS & MENSAGENS SALVAS',
+                          style: NixTokens.labelUppercase(),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        key: const Key('add_contact_sidebar_button'),
+                        icon: Icon(Icons.person_add_alt_1_rounded, size: 16, color: NixColors.accentYellow),
+                        tooltip: 'Adicionar Contato por ID',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _showAddContactDialog(context, nixState),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 4),
 
@@ -342,6 +361,79 @@ class HomeSidebar extends StatelessWidget {
             icon: Icon(Icons.settings_outlined, size: 16, color: NixColors.textSecondary),
             tooltip: 'Configurações',
             onPressed: () => state.openProfileOverlay(startInSettings: true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddContactDialog(BuildContext context, NixState state) {
+    final idController = TextEditingController();
+    final nameController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: NixColors.surfaceElevatedHigh,
+        title: Row(
+          children: [
+            Icon(Icons.person_add_alt_1_rounded, color: NixColors.accentYellow, size: 20),
+            const SizedBox(width: 8),
+            Text('Adicionar Contato Soberano', style: TextStyle(color: NixColors.textPrimary, fontSize: 15)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Insira o Card ID ou Chave Pública do seu contato para iniciar uma conversa cifrada de ponta a ponta sem passar por servidores.',
+              style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: idController,
+              key: const Key('add_contact_id_field'),
+              style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
+              decoration: const InputDecoration(
+                labelText: 'Card ID ou Chave Pública',
+                hintText: 'ex: NIX-XXXX-XXXX-XXXX-XXXX',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.badge_outlined),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: nameController,
+              key: const Key('add_contact_name_field'),
+              style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
+              decoration: const InputDecoration(
+                labelText: 'Nome ou Apelido (Opcional)',
+                hintText: 'ex: Alice, Bob',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.edit_note_rounded),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            key: const Key('add_contact_confirm_button'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: NixColors.accentYellow,
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () {
+              final id = idController.text.trim();
+              if (id.isNotEmpty) {
+                state.addNewContact(publicId: id, nickname: nameController.text.trim());
+                Navigator.of(ctx).pop();
+              }
+            },
+            child: const Text('Adicionar e Abrir Chat', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),

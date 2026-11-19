@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqlite3/open.dart' as sqlite_open;
 
 /// Informações de versão e integridade de uma migração do banco de dados local.
 class SchemaMigrationRecord {
@@ -67,6 +69,37 @@ class LocalDatabase {
     return '$home/.local/share/nix/nix_local_v4.db';
   }
 
+  static bool _sqliteInitialized = false;
+
+  /// Garante que o motor SQLite FFI seja inicializado com resolução dinâmica robusta no Linux.
+  static void ensureSqliteInitialized() {
+    if (_sqliteInitialized) return;
+    if (Platform.isLinux) {
+      try {
+        sqlite_open.open.overrideFor(sqlite_open.OperatingSystem.linux, () {
+          final candidates = [
+            'libsqlite3.so',
+            'libsqlite3.so.0',
+            '/usr/lib/x86_64-linux-gnu/libsqlite3.so.0',
+            '/usr/lib/libsqlite3.so.0',
+            '${Platform.environment['HOME']}/.local/lib/libsqlite3.so',
+            '${Platform.environment['HOME']}/.local/share/nix/bundle/lib/libsqlite3.so',
+          ];
+          for (final path in candidates) {
+            try {
+              return DynamicLibrary.open(path);
+            } catch (_) {}
+          }
+          return DynamicLibrary.open('libsqlite3.so');
+        });
+      } catch (_) {}
+    }
+    try {
+      sqfliteFfiInit();
+    } catch (_) {}
+    _sqliteInitialized = true;
+  }
+
   /// Inicializa e abre a conexão com o banco de dados local, aplicando migrações pendentes.
   static Future<LocalDatabase> open({
     String? path,
@@ -75,8 +108,9 @@ class LocalDatabase {
     String? migration001Sql,
     String? migration002Sql,
   }) async {
+    ensureSqliteInitialized();
     final dbPath = path ?? getDefaultDatabasePath();
-    final factory = customFactory ?? databaseFactoryFfi;
+    final factory = customFactory ?? databaseFactoryFfiNoIsolate;
 
     // Garante que o diretório pai existe
     if (dbPath != inMemoryDatabasePath) {

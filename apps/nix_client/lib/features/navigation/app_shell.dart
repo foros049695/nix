@@ -5,6 +5,8 @@ import '../../core/models/direct_message.dart';
 import '../../core/security/window_privacy_guard.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
+import '../dialogs/sovereign_onboarding_dialog.dart';
+import '../onboarding/sovereign_onboarding_flow.dart';
 import '../calls/call_room_view.dart';
 import '../chat/chat_view.dart';
 import '../chat/conversation_info_panel.dart';
@@ -46,6 +48,22 @@ class AppShell extends StatelessWidget {
                 nixState.homeSubTab == HomeSubTab.directChat &&
                 nixState.selectedDm != null));
 
+    if (!nixState.isOnboarded && !nixState.onboardingNoticeDismissed) {
+      return MediaQuery(
+        data: sanitizedMq,
+        child: Scaffold(
+          backgroundColor: NixColors.background,
+          body: Center(
+            child: SovereignOnboardingFlow(
+              nixState: nixState,
+              onComplete: () {},
+              onDismiss: () => nixState.dismissOnboardingToIncompleteNotice(),
+            ),
+          ),
+        ),
+      );
+    }
+
     return MediaQuery(
       data: sanitizedMq,
       child: LayoutBuilder(
@@ -60,6 +78,32 @@ class AppShell extends StatelessWidget {
                     child: Column(
                       children: [
                         const WindowTitleBar(),
+                        if (!nixState.isOnboarded)
+                          Container(
+                            color: Colors.amber.shade900,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.warning_amber_rounded, size: 16, color: Colors.white),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'CONFIGURAÇÃO SOBERANA INCOMPLETA · Roteamento Tor e Identidade Privada pendentes.',
+                                    style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: NixColors.accentYellow,
+                                    foregroundColor: Colors.black,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  ),
+                                  onPressed: () => SovereignOnboardingDialog.show(context, nixState),
+                                  child: const Text('Retomar Configuração', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          ),
                         Expanded(
                           child: Row(
                             children: [

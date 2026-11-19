@@ -348,13 +348,11 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(color: Colors.white30, width: 1),
                                   ),
-                                  child: CustomPaint(
-                                    size: const Size(64, 64),
-                                    painter: NixQrCodePainter(
-                                      data: profile.qrPublicPayload,
-                                      foregroundColor: NixColors.platinumAccent,
-                                      backgroundColor: Colors.black,
-                                    ),
+                                  child: NixQrCodeWidget(
+                                    data: profile.qrPublicPayload,
+                                    size: 64,
+                                    foregroundColor: Colors.white,
+                                    backgroundColor: Colors.black,
                                   ),
                                 ),
                               ),

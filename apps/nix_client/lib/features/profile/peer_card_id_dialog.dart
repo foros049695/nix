@@ -330,12 +330,11 @@ class PeerCardIdDialog extends StatelessWidget {
                                     color: Colors.white,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: CustomPaint(
-                                    painter: NixQrCodePainter(
-                                      data: peerPublicId,
-                                      foregroundColor: Colors.black,
-                                      backgroundColor: Colors.white,
-                                    ),
+                                  child: NixQrCodeWidget(
+                                    data: peerPublicId,
+                                    size: 52,
+                                    foregroundColor: Colors.black,
+                                    backgroundColor: Colors.white,
                                   ),
                                 ),
                               ],
