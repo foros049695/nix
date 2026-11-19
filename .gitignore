@@ -82,6 +82,8 @@ Cargo.lock
 *.dump
 /data/
 /minio_data/
+/build/
+/tools/metadata_builder/cache/
 
 # Protobuf generated code (if compiled into temporary caches)
 # Maintain checked-in stubs only if desired, else ignore runtime bins
@@ -94,3 +96,5 @@ Cargo.lock
 !.vscode/launch.json
 !.vscode/extensions.json
 *.code-search
+__pycache__/
+*.pyc

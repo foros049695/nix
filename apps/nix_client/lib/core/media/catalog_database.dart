@@ -94,6 +94,7 @@ class CatalogDatabase {
   static Future<CatalogDatabase> open({
     String? path,
     bool inMemory = false,
+    bool readOnly = false,
   }) async {
     LocalDatabase.ensureSqliteInitialized();
     final dbFactory = databaseFactoryFfi;
@@ -110,15 +111,20 @@ class CatalogDatabase {
     final db = await dbFactory.openDatabase(
       resolvedPath,
       options: OpenDatabaseOptions(
-        version: 1,
-        onCreate: (db, version) async {
-          await _createSchema(db);
-        },
+        version: readOnly ? null : 1,
+        readOnly: readOnly,
+        onCreate: readOnly
+            ? null
+            : (db, version) async {
+                await _createSchema(db);
+              },
       ),
     );
 
     // Garante que o schema FTS5 esteja pronto caso a base tenha sido criada vazia
-    await _createSchema(db);
+    if (!readOnly) {
+      await _createSchema(db);
+    }
 
     return CatalogDatabase._(db, resolvedPath);
   }
