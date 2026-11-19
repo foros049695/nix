@@ -592,14 +592,16 @@ class MediaRepository {
   }
 
   Future<List<Map<String, dynamic>>> searchMedia(String queryTerm) async {
-    if (queryTerm.trim().isEmpty) return [];
-    final sanitized = queryTerm.replaceAll("'", "''").replaceAll('"', '""');
+    final clean = queryTerm.trim();
+    if (clean.isEmpty) return [];
+    // Trata a busca como frase literal, inclusive hífens e aspas internas.
+    final safeTerm = '"${clean.replaceAll('"', '""')}"';
     return _db.rawQuery('''
       SELECT m.* FROM media_items m
       JOIN media_search ms ON m.id = ms.media_id
       WHERE media_search MATCH ?
       ORDER BY m.updated_at DESC LIMIT 30;
-    ''', [sanitized]);
+    ''', [safeTerm]);
   }
 
   Future<void> deleteMediaItem(String id) async {
