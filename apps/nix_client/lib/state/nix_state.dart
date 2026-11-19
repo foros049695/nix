@@ -36,6 +36,7 @@ import '../core/messaging/sovereign_messenger.dart';
 import '../core/p2p/monero_ad_verifier.dart';
 import '../core/archive/nix_archive_service.dart';
 import '../core/media/media_catalog_service.dart';
+import '../core/media/catalog_database.dart';
 import 'package:nix_transport/nix_transport.dart';
 import '../features/onboarding/sovereign_onboarding_model.dart';
 import 'mock_data.dart';
@@ -46,6 +47,8 @@ enum NixActiveArea {
   explore,     // Explorar Canais e Grupos Públicos
   github,      // GitHub Discovery (Starwire)
   moneroP2p,   // Mercado Monero P2P Não Custodial
+  mediaIndex,  // Nix Media Index Offline-First (Acervo Cultural)
+  archive,     // Nix Archive Ambiente Dedicado
 }
 
 enum ConversationFilter {
@@ -489,6 +492,25 @@ class NixState extends ChangeNotifier {
   ObjectChunkRepository? get objectChunkRepo => _objectChunkRepo;
   MediaRepository? get mediaRepo => _mediaRepo;
   ArchiveRepository? get archiveRepo => _archiveRepo;
+
+  CatalogDatabase? _catalogDatabase;
+  CatalogRepository? _catalogRepo;
+
+  CatalogDatabase? get catalogDatabase => _catalogDatabase;
+  CatalogRepository? get catalogRepo => _catalogRepo;
+  MediaRepository get mediaRepository => _mediaRepo!;
+  ArchiveRepository get archiveRepository => _archiveRepo!;
+
+  Future<void> ensureCatalogDatabaseOpened() async {
+    if (_catalogDatabase == null) {
+      _catalogDatabase = await CatalogDatabase.open();
+      _catalogRepo = CatalogRepository(_catalogDatabase!);
+      if (_mediaRepo != null) {
+        _mediaCatalogService = MediaCatalogService(_mediaRepo!, catalogRepo: _catalogRepo);
+      }
+      notifyListeners();
+    }
+  }
 
   void _rebuildSovereignMessenger() {
     if (_localDatabase != null &&
@@ -2486,6 +2508,19 @@ class NixState extends ChangeNotifier {
 
   void openMoneroP2pArea() {
     _activeArea = NixActiveArea.moneroP2p;
+    notifyListeners();
+  }
+
+  void openMediaIndexArea() {
+    _activeArea = NixActiveArea.mediaIndex;
+    _clearTransientMessageModes();
+    ensureCatalogDatabaseOpened();
+    notifyListeners();
+  }
+
+  void openArchiveArea() {
+    _activeArea = NixActiveArea.archive;
+    _clearTransientMessageModes();
     notifyListeners();
   }
 

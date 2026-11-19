@@ -351,12 +351,15 @@ class MessageBubble extends StatelessWidget {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text(
-                                    message.senderName,
-                                    style: TextStyle(
-                                      color: NixColors.textPrimary,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12 * settings.fontScale,
+                                  Flexible(
+                                    child: Text(
+                                      message.senderName,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: NixColors.textPrimary,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12 * settings.fontScale,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 6),

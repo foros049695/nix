@@ -284,6 +284,9 @@ class NixArchiveService {
     return std_crypto.sha256.convert(canonicalBytes).toString();
   }
 
+  static String _toHex(List<int> bytes) =>
+      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
   Future<void> ensurePersonaRegistered({
     required String personaId,
     required NixIdentity identity,
@@ -432,5 +435,200 @@ class NixArchiveService {
       current = row['supersedes_hash'] as String?;
     }
     return chain;
+  }
+
+  // ===========================================================================
+  // SUBSISTEMA DE DISCUSSÕES, RASCUNHOS E MODERAÇÃO LOCAL (Fase 19)
+  // ===========================================================================
+
+  static const String commentSchemaV1 = 'nix.archive.comment.v1';
+
+  /// Publica comentário assinado `nix.archive.comment.v1` vinculado ao objeto do artigo
+  /// ou encadeado a outro comentário pai (`parentCommentHash`).
+  Future<String> publishComment({
+    required NixIdentity author,
+    required String authorPersonaId,
+    required String targetObjectHash,
+    String? parentCommentHash,
+    required String contentMarkdown,
+    String? quoteText,
+    int? createdAtMs,
+  }) async {
+    final now = createdAtMs ?? DateTime.now().toUtc().millisecondsSinceEpoch;
+    final cleanContent = contentMarkdown.trim();
+
+    final canonicalObj = <String, dynamic>{
+      'schema': commentSchemaV1,
+      'targetObjectHash': targetObjectHash,
+      if (parentCommentHash != null) 'parentCommentHash': parentCommentHash,
+      'authorPersonaId': authorPersonaId,
+      'authorEd25519': author.ed25519PublicHex,
+      'contentMarkdown': cleanContent,
+      if (quoteText != null && quoteText.isNotEmpty) 'quoteText': quoteText.trim(),
+      'createdAt': now,
+    };
+
+    final canonicalBytes = canonicalizeJsonBytes(canonicalObj);
+    final hashHex = computeContentHashHex(canonicalBytes);
+    final sig = await author.sign(canonicalBytes);
+
+    await archiveRepo.insertComment(
+      hash: hashHex,
+      targetObjectHash: targetObjectHash,
+      parentCommentHash: parentCommentHash,
+      authorPublic: Uint8List.fromList(author.ed25519PublicKey.bytes),
+      authorPersonaId: authorPersonaId,
+      signature: Uint8List.fromList(sig),
+      contentMarkdown: cleanContent,
+      quoteText: quoteText,
+      createdAt: now,
+    );
+
+    return hashHex;
+  }
+
+  /// Verifica a integridade e autenticidade Ed25519 de um comentário salvo.
+  Future<bool> verifyStoredComment(String commentHash) async {
+    final row = await archiveRepo.getComment(commentHash);
+    if (row == null) return false;
+
+    final targetObjectHash = row['target_object_hash'] as String;
+    final parentCommentHash = row['parent_comment_hash'] as String?;
+    final authorPersonaId = row['author_persona_id'] as String;
+    final authorPub = row['author_public'] as List<int>;
+    final sig = row['signature'] as List<int>;
+    final content = row['content_markdown'] as String;
+    final quoteText = row['quote_text'] as String?;
+    final createdAt = row['created_at'] as int;
+
+    final canonicalObj = <String, dynamic>{
+      'schema': commentSchemaV1,
+      'targetObjectHash': targetObjectHash,
+      if (parentCommentHash != null) 'parentCommentHash': parentCommentHash,
+      'authorPersonaId': authorPersonaId,
+      'authorEd25519': _toHex(authorPub),
+      'contentMarkdown': content,
+      if (quoteText != null && quoteText.isNotEmpty) 'quoteText': quoteText,
+      'createdAt': createdAt,
+    };
+
+    final canonicalBytes = canonicalizeJsonBytes(canonicalObj);
+    final actualHash = computeContentHashHex(canonicalBytes);
+    if (actualHash != commentHash) return false;
+
+    return NixIdentity.verify(
+      message: canonicalBytes,
+      signatureBytes: sig,
+      ed25519PublicKey: SimplePublicKey(authorPub, type: KeyPairType.ed25519),
+    );
+  }
+
+  /// Retorna lista de comentários organizados e encadeados por profundidade de resposta.
+  Future<List<Map<String, dynamic>>> getThreadedComments(
+    String objectHash, {
+    bool filterModerated = true,
+  }) async {
+    final rawComments = await archiveRepo.listCommentsForObject(objectHash);
+    if (rawComments.isEmpty) return const [];
+
+    final moderatedAuthors = <String>{};
+    if (filterModerated) {
+      final modRows = await archiveRepo.listModeratedAuthors();
+      for (final m in modRows) {
+        final pubBytes = m['author_public'] as List<int>;
+        moderatedAuthors.add(_toHex(pubBytes));
+      }
+    }
+
+    final commentMap = <String, Map<String, dynamic>>{};
+    final childrenMap = <String, List<String>>{};
+    final rootHashes = <String>[];
+
+    for (final row in rawComments) {
+      final hash = row['hash'] as String;
+      final authorHex = _toHex(row['author_public'] as List<int>);
+      if (filterModerated && moderatedAuthors.contains(authorHex)) {
+        continue;
+      }
+
+      final parent = row['parent_comment_hash'] as String?;
+      commentMap[hash] = Map<String, dynamic>.from(row);
+
+      if (parent == null || parent.isEmpty) {
+        rootHashes.add(hash);
+      } else {
+        childrenMap.putIfAbsent(parent, () => []).add(hash);
+      }
+    }
+
+    final result = <Map<String, dynamic>>[];
+    void traverse(String commentHash, int depth) {
+      final node = commentMap[commentHash];
+      if (node != null) {
+        node['thread_depth'] = depth;
+        result.add(node);
+        final children = childrenMap[commentHash] ?? [];
+        for (final child in children) {
+          traverse(child, depth + 1);
+        }
+      }
+    }
+
+    for (final root in rootHashes) {
+      traverse(root, 0);
+    }
+
+    return result;
+  }
+
+  // --- RASCUNHOS DE ARTIGOS ---
+
+  Future<void> saveDraft({
+    required String id,
+    required String title,
+    required String category,
+    required String markdownContent,
+    List<String> tags = const [],
+  }) {
+    return archiveRepo.saveDraft(
+      id: id,
+      title: title,
+      category: category,
+      markdownContent: markdownContent,
+      tags: tags,
+    );
+  }
+
+  Future<Map<String, dynamic>?> getDraft(String id) =>
+      archiveRepo.getDraft(id);
+
+  Future<List<Map<String, dynamic>>> listDrafts() =>
+      archiveRepo.listDrafts();
+
+  Future<void> deleteDraft(String id) =>
+      archiveRepo.deleteDraft(id);
+
+  // --- MODERAÇÃO LOCAL ---
+
+  Future<void> muteAuthor(Uint8List authorPublic, {String? reason}) =>
+      archiveRepo.setAuthorModeration(
+        authorPublic: authorPublic,
+        status: 'muted',
+        reason: reason,
+      );
+
+  Future<void> blockAuthor(Uint8List authorPublic, {String? reason}) =>
+      archiveRepo.setAuthorModeration(
+        authorPublic: authorPublic,
+        status: 'blocked',
+        reason: reason,
+      );
+
+  Future<void> unmoderateAuthor(Uint8List authorPublic) =>
+      archiveRepo.removeAuthorModeration(authorPublic);
+
+  Future<bool> isAuthorModerated(Uint8List authorPublic) async {
+    final status = await archiveRepo.getAuthorModeration(authorPublic);
+    return status != null;
   }
 }

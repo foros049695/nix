@@ -127,6 +127,22 @@ class HomeSidebar extends StatelessWidget {
                 ),
                 _navTile(
                   context,
+                  key: const Key('home_nav_media_index'),
+                  icon: Icons.local_library_rounded,
+                  label: 'Nix Media Index',
+                  isSelected: nixState.activeArea == NixActiveArea.mediaIndex,
+                  onTap: () => nixState.openMediaIndexArea(),
+                ),
+                _navTile(
+                  context,
+                  key: const Key('home_nav_archive'),
+                  icon: Icons.auto_stories_rounded,
+                  label: 'Nix Archive',
+                  isSelected: nixState.activeArea == NixActiveArea.archive,
+                  onTap: () => nixState.openArchiveArea(),
+                ),
+                _navTile(
+                  context,
                   icon: Icons.account_balance_wallet_outlined,
                   label: 'Transações (XMR)',
                   isSelected: nixState.activeArea == NixActiveArea.homePrivate &&

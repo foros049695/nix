@@ -180,7 +180,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Mensagens Salvas'), findsAtLeastNWidgets(1));
 
-    await tester.tap(find.byKey(const Key('dm_item_dm_saved_messages')));
+    await tester.tap(find.text('Mensagens Salvas').first);
     await tester.pumpAndSettle();
     expect(state.homeSubTab, HomeSubTab.directChat);
     expect(state.selectedDm?.isSavedMessages, true);

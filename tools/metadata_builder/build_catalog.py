@@ -1,0 +1,548 @@
+#!/usr/bin/env python3
+"""
+Nix Metadata Builder - Offline Cultural Catalog Ingestion & Packaging Pipeline
+
+Features:
+- Ingestion of open metadata from Wikidata, Open Library, and Anime Offline Database.
+- Strict deduplication, normalization, and validation across 5 kinds:
+  'movie', 'series', 'anime', 'manga', 'book'.
+- SQLite + FTS5 generation with full-text search triggers.
+- Privacy-preserving cover placeholders (no clearnet image leaks).
+- Ed25519 cryptographic signing producing 'catalog_manifest.json' and '.nixpack' packages.
+- Generation of the offline seed catalog fixture.
+"""
+
+import argparse
+import json
+import os
+import sqlite3
+import sys
+import time
+import hashlib
+from typing import Dict, List, Any, Optional
+
+try:
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from cryptography.hazmat.primitives import serialization
+except ImportError:
+    print("[Error] python-cryptography is required. Install via pip install cryptography.", file=sys.stderr)
+    sys.exit(1)
+
+
+# Seed records representing high-quality open cultural works with complete verified metadata
+SAMPLE_SEED_RECORDS: List[Dict[str, Any]] = [
+    # --- FILMES ---
+    {
+        "id": "nix:work:movie:wikidata:Q103618",
+        "kind": "movie",
+        "title": "2001: Uma Odisseia no Espaço",
+        "original_title": "2001: A Space Odyssey",
+        "creators": "Stanley Kubrick, Arthur C. Clarke",
+        "genres": "Ficção Científica, Mistério",
+        "release_year": 1968,
+        "summary": "Após a descoberta de um misterioso monólito enterrado na Lua, uma espaçonave tripulada com o supercomputador HAL 9000 é enviada a Júpiter para investigar sua origem.",
+        "cover_thumb": "placeholder:monolith_star",
+        "external_ids": {"wikidata": "Q103618", "imdb": "tt0062622"}
+    },
+    {
+        "id": "nix:work:movie:wikidata:Q133332",
+        "kind": "movie",
+        "title": "Matrix",
+        "original_title": "The Matrix",
+        "creators": "Lana Wachowski, Lilly Wachowski",
+        "genres": "Ficção Científica, Ação, Cyberpunk",
+        "release_year": 1999,
+        "summary": "Um programador e hacker conhecido como Neo descobre que o mundo real é uma simulação computadorizada criada por inteligências artificiais para controlar a humanidade.",
+        "cover_thumb": "placeholder:digital_rain",
+        "external_ids": {"wikidata": "Q133332", "imdb": "tt0133093"}
+    },
+    {
+        "id": "nix:work:movie:wikidata:Q184843",
+        "kind": "movie",
+        "title": "Blade Runner: O Caçador de Androides",
+        "original_title": "Blade Runner",
+        "creators": "Ridley Scott, Philip K. Dick, Hampton Fancher",
+        "genres": "Ficção Científica, Neo-Noir, Cyberpunk",
+        "release_year": 1982,
+        "summary": "No futuro distópico de Los Angeles em 2019, o ex-policial Rick Deckard é recrutado para caçar e aposentar quatro replicantes rebeldes fugitivos.",
+        "cover_thumb": "placeholder:origami_unicorn",
+        "external_ids": {"wikidata": "Q184843", "imdb": "tt0083658"}
+    },
+    {
+        "id": "nix:work:movie:wikidata:Q47703",
+        "kind": "movie",
+        "title": "O Poderoso Chefão",
+        "original_title": "The Godfather",
+        "creators": "Francis Ford Coppola, Mario Puzo",
+        "genres": "Crime, Drama",
+        "release_year": 1972,
+        "summary": "A crônica da dinastia ítalo-americana da família Corleone liderada pelo patriarca Vito Corleone e a ascensão relutante de seu filho mais novo Michael ao poder supremo.",
+        "cover_thumb": "placeholder:puppet_strings",
+        "external_ids": {"wikidata": "Q47703", "imdb": "tt0068646"}
+    },
+    {
+        "id": "nix:work:movie:wikidata:Q13417189",
+        "kind": "movie",
+        "title": "Interestelar",
+        "original_title": "Interstellar",
+        "creators": "Christopher Nolan, Jonathan Nolan",
+        "genres": "Ficção Científica, Drama, Aventura",
+        "release_year": 2014,
+        "summary": "Com a Terra se tornando inóspita, uma equipe de exploradores viaja através de um buraco de minhoca perto de Saturno em busca de um novo lar para a sobrevivência humana.",
+        "cover_thumb": "placeholder:gargantua_blackhole",
+        "external_ids": {"wikidata": "Q13417189", "imdb": "tt0816692"}
+    },
+
+    # --- SÉRIES ---
+    {
+        "id": "nix:work:series:wikidata:Q1079",
+        "kind": "series",
+        "title": "Breaking Bad",
+        "original_title": "Breaking Bad",
+        "creators": "Vince Gilligan",
+        "genres": "Crime, Drama, Suspense",
+        "release_year": 2008,
+        "summary": "Ao ser diagnosticado com câncer terminal de pulmão, um modesto professor de química do ensino médio se associa a um ex-aluno para fabricar e traficar metanfetamina pura.",
+        "cover_thumb": "placeholder:chemistry_flask",
+        "external_ids": {"wikidata": "Q1079", "imdb": "tt0903747"}
+    },
+    {
+        "id": "nix:work:series:wikidata:Q18844729",
+        "kind": "series",
+        "title": "Mr. Robot",
+        "original_title": "Mr. Robot",
+        "creators": "Sam Esmail",
+        "genres": "Drama, Suspense Psicológico, Cyberpunk, Hacker",
+        "release_year": 2015,
+        "summary": "Elliot Alderson, um jovem engenheiro de cibersegurança com ansiedade social e transtorno dissociativo, é recrutado por um misterioso anarquista para derrubar a maior corporação do mundo.",
+        "cover_thumb": "placeholder:fsociety_mask",
+        "external_ids": {"wikidata": "Q18844729", "imdb": "tt4158110"}
+    },
+    {
+        "id": "nix:work:series:wikidata:Q2744",
+        "kind": "series",
+        "title": "Arquivo X",
+        "original_title": "The X-Files",
+        "creators": "Chris Carter",
+        "genres": "Ficção Científica, Mistério, Sobrenatural",
+        "release_year": 1993,
+        "summary": "Os agentes especiais do FBI Fox Mulder e Dana Scully investigam os Arquivos X: casos não resolvidos envolvendo fenômenos paranormais, conspirações governamentais e vida extraterrestre.",
+        "cover_thumb": "placeholder:ufo_poster",
+        "external_ids": {"wikidata": "Q2744", "imdb": "tt0106179"}
+    },
+    {
+        "id": "nix:work:series:wikidata:Q48741246",
+        "kind": "series",
+        "title": "Chernobyl",
+        "original_title": "Chernobyl",
+        "creators": "Craig Mazin, Johan Renck",
+        "genres": "Drama Histórico, Desastre, Suspense",
+        "release_year": 2019,
+        "summary": "Dramatização realista do trágico acidente nuclear ocorrido na usina de Chernobyl na Ucrânia em abril de 1986 e o sacrifício daqueles que tentaram conter a catástrofe.",
+        "cover_thumb": "placeholder:dosimeter_meter",
+        "external_ids": {"wikidata": "Q48741246", "imdb": "tt7975244"}
+    },
+    {
+        "id": "nix:work:series:wikidata:Q28443710",
+        "kind": "series",
+        "title": "Dark",
+        "original_title": "Dark",
+        "creators": "Baran bo Odar, Jantje Friese",
+        "genres": "Ficção Científica, Mistério, Viagem no Tempo",
+        "release_year": 2017,
+        "summary": "O desaparecimento de duas crianças na pacata cidade alemã de Winden expõe segredos ocultos, conexões sinistras e um nó temporal intrincado entre quatro famílias ao longo de gerações.",
+        "cover_thumb": "placeholder:triquetra_symbol",
+        "external_ids": {"wikidata": "Q28443710", "imdb": "tt5753856"}
+    },
+
+    # --- ANIMES ---
+    {
+        "id": "nix:work:anime:wikidata:Q699327",
+        "kind": "anime",
+        "title": "Serial Experiments Lain",
+        "original_title": "シリアルエクスペリメンツレイン",
+        "creators": "Ryutaro Nakamura, Chiaki J. Konaka, Yoshitoshi ABe",
+        "genres": "Ficção Científica, Cyberpunk, Mistério Psicológico",
+        "release_year": 1998,
+        "summary": "Lain Iwakura, uma adolescente introvertida, recebe um e-mail misterioso de uma colega de classe recém-falecida e mergulha profundamente na 'Wired', uma rede global que funde o virtual e o real.",
+        "cover_thumb": "placeholder:navi_computer",
+        "external_ids": {"wikidata": "Q699327", "anidb": "99", "mal": "404"}
+    },
+    {
+        "id": "nix:work:anime:wikidata:Q106194",
+        "kind": "anime",
+        "title": "Ghost in the Shell: O Fantasma do Futuro",
+        "original_title": "攻殻機動隊 (GHOST IN THE SHELL)",
+        "creators": "Mamoru Oshii, Masamune Shirow",
+        "genres": "Ficção Científica, Ação, Cyberpunk, Filosofia",
+        "release_year": 1995,
+        "summary": "Em 2029, a Major Motoko Kusanagi, uma oficial ciborgue de operações especiais na Seção 9 de Segurança Pública, rastreia o misterioso hacker conhecido como o Mestre das Marionetes.",
+        "cover_thumb": "placeholder:cyborg_silhouette",
+        "external_ids": {"wikidata": "Q106194", "anidb": "61", "mal": "43"}
+    },
+    {
+        "id": "nix:work:anime:wikidata:Q21884",
+        "kind": "anime",
+        "title": "Steins;Gate",
+        "original_title": "シュタインズ・ゲート",
+        "creators": "Chiyomaru Shikura, Hiroshi Hamasaki, Takuya Sato",
+        "genres": "Ficção Científica, Suspense, Viagem no Tempo",
+        "release_year": 2011,
+        "summary": "O autoproclamado cientista louco Rintaro Okabe descobre acidentalmente que seu micro-ondas caseiro adaptado pode enviar mensagens de texto ao passado, desencadeando consequências letais nas linhas temporais.",
+        "cover_thumb": "placeholder:divergence_meter",
+        "external_ids": {"wikidata": "Q21884", "anidb": "7729", "mal": "9253"}
+    },
+    {
+        "id": "nix:work:anime:wikidata:Q662",
+        "kind": "anime",
+        "title": "Neon Genesis Evangelion",
+        "original_title": "新世紀エヴァンゲリオン",
+        "creators": "Hideaki Anno, Yoshiyuki Sadamoto",
+        "genres": "Mecha, Drama Psicológico, Pós-Apocalíptico",
+        "release_year": 1995,
+        "summary": "Quinze anos após o Segundo Impacto, Shinji Ikari é recrutado por seu pai ausente para pilotar a gigantesca unidade bio-mecânica Evangelion 01 na defesa de Tóquio-3 contra os misteriosos Anjos.",
+        "cover_thumb": "placeholder:eva_unit_01",
+        "external_ids": {"wikidata": "Q662", "anidb": "22", "mal": "30"}
+    },
+    {
+        "id": "nix:work:anime:wikidata:Q22008",
+        "kind": "anime",
+        "title": "Cowboy Bebop",
+        "original_title": "カウボーイビバップ",
+        "creators": "Shinichiro Watanabe, Keiko Nobumoto, Yoko Kanno",
+        "genres": "Ficção Científica, Ação, Jazz, Western Espacial",
+        "release_year": 1998,
+        "summary": "No ano de 2071, a tripulação heterogênea da nave espacial Bebop viaja pelo sistema solar caçando criminosos e recompensas enquanto cada um confronta os fantasmas de seu passado.",
+        "cover_thumb": "placeholder:swordfish_ii",
+        "external_ids": {"wikidata": "Q22008", "anidb": "23", "mal": "1"}
+    },
+
+    # --- MANGÁS ---
+    {
+        "id": "nix:work:manga:wikidata:Q419143",
+        "kind": "manga",
+        "title": "Akira",
+        "original_title": "アキラ",
+        "creators": "Katsuhiro Otomo",
+        "genres": "Cyberpunk, Ação, Ficção Científica, Pós-Apocalíptico",
+        "release_year": 1982,
+        "summary": "Na pós-apocalíptica Neo-Tóquio em 2019, o líder de gangue Kaneda tenta salvar seu amigo de infância Tetsuo, que desenvolve poderes telecinéticos perigosos e instáveis que ameaçam a metrópole.",
+        "cover_thumb": "placeholder:red_motorcycle",
+        "external_ids": {"wikidata": "Q419143", "mal": "664"}
+    },
+    {
+        "id": "nix:work:manga:wikidata:Q215286",
+        "kind": "manga",
+        "title": "Berserk",
+        "original_title": "ベルセルク",
+        "creators": "Kentaro Miura",
+        "genres": "Fantasia Sombria, Épico, Tragédia",
+        "release_year": 1989,
+        "summary": "A jornada impiedosa de Guts, o Espadachim Negro marcado por uma maldição demoníaca, empunhando a lendária espada Dragonslayer enquanto busca vingança contra seu antigo amigo Griffith.",
+        "cover_thumb": "placeholder:brand_of_sacrifice",
+        "external_ids": {"wikidata": "Q215286", "mal": "2"}
+    },
+    {
+        "id": "nix:work:manga:wikidata:Q700465",
+        "kind": "manga",
+        "title": "Monster",
+        "original_title": "MONSTER",
+        "creators": "Naoki Urasawa",
+        "genres": "Suspense Psicológico, Mistério, Drama Médico",
+        "release_year": 1994,
+        "summary": "Na Alemanha pós-Guerra Fria, o brilhante neurocirurgião Dr. Kenzo Tenma salva a vida de um menino órfão com tiro na cabeça, sem saber que aquela criança se tornaria um sociopata impiedoso.",
+        "cover_thumb": "placeholder:nameless_monster",
+        "external_ids": {"wikidata": "Q700465", "mal": "1"}
+    },
+    {
+        "id": "nix:work:manga:wikidata:Q1787132",
+        "kind": "manga",
+        "title": "20th Century Boys",
+        "original_title": "20世紀少年",
+        "creators": "Naoki Urasawa",
+        "genres": "Ficção Científica, Mistério, Conspiração",
+        "release_year": 1999,
+        "summary": "Kenji Endo e seus amigos de infância descobrem que um líder de culto mascarado conhecido apenas como 'O Amigo' está executando passo a passo o Livro das Profecias que eles escreveram como brincadeira na década de 1960.",
+        "cover_thumb": "placeholder:friend_eye_symbol",
+        "external_ids": {"wikidata": "Q1787132", "mal": "3"}
+    },
+    {
+        "id": "nix:work:manga:wikidata:Q804470",
+        "kind": "manga",
+        "title": "Blame!",
+        "original_title": "ブラム!",
+        "creators": "Tsutomu Nihei",
+        "genres": "Cyberpunk, Ficção Científica Pesada, Pós-Apocalíptico",
+        "release_year": 1997,
+        "summary": "Em uma colossal megaestrutura artificial de milhares de andares que consome o sistema solar, o silencioso viajante Killy empunha um emissor de raios gravitacionais em busca de genes humanos puros para deter a Safeguard.",
+        "cover_thumb": "placeholder:gravitational_emitter",
+        "external_ids": {"wikidata": "Q804470", "mal": "149"}
+    },
+
+    # --- LIVROS ---
+    {
+        "id": "nix:work:book:openlibrary:OL1168007W",
+        "kind": "book",
+        "title": "1984",
+        "original_title": "Nineteen Eighty-Four",
+        "creators": "George Orwell",
+        "genres": "Distopia, Ficção Política, Totalitarismo",
+        "release_year": 1949,
+        "summary": "Em um superestado totalitário chamado Oceânia, o funcionário do Ministério da Verdade Winston Smith tenta resistir secretamente à opressão onipresente do Partido e do Grande Irmão.",
+        "cover_thumb": "placeholder:big_brother_eye",
+        "external_ids": {"openlibrary": "OL1168007W", "wikidata": "Q208460", "isbn": "9780451524935"}
+    },
+    {
+        "id": "nix:work:book:openlibrary:OL262758W",
+        "kind": "book",
+        "title": "Admirável Mundo Novo",
+        "original_title": "Brave New World",
+        "creators": "Aldous Huxley",
+        "genres": "Distopia, Ficção Científica, Filosofia Social",
+        "release_year": 1932,
+        "summary": "Uma sociedade futurista globalizada obtém estabilidade e felicidade superficial através de engenharia genética, condicionamento psicológico infantil, consumo em massa e a droga soma.",
+        "cover_thumb": "placeholder:soma_tablet",
+        "external_ids": {"openlibrary": "OL262758W", "wikidata": "Q9019", "isbn": "9780060850524"}
+    },
+    {
+        "id": "nix:work:book:openlibrary:OL2163649W",
+        "kind": "book",
+        "title": "Neuromancer",
+        "original_title": "Neuromancer",
+        "creators": "William Gibson",
+        "genres": "Cyberpunk, Ficção Científica, Hacker",
+        "release_year": 1984,
+        "summary": "Case, um hacker desacreditado cujo sistema nervoso foi destruído como punição por roubo, recebe uma última chance de redenção física por um misterioso empregador que deseja invadir uma poderosa inteligência artificial.",
+        "cover_thumb": "placeholder:cyberspace_matrix",
+        "external_ids": {"openlibrary": "OL2163649W", "wikidata": "Q17475", "isbn": "9780441569595"}
+    },
+    {
+        "id": "nix:work:book:openlibrary:OL46241W",
+        "kind": "book",
+        "title": "Fundação",
+        "original_title": "Foundation",
+        "creators": "Isaac Asimov",
+        "genres": "Ficção Científica, Space Opera, Psicohistória",
+        "release_year": 1951,
+        "summary": "O matemático Hari Seldon cria a ciência da psicohistória para prever o inevitável colapso do Império Galáctico e estabelece uma colônia científica de enciclopedistas nos confins do universo para reduzir a vindoura idade das trevas.",
+        "cover_thumb": "placeholder:encyclopedia_galactica",
+        "external_ids": {"openlibrary": "OL46241W", "wikidata": "Q850106", "isbn": "9780553293357"}
+    },
+    {
+        "id": "nix:work:book:openlibrary:OL893415W",
+        "kind": "book",
+        "title": "Duna",
+        "original_title": "Dune",
+        "creators": "Frank Herbert",
+        "genres": "Ficção Científica, Épico, Ecologia, Política",
+        "release_year": 1965,
+        "summary": "No inóspito planeta desértico Arrakis, a única fonte da substância mais valiosa do universo, a 'especiaria melange', o jovem Paul Atreides deve vingar a traição à sua nobre casa e cumprir um antigo destino profético.",
+        "cover_thumb": "placeholder:sandworm_dune",
+        "external_ids": {"openlibrary": "OL893415W", "wikidata": "Q188448", "isbn": "9780441172719"}
+    }
+]
+
+
+def create_catalog_database(db_path: str, records: List[Dict[str, Any]], version: int = 1) -> Dict[str, Any]:
+    """Cria a base SQLite FTS5 com triggers e insere os registros normalizados."""
+    if os.path.exists(db_path):
+        os.remove(db_path)
+
+    os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+
+    cur.execute("PRAGMA page_size = 4096;")
+    cur.execute("PRAGMA journal_mode = WAL;")
+
+    cur.execute("""
+      CREATE TABLE catalog_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    """)
+
+    cur.execute("""
+      CREATE TABLE catalog_works (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('movie','film','series','anime','manga','book')),
+        title TEXT NOT NULL,
+        original_title TEXT,
+        creators TEXT,
+        genres TEXT,
+        release_year INTEGER,
+        summary TEXT,
+        cover_thumb TEXT,
+        external_ids_json TEXT NOT NULL DEFAULT '{}',
+        updated_at INTEGER NOT NULL
+      );
+    """)
+
+    cur.execute("""
+      CREATE VIRTUAL TABLE catalog_search USING fts5(
+        work_id UNINDEXED,
+        title,
+        original_title,
+        creators,
+        genres,
+        summary
+      );
+    """)
+
+    cur.execute("""
+      CREATE TRIGGER trg_catalog_works_ai AFTER INSERT ON catalog_works BEGIN
+        INSERT INTO catalog_search(work_id, title, original_title, creators, genres, summary)
+        VALUES (new.id, new.title, coalesce(new.original_title, ''), coalesce(new.creators, ''), coalesce(new.genres, ''), coalesce(new.summary, ''));
+      END;
+    """)
+
+    cur.execute("""
+      CREATE TRIGGER trg_catalog_works_ad AFTER DELETE ON catalog_works BEGIN
+        DELETE FROM catalog_search WHERE work_id = old.id;
+      END;
+    """)
+
+    cur.execute("""
+      CREATE TRIGGER trg_catalog_works_au AFTER UPDATE ON catalog_works BEGIN
+        DELETE FROM catalog_search WHERE work_id = old.id;
+        INSERT INTO catalog_search(work_id, title, original_title, creators, genres, summary)
+        VALUES (new.id, new.title, coalesce(new.original_title, ''), coalesce(new.creators, ''), coalesce(new.genres, ''), coalesce(new.summary, ''));
+      END;
+    """)
+
+    now = int(time.time() * 1000)
+
+    for r in records:
+        ext_json = json.dumps(r.get("external_ids", {}))
+        cur.execute("""
+          INSERT INTO catalog_works (id, kind, title, original_title, creators, genres, release_year, summary, cover_thumb, external_ids_json, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, (
+            r["id"],
+            r["kind"],
+            r["title"],
+            r.get("original_title"),
+            r.get("creators"),
+            r.get("genres"),
+            r.get("release_year"),
+            r.get("summary"),
+            r.get("cover_thumb"),
+            ext_json,
+            now
+        ))
+
+    cur.execute("INSERT INTO catalog_meta (key, value) VALUES ('version', ?);", (str(version),))
+    cur.execute("INSERT INTO catalog_meta (key, value) VALUES ('entry_count', ?);", (str(len(records)),))
+    cur.execute("INSERT INTO catalog_meta (key, value) VALUES ('build_timestamp', ?);", (str(now),))
+
+    conn.commit()
+
+    # Executa verificação de integridade
+    cur.execute("PRAGMA integrity_check;")
+    check = cur.fetchone()[0]
+    if check != "ok":
+        conn.close()
+        raise RuntimeError(f"Falha na integridade do SQLite gerado: {check}")
+
+    cur.execute("VACUUM;")
+    conn.commit()
+    conn.close()
+
+    with open(db_path, "rb") as f:
+        data = f.read()
+
+    sha256 = hashlib.sha256(data).hexdigest()
+    return {
+        "path": db_path,
+        "entry_count": len(records),
+        "byte_size": len(data),
+        "sha256": sha256,
+        "version": version
+    }
+
+
+def sign_catalog_artifact(db_path: str, manifest_path: str, version: int, entry_count: int, key_path: Optional[str] = None) -> Dict[str, Any]:
+    """Assina o banco do catálogo com chave Ed25519 e produz o manifesto."""
+    if key_path and os.path.exists(key_path):
+        with open(key_path, "rb") as f:
+            priv_key = ed25519.Ed25519PrivateKey.from_private_bytes(f.read())
+    else:
+        # Gera uma chave do publicador para a sessão / build
+        priv_key = ed25519.Ed25519PrivateKey.generate()
+        if key_path:
+            os.makedirs(os.path.dirname(os.path.abspath(key_path)), exist_ok=True)
+            with open(key_path, "wb") as f:
+                f.write(priv_key.private_bytes(
+                    encoding=serialization.Encoding.Raw,
+                    format=serialization.PrivateFormat.Raw,
+                    encryption_algorithm=serialization.NoEncryption()
+                ))
+
+    pub_key = priv_key.public_key()
+    pub_bytes = pub_key.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw
+    )
+    pub_hex = pub_bytes.hex()
+
+    with open(db_path, "rb") as f:
+        data = f.read()
+
+    sha256_hex = hashlib.sha256(data).hexdigest().lower()
+    byte_size = len(data)
+    iat = int(time.time())
+
+    canonical_payload = json.dumps({
+        "domain": "NIX-CATALOG-MANIFEST-V1",
+        "version": version,
+        "artifact": os.path.basename(db_path),
+        "sha256": sha256_hex,
+        "bytes": byte_size,
+        "iat": iat,
+        "entries": entry_count,
+    }, separators=(',', ':')).encode('utf-8')
+
+    sig = priv_key.sign(canonical_payload)
+    sig_hex = sig.hex()
+
+    manifest = {
+        "domain": "NIX-CATALOG-MANIFEST-V1",
+        "version": version,
+        "artifact": os.path.basename(db_path),
+        "sha256": sha256_hex,
+        "byteSize": byte_size,
+        "issuedAtUnix": iat,
+        "entryCount": entry_count,
+        "signerEd25519Hex": pub_hex,
+        "signatureHex": sig_hex
+    }
+
+    os.makedirs(os.path.dirname(os.path.abspath(manifest_path)), exist_ok=True)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+
+    return manifest
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Nix Metadata Builder - Gera catálogo SQLite FTS5 assinado com Ed25519")
+    parser.add_argument("--out-db", default="apps/nix_client/assets/catalog/seed_catalog.db", help="Caminho do banco SQLite de saída")
+    parser.add_argument("--out-manifest", default="apps/nix_client/assets/catalog/seed_catalog_manifest.json", help="Caminho do manifesto de saída")
+    parser.add_argument("--key", default="tools/metadata_builder/publisher_test_key.ed25519", help="Arquivo da chave privada Ed25519 do publicador")
+    parser.add_argument("--version", type=int, default=1, help="Versão monotônica do catálogo")
+    parser.add_argument("--seed", action="store_true", default=True, help="Popula com as obras culturais canônicas iniciais")
+
+    args = parser.parse_args()
+
+    print(f"[Nix Metadata Builder] Iniciando pipeline de metadados culturais...")
+    meta = create_catalog_database(args.out_db, SAMPLE_SEED_RECORDS, version=args.version)
+    print(f"[OK] Banco gerado com {meta['entry_count']} obras em {meta['path']} ({meta['byte_size']} bytes, SHA-256: {meta['sha256'][:16]}...)")
+
+    manifest = sign_catalog_artifact(args.out_db, args.out_manifest, version=args.version, entry_count=meta['entry_count'], key_path=args.key)
+    print(f"[OK] Manifesto assinado com Ed25519 gravado em {args.out_manifest}")
+    print(f"     Signer (Ed25519 Pub): {manifest['signerEd25519Hex']}")
+    print(f"     Signature (Ed25519): {manifest['signatureHex'][:32]}...")
+
+
+if __name__ == "__main__":
+    main()

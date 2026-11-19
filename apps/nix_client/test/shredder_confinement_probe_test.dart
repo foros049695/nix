@@ -78,7 +78,15 @@ void main() {
       await File('${defaults.path}/$name').writeAsString('sentinela');
       await File('${base.path}/$name').writeAsString('descartavel');
     }
-    final result = await Process.run('dart', [
+    final dartExecutable = Platform.resolvedExecutable.endsWith('dart')
+        ? Platform.resolvedExecutable
+        : (File('/home/gus/development/flutter/bin/cache/dart-sdk/bin/dart').existsSync()
+            ? '/home/gus/development/flutter/bin/cache/dart-sdk/bin/dart'
+            : (Platform.environment['FLUTTER_ROOT'] != null &&
+                    File('${Platform.environment['FLUTTER_ROOT']}/bin/cache/dart-sdk/bin/dart').existsSync()
+                ? '${Platform.environment['FLUTTER_ROOT']}/bin/cache/dart-sdk/bin/dart'
+                : 'dart'));
+    final result = await Process.run(dartExecutable, [
       '--packages=.dart_tool/package_config.json',
       'test/helpers/panic_wipe.dart',
       base.path,

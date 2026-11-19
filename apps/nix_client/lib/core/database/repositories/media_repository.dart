@@ -89,4 +89,15 @@ class MediaRepository {
       ORDER BY l.saved_at DESC;
     ''', [identityId]);
   }
+
+  Future<void> deleteLibraryEntry({
+    required String identityId,
+    required String mediaId,
+  }) async {
+    await _db.delete(
+      'library_entries',
+      where: 'identity_id = ? AND media_id = ?',
+      whereArgs: [identityId, mediaId],
+    );
+  }
 }

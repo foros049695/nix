@@ -10,3 +10,4 @@ export 'repositories/pre_key_repository.dart';
 export 'repositories/session_repository.dart';
 export 'repositories/object_chunk_repository.dart';
 export 'repositories/archive_repository.dart';
+export 'repositories/catalog_repository.dart';

@@ -2,6 +2,19 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as std_crypto;
 import '../database/repositories.dart';
+import 'catalog_database.dart';
+
+/// Modos de privacidade para operação do Nix Media Index.
+enum MediaPrivacyMode {
+  /// 100% Offline: busca unificada estritamente no catálogo SQLite FTS5 local, sem tráfego de rede.
+  offlineStrict,
+
+  /// Atualizações privadas: busca local + atualização periódica de pacotes assinados `.nixpack` via Tor Onion v3.
+  privateTorUpdates,
+
+  /// Conectores externos opt-in: sob demanda, com consentimento prévio e gate Tor obrigatório.
+  optInExternalSearch,
+}
 
 /// Exceção fail-closed ao tentar resolver tracker/DHT BitTorrent em claro quando Tor estrito está ativo (Fase 8).
 class TorrentClearnetLeakBlockedException implements Exception {
@@ -29,23 +42,133 @@ enum OptInMediaConnectorKind {
   jellyfin,
 }
 
-/// Fases formalmente desacopladas do catálogo Nix Media (Fase 8 / Fase 9.2):
+/// Fases formalmente desacopladas do catálogo Nix Media:
 /// 1) Descoberta offline/catálogo (`OfflineCatalogLookup` / `MediaOperationStage.localCatalogSearch`)
 /// 2) Consulta remota opt-in (`OptInMediaConnectorKind` / `MediaOperationStage.remoteOptInQuery`)
 /// 3) Gate de resolução magnet e transferência em sandbox (`MediaOperationStage.sandboxFileTransfer`)
 class MediaCatalogService {
   final MediaRepository mediaRepo;
+  final CatalogRepository? catalogRepo;
+  MediaPrivacyMode _privacyMode = MediaPrivacyMode.offlineStrict;
+
   final Map<OptInMediaConnectorKind, bool> _enabledConnectors = {
     for (final k in OptInMediaConnectorKind.values) k: false,
   };
 
-  MediaCatalogService(this.mediaRepo);
+  MediaCatalogService(this.mediaRepo, {this.catalogRepo});
+
+  MediaPrivacyMode get privacyMode => _privacyMode;
+
+  void setPrivacyMode(MediaPrivacyMode mode) {
+    _privacyMode = mode;
+  }
 
   bool isConnectorEnabled(OptInMediaConnectorKind kind) =>
       _enabledConnectors[kind] ?? false;
 
   void setConnectorEnabled(OptInMediaConnectorKind kind, bool enabled) {
     _enabledConnectors[kind] = enabled;
+  }
+
+  /// Busca offline de obras no catálogo cultural público (`CatalogRepository` via FTS5).
+  /// Garante ZERO emissão de requisições à rede durante a busca.
+  Future<List<CatalogWork>> searchCatalog({
+    required String query,
+    String? kind,
+    String? genre,
+    int? releaseYear,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    if (catalogRepo == null) return const [];
+    return catalogRepo!.search(
+      query: query,
+      kind: kind,
+      genre: genre,
+      releaseYear: releaseYear,
+      limit: limit,
+      offset: offset,
+    );
+  }
+
+  /// Lista obras do catálogo com filtros opcionais.
+  Future<List<CatalogWork>> listCatalogWorks({
+    String? kind,
+    String? genre,
+    int? releaseYear,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    if (catalogRepo == null) return const [];
+    return catalogRepo!.listWorks(
+      kind: kind,
+      genre: genre,
+      releaseYear: releaseYear,
+      limit: limit,
+      offset: offset,
+    );
+  }
+
+  /// Recupera detalhes de uma obra específica no catálogo público offline.
+  Future<CatalogWork?> getCatalogWork(String id) async {
+    if (catalogRepo == null) return null;
+    return catalogRepo!.getWork(id);
+  }
+
+  /// Salva uma obra no Acervo Cultural pessoal do usuário (`nix_local_v4.db` em SQLCipher).
+  ///
+  /// Privacidade:
+  /// - Status de consumo, nota e anotações pessoais são protegidos com cifragem local.
+  /// - NENHUM dado do acervo pessoal é enviado à rede.
+  Future<void> saveToAcervo({
+    required String identityId,
+    required CatalogWork work,
+    String status = 'want_to_watch',
+    int? rating,
+    String? privateNotes,
+  }) async {
+    final normalizedKind = (work.kind == 'movie') ? 'film' : work.kind;
+    await mediaRepo.upsertMediaItem(
+      id: work.id,
+      kind: normalizedKind,
+      title: work.title,
+      metadata: {
+        'original_title': work.originalTitle,
+        'creators': work.creators,
+        'genres': work.genres,
+        'release_year': work.releaseYear,
+        'summary': work.summary,
+        'cover_thumb': work.coverThumb,
+        'external_ids': work.externalIds,
+        if (privateNotes != null) 'private_notes': privateNotes,
+      },
+      source: 'nix_catalog',
+      sourceId: work.id,
+    );
+
+    await mediaRepo.upsertLibraryEntry(
+      identityId: identityId,
+      mediaId: work.id,
+      status: status,
+      progress: {
+        if (privateNotes != null) 'notes': privateNotes,
+        'updated_at': DateTime.now().toUtc().millisecondsSinceEpoch,
+      },
+      rating: rating,
+    );
+  }
+
+  /// Lista os itens do acervo pessoal do usuário no SQLCipher.
+  Future<List<Map<String, dynamic>>> listUserAcervo(String identityId) {
+    return mediaRepo.listLibraryEntries(identityId);
+  }
+
+  /// Remove item do acervo pessoal do usuário.
+  Future<void> removeFromAcervo({
+    required String identityId,
+    required String workId,
+  }) async {
+    await mediaRepo.deleteLibraryEntry(identityId: identityId, mediaId: workId);
   }
 
   /// Fase 1 (Offline / Catálogo): Indexa metadados e instantâneo em `media_items` + FTS5 sem rede P2P.

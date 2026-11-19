@@ -24,6 +24,8 @@ import '../members/members_panel.dart';
 import '../monero_p2p/monero_p2p_view.dart';
 import '../profile/profile_overlay.dart';
 import '../publications/publication_room_view.dart';
+import '../media/media_index_view.dart';
+import '../archive/archive_environment_view.dart';
 import 'channels_sidebar.dart';
 import 'panel_resize_divider.dart';
 import 'resizable_window_frame.dart';
@@ -159,7 +161,9 @@ class AppShell extends StatelessWidget {
                               // Área 2: Lista de Conversas & Navegação Principal (redimensionável)
                               if (activeArea == NixActiveArea.homePrivate ||
                                   activeArea == NixActiveArea.github ||
-                                  activeArea == NixActiveArea.moneroP2p)
+                                  activeArea == NixActiveArea.moneroP2p ||
+                                  activeArea == NixActiveArea.mediaIndex ||
+                                  activeArea == NixActiveArea.archive)
                                 HomeSidebar(width: nixState.sidebarWidth)
                               else if (activeArea == NixActiveArea.spaces)
                                 ChannelsSidebar(width: nixState.sidebarWidth),
@@ -168,7 +172,9 @@ class AppShell extends StatelessWidget {
                               if (activeArea == NixActiveArea.homePrivate ||
                                   activeArea == NixActiveArea.github ||
                                   activeArea == NixActiveArea.moneroP2p ||
-                                  activeArea == NixActiveArea.spaces)
+                                  activeArea == NixActiveArea.spaces ||
+                                  activeArea == NixActiveArea.mediaIndex ||
+                                  activeArea == NixActiveArea.archive)
                                 PanelResizeDivider(
                                   key: const Key('sidebar_resize_divider'),
                                   onDeltaDrag: (delta) => nixState.updateSidebarWidth(nixState.sidebarWidth + delta),
@@ -263,7 +269,9 @@ class AppShell extends StatelessWidget {
                           Expanded(
                             child: (activeArea == NixActiveArea.homePrivate ||
                                     activeArea == NixActiveArea.github ||
-                                    activeArea == NixActiveArea.moneroP2p)
+                                    activeArea == NixActiveArea.moneroP2p ||
+                                    activeArea == NixActiveArea.mediaIndex ||
+                                    activeArea == NixActiveArea.archive)
                                 ? const HomeSidebar()
                                 : const ChannelsSidebar(),
                           ),
@@ -295,6 +303,67 @@ class AppShell extends StatelessWidget {
                       ),
                     ],
                   ),
+                  bottomNavigationBar: NavigationBar(
+                          selectedIndex: switch (activeArea) {
+                            NixActiveArea.homePrivate => 0,
+                            NixActiveArea.spaces => 1,
+                            NixActiveArea.mediaIndex => 2,
+                            NixActiveArea.archive => 3,
+                            NixActiveArea.moneroP2p => 4,
+                            _ => 0,
+                          },
+                          backgroundColor: NixColors.surfaceCard,
+                          indicatorColor: Colors.amber,
+                          onDestinationSelected: (idx) {
+                            switch (idx) {
+                              case 0:
+                                nixState.openHomePrivateArea();
+                                break;
+                              case 1:
+                                nixState.selectFolder('all');
+                                if (nixState.spaces.isNotEmpty) {
+                                  nixState.selectSpace(nixState.currentSpace);
+                                }
+                                break;
+                              case 2:
+                                nixState.openMediaIndexArea();
+                                break;
+                              case 3:
+                                nixState.openArchiveArea();
+                                break;
+                              case 4:
+                                nixState.openMoneroP2pArea();
+                                break;
+                            }
+                          },
+                          destinations: const [
+                            NavigationDestination(
+                              icon: Icon(Icons.chat_bubble_outline_rounded),
+                              selectedIcon: Icon(Icons.chat_bubble_rounded, color: Colors.black),
+                              label: 'Conversas',
+                            ),
+                            NavigationDestination(
+                              icon: Icon(Icons.forum_outlined),
+                              selectedIcon: Icon(Icons.forum_rounded, color: Colors.black),
+                              label: 'Grupos',
+                            ),
+                            NavigationDestination(
+                              icon: Icon(Icons.local_library_outlined),
+                              selectedIcon: Icon(Icons.local_library_rounded, color: Colors.black),
+                              label: 'Acervo',
+                            ),
+                            NavigationDestination(
+                              icon: Icon(Icons.auto_stories_outlined),
+                              selectedIcon: Icon(Icons.auto_stories_rounded, color: Colors.black),
+                              label: 'Arquivo',
+                            ),
+                            NavigationDestination(
+                              icon: Icon(Icons.currency_exchange_rounded),
+                              selectedIcon: Icon(Icons.currency_exchange_rounded, color: Colors.black),
+                              label: 'Monero',
+                            ),
+                          ],
+                        ),
                 );
 
           return Stack(
@@ -389,6 +458,10 @@ class AppShell extends StatelessWidget {
         return Icons.code_rounded;
       case NixActiveArea.moneroP2p:
         return Icons.currency_exchange_rounded;
+      case NixActiveArea.mediaIndex:
+        return Icons.local_library_rounded;
+      case NixActiveArea.archive:
+        return Icons.auto_stories_rounded;
       case NixActiveArea.spaces:
         return channel.icon;
     }
@@ -404,6 +477,10 @@ class AppShell extends StatelessWidget {
         return 'GitHub Discovery';
       case NixActiveArea.moneroP2p:
         return 'Mercado Monero P2P';
+      case NixActiveArea.mediaIndex:
+        return 'Nix Media Index (Offline-First)';
+      case NixActiveArea.archive:
+        return 'Nix Archive';
       case NixActiveArea.spaces:
         return channel.name;
     }
@@ -421,6 +498,12 @@ class AppShell extends StatelessWidget {
     }
     if (activeArea == NixActiveArea.moneroP2p) {
       return const MoneroP2pView();
+    }
+    if (activeArea == NixActiveArea.mediaIndex) {
+      return const NixMediaIndexView();
+    }
+    if (activeArea == NixActiveArea.archive) {
+      return const NixArchiveEnvironmentView();
     }
 
     switch (channel.type) {

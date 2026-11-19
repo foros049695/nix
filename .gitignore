@@ -75,6 +75,7 @@ Cargo.lock
 *.db
 *.db-wal
 *.db-shm
+!apps/nix_client/assets/catalog/*.db
 *.sqlite
 *.sqlite3
 *.log

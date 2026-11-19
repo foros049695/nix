@@ -331,6 +331,8 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       setState(() {
         _identityErrorMessage =
             'Como o desbloqueio rápido pelo chaveiro do SO foi desmarcado, é obrigatório definir uma frase-passe manual para proteger o cofre.';
+        _diagnosticsLogs.add(
+            '[Aviso] Chaveiro do SO desmarcado: defina uma frase-passe manual acima para proteger o cofre.');
       });
       return;
     }
@@ -340,6 +342,8 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       setState(() {
         _identityErrorMessage =
             'Chaveiro nativo do SO indisponível nesta sessão. Informe uma frase-passe manual acima.';
+        _diagnosticsLogs.add(
+            '[Aviso] Chaveiro nativo indisponível: informe uma frase-passe manual para inicializar o cofre.');
       });
       return;
     }
@@ -1095,9 +1099,18 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
           controller: _passphraseController,
           obscureText: true,
           style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5),
+          onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
-            labelText: 'Frase-passe do cofre SQLCipher (opcional)',
-            hintText: 'Vazio = senha CSPRNG vinculada ao chaveiro nativo do SO',
+            labelText: _bindToOsKeyring
+                ? 'Frase-passe do cofre SQLCipher (opcional)'
+                : 'Frase-passe do cofre SQLCipher (obrigatória sem chaveiro)',
+            hintText: _bindToOsKeyring
+                ? 'Vazio = senha CSPRNG vinculada ao chaveiro nativo do SO'
+                : 'Defina uma frase-passe manual para abrir o app ao iniciar',
+            helperText: !_bindToOsKeyring && _passphraseController.text.trim().isEmpty
+                ? 'Chaveiro do SO desmarcado: defina uma senha manual acima.'
+                : null,
+            helperStyle: const TextStyle(color: Colors.amber, fontSize: 11),
             filled: true,
             fillColor: NixColors.surfaceCard,
             border: OutlineInputBorder(borderRadius: NixTokens.borderSm),
