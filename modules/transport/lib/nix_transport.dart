@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as std_crypto;
 
+export 'nix_bluetooth_mesh.dart';
+
 /// Exceção lançada sempre que a política de transporte bloqueia uma conexão insegura (fail-closed).
 class TransportBlockedException implements Exception {
   final String message;

@@ -22,6 +22,8 @@ import '../core/security/security_context.dart';
 import '../core/database/local_database.dart';
 import '../core/database/repositories.dart';
 import '../core/security/key_vault.dart';
+import '../core/security/anti_forensic_shredder.dart';
+import 'package:nix_transport/nix_transport.dart';
 import 'mock_data.dart';
 
 enum NixActiveArea {
@@ -149,6 +151,51 @@ class NixState extends ChangeNotifier {
   final String _onionAddress = 'gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion';
   bool _isTorRunning = false;
   String _torDiagnosticDetail = 'Tor aguardando conexão SOCKS5 em 127.0.0.1:9050';
+
+  // Banco de Dados Local Cifrado & KeyVault (P0-2)
+  LocalDatabase? _localDatabase;
+  final KeyVault _keyVault = KeyVault();
+  IdentityRepository? _identityRepo;
+  ContactRepository? _contactRepo;
+  ConversationRepository? _conversationRepo;
+  MessageRepository? _messageRepo;
+  OutboxRepository? _outboxRepo;
+  PreferencesRepository? _preferencesRepo;
+
+  bool get isDatabaseReady => _localDatabase != null;
+  LocalDatabase? get localDatabase => _localDatabase;
+  KeyVault get keyVault => _keyVault;
+  IdentityRepository? get identityRepo => _identityRepo;
+  ContactRepository? get contactRepo => _contactRepo;
+  ConversationRepository? get conversationRepo => _conversationRepo;
+  MessageRepository? get messageRepo => _messageRepo;
+  OutboxRepository? get outboxRepo => _outboxRepo;
+  PreferencesRepository? get preferencesRepo => _preferencesRepo;
+
+  // Gerenciador de Malha por Proximidade Bluetooth (estilo Briar BTP)
+  late final BluetoothMeshManager _bluetoothMesh = BluetoothMeshManager(
+    localCardId: _userProfile.publicId,
+  );
+
+  BluetoothMeshManager get bluetoothMesh => _bluetoothMesh;
+  bool get isBluetoothMeshEnabled => _bluetoothMesh.isMeshEnabled;
+
+  void setBluetoothMeshEnabled(bool enabled) {
+    _bluetoothMesh.setMeshEnabled(enabled);
+    notifyListeners();
+  }
+
+  /// Procedimento Anti-Forense / Botão de Pânico (estilo BleachBit):
+  /// Destrói a memória RAM, fecha banco e sobrescreve arquivos em múltiplas passagens destrutivas.
+  Future<ShredReport> panicWipeAllData() async {
+    final report = await AntiForensicShredder.panicWipeAccount(
+      activeDatabase: _localDatabase,
+      activeVault: _keyVault,
+    );
+    _localDatabase = null;
+    notifyListeners();
+    return report;
+  }
 
   NixState() {
     _spaces = MockData.getInitialSpaces();
