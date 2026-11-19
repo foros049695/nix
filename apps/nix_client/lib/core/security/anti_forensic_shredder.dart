@@ -216,35 +216,43 @@ class AntiForensicShredder {
     }
 
     // Não segue links do cache para arquivos fora do diretório da conta.
-    final storageDir = Directory('$baseDir/storage');
-    try {
-      final type =
-          await FileSystemEntity.type(storageDir.path, followLinks: false);
-      if (type == FileSystemEntityType.link) {
-        throw FileSystemException(
-            'Cache não pode ser link simbólico', storageDir.path);
-      }
-      if (type == FileSystemEntityType.directory) {
-        final errorsBefore = errors.length;
-        await for (final entity
-            in storageDir.list(recursive: true, followLinks: false)) {
-          if (entity is Link) {
-            // Remove somente o link, sem abrir ou apagar o alvo externo.
-            try {
-              await entity.delete();
-            } catch (error) {
-              errors[entity.path] = error.toString();
+    for (final name in const [
+      'storage',
+      'sanitized_media',
+      'encrypted_objects',
+      'tor_data',
+      'downloads',
+    ]) {
+      final storageDir = Directory('$baseDir/$name');
+      try {
+        final type =
+            await FileSystemEntity.type(storageDir.path, followLinks: false);
+        if (type == FileSystemEntityType.link) {
+          await Link(storageDir.path).delete();
+          continue;
+        }
+        if (type == FileSystemEntityType.directory) {
+          final errorsBefore = errors.length;
+          await for (final entity
+              in storageDir.list(recursive: true, followLinks: false)) {
+            if (entity is Link) {
+              // Remove somente o link, sem abrir ou apagar o alvo externo.
+              try {
+                await entity.delete();
+              } catch (error) {
+                errors[entity.path] = error.toString();
+              }
+            } else if (entity is File) {
+              await wipeTarget(entity.path);
             }
-          } else if (entity is File) {
-            await wipeTarget(entity.path);
+          }
+          if (errors.length == errorsBefore) {
+            await storageDir.delete(recursive: true);
           }
         }
-        if (errors.length == errorsBefore) {
-          await storageDir.delete(recursive: true);
-        }
+      } catch (error) {
+        errors[storageDir.path] = error.toString();
       }
-    } catch (error) {
-      errors[storageDir.path] = error.toString();
     }
 
     return ShredReport(
