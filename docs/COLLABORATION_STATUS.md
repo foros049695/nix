@@ -13,11 +13,11 @@
 
 | Categoria | Quantidade | Observações |
 |---|:---:|---|
-| **Pull Requests Abertos** | 0 | PRs #1 a #10 totalmente mesclados em `origin/main` (`merged=true`) |
-| **Pull Requests Integrados** | 10 | PR #1 (`789cf92`) + PRs #2 a #10 (`8618b79`–`1799597`) |
-| **Issues Rastreáveis** | 2 resolvidas tecnicamente | **Issue #11** (TLS real sobre SOCKS5 via `RawSecureSocket`) · **Issue #12** (PVR ativo e encerrada) |
-| **GitHub Actions Remoto (Baseline)** | ✅ GREEN em `090c18c` | Run `44456259441` aprovado nos 5 jobs (será revalidado no próximo push) |
-| **Suites Locais Fases 0–9** | ✅ 100% GREEN | Privacy gate, Relay Go (`vet` + `test -race` + PostgreSQL 17 Docker + Onion v3 Tor `0.4.9.15`), Crypto (`10/10`), Transport (`22/22`), Client (`56/56` com SQLCipher `4.10.0` e `$HOME` isolado) |
+| **Pull Requests Abertos** | 0 | PRs #1 a #18 totalmente integrados na branch `main` (últimos merges: `#13`–`#18`) |
+| **Pull Requests Integrados** | 16 (do #1 ao #10 + #13 ao #18; sem #11/#12 pois eram Issues) | PRs `#1`–`#10` + implementação Fases 0–9 (`1dea5f3`) + PRs `#13`–`#18` (`ab308e7` / `f2effa4`) |
+| **Issues Rastreáveis** | 2 resolvidas e encerradas | **Issue #11** (TLS real sobre SOCKS5, fechada em `completed`) · **Issue #12** (PVR ativo, fechada) |
+| **GitHub Actions Remoto** | ✅ GREEN em `1dea5f3` (Run `44463390129`) | Todos os 5 jobs verdes em `1dea5f3`; nova rodada automática após push de `#13`–`#18` |
+| **Suites Locais Combinadas** | ✅ 100% GREEN | Privacy gate (com #13 I-A/I-S), Relay Go (`vet` + `test -race` com PG 17 Docker & Onion v3 Tor `0.4.9.15`), Crypto (`10/10`), Transport (`22/22`), Client (`68/68` com SQLCipher `4.10.0` e `$HOME` isolado) |
 
 ---
 
@@ -204,6 +204,19 @@ Ao auditar as execuções de CI (`.github/workflows/ci.yml`) nas branches dos PR
 
 ---
 
+### 🔹 Pull Requests #13 a #18 (Integração de Hardening Adicional — 19/11/2026)
+
+| PR | Título & Escopo | Autor | Parecer |
+|---|---|---|---|
+| **#13** | `fix(privacy): make the I-A and I-S gate checks enforce what they report` (`scripts/verify_privacy_matrix.sh`: bloqueia `RemoteAddr`, `X-Forwarded-For`, `X-Real-IP` no relay e permissões civis Android) | @gabrielmaialva33 | `ALREADY_INTEGRATED` |
+| **#14** | `fix(client): quote FTS5 terms in media search` (`repositories.dart` + `media_search_fts5_probe_test.dart`) | @gabrielmaialva33 | `ALREADY_INTEGRATED` |
+| **#15** | `fix(client): release Tor, mesh, database and vault in NixState.dispose` (`nix_state.dart` + `nixstate_dispose_probe_test.dart` + zeroização `_activeMasterKey`) | @gabrielmaialva33 | `ALREADY_INTEGRATED` |
+| **#16** | `fix(android): disable automatic backup of app data` (`AndroidManifest.xml`: `allowBackup="false"`, `fullBackupContent="false"`) | @gabrielmaialva33 | `ALREADY_INTEGRATED` |
+| **#17** | `chore(dx): remove hardcoded developer paths and expand ~ in relay base_dir` (`.vscode/settings.json`, `relay.local.yaml`, `config.go`, `config_test.go`) | @gabrielmaialva33 | `ALREADY_INTEGRATED` |
+| **#18** | `fix(client): sanitize Starwire ZIP filenames against path traversal` (`github_discovery_view.dart` + `starwire_zip_filename_test.dart`) | @gabrielmaialva33 | `ALREADY_INTEGRATED` |
+
+---
+
 ## 4. ANÁLISE DETALHADA DAS ISSUES E AÇÕES EXECUTADAS
 
 ### ✅ Issue #11 — [BUG] HTTPS over SOCKS fails with NoSuchMethodError (_detachRaw)
@@ -285,12 +298,14 @@ graph TD
    - Fase 2: Abstração `RelayStore`, capabilities duráveis SHA-256 com escopo/revogação, `PostgresMailboxStore` (PostgreSQL 17), bloqueio não-loopback em admin, `provision_vps.sh` e teste vivo em Tor `0.4.9.15` Onion v3.
    - Fase 3: `SovereignMessenger` + `gate3_two_client_e2ee_test.dart` (OOB Card ID, alerta de troca de chave, X3DH + Double Ratchet fora de ordem, Commit-before-ACK, retry Outbox, chunks com EXIF strip, Sender Keys época, expiração distribuída).
    - Fases 4–9: Simulador 50 clientes + 2 MB (`docs/PERFORMANCE.md`), Rádio `<=240B` / Duty Cycle / MBTiles / ATAK CoT, Monero Ed25519 + isolamento Seed A/B, Nix Archive v1 XSS/integrity, Nix Media FTS5/magnet gate, `PqxdhCombiner`, SBOM CycloneDX, assinador `SignedReleaseManifest` e `PRIVACY_MATRIX.md` + `THIRD_PARTY_LICENSES.md`.
+8. **Etapa 8 — Integração dos PRs #13 a #18 & Encerramento Formal da Issue #11:**
+   - Merge limpo e resolução de conflitos em `nix_state.dart`, `config.go` e `relay.local.yaml` preservando as suítes completas (`68/68` no cliente, `10/10` crypto, `22/22` transport, Go `-race` e privacy gate).
+   - Issue #11 formalmente comentada e encerrada no GitHub (`completed`).
 
 ---
 
 ## 7. PRÓXIMAS TAREFAS OPERACIONAIS / HARDWARE REMANESCENTES
 
-1. **Acompanhar GitHub Actions & Encerrar Issue #11:** Verificar pipeline verde após push do pacote completo na `main` e comentar/fechar Issue #11 com a evidência de `RawSecureSocket`.
-2. **Soak Contínuo de 60 Minutos em VPS Externa:** Provisionar Debian 13 via `services/nix_relay/deploy/provision_vps.sh` e rodar `./bench -clients 50 -duration 60m`.
-3. **Hardware Físico Android / LoRa:** Compilar APK Android em dispositivo real validando `AndroidKeyStore` TEE, Bluetooth físico e adaptadores LoRa/RNode seriais.
-4. **Auditoria Externa Independente:** Submeter relatório SBOM + matriz de privacidade + suites E2EE antes de release beta pública.
+1. **Soak Contínuo de 60 Minutos em VPS Externa:** Provisionar Debian 13 via `services/nix_relay/deploy/provision_vps.sh` e rodar `./bench -clients 50 -duration 60m`.
+2. **Hardware Físico Android / LoRa:** Compilar APK Android em dispositivo real validando `AndroidKeyStore` TEE, Bluetooth físico e adaptadores LoRa/RNode seriais.
+3. **Auditoria Externa Independente:** Submeter relatório SBOM + matriz de privacidade + suites E2EE antes de release beta pública.

@@ -386,6 +386,12 @@ O parecer deverá utilizar:
 | #7 | Persistência & erros do Relay (Go) | @gabrielmaialva33 | `4a13daa` | `ALREADY_INTEGRATED` (Combinado com #8) |
 | #8 | Limites de corpo HTTP do Relay (Go) | @gabrielmaialva33 | `f1dffd1` | `ALREADY_INTEGRATED` (Combinado com #7) |
 | #10 | Atualização `AGENTS.md` e test safety | @gabrielmaialva33 | `1799597` | `ALREADY_INTEGRATED` |
+| #13 | Gate I-A / I-S estrito (`verify_privacy_matrix.sh`) | @gabrielmaialva33 | integrado | `ALREADY_INTEGRATED` |
+| #14 | FTS5 `media_search` literal (`repositories.dart`) | @gabrielmaialva33 | integrado | `ALREADY_INTEGRATED` |
+| #15 | Liberação segura em `NixState.dispose` | @gabrielmaialva33 | integrado | `ALREADY_INTEGRATED` |
+| #16 | Desabilitar `allowBackup` no Android | @gabrielmaialva33 | integrado | `ALREADY_INTEGRATED` |
+| #17 | Remoção paths dev + expansão `~` em `relay` | @gabrielmaialva33 | integrado | `ALREADY_INTEGRATED` |
+| #18 | Sanitização ZIP contra path traversal | @gabrielmaialva33 | integrado | `ALREADY_INTEGRATED` |
 
 A classificação representa o estado consultado e integrado mediante autorização explícita do proprietário, com suítes reexecutadas localmente sobre o conjunto combinado.
 
