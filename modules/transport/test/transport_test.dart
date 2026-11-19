@@ -163,5 +163,25 @@ void main() {
       expect(deleted, equals(1));
       expect(await client.fetchEnvelopes(creds), isEmpty);
     });
+
+    test('TorDiagnostics.probeSocks5Proxy rejects arbitrary non-SOCKS listener and accepts [5, 0]', () async {
+      final bogus = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(bogus.close);
+      bogus.listen((s) {
+        s.write('HTTP/1.1 200 OK\r\n\r\n');
+        s.close();
+      });
+      expect(await TorDiagnostics.probeSocks5Proxy('127.0.0.1', bogus.port), isFalse);
+
+      final socks = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(socks.close);
+      socks.listen((s) {
+        s.listen((_) {
+          s.add(<int>[0x05, 0x00]);
+          s.close();
+        });
+      });
+      expect(await TorDiagnostics.probeSocks5Proxy('127.0.0.1', socks.port), isTrue);
+    });
   });
 }

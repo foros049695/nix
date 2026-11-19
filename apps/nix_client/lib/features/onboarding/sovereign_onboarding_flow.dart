@@ -3,7 +3,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:nix_core_crypto/nix_core_crypto.dart';
 import 'package:nix_transport/nix_transport.dart';
+import '../../core/security/seed_recovery.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
@@ -87,8 +89,12 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
 
   // Identidade Pública
   String _derivedPublicId = '';
+  NixIdentity? _generatedIdentity;
   final TextEditingController _displayNameController = TextEditingController(text: 'Soberano');
   final TextEditingController _bioController = TextEditingController(text: 'Identidade Criptográfica Soberana · Projeto Nix');
+  final TextEditingController _passphraseController = TextEditingController();
+  final TextEditingController _duressPinController = TextEditingController();
+  bool _bindToOsKeyring = true;
   String _selectedAvatarStyle = 'nyx_emblem';
 
   StreamSubscription<TorBootstrapEvent>? _torBootstrapSub;
@@ -105,6 +111,8 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
     _torBootstrapSub?.cancel();
     _displayNameController.dispose();
     _bioController.dispose();
+    _passphraseController.dispose();
+    _duressPinController.dispose();
     super.dispose();
   }
 
@@ -287,64 +295,203 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
     _persistCheckpoint();
   }
 
+  String _generateRandomHexPassphrase() {
+    final rng = Random.secure();
+    return List.generate(
+      32,
+      (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+  }
+
   Future<void> _generatePrivateIdentity() async {
     setState(() {
       _isGeneratingIdentity = true;
-      _diagnosticsLogs.add('[Cripto] Gerando entropia CSPRNG para a Seed A...');
+      _diagnosticsLogs.add('[Cripto] Gerando entropia CSPRNG para a Seed A (24 palavras c/ checksum)...');
     });
 
-    await Future.delayed(const Duration(milliseconds: 200));
+    // 1. Gera 24 palavras criptograficamente seguras (23 bytes entropia + 1 byte SHA-256 checksum)
+    final generatedSeed = SeedRecoveryManager.generateMnemonic();
 
-    // 1. Gera 24 palavras criptograficamente seguras para Seed A
-    final generatedSeed = _createSecureMnemonicWords();
+    // 2. Deriva deterministicamente o par real Ed25519 + X25519 e o Public ID (ADR-0003: Seed A isolada)
+    final identity = await SeedRecoveryManager.deriveIdentityFromMnemonic(generatedSeed);
 
-    // 2. Inicializa o cofre de chaves KeyVault (Argon2id + XChaCha20) e banco SQLCipher
-    await widget.nixState.initializeEncryptedDatabase(
-      passphrase: 'sovereign_identity_${DateTime.now().millisecondsSinceEpoch}',
+    // 3. Inicializa o cofre KeyVault (Argon2id + XChaCha20-Poly1305) e banco SQLCipher
+    final userPassphrase = _passphraseController.text.trim();
+    final effectivePassphrase = userPassphrase.isNotEmpty
+        ? userPassphrase
+        : _generateRandomHexPassphrase();
+    final effectiveBindKeyring = userPassphrase.isEmpty ? true : _bindToOsKeyring;
+    final duressPin = _duressPinController.text.trim();
+
+    final dbOk = await widget.nixState.initializeEncryptedDatabase(
+      passphrase: effectivePassphrase,
+      bindToOsKeyring: effectiveBindKeyring,
+      duressPassphrase: duressPin.isNotEmpty ? duressPin : null,
+    );
+    if (!dbOk) {
+      if (!mounted) return;
+      setState(() {
+        _isGeneratingIdentity = false;
+        _diagnosticsLogs.add('[Erro] Falha ao inicializar KeyVault / SQLCipher.');
+      });
+      return;
+    }
+
+    // 4. Grava identidade pública em `identities`, material privado envelopado em `key_material`,
+    //    dispositivo com grant assinado e perfil inicial no SQLCipher
+    await widget.nixState.persistPrimaryIdentity(
+      identity: identity,
+      displayName: _displayNameController.text.trim(),
+      avatarStyle: _selectedAvatarStyle,
+      bio: _bioController.text.trim(),
     );
 
-    // 3. Deriva identificador público único
-    final randomHex = List.generate(4, (_) => Random.secure().nextInt(0xFFFF).toRadixString(16).padLeft(4, '0').toUpperCase()).join('-');
-    final pubId = 'NIX-$randomHex';
-
+    final pubId = identity.publicId;
     if (!mounted) return;
 
     setState(() {
       _isGeneratingIdentity = false;
+      _generatedIdentity = identity;
       _seedWords = generatedSeed;
       _derivedPublicId = pubId;
       _challengeWordIndices = [
-        Random.secure().nextInt(7),       // entre 0 e 6 (ex: palavra 1 a 7)
+        Random.secure().nextInt(7),       // entre 0 e 6
         8 + Random.secure().nextInt(7),   // entre 8 e 14
         16 + Random.secure().nextInt(7),  // entre 16 e 22
       ];
       _userChallengeAnswers.clear();
       _challengePassed = false;
-      _diagnosticsLogs.add('[Cripto] Chaves derivadas com sucesso. ID Público: $pubId');
+      _diagnosticsLogs.add(
+        '[Cripto] Chaves Ed25519/X25519 derivadas da Seed A (${widget.nixState.localDatabase?.cipherInfo.cipherEngine ?? "SQLite"} · Storage: ${widget.nixState.keyVault.osKeyStorage.backendName}). ID: $pubId (pub=${_generatedIdentity?.ed25519PublicHex.substring(0, 8) ?? ""})',
+      );
     });
 
-    _persistCheckpoint();
+    await _persistCheckpoint();
     _goToStep(OnboardingStep.recoveryBackup);
   }
 
-  List<String> _createSecureMnemonicWords() {
-    const wordlist = [
-      'abandon', 'ability', 'able', 'about', 'above', 'absent', 'absorb', 'abstract',
-      'absurd', 'abuse', 'access', 'accident', 'account', 'accuse', 'achieve', 'acid',
-      'acoustic', 'acquire', 'across', 'act', 'action', 'actor', 'actress', 'actual',
-      'adapt', 'add', 'addict', 'address', 'adjust', 'admit', 'adult', 'advance',
-      'advice', 'aerobic', 'affair', 'afford', 'afraid', 'again', 'age', 'agent',
-      'agree', 'ahead', 'aim', 'air', 'airport', 'aisle', 'alarm', 'album',
-      'alcohol', 'alert', 'alien', 'all', 'alley', 'allow', 'almost', 'alone',
-      'alpha', 'already', 'also', 'alter', 'always', 'amateur', 'amazing', 'among',
-      'amount', 'amused', 'analyst', 'anchor', 'ancient', 'anger', 'angle', 'angry',
-      'animal', 'ankle', 'announce', 'annual', 'another', 'answer', 'antenna', 'antique',
-      'anxiety', 'any', 'apart', 'apology', 'appear', 'apple', 'approve', 'april',
-      'arch', 'arctic', 'area', 'arena', 'argue', 'arm', 'armed', 'armor',
-      'army', 'around', 'arrange', 'arrest', 'arrive', 'arrow', 'art', 'artefact',
-    ];
-    final rng = Random.secure();
-    return List.generate(24, (_) => wordlist[rng.nextInt(wordlist.length)]);
+  Future<void> _showRestoreFromSeedDialog() async {
+    final seedInputCtrl = TextEditingController();
+    final passInputCtrl = TextEditingController();
+    String? errorMsg;
+    bool busy = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          backgroundColor: NixColors.surfaceCard,
+          title: Text(
+            'Recuperar Identidade (Seed A - 24 palavras)',
+            style: TextStyle(color: NixColors.textPrimary, fontSize: 15, fontWeight: FontWeight.bold),
+          ),
+          content: SizedBox(
+            width: 460,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Cole ou digite as 24 palavras da sua Seed A separadas por espaços para restaurar deterministicamente suas chaves Ed25519/X25519 e Public ID.',
+                  style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: seedInputCtrl,
+                  maxLines: 3,
+                  style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5, fontFamily: 'monospace'),
+                  decoration: InputDecoration(
+                    labelText: 'Frase mnemônica (24 palavras)',
+                    hintText: 'ex: abandon ability able ...',
+                    errorText: errorMsg,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: passInputCtrl,
+                  obscureText: true,
+                  style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5),
+                  decoration: const InputDecoration(
+                    labelText: 'Nova frase-passe do cofre local (opcional)',
+                    hintText: 'Vazio = proteção automática via chaveiro do SO',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.of(ctx).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final words = seedInputCtrl.text
+                          .trim()
+                          .split(RegExp(r'\s+'))
+                          .where((w) => w.isNotEmpty)
+                          .toList();
+                      if (!SeedRecoveryManager.validateMnemonic(words)) {
+                        setDlgState(() => errorMsg = 'Frase inválida: verifique as 24 palavras e o checksum.');
+                        return;
+                      }
+                      setDlgState(() {
+                        busy = true;
+                        errorMsg = null;
+                      });
+                      try {
+                        final identity = await SeedRecoveryManager.deriveIdentityFromMnemonic(words);
+                        final customPass = passInputCtrl.text.trim();
+                        final pass = customPass.isNotEmpty ? customPass : _generateRandomHexPassphrase();
+                        final dbOk = await widget.nixState.initializeEncryptedDatabase(
+                          passphrase: pass,
+                          bindToOsKeyring: customPass.isEmpty,
+                        );
+                        if (!dbOk) {
+                          setDlgState(() {
+                            busy = false;
+                            errorMsg = 'Falha ao abrir banco cifrado local.';
+                          });
+                          return;
+                        }
+                        await widget.nixState.persistPrimaryIdentity(
+                          identity: identity,
+                          displayName: _displayNameController.text.trim(),
+                          avatarStyle: _selectedAvatarStyle,
+                        );
+                        if (!mounted) return;
+                        setState(() {
+                          _generatedIdentity = identity;
+                          _seedWords = words;
+                          _derivedPublicId = identity.publicId;
+                          _paperBackupConfirmed = true;
+                          _challengePassed = true;
+                          _torConsentChecked = true;
+                          _diagnosticsLogs.add('[Recuperação] Seed A restaurada com ID ${identity.publicId}.');
+                        });
+                        if (ctx.mounted) Navigator.of(ctx).pop();
+                        _goToStep(OnboardingStep.profileSetup);
+                      } catch (e) {
+                        setDlgState(() {
+                          busy = false;
+                          errorMsg = 'Erro na derivação: $e';
+                        });
+                      }
+                    },
+              style: ElevatedButton.styleFrom(backgroundColor: NixColors.accentYellow),
+              icon: const Icon(Icons.restore_rounded, color: Colors.black, size: 17),
+              label: const Text('Restaurar Conta', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+    seedInputCtrl.dispose();
+    passInputCtrl.dispose();
   }
 
   void _verifyBackupChallenge() {
@@ -385,7 +532,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
   }
 
   Future<void> _finishOnboarding() async {
-    widget.nixState.completeOnboarding(
+    await widget.nixState.completeOnboarding(
       publicId: _derivedPublicId,
       displayName: _displayNameController.text.trim(),
       avatarStyle: _selectedAvatarStyle,
@@ -604,6 +751,19 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
                 ),
               ),
             ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        OutlinedButton.icon(
+          onPressed: _showRestoreFromSeedDialog,
+          icon: Icon(Icons.restore_rounded, color: NixColors.accentYellow, size: 18),
+          label: Text(
+            'Já possuo Seed A (Recuperar Conta de Backup)',
+            style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600),
+          ),
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(color: NixColors.surfaceBorderStrong),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           ),
         ),
       ],
@@ -849,7 +1009,48 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
         _buildFeatureItem(Icons.lock_clock_rounded, 'Chave de Cifra X25519 (Ratchet)', 'Permite o estabelecimento de sessões Double Ratchet com Forward Secrecy.'),
         _buildFeatureItem(Icons.storage_rounded, 'Cofre SQLCipher (Argon2id)', 'Protege as chaves em disco em cofre criptografado com sal de 16 bytes.'),
         _buildFeatureItem(Icons.money_off_rounded, 'Isolamento Absoluto da Carteira', 'A Seed A da mensageria jamais toca ou deriva chaves financeiras do Monero (Seed B).'),
-        const SizedBox(height: 20),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _passphraseController,
+          obscureText: true,
+          style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5),
+          decoration: InputDecoration(
+            labelText: 'Frase-passe do cofre SQLCipher (opcional)',
+            hintText: 'Vazio = senha CSPRNG vinculada ao chaveiro nativo do SO',
+            filled: true,
+            fillColor: NixColors.surfaceCard,
+            border: OutlineInputBorder(borderRadius: NixTokens.borderSm),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _duressPinController,
+          obscureText: true,
+          style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5),
+          decoration: InputDecoration(
+            labelText: 'PIN de coação / anti-apreensão (opcional)',
+            hintText: 'Se digitado no desbloqueio, aciona destruição local imediata',
+            filled: true,
+            fillColor: NixColors.surfaceCard,
+            border: OutlineInputBorder(borderRadius: NixTokens.borderSm),
+            isDense: true,
+          ),
+        ),
+        CheckboxListTile(
+          value: _bindToOsKeyring,
+          onChanged: (v) => setState(() => _bindToOsKeyring = v ?? true),
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          controlAffinity: ListTileControlAffinity.leading,
+          activeColor: NixColors.accentYellow,
+          checkColor: Colors.black,
+          title: Text(
+            'Permitir desbloqueio rápido pelo chaveiro do SO (libsecret / AndroidKeyStore)',
+            style: TextStyle(color: NixColors.textSecondary, fontSize: 11.5),
+          ),
+        ),
+        const SizedBox(height: 12),
         Center(
           child: _isGeneratingIdentity
               ? Column(

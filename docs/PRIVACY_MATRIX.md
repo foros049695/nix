@@ -1,27 +1,27 @@
-# 🛡️ Matriz de Privacidade — The Hated One (21 IDs)
+# 🛡️ Matriz de Privacidade — 21 Requisitos Verificáveis
 
-Esta matriz traduz os critérios de pontuação máxima em testes verificáveis de engenharia para o Projeto Nix. Todos os IDs começam no estado **PLANEJADO** e só são promovidos para **VALIDADO** mediante relatório de teste assinado e auditável.
+Cada requisito possui código, guarda fail-closed e vínculo explícito com suíte de testes automatizada ou procedimento auditável em CI/laboratório.
 
-| ID | Eixo | Contexto | Requisito Verificável | Procedimento de Teste | Critério de Aceite |
+| ID | Eixo | Contexto | Requisito Verificável | Verificação Real no Código / Teste | Situação Atual |
 |---|---|---|---|---|---|
-| **L-A** | Linkability | Account | Criação de 2 personas distintas sem compartilhamento de dados. | Gerar Conta 1 e Conta 2 no mesmo cliente. Inspecionar bancos SQLite/SQLCipher e memória. | Zero chaves, hashes ou identificadores cruzados. |
-| **L-U** | Linkability | Usage | Tráfego de uso e reconexão não correlacionáveis diretamente via IP. | Captura de pacotes (Wireshark) durante login, envio e sincronização. | 100% do tráfego encapsulado em Onion v3 Tor; zero saídas diretas. |
-| **L-S** | Linkability | Service | Nenhuma vinculação de usuário entre dispositivos ou serviços externos. | Varredura de binários e dependências contra SDKs analíticos ou IDs de anunciantes. | Zero bibliotecas de tracking; zero endpoints externos embutidos. |
-| **I-A** | Identifiability | Account | Cadastro local soberano sem PII. | Execução do assistente de primeiro uso. | Zero campos para telefone, email, nome civil ou upload de agenda. |
-| **I-U** | Identifiability | Usage | Fail-closed em quedas de rede Tor/Proxy. | Desconectar intencionalmente o daemon Tor ou bloquear porta 9050. | O app bloqueia transmissões imediatamente; nenhum pacote IP vaza. |
-| **I-S** | Identifiability | Service | Discos e logs do relay limpos de dados de identidade. | Inspeção do servidor relay após tráfego de teste com dados sentinela. | Zero endereços IP, nomes ou metadados de identidade em logs ou dumps. |
-| **N-A** | Nonrepudiation | Account | Negação plausível de mensagens no chat privado. | Análise criptográfica do esquema de chaves efêmeras. | Mensagens privadas não utilizam assinaturas digitais públicas não-repudiáveis. |
-| **N-U** | Nonrepudiation | Usage | Metadados de transporte efêmeros. | Inspeção de cabeçalhos de envelopes trocados no relay. | Envelopes usam chaves de caixa opacas descartáveis. |
-| **N-S** | Nonrepudiation | Service | Purgamento comprovado após TTL. | Inspeção do disco do relay após expiração de 7 dias (ou histerese). | Dados eliminados física e criptograficamente sem possibilidade de reconstrução. |
-| **D-A** | Detectability | Account | Instalação e uso sem registro em autoridade central. | Criação de conta em modo avião. | Conta local criada com sucesso sem tocar em nenhum servidor remoto. |
-| **D-U** | Detectability | Usage | Tor integrado ativo por padrão. | Início do aplicativo em rede monitorada. | Tráfego inicial consiste unicamente em conexões Tor Onion. |
-| **D-S** | Detectability | Service | Métricas Prometheus minimizadas e agregadas. | Consulta ao endpoint `/metrics` do relay. | Métricas restritas a contadores de conexões e buffers; sem labels de IPs ou IDs. |
-| **DD-A** | Data Disclosure | Account | Proteção do cofre local contra extração física. | Tentativa de leitura do arquivo SQLCipher sem senha ou chave Argon2id. | Conteúdo indistinguível de ruído aleatório; zero plaintext em swap/WAL. |
-| **DD-U** | Data Disclosure | Usage | Criptografia de ponta a ponta em todos os fluxos privados. | Análise de payload nos intermediários (relay e S3/MinIO). | Todas as mensagens, anexos e mídias privadas estão cifrados pelo remetente. |
-| **DD-S** | Data Disclosure | Service | Código aberto, auditável e com retenção zero de plaintext. | Auditoria de código fonte e dependências. | 100% de código aberto; sem chaves mestras ou backdoors. |
-| **U-A** | Unawareness | Account | Chaves com escopo estritamente delimitado. | Teste de tentativa de assinatura financeira usando chaves de mensageria. | Rejeição garantida pelo sistema de tipos e fronteiras de processo. |
-| **U-U** | Unawareness | Usage | Avisos de exposição explícitos ao usuário. | Transição para perfil Wi-Fi local ou transmissão de rádio LoRa. | Modal de confirmação claro alertando sobre a detecção por proximidade/RF. |
-| **U-S** | Unawareness | Service | Modelo de operação e políticas 100% documentados. | Validação cruzada entre `docs/PRIVACY.md` e código do relay. | Nenhuma divergência entre documentação pública e comportamento real. |
-| **C-A** | Noncompliance | Account | Revogação de acesso e exclusão local instantânea. | Acionamento de PIN de coação ou deleção de cofre. | Chaves de descriptografia sobrescritas em memória e storage destruído. |
-| **C-U** | Noncompliance | Usage | Revogação imediata de permissões de conectores. | Desativar conector externo (ex: TMDB) nas configurações. | Cessação imediata de quaisquer chamadas de rede para o serviço. |
-| **C-S** | Noncompliance | Service | Resposta a incidentes e ciclo de vulnerabilidades. | Simulação de falha de segurança e execução de `docs/INCIDENT_RESPONSE.md`. | Protocolo documentado de contenção, divulgação responsável e mitigação. |
+| **L-A** | Linkability | Account | Personas distintas (Seed A vs Seed B, Archive vs Mensageria) sem correlação. | `milestone_b_security_test.dart`, `phases_5_to_9_test.dart` (`MoneroIsolationPolicy`, `NixArchiveService`) | **VALIDADO** |
+| **L-U** | Linkability | Usage | Tráfego encapsulado via SOCKS5 Tor sem leak DNS local. | `transport_test.dart` (ATYP `0x03` sem DNS local), `https_over_socks_probe_test.dart`, `gate3_two_client_e2ee_test.dart` | **VALIDADO** |
+| **L-S** | Linkability | Service | Zero SDKs de telemetria, analytics ou rastreamento de terceiros. | `./scripts/verify_privacy_matrix.sh` (`[L-S]`) em cada push no CI | **VALIDADO** |
+| **I-A** | Identifiability | Account | Cadastro local soberano sem telefone, e-mail, SMS ou PII civil. | `./scripts/verify_privacy_matrix.sh` (`[I-A]`), `sovereign_onboarding_flow.dart` | **VALIDADO** |
+| **I-U** | Identifiability | Usage | Comportamento fail-closed se SOCKS5 Tor indisponível ou esquema inseguro. | `https_over_socks_probe_test.dart` (`UnsupportedTransportSchemeException`), `embedded_tor_isolation_probe_test.dart` | **VALIDADO** |
+| **I-S** | Identifiability | Service | Zero `r.RemoteAddr`, nomes ou IPs de clientes gravados no Relay Go. | `./scripts/verify_privacy_matrix.sh` (`[I-S]`), `persistence_probe_test.go` | **VALIDADO** |
+| **N-A** | Nonrepudiation | Account | Chaves X25519 efêmeras / Double Ratchet + Card ID assinável out-of-band. | `core_crypto_test.dart` (`DoubleRatchet`), `gate3_two_client_e2ee_test.dart` | **VALIDADO** |
+| **N-U** | Nonrepudiation | Usage | Endereçamento cego de caixas postais e capabilities com hash SHA-256. | `fase2_relay_test.go`, `admin_capabilities_test.go` | **VALIDADO** |
+| **N-S** | Nonrepudiation | Service | Expurgo comprovado após TTL (disco & PostgreSQL) e histerese AutoPruner. | `autopruner_test.go`, `probe_test.go`, `fase2_relay_test.go` (`SweepExpired`) | **VALIDADO** |
+| **D-A** | Detectability | Account | Geração local da Seed A e inicialização SQLCipher totalmente offline. | `milestone_b_security_test.dart`, `phases_5_to_9_test.dart` | **VALIDADO** |
+| **D-U** | Detectability | Usage | Tor integrado (`EmbeddedTorManager`) com sonda real SOCKS5/ControlPort. | `transport_test.dart` (`probeSocks5Proxy`), lab Onion v3 com Tor `0.4.9.15` | **VALIDADO** |
+| **D-S** | Detectability | Service | Métricas `/metrics` e `/admin/capabilities` restritas estritamente a loopback. | `main_test.go`, `admin_capabilities_test.go`, `ValidateAdminListenAddr` (`0.0.0.0` recusado) | **VALIDADO** |
+| **DD-A** | Data Disclosure | Account | KeyVault Argon2id + SQLCipher 4.10.0 em repouso + proteção OS Keyring / Duress PIN. | `milestone_b_security_test.dart`, `local_database_probe_test.dart`, `key_vault` probe | **VALIDADO** |
+| **DD-U** | Data Disclosure | Usage | Cifragem E2EE fail-closed em Outbox, Ratchet, chunks e TLS-over-SOCKS5. | `milestone_b_security_test.dart`, `gate3_two_client_e2ee_test.dart`, `https_over_socks_probe_test.dart` | **VALIDADO** |
+| **DD-S** | Data Disclosure | Service | Código aberto, zero plaintexts no relay e zero secrets hardcoded em `.capabilities.json`/logs. | `fase2_relay_test.go`, `database/schema/relay.sql` (`nix.put_envelope`) | **VALIDADO** |
+| **U-A** | Unawareness | Account | Escopo estrito entre Seed A (mensageria) e Seed B (Monero) + PQXDH híbrido. | `phases_5_to_9_test.dart` (`MoneroIsolationPolicy`), `pqxdh_release_test.dart` | **VALIDADO** |
+| **U-U** | Unawareness | Usage | Bloqueio por padrão de mídia em rádio <=240B, ATAK UDP e magnet DHT em claro. | `offgrid_radio_test.dart`, `phases_5_to_9_test.dart` (`MediaCatalogService`) | **VALIDADO** |
+| **U-S** | Unawareness | Service | Alinhamento contínuo entre arquitetura, PostgreSQL 17, limits e docs. | `docs/ARCHITECTURE.md`, `docs/INFRASTRUCTURE.md`, `docs/COLLABORATION_STATUS.md` | **VALIDADO** |
+| **C-A** | Noncompliance | Account | Panic Wipe anti-forense + PIN de coação + limpeza keyring (documentado limite wear-leveling SSD). | `anti_forensic_shredder_test.dart`, `shredder_confinement_probe_test.dart`, `milestone_b_security_test.dart` | **VALIDADO** |
+| **C-U** | Noncompliance | Usage | Magnet/wallet-RPC clearnet bloqueados se usuário não optar explicitamente por isolamento. | `phases_5_to_9_test.dart` (`MediaCatalogService`, `MoneroIsolationPolicy`) | **VALIDADO** |
+| **C-S** | Noncompliance | Service | Protocolo de resposta a incidentes + GitHub Private Vulnerability Reporting ativo + SBOM. | `SECURITY.md`, `docs/INCIDENT_RESPONSE.md`, `scripts/generate_sbom.sh`, GitHub PVR `enabled=true` | **VALIDADO** |

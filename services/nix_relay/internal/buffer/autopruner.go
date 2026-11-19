@@ -43,7 +43,7 @@ type AutoPruner struct {
 	currentState           string
 	baseTTL                time.Duration
 	usageSampler           func() int
-	store                  *BlindMailboxStore
+	store                  RelayStore
 }
 
 func NewAutoPruner(light, severe, critical int) *AutoPruner {
@@ -62,8 +62,8 @@ func NewAutoPruner(light, severe, critical int) *AutoPruner {
 	}
 }
 
-// AttachDiskMonitor conecta leitura real de ocupação do sistema de arquivos e o BlindMailboxStore para expurgo ativo.
-func (ap *AutoPruner) AttachDiskMonitor(dataDir string, baseTTL time.Duration, store *BlindMailboxStore) {
+// AttachDiskMonitor conecta leitura real de ocupação do sistema de arquivos e o RelayStore para expurgo ativo.
+func (ap *AutoPruner) AttachDiskMonitor(dataDir string, baseTTL time.Duration, store RelayStore) {
 	ap.mu.Lock()
 	defer ap.mu.Unlock()
 	if baseTTL > 0 {

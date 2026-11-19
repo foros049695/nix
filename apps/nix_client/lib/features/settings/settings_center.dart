@@ -1790,9 +1790,13 @@ class _SettingsCenterState extends State<SettingsCenter> {
         ),
         _survivalModuleCard(
           title: 'Cofre SQLCipher 256-bit, Argon2id & Duress PIN',
-          status: 'EXPERIMENTAL (FASE 1)',
+          status: state.localDatabase?.cipherInfo.isEncrypted == true
+              ? 'SQLCIPHER ATIVO (${state.localDatabase?.cipherInfo.cipherVersion ?? "OK"})'
+              : (state.isDatabaseReady ? 'CLEARNET DEV (SEM SQLCIPHER)' : 'BLOQUEADO / AGUARDANDO COFRE'),
           description:
-              'Persistência cifrada local e PIN de coação com escopo isolado (nunca destrói a Seed B financeira do Monero).',
+              'Motor de banco: ${state.localDatabase?.cipherInfo.cipherEngine ?? "Desconectado"} · '
+              'Keyring SO: ${state.keyVault.osKeyStorage.backendName}. '
+              'PIN de coação atua isoladamente sem tocar a Seed B financeira.',
         ),
         _survivalModuleCard(
           title: 'Comunicação Off-Grid: LoRa BLE (Meshtastic), Reticulum & ATAK CoT',
@@ -1841,24 +1845,45 @@ class _SettingsCenterState extends State<SettingsCenter> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Sobrescreve destrutivamente em 3 passagens (CSPRNG, padrão 0x55 e zeros 0x00) todo o banco de dados SQLCipher, logs de transação WAL/SHM, preferências e cofre de chaves (estilo BleachBit / DoD 5220.22-M), zerando a memória RAM e apagando a conta sem deixar rastros.',
+            'Destrói a chave mestra em memória RAM (KeyVault.lock), remove o segredo do keyring do SO e sobrescreve em 3 passagens (CSPRNG, 0x55 e zeros 0x00) o banco SQLCipher, logs WAL/SHM, cofre e preferências. Aviso técnico: em SSDs e memória flash modernos, o wear leveling impede garantia física de apagamento completo das células; a proteção principal é a destruição criptográfica irrecuperável da chave do KeyVault/SQLCipher.',
             style: TextStyle(color: Color(0xFFE0B0B0), fontSize: 11.5, height: 1.4),
           ),
           const SizedBox(height: 14),
-          ElevatedButton.icon(
-            key: const Key('panic_wipe_button'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF8B0000),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-            ),
-            icon: const Icon(Icons.delete_forever_rounded, size: 18),
-            label: const Text(
-              'DESTRUIR CONTA E DADOS LOCAIS AGORA (PÂNICO)',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.5),
-            ),
-            onPressed: () => _showPanicConfirmationDialog(context, state),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              ElevatedButton.icon(
+                key: const Key('panic_wipe_button'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF8B0000),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                icon: const Icon(Icons.delete_forever_rounded, size: 18),
+                label: const Text(
+                  'DESTRUIR CONTA E DADOS LOCAIS AGORA (PÂNICO)',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+                ),
+                onPressed: () => _showPanicConfirmationDialog(context, state),
+              ),
+              OutlinedButton.icon(
+                key: const Key('configure_duress_pin_button'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.amberAccent,
+                  side: const BorderSide(color: Color(0xFF8B4513)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                icon: const Icon(Icons.password_rounded, size: 17),
+                label: const Text(
+                  'CONFIGURAR PIN DE COAÇÃO (DURESS)',
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                ),
+                onPressed: () => _showDuressPinDialog(context, state),
+              ),
+            ],
           ),
         ],
       ),
@@ -1892,7 +1917,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
             onPressed: () async {
               Navigator.of(ctx).pop();
               final report = await state.panicWipeAllData();
-              if (context.mounted) {
+                  if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     backgroundColor: const Color(0xFF8B0000),
@@ -1903,6 +1928,79 @@ class _SettingsCenterState extends State<SettingsCenter> {
                 );
               }
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDuressPinDialog(BuildContext context, NixState state) {
+    final vaultCtrl = TextEditingController();
+    final duressCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: NixColors.surfaceElevatedHigh,
+        title: Row(
+          children: const [
+            Icon(Icons.shield_outlined, color: Colors.amberAccent, size: 20),
+            SizedBox(width: 8),
+            Text('CONFIGURAR PIN DE COAÇÃO (DURESS)', style: TextStyle(fontSize: 14)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Se este PIN for inserido no desbloqueio sob coerção, o cliente apagará o banco de mensageria e o cofre sem tocar em carteiras Monero externas (Seed B). Em SSD/flash há limites físicos de sobrescrita.',
+              style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.35),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: vaultCtrl,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Senha atual do KeyVault',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: duressCtrl,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Novo PIN/Senha de Coação (distinto)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final ok = await state.configureDuressPin(
+                vaultPassphrase: vaultCtrl.text,
+                duressPin: duressCtrl.text,
+              );
+              if (ctx.mounted) Navigator.of(ctx).pop();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      ok
+                          ? 'PIN de coação configurado no KeyVault (Argon2id).'
+                          : 'Não foi possível configurar: verifique a senha do cofre e use um PIN diferente.',
+                    ),
+                  ),
+                );
+              }
+            },
+            child: const Text('Salvar PIN de Coação'),
           ),
         ],
       ),

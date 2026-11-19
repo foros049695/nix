@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 import '../database/local_database.dart';
 import 'key_vault.dart';
+import 'os_key_storage.dart';
 
 /// Relatório de execução do procedimento anti-forense.
 class ShredReport {
@@ -163,6 +164,14 @@ class AntiForensicShredder {
       final wasUnlocked = activeVault.isUnlocked;
       try {
         activeVault.lock();
+        if (customBaseDir == null ||
+            activeVault.osKeyStorage is InMemoryOsKeyStorage) {
+          await activeVault.clearOsKeyringSecret(
+            customPath: customBaseDir != null
+                ? '$customBaseDir/vault_bootstrap.json'
+                : null,
+          );
+        }
         memoryWiped = wasUnlocked && !activeVault.isUnlocked;
       } catch (error) {
         errors['vault.lock'] = error.toString();

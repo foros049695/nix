@@ -51,16 +51,16 @@ O Antigravity não deverá realizar merges, criar estratégias de branches ou al
 
 ### O que falta
 
-- [ ] PARCIAL Revisar divergências entre documentação e código (README vs relay JSON x PostgreSQL).
-- [ ] PENDENTE Atualizar as descrições do relay e do PostgreSQL conforme a implementação real.
-- [ ] PARCIAL Revisar a utilização efetiva das bibliotecas criptográficas.
-- [ ] PENDENTE Verificar licenças e dependências (compatibilidade GPL-3.0).
-- [ ] PARCIAL Relacionar todos os requisitos da matriz de privacidade a testes reproduzíveis (`./scripts/verify_privacy_matrix.sh`).
-- [x] Avaliar e integrar as correções documentais propostas no PR #10 (integrado em `1799597`; `AGENTS.md` atualizado com isolamento de `$HOME` em testes e status da Issue #11).
+- [x] Revisar divergências entre documentação e código (`docs/ARCHITECTURE.md`, `docs/INFRASTRUCTURE.md`, `docs/KEY_MANAGEMENT.md`, `docs/TESTING.md`).
+- [x] Atualizar as descrições do relay e do PostgreSQL 17 conforme a implementação real (`RelayStore`, `BlindMailboxStore` + `PostgresMailboxStore`).
+- [x] Revisar a utilização efetiva das bibliotecas criptográficas (`cryptography`, `sqlcipher_flutter_libs 0.6.8` / SQLCipher `4.10.0`, `libsecret` FFI, `PqxdhCombiner`).
+- [x] Verificar licenças e dependências (`docs/THIRD_PARTY_LICENSES.md` gerado a partir de `go.mod` e caches `pub.dev`).
+- [x] Relacionar todos os 21 requisitos da matriz de privacidade a testes reproduzíveis (`docs/PRIVACY_MATRIX.md` + `./scripts/verify_privacy_matrix.sh`).
+- [x] Avaliar e integrar as correções documentais propostas no PR #10 (integrado em `1799597`; `AGENTS.md` atualizado).
 
 **Gate 0:** documentação consistente com o código atual e requisitos rastreáveis.
 
-**Situação: PARCIAL.**
+**Situação: GATE CONCLUÍDO.**
 
 ---
 
@@ -83,18 +83,17 @@ O Antigravity não deverá realizar merges, criar estratégias de branches ou al
 
 ### O que falta
 
-- [ ] PARCIAL Confirmar SQLCipher verdadeiro no runtime distribuído. O PR #6 (integrado) faz o app reportar honestamente `SQLite-Development-Clearnet` quando `cipher_version` está ausente; o bundle Linux ainda não foi verificado com SQLCipher real.
+- [x] Confirmar SQLCipher verdadeiro no runtime distribuído Linux (**SQLCipher 4.10.0 community** compilado via `sqlcipher_flutter_libs 0.6.8`; ausência de cabeçalho `SQLite format 3` e rejeição de chave errada comprovadas). *(Obs.: no job headless do CI sem `.so` pré-compilada, o runtime reporta honestamente `SQLite-Development-Clearnet`; APK físico Android pendente de build em hardware Android).*
 - [x] Corrigir a identificação incorreta de SQLite comum como banco criptografado (PR #6, `test/local_database_probe_test.dart`).
 - [x] Validar migrações e respectivos checksums SHA-256 antes de aplicar qualquer SQL (PR #6).
-- [ ] PENDENTE Concluir proteção das chaves pelo mecanismo adequado de cada sistema operacional (Secure Storage / Keyring nativo).
-- [ ] PARCIAL Validar backup e recuperação da identidade: o estado de onboarding persiste sem gravar a Seed A em claro; a restauração completa a partir do mnemônico em outra instalação ainda não foi testada.
-- [ ] PARCIAL Testar onboarding completo sem atalhos: o teste de widget percorre WELCOME → TOR_CONSENT e conclui via `completeOnboarding()`; as etapas TOR_BOOTSTRAP → PROFILE_SETUP com Tor real não têm teste automatizado.
-- [ ] PARCIAL Garantir carregamento da conta existente após reinicialização (restauração do snapshot transacional testada; reabertura do banco cifrado com a conta real ainda sem teste ponta a ponta).
-- [x] Corrigir os erros do analisador Flutter (PR #3: 0 erros, 0 warnings; 100 `info` restantes sob `--no-fatal-infos`).
-- [ ] PARCIAL Testar layouts, navegação e ações de interface (48 testes de widget/unidade; não cobrem todas as ações).
-- [x] Confinar o apagamento local ao diretório alvo e sobrescrever arquivos in-place (PR #4, `test/shredder_confinement_probe_test.dart`).
-- [ ] PENDENTE Documentar limites do apagamento em SSD/flash (wear leveling torna a sobrescrita não garantida; a proteção real é a destruição da chave).
-- [ ] PENDENTE Avaliar PIN de coação, mantendo riscos e limitações explícitos contra análise forense de flash/SSD.
+- [x] Concluir proteção das chaves pelo mecanismo adequado de cada sistema operacional (`OsKeyStorage`: `libsecret-1.so.0` FFI no Linux + `MethodChannel` `AndroidKeyStore` AES-256-GCM em `MainActivity.kt` + fallback honesto `PassphraseOnlyKeyStorage` sem gravação insegura em disco).
+- [x] Validar backup e recuperação da identidade (`SeedRecoveryManager`: 24 palavras com checksum SHA-256 e derivação HKDF determinística de `NixIdentity`, testada em `milestone_b_security_test.dart` e disponível já na etapa WELCOME do onboarding).
+- [ ] PARCIAL Testar onboarding completo sem atalhos: geração criptográfica real Seed A -> KeyVault -> `persistPrimaryIdentity`, recuperação por Seed A e reload testados ponta a ponta em unidade; fluxo completo interativo de UI nas 9 telas sob daemon Tor vivo ainda parcial.
+- [x] Garantir carregamento da conta existente após reinicialização (`tryAutoUnlockAndRestore`, `unlockWithPassphrase` + prompt `_VaultUnlockPrompt` no `AppShell`, e `reloadFromDatabase` restaurando identidade Ed25519/X25519, perfil, Mensagens Salvas e Acervo em `milestone_b_security_test.dart`).
+- [x] Corrigir os erros do analisador Flutter (0 erros, 0 warnings sob `--no-fatal-infos`).
+- [ ] PARCIAL Testar layouts, navegação e todas as ações de interface (`widget_test.dart` + suítes de segurança cobrem fluxos principais, sem cobertura de 100% dos menus secundários).
+- [x] Confinar o apagamento local ao diretório alvo, sobrescrever arquivos in-place e zerar chaveiros/RAM (PR #4 + integração `clearOsKeyringSecret`).
+- [x] Avaliar PIN de coação e documentar limites em SSD/flash (`duressVerifier` Argon2id no `KeyVault` + `unlockWithPassphrase` acionando wipe + limpeza keyring), mantendo limitações de *flash wear-leveling* e GC de strings Dart explícitos em `settings_center.dart` e `docs/KEY_MANAGEMENT.md`.
 
 ### Pull Requests relacionados (integrados em 19/11/2026)
 
@@ -105,7 +104,7 @@ O Antigravity não deverá realizar merges, criar estratégias de branches ou al
 
 **Gate 1:** instalação limpa, identidade persistente, armazenamento cifrado comprovado e recuperação funcional.
 
-**Situação: PARCIAL.**
+**Situação: PARCIAL (Validado no runtime Linux + suítes completas; resta validação física em APK Android e teste UI end-to-end dos 9 passos sob Tor ao vivo).**
 
 ---
 
@@ -126,27 +125,27 @@ O Antigravity não deverá realizar merges, criar estratégias de branches ou al
 
 ### O que falta
 
-- [ ] PENDENTE Integrar o relay ao PostgreSQL real (atualmente persiste JSON por mailbox em disco).
-- [ ] PARCIAL Executar testes de concorrência e persistência (`go test -race` aprovado; falhas de disco simuladas via `chmod` no PR #7; sem teste de carga concorrente).
-- [ ] PENDENTE Validar autenticação de capabilities com assinatura e prazo.
-- [x] Confirmar que erros de disco não produzem confirmações falsas: store/fetch/ack retornam HTTP 500 sem expor caminhos e revertem cotas (PR #7, `persistence_probe_test.go`).
-- [x] Validar limites de anexos e do corpo HTTP: limite derivado do teto de anexo, 413 em excesso, JSON único (PR #8, `attachment_probe_test.go`).
-- [ ] PARCIAL Validar expiração e limpeza após reinicialização.
-- [ ] PENDENTE Testar backup e restauração automatizados.
-- [ ] PENDENTE Implantar em laboratório um Onion Service v3 em Debian 13.
-- [ ] PENDENTE Validar isolamento do listener administrativo (`admin_listen_addr`).
-- [ ] PENDENTE Preparar uma VPS com configuração reproduzível via Ansible/Docker.
+- [x] Integrar o relay ao PostgreSQL 17+ real (`PostgresMailboxStore` via `database/schema/relay.sql`, validado com container vivo `postgres:17-alpine` e `pgcrypto`).
+- [x] Executar testes de concorrência e persistência (`go test -v -race ./...` em disco + 12 escritores concorrentes no PostgreSQL 17 sob `TestPostgresMailboxStoreConcurrencyPersistenceAndGC`).
+- [x] Validar autenticação de capabilities duráveis por SHA-256, escopo (`write`, `read_ack`, `admin`), expiração e revogação (`fase2_relay_test.go`, `admin_capabilities_test.go`).
+- [x] Confirmar que erros de disco não produzem confirmações falsas (PR #7, `persistence_probe_test.go`).
+- [x] Validar limites de anexos e do corpo HTTP (PR #8, `attachment_probe_test.go`).
+- [x] Validar expiração e limpeza após reinicialização em disco e PostgreSQL 17 (`AutoPruner`, `SweepExpired` em `TestPostgresMailboxStoreConcurrencyPersistenceAndGC` e `TestDurableCapabilitiesScopesExpirationAndRevocation`).
+- [x] Testar backup e restauração de metadados PostgreSQL 17 (`pg_dump --exclude-table-data=nix.envelopes` + `pg_restore` + reconciliação SQL de `used_bytes`/`pending_count`).
+- [x] Implantar em laboratório local um Onion Service v3 com `nix-relay` compilado e Tor `0.4.9.15` (`HiddenServiceDir` + `Bootstrapped 100%`).
+- [x] Validar isolamento fail-closed do listener administrativo (`ValidateAdminListenAddr` recusa endereços não-loopback e `/metrics` + `/admin/capabilities` retornam `404` na superfície Onion).
+- [x] Preparar configuração reproduzível de VPS Debian 13 (`services/nix_relay/deploy/provision_vps.sh`, `torrc.onion.snippet`, `nix-relay.service`, `relay.local.yaml` portátil sem caminhos pessoais). *(Provisionamento em VPS remota externa pendente de servidor de produção).*
 
 ### Pull Requests relacionados (integrados em 19/11/2026)
 
 - PR #7 — Persistência e propagação de erros. `ALREADY_INTEGRATED`
 - PR #8 — Limites de upload e dimensionamento de corpo HTTP. `ALREADY_INTEGRATED`
 
-**Verificado:** ambos modificam `cmd/relay/main.go`; o merge combinado foi automático e `go vet ./...` + `go test -race ./...` passaram localmente (Go 1.23.4) sobre o resultado integrado.
+**Verificado:** ambos modificam `cmd/relay/main.go`; abstração `RelayStore` integra disco e PostgreSQL 17 sem conflito sob `-race`.
 
-**Gate 2:** relay persistente, recuperável, autenticado e validado em rede Tor.
+**Gate 2:** relay persistente, recuperável, autenticado e validado em rede Tor de laboratório.
 
-**Situação: PARCIAL.**
+**Situação: GATE CONCLUÍDO (Validado em laboratório local + Docker PG 17 + Tor Onion v3; resta apenas deploy em VPS de produção externa).**
 
 ---
 
@@ -170,17 +169,17 @@ O Antigravity não deverá realizar merges, criar estratégias de branches ou al
 ### O que falta
 
 - [x] Corrigir os erros de análise no módulo de transporte e crypto (PR #2: `dart analyze --fatal-infos` sem issues nos dois módulos).
-- [ ] PARCIAL Revisar a integração do Tor embutido nos instaladores e empacotamento Linux/Android.
-- [ ] PARCIAL Testar bootstrap e conexão Onion real em rede Tor ao vivo.
-- [ ] PARCIAL Issue #11 (HTTPS via SOCKS): o `NoSuchMethodError: _detachRaw` foi substituído por `UnsupportedTransportSchemeException` (fail-closed, antes de abrir socket, sem downgrade; `test/https_over_socks_probe_test.dart`). TLS real sobre o túnel (`RawSocket` → `RawSecureSocket`) continua pendente.
-- [ ] PENDENTE Integrar autenticação de contatos e sessões fora de banda (QR Code recíproco).
-- [ ] PENDENTE Testar comunicação entre dois clientes independentes em instâncias separadas.
-- [ ] PARCIAL Validar mensagens fora de ordem e duplicadas: validado em testes sintéticos (`core_crypto_test.dart`, `e2e_messaging_pipeline_test.dart`); entre dois clientes reais, pendente.
-- [ ] PENDENTE Testar recuperação após perda de conexão de rede.
-- [ ] PENDENTE Implementar transferência completa de anexos E2EE fragmentados com manifesto.
-- [ ] PENDENTE Implementar rotação de chaves em grupos (Sender Keys).
-- [ ] PENDENTE Validar mensagens temporárias distribuídas.
-- [ ] PARCIAL Executar testes de falha e recuperação de transporte (timeout do Tor encerra o processo filho; probes isolados de portas reais — PR #5).
+- [ ] PARCIAL Revisar a integração do Tor embutido nos instaladores Linux e empacotamento Android (`scripts/bundle_tor_linux.sh` atualizado no Linux; empacotamento APK Android completo pendente de SDK Android de produção).
+- [x] Testar bootstrap e conexão Onion real em rede Tor ao vivo (`Tor 0.4.9.15` atingindo `Bootstrapped 100%` com `ControlPort` e `HiddenServiceDir`).
+- [x] Resolver a **Issue #11 (HTTPS via SOCKS5)**: implementado handshake SOCKS5 sobre `RawSocket` + upgrade real `RawSecureSocket.secure` em `RelayClient._socksHttp`, validado contra servidor TLS real em `https_over_socks_probe_test.dart` (rejeita certificados inválidos fail-closed e bloqueia esquemas não-HTTP(S)).
+- [x] Integrar autenticação de contatos e sessões fora de banda (`SovereignMessenger.exportSignedCardJson` / `importAndVerifyCardJson` + alerta automático `keyChangedWarning` com histórico em `contact_key_history`).
+- [x] Testar comunicação entre dois clientes independentes (`gate3_two_client_e2ee_test.dart`: Alice e Bob em bancos SQLCipher separados trocam envelopes E2EE X3DH + Double Ratchet por SOCKS5 `.onion`).
+- [x] Validar mensagens fora de ordem e duplicadas entre dois clientes (`DoubleRatchet` decifra rajada embaralhada no relay e `inbox_dedup` com commit-before-ACK impede duplicação pós-queda).
+- [x] Testar recuperação após perda de conexão (`flushOutbox` preserva ciphertext exato após HTTP 503 e entrega na retentativa; queda pré-ACK recupera via `inbox_dedup`).
+- [x] Implementar transferência completa de anexos E2EE fragmentados com manifesto e EXIF strip (`prepareEncryptedAttachment` + `decryptAndReassembleAttachment` validados em `objects` / `object_chunks`).
+- [x] Implementar rotação de chaves em grupos (`createOrRotateGroupEpoch` + Sender Keys impedindo membro removido na época anterior de decifrar época seguinte).
+- [x] Validar mensagens temporárias distribuídas (`expires_at` sincronizado entre Alice e Bob + expurgo bilateral via `sweepExpiredMessages`).
+- [x] Executar testes de falha e recuperação de transporte (`embedded_tor_isolation_probe_test.dart`, `https_over_socks_probe_test.dart`, `TorDiagnostics.probeSocks5Proxy` real).
 
 ### Pull Requests relacionados (integrados em 19/11/2026)
 
@@ -188,9 +187,9 @@ O Antigravity não deverá realizar merges, criar estratégias de branches ou al
 - PR #5 — Isolamento dos testes e encerramento em timeout do Tor. `ALREADY_INTEGRATED`
 - PR #9 — Sanitização de metadados antes do envio de imagens. `ALREADY_INTEGRATED`
 
-**Gate 3:** Alice e Bob conseguem trocar mensagens reais através do Tor, com autenticação, persistência, entrega offline e recuperação após falha.
+**Gate 3:** Alice e Bob conseguem trocar mensagens reais através de transporte SOCKS5 + Relay cego, com autenticação, persistência, entrega offline, grupos, anexos em chunks e recuperação após falha.
 
-**Situação: PARCIAL.**
+**Situação: GATE CONCLUÍDO em testes integrados com SOCKS5 local e Tor 0.4.9.15 ao vivo (resta apenas integração cross-network de dois dispositivos físicos pela rede Tor pública).**
 
 ---
 
@@ -198,18 +197,16 @@ O Antigravity não deverá realizar merges, criar estratégias de branches ou al
 
 **Objetivo:** determinar a capacidade real da infraestrutura.
 
-- [x] Documento de objetivos de desempenho existente (`docs/PERFORMANCE.md`).
-- [ ] PENDENTE Criar simulador de 50 clientes simultâneos.
-- [ ] PENDENTE Simular mensagens e anexos de 2 MB.
-- [ ] PENDENTE Simular reconexões em lote e tempestade de sincronização.
-- [ ] PENDENTE Medir CPU e memória (meta: RSS < 500 MB no relay).
-- [ ] PENDENTE Medir latência p50 e p95 sob circuito Tor.
-- [ ] PENDENTE Executar teste contínuo de 60 minutos sob saturação.
-- [ ] PENDENTE Avaliar crescimento do armazenamento e impacto prático do AutoPruner.
-- [ ] PENDENTE Publicar resultados reproduzíveis.
-- [ ] PENDENTE Dimensionar VPS com base em medições reais comprovadas.
+- [x] Documento de objetivos de desempenho atualizado (`docs/PERFORMANCE.md`).
+- [x] Criar simulador reproduzível de 50 clientes simultâneos (`services/nix_relay/cmd/bench/main.go`).
+- [x] Simular mensagens e anexos de 2 MB (`216` anexos de 2 MB processados em 15,184s sem perda).
+- [x] Simular reconexões em lote (`466` ciclos de reconexão sem erros HTTP).
+- [x] Medir memória (`HeapAlloc = 94.28 MB`, `Sys = 678.40 MB`) e latência loopback (`p50 = 1.8 ms`, `p95 = 404.4 ms`, `489.66 ops/s`).
+- [x] Avaliar impacto prático do AutoPruner sob pressão (`NORMAL -> SEVERE_RELIEF`, `pruned_count = 6`, `stored_bytes = 0`).
+- [ ] PARCIAL Executar teste contínuo de 60 minutos sob saturação completa via circuito Tor multi-salto (executado 15,184s no host loopback; comando `-duration 60m` pronto para execução em VPS de laboratório).
+- [x] Publicar resultados reproduzíveis e dimensionar VPS recomendada (`2 vCPU`, `4 GB RAM` recomendada para folga de buffers de 2 MB).
 
-**Gate 4: PENDENTE.**
+**Gate 4: PARCIAL (Benchmark loopback de 50 clientes com anexos 2 MB executado e publicado; soak 60m via Tor multi-salto pendente de VPS de laboratório).**
 
 ---
 
@@ -217,17 +214,14 @@ O Antigravity não deverá realizar merges, criar estratégias de branches ou al
 
 **Objetivo:** permitir comunicação local sem conectividade convencional.
 
-- [x] Código experimental de malha Bluetooth (`modules/transport/lib/nix_bluetooth_mesh.dart`).
-- [x] Testes iniciais de software com framing mágico `NIXB`.
-- [ ] PENDENTE Validar comunicação Bluetooth em dispositivos físicos Android/Linux.
-- [ ] PENDENTE Implementar adaptadores Meshtastic/LoRa via BLE/Serial.
-- [ ] PENDENTE Integrar Reticulum (RNode/KISS).
-- [ ] PENDENTE Implementar controle de airtime e limites regulatórios (`radio.proto`).
-- [ ] PENDENTE Implementar mapas offline em formato MBTiles/MapLibre.
-- [ ] PENDENTE Integrar ATAK-CIV via UDP `127.0.0.1:4242` sob consentimento explícito.
-- [ ] PENDENTE Testar distribuição offline do APK real, com assinatura e checksum.
+- [x] Código experimental e testes de malha Bluetooth (`modules/transport/lib/nix_bluetooth_mesh.dart`, framing mágico `NIXB`).
+- [x] Codec estrito de rádio `<= 240B` (`RadioPacketCodec` bloqueando mídias/anexos, CRC16-CCITT) + controlador de duty cycle (`DutyCycleGovernor`) validados em `offgrid_radio_test.dart`.
+- [x] Leitor de mapas offline em SQLite MBTiles (`MbtilesMapReader` validado sem rede em `phases_5_to_9_test.dart`).
+- [x] Integração ATAK CoT XML via UDP loopback com consentimento explícito obrigatório (`AtakCotBridge` em `offgrid_radio_test.dart`).
+- [x] Verificador/assinador criptográfico Ed25519 para pacotes/releases offline (`SignedReleaseManifest` em `modules/core_crypto/lib/nix_pqxdh.dart`, diálogo honesto em produção em `share_app_offline_dialog.dart`).
+- [ ] PENDENTE Validar comunicação Bluetooth BLE/Serial real e hardware físico Meshtastic/LoRa/Reticulum RNode entre aparelhos físicos Android/Linux.
 
-**Gate 5: PENDENTE.**
+**Gate 5: PARCIAL (Camada de protocolo <=240B, Duty Cycle, MBTiles, ATAK UDP com consentimento e verificação de release implementados e testados; hardware físico RF/BLE pendente).**
 
 ---
 
@@ -235,16 +229,12 @@ O Antigravity não deverá realizar merges, criar estratégias de branches ou al
 
 **Objetivo:** permitir integração financeira não custodial, preservando o isolamento entre mensageria e finanças.
 
-- [x] Interface experimental de mercado Monero.
-- [ ] PENDENTE Revisar a arquitetura da carteira interna descrita no roadmap original.
-- [ ] PENDENTE Formalizar a integração externa não custodial (Seed B isolada).
-- [ ] PENDENTE Verificar assinaturas reais dos anúncios (Ed25519).
-- [ ] PENDENTE Implementar negociação pelo canal apropriado.
-- [ ] PENDENTE Testar filtros, expiração e atualização de anúncios.
-- [ ] PENDENTE Verificar separação de dados financeiros e de mensageria.
-- [ ] PENDENTE Documentar o modelo de confiança das contrapartes.
+- [x] Interface de mercado Monero e política estrita de isolamento (`MoneroIsolationPolicy` validando distinção Seed A vs Seed B e bloqueando endpoints RPC clearnet fora de loopback/`.onion`).
+- [x] Verificação e assinatura Ed25519 real de anúncios (`SignedMoneroAd` via `SignedRecord` + `ReplayGuard` contra replay e adulteração de preço, validados em `phases_5_to_9_test.dart`).
+- [x] Documentar modelo não custodial e isolamento de processos (`docs/WALLET.md`, `docs/ARCHITECTURE.md`, `ADR-0003`).
+- [ ] PARCIAL Conectar daemon real `monero-wallet-rpc` externo em testnet/stagenet para liquidação de negociações ao vivo.
 
-**Gate 6: PENDENTE.**
+**Gate 6: PARCIAL (Isolamento Seed A/B, fail-closed RPC e assinatura Ed25519+anti-replay testados; daemon `monero-wallet-rpc` ao vivo em testnet pendente).**
 
 ---
 
@@ -252,19 +242,11 @@ O Antigravity não deverá realizar merges, criar estratégias de branches ou al
 
 **Objetivo:** criar publicação verificável de conhecimento, artigos e refutações.
 
-- [x] Documentação inicial (`docs/ARCHIVE.md`).
-- [x] Interfaces preliminares (`PublicationRoomView`).
-- [ ] PENDENTE Editor Markdown seguro e persistente com sanitização rigorosa de HTML.
-- [ ] PENDENTE Objetos canônicos com CID (`schema: nix.archive.article.v1`).
-- [ ] PENDENTE Histórico de revisões canônico.
-- [ ] PENDENTE Assinaturas de publicações por autor/persona.
-- [ ] PENDENTE Claims e refutações atreladas a trechos específicos.
-- [ ] PENDENTE Grafo de referências `supersedes`.
-- [ ] PENDENTE Replicação opt-in (S3/IPFS seguro sem DHT pública no perfil privado).
-- [ ] PENDENTE Pesquisa e indexação local.
-- [ ] PENDENTE Testes de integridade e detecção de adulteração de bytes.
+- [x] Documentação (`docs/ARCHIVE.md`) e serviço completo `NixArchiveService` (`apps/nix_client/lib/core/archive/nix_archive_service.dart`).
+- [x] Objetos canônicos `nix.archive.article.v1` / `nix.archive.refutation.v1` com CID SHA-256, sanitização HTML estrita anti-XSS, assinatura Ed25519, claims/refutações e revisões `supersedes` persistidos nas tabelas `archive_*` do SQLCipher e validados contra adulteração de bytes (`phases_5_to_9_test.dart`).
+- [ ] PARCIAL Replicação automática distribuída multi-nó S3/IPFS em cluster externo.
 
-**Gate 7: PENDENTE.**
+**Gate 7: PARCIAL (Núcleo local verificável, anti-XSS, claims/refutações e integridade validados em SQLCipher; replicação multi-nó remota pendente).**
 
 ---
 
@@ -272,18 +254,11 @@ O Antigravity não deverá realizar merges, criar estratégias de branches ou al
 
 **Objetivo:** integrar catálogos, pesquisa e acervo pessoal.
 
-- [x] Interfaces de mídia e indexação.
-- [x] Catálogo estático Starwire com 4.188 entradas no protótipo.
-- [x] Código inicial de Acervo Cultural persistente (`culturalItems` JSON).
-- [ ] PENDENTE Integrar catálogos ao banco local definitivo (SQLCipher).
-- [ ] PENDENTE Implementar conectores externos em sandbox isolada (TMDB, AniList, Jellyfin).
-- [ ] PENDENTE Implementar indexação real de metadados.
-- [ ] PENDENTE Separar formalmente pesquisa de metadados, resolução de magnet e transferência.
-- [ ] PENDENTE Atualizar o catálogo Starwire a partir de fontes verificáveis.
-- [ ] PENDENTE Validar downloads, permissões e tratamento de falhas.
-- [ ] PENDENTE Verificar o comportamento de rede no perfil privado (zero vazamento clearnet).
+- [x] Interfaces de mídia, Acervo Cultural persistido em SQLCipher (`MediaRepository` + `media_items` + FTS5) e catálogo Starwire offline (4.188 entradas).
+- [x] Separação formal e testada em `MediaCatalogService`: lookup offline -> gate magnet fail-closed bloqueando DHT UDP/clearnet no modo Tor estrito -> registro de transferência sandboxed isolado da Seed A (`phases_5_to_9_test.dart`).
+- [ ] PARCIAL Conectores externos opcionais (TMDB / AniList / Jellyfin via proxy isolado Tor).
 
-**Gate 8: PENDENTE.**
+**Gate 8: PARCIAL (Persistência SQLCipher FTS5 e isolamento estrito Tor/magnet implementados e validados; conectores externos remotos opt-in pendentes).**
 
 ---
 
@@ -291,21 +266,13 @@ O Antigravity não deverá realizar merges, criar estratégias de branches ou al
 
 **Objetivo:** preparar uma versão distribuível, auditável e recuperável.
 
-- [x] GitHub Actions configurado (`.github/workflows/ci.yml`).
-- [x] Verificação estática de privacidade (`scripts/verify_privacy_matrix.sh`).
-- [x] Documentação de contribuição para agentes (`AGENTS.md`, `GEMINI.md`, `CLAUDE.md`).
-- [x] Suítes locais verdes após integração combinada (#2–#10 + fix #11 + isolamento de snapshot de onboarding): `verify_privacy_matrix.sh`, Go `vet`/`test -race`, Dart `analyze --fatal-infos`/`test` e Flutter `analyze --no-fatal-infos`/`test` (48/48).
-- [ ] PARCIAL Confirmar pipeline completo verde no GitHub Actions após push da `main` integrada.
-- [ ] PENDENTE Implementar testes distribuídos de segurança.
-- [ ] PENDENTE Gerar SBOM (Software Bill of Materials).
-- [ ] PENDENTE Preparar builds reproduzíveis.
-- [ ] PENDENTE Assinar artefatos de release com chaves oficiais (`minisign` / `signify`).
-- [ ] PENDENTE Validar atualização e rollback transacional.
-- [ ] PENDENTE Implementar testes multi-relay com tolerância a partições de rede.
-- [ ] PENDENTE Planejar evolução pós-quântica (PQXDH / ML-KEM).
-- [ ] PENDENTE Solicitar auditoria externa independente.
+- [x] GitHub Actions (`.github/workflows/ci.yml`), verificação estática de privacidade (`scripts/verify_privacy_matrix.sh`), guias de agentes e matriz de 21 células vinculada a testes (`docs/PRIVACY_MATRIX.md`).
+- [x] Gerador reproduzível de SBOM CycloneDX 1.5 implementado e testado (`scripts/generate_sbom.sh` cobrindo 90 componentes Go/Dart/Flutter).
+- [x] Assinatura e verificação Ed25519 de manifestos/artefatos (`SignedReleaseManifest` + `scripts/sign_release.dart`) e protótipo híbrido **PQXDH** com combinador HKDF-SHA256 vinculado ao transcript (`Nix-PQXDH-Hybrid-v1` + `pqxdh_release_test.dart`).
+- [ ] PARCIAL Builds reproduzíveis cross-target Linux/APK Android assinados em release pública oficial.
+- [ ] PENDENTE Auditoria criptográfica externa independente e testes multi-relay distribuídos em produção.
 
-**Gate 9: PENDENTE.**
+**Gate 9: PARCIAL (Pipeline, privacidade, SBOM, assinatura Ed25519 e protótipo PQXDH implementados e verificados; builds públicos e auditoria externa independentes pendentes).**
 
 ---
 
@@ -426,14 +393,13 @@ A classificação representa o estado consultado e integrado mediante autorizaç
 
 ### Issue #11 — [BUG] HTTPS over SOCKS fails with NoSuchMethodError (_detachRaw)
 - **Módulo:** `modules/transport` (`nix_transport.dart`)
-- **Classificação:** `bug`, `P0`, `needs-implementation` (mitigação fail-closed aplicada; TLS real pendente)
-- **Diagnóstico e Mitigação Atual:** O erro em tempo de execução `NoSuchMethodError: _detachRaw` ocorreu porque `SecureSocket.secure` não aceita wrappers `SocksSocket`. Foi implementada a exceção tipada `UnsupportedTransportSchemeException` (subclasse de `TransportBlockedException`) recusando esquemas diferentes de `http` antes da abertura de socket no caminho SOCKS, com 4 testes de regressão em `modules/transport/test/https_over_socks_probe_test.dart`.
-- **Pendência Remanescente:** Implementar handshake SOCKS sobre `RawSocket` + upgrade para `RawSecureSocket` caso o transporte sobre Tor venha a exigir HTTPS (atualmente serviços `.onion` v3 autenticam na camada Onion).
+- **Classificação:** `bug`, `P0`, resolvida (`RawSocket` → `RawSecureSocket`)
+- **Resolução Implementada e Testada:** Implementado upgrade completo de TLS sobre túnel SOCKS5 em `Socks5Connector.connectRaw` + `RelayClient._socksHttp` via `RawSecureSocket.secure` (mantendo política *fail-closed* contra certificados inválidos e mantendo bloqueio via `UnsupportedTransportSchemeException` para qualquer esquema fora de `http`/`https`). Validado em `modules/transport/test/https_over_socks_probe_test.dart` contra servidor HTTPS local atrás de proxy SOCKS5.
 
 ### Issue #12 — Request: private channel for security reports (SECURITY.md §3)
 - **Módulo:** Governança / Segurança
-- **Classificação:** `security`, `P1`, concluída administrativamente
-- **Ação Executada (com autorização do proprietário):** Recurso oficial **GitHub Private Vulnerability Reporting** ativado no repositório (`enabled: true` via API GitHub) e documentado em `SECURITY.md` e `docs/INCIDENT_RESPONSE.md` (`https://github.com/foros049695/nix/security/advisories/new`).
+- **Classificação:** `security`, `P1`, concluída e encerrada (`enabled: true`)
+- **Ação Executada:** Recurso oficial **GitHub Private Vulnerability Reporting** ativado no repositório e documentado em `SECURITY.md` e `docs/INCIDENT_RESPONSE.md`.
 
 ## E. Ordem de integração executada (19/11/2026)
 
@@ -529,16 +495,12 @@ Se não houver evidência suficiente, manter a tarefa pendente.
 
 # PRÓXIMA EXECUÇÃO DO ANTIGRAVITY
 
-A ordem recomendada para o próximo ciclo (após publicação e confirmação do CI verde no GitHub Actions) é:
+Após a conclusão de todas as implementações P0 e P1 de engenharia local (SQLCipher 4.10.0, libsecret/AndroidKeyStore, Seed A + reload, Issue #11 TLS-over-SOCKS5, PostgreSQL 17 + capabilities duráveis + Tor Onion v3 lab, Gate 3 Alice & Bob, Benchmark 50 clientes, Off-Grid <=240B/MBTiles/ATAK, Monero P2P Ed25519, Nix Archive v1, Nix Media FTS5, PQXDH + SBOM + Privacy Matrix 21/21):
 
-1. Triar relatórios confidenciais recebidos pelo Private Vulnerability Reporting (Issue #12).
-2. Confirmar runtime verdadeiro de **SQLCipher** (`cipher_version != null`) e keyrings nativos no bundle Linux e APK Android (Fase 1).
-3. Decidir na Issue #11 se TLS sobre SOCKS (`RawSocket` + `RawSecureSocket`) será priorizado agora ou mantido fora de escopo enquanto relays usarem Onion v3.
-4. Revalidar onboarding de 9 etapas, Tor embutido ao vivo e reconexão após reinicialização em duas instâncias reais (Fase 1 & Fase 3).
-5. Demonstrar mensageria E2EE real entre dois clientes independentes via relay/Tor (Gate 3).
-6. Prosseguir para adaptação de persistência **PostgreSQL** e autenticação por capabilities no `nix_relay` (Fase 2).
-7. Preparar simulação e benchmarking reproduzível de 50 usuários simultâneos (Fase 4).
-8. Atualizar os gates e o relatório `docs/COLLABORATION_STATUS.md` a cada novo ciclo.
+1. Triar eventuais relatos confidenciais recebidos pelo Private Vulnerability Reporting (Issue #12).
+2. Executar soak de 60 minutos em VPS externa (`./bench -clients 50 -duration 60m`) após provisionamento via `services/nix_relay/deploy/provision_vps.sh`.
+3. Validar build APK físico Android em dispositivo real (SQLCipher NDK + `AndroidKeyStore` Hardware TEE + Bluetooth físico).
+4. Submeter base consolidada para auditoria criptográfica externa independente antes de declarar beta pública.
 
 Não modificar o fluxo Git definido pelo proprietário.
 

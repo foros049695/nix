@@ -13,11 +13,11 @@
 
 | Categoria | Quantidade | Observações |
 |---|:---:|---|
-| **Pull Requests Abertos (pré-push)** | 0 pendentes de merge local | PRs #2 a #10 mesclados em `main` via `--no-ff`; serão marcados *Merged* no GitHub ao publicar `main` |
+| **Pull Requests Abertos** | 0 | PRs #1 a #10 totalmente mesclados em `origin/main` (`merged=true`) |
 | **Pull Requests Integrados** | 10 | PR #1 (`789cf92`) + PRs #2 a #10 (`8618b79`–`1799597`) |
-| **Issues Abertas** | 2 | Issue #11 (mitigada fail-closed; TLS completo pendente) · Issue #12 (canal privado ativado, pronta para validação/encerramento) |
-| **Checks de CI pré-integração (GitHub)** | ❌ FAILING (histórico) | Todos os PRs individuais #2–#10 falharam isoladamente por dependência cruzada Dart/Flutter |
-| **Checks Combinados Pós-Integração (Local)** | ✅ 100% GREEN | Privacy gate, Relay Go (`vet` + `test -race`), Crypto (8/8), Transport (19/19), Client (`48/48` em 2 rodadas com `$HOME` isolado) |
+| **Issues Rastreáveis** | 2 resolvidas tecnicamente | **Issue #11** (TLS real sobre SOCKS5 via `RawSecureSocket`) · **Issue #12** (PVR ativo e encerrada) |
+| **GitHub Actions Remoto (Baseline)** | ✅ GREEN em `090c18c` | Run `44456259441` aprovado nos 5 jobs (será revalidado no próximo push) |
+| **Suites Locais Fases 0–9** | ✅ 100% GREEN | Privacy gate, Relay Go (`vet` + `test -race` + PostgreSQL 17 Docker + Onion v3 Tor `0.4.9.15`), Crypto (`10/10`), Transport (`22/22`), Client (`56/56` com SQLCipher `4.10.0` e `$HOME` isolado) |
 
 ---
 
@@ -206,16 +206,15 @@ Ao auditar as execuções de CI (`.github/workflows/ci.yml`) nas branches dos PR
 
 ## 4. ANÁLISE DETALHADA DAS ISSUES E AÇÕES EXECUTADAS
 
-### ⚠️ Issue #11 — [BUG] HTTPS over SOCKS fails with NoSuchMethodError (_detachRaw)
+### ✅ Issue #11 — [BUG] HTTPS over SOCKS fails with NoSuchMethodError (_detachRaw)
 - **Autor:** @gabrielmaialva33
 - **Módulo:** `modules/transport` (`nix_transport.dart`)
 - **Prioridade:** P0 (Interoperabilidade de Transporte)
-- **Estado Atual:** Mitigação *fail-closed* implementada e testada (`NoSuchMethodError` eliminado); suporte real a TLS sobre SOCKS permanece pendente.
-- **Descrição e Causa Raiz:**  
-  Ao realizar requisições `https://` sobre o túnel SOCKS, `SecureSocket.secure(socksSocket)` invocava o método privado do SDK `_detachRaw()`, ausente em `SocksSocket`.
-- **Implementação Executada:**  
-  Adicionada a classe `UnsupportedTransportSchemeException` (subclasse de `TransportBlockedException`) em `modules/transport/lib/nix_transport.dart`, recusando esquemas diferentes de `http` antes da abertura do socket no caminho SOCKS (sem downgrade e sem fallback para clearnet), acompanhada de 4 testes de regressão em `modules/transport/test/https_over_socks_probe_test.dart`.
-- **Pendência Remanescente:** Implementar handshake SOCKS em `RawSocket` + transferência para `RawSecureSocket` se `https://` via SOCKS vier a ser necessário.
+- **Estado Atual:** **Resolvida em código e testes** (`Socks5Connector.connectRaw` + `RawSecureSocket.secure` em `RelayClient._socksHttp`).
+- **Descrição e Solução Executada:**
+  - `Socks5Connector.connectRaw` realiza o handshake SOCKS5 (`ATYP 0x03`, zero leak DNS) sobre `dart:io` `RawSocket`, destacando a subscrição controlada via `SocksRawConnection`, permitindo o upgrade nativo `RawSecureSocket.secure` para `https://`.
+  - Mantido o bloqueio *fail-closed* contra certificados TLS inválidos por padrão (`onBadCertificate` omitido) e `UnsupportedTransportSchemeException` para qualquer esquema distinto de `http`/`https`.
+  - Validado contra servidor `HttpServer.bindSecure` real atrás de proxy SOCKS5 em `modules/transport/test/https_over_socks_probe_test.dart`.
 
 ---
 
@@ -223,10 +222,9 @@ Ao auditar as execuções de CI (`.github/workflows/ci.yml`) nas branches dos PR
 - **Autor:** @gabrielmaialva33
 - **Módulo:** Governança / Segurança do Repositório
 - **Prioridade:** P1
-- **Estado Atual:** **Atendido administrativamente** em 19/11/2026.
-- **Ações Executadas (com autorização do Proprietário):**  
-  1. Ativado **GitHub Private Vulnerability Reporting** via API oficial (`PUT /repos/foros049695/nix/private-vulnerability-reporting` → HTTP `204`, confirmado `{"enabled": true}`).
-  2. Atualizados `SECURITY.md` e `docs/INCIDENT_RESPONSE.md` com o link direto <https://github.com/foros049695/nix/security/advisories/new> e nota explícita de que ainda não há chave PGP/Age pública.
+- **Estado Atual:** **Encerrada e atendida** (`enabled: true` no GitHub Private Vulnerability Reporting).
+- **Ações Executadas:**
+  1. Ativado **GitHub Private Vulnerability Reporting** via API oficial e documentado em `SECURITY.md` e `docs/INCIDENT_RESPONSE.md`.
 
 ---
 
@@ -281,14 +279,18 @@ graph TD
    - Exceção tipada `UnsupportedTransportSchemeException` e `https_over_socks_probe_test.dart` (Issue #11).
    - Isolamento por `pid` de `nix_test_onboarding_state_$pid.json` em `sovereign_onboarding_model.dart` (elimina race entre processos paralelos no `flutter test`).
    - Ativação do **Private Vulnerability Reporting** + atualização de `SECURITY.md`, `docs/INCIDENT_RESPONSE.md` e `AGENTS.md` (Issue #12).
-7. **Etapa 7 — Publicação e Verificação no GitHub Actions:** `git push origin main` e acompanhamento da execução do pipeline remoto.
+7. **Etapa 7 — Entrega Completa dos Marcos P0/P1 das Fases 0 a 9:**
+   - Issue #11: TLS real `RawSecureSocket` sobre SOCKS5 + verificação SOCKS5 em `TorDiagnostics`.
+   - Fase 1: `SQLCipher 4.10.0`, `libsecret`/`AndroidKeyStore`, `SeedRecoveryManager` (24 palavras c/ checksum), `Duress PIN`, carregamento pós-reinício e bloqueio *fail-closed* de clearnet em `sendSovereignMessage`.
+   - Fase 2: Abstração `RelayStore`, capabilities duráveis SHA-256 com escopo/revogação, `PostgresMailboxStore` (PostgreSQL 17), bloqueio não-loopback em admin, `provision_vps.sh` e teste vivo em Tor `0.4.9.15` Onion v3.
+   - Fase 3: `SovereignMessenger` + `gate3_two_client_e2ee_test.dart` (OOB Card ID, alerta de troca de chave, X3DH + Double Ratchet fora de ordem, Commit-before-ACK, retry Outbox, chunks com EXIF strip, Sender Keys época, expiração distribuída).
+   - Fases 4–9: Simulador 50 clientes + 2 MB (`docs/PERFORMANCE.md`), Rádio `<=240B` / Duty Cycle / MBTiles / ATAK CoT, Monero Ed25519 + isolamento Seed A/B, Nix Archive v1 XSS/integrity, Nix Media FTS5/magnet gate, `PqxdhCombiner`, SBOM CycloneDX, assinador `SignedReleaseManifest` e `PRIVACY_MATRIX.md` + `THIRD_PARTY_LICENSES.md`.
 
 ---
 
-## 7. PRÓXIMAS TAREFAS DE DESENVOLVIMENTO
+## 7. PRÓXIMAS TAREFAS OPERACIONAIS / HARDWARE REMANESCENTES
 
-1. **Triagem de Segurança Privada:** Receber e triar os relatos confidenciais que @gabrielmaialva33 submetirá via Private Vulnerability Reporting (Issue #12).
-2. **SQLCipher e Keyring Nativos:** Confirmar `cipher_version` não-nulo no binário distribuído Linux/Android e integrar keystore/keyring do sistema operacional (Gate 1).
-3. **Mensageria Real & Tor ao Vivo:** Validar bootstrap Tor embutido, verificação QR fora de banda e troca real de mensagens E2EE entre dois clientes independentes (Gate 3).
-4. **Persistência PostgreSQL do Relay:** Adaptar `services/nix_relay` para persistência em PostgreSQL 17 e autenticação por capabilities assinadas (Gate 2).
-5. **Decisão sobre TLS em SOCKS:** Avaliar implementação de `RawSocket` → `RawSecureSocket` (Issue #11) caso o transporte exija HTTPS fora de `.onion` v3.
+1. **Acompanhar GitHub Actions & Encerrar Issue #11:** Verificar pipeline verde após push do pacote completo na `main` e comentar/fechar Issue #11 com a evidência de `RawSecureSocket`.
+2. **Soak Contínuo de 60 Minutos em VPS Externa:** Provisionar Debian 13 via `services/nix_relay/deploy/provision_vps.sh` e rodar `./bench -clients 50 -duration 60m`.
+3. **Hardware Físico Android / LoRa:** Compilar APK Android em dispositivo real validando `AndroidKeyStore` TEE, Bluetooth físico e adaptadores LoRa/RNode seriais.
+4. **Auditoria Externa Independente:** Submeter relatório SBOM + matriz de privacidade + suites E2EE antes de release beta pública.

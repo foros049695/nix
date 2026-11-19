@@ -1,0 +1,15 @@
+# Trecho de configuração Tor para Debian 13 / VPS soberana (Onion Service v3)
+# Copiar para /etc/tor/torrc ou /etc/tor/torrc.d/nix-relay.conf
+
+SocksPort 127.0.0.1:9050
+ControlPort 127.0.0.1:9051
+CookieAuthentication 1
+CookieAuthFileGroupReadable 1
+
+HiddenServiceDir /var/lib/tor/nix_relay_onion/
+HiddenServiceVersion 3
+HiddenServicePort 80 127.0.0.1:8080
+
+# Logs mínimos sem retenção de circuitos de clientes
+Log notice syslog
+SafeLogging 1

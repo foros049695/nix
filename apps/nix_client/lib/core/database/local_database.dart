@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqlite3/open.dart' as sqlite_open;
+import 'android_sqlcipher_stub.dart'
+    if (dart.library.ui) 'android_sqlcipher_flutter.dart';
 
 /// Informações de versão e integridade de uma migração do banco de dados local.
 class SchemaMigrationRecord {
@@ -71,23 +73,50 @@ class LocalDatabase {
 
   static bool _sqliteInitialized = false;
 
-  /// Garante que o motor SQLite FFI seja inicializado com resolução dinâmica robusta no Linux.
+  /// Garante que o motor SQLCipher/SQLite FFI seja inicializado com resolução dinâmica real.
+  /// Prioriza sempre binários SQLCipher reais antes do fallback SQLite de desenvolvimento.
   static void ensureSqliteInitialized() {
     if (_sqliteInitialized) return;
-    if (Platform.isLinux) {
+    if (Platform.isAndroid) {
+      try {
+        sqlite_open.open.overrideFor(
+            sqlite_open.OperatingSystem.android, openAndroidSqlCipherLibrary);
+      } catch (_) {}
+    } else if (Platform.isLinux) {
       try {
         sqlite_open.open.overrideFor(sqlite_open.OperatingSystem.linux, () {
+          final exeDir = File(Platform.resolvedExecutable).parent.path;
+          final home = Platform.environment['HOME'] ?? '';
           final candidates = [
+            // 1. Plugin SQLCipher compilado junto ao bundle Linux atual
+            '$exeDir/lib/libsqlcipher_flutter_libs_plugin.so',
+            'libsqlcipher_flutter_libs_plugin.so',
+            // 2. Bundle instalado localmente e artefatos de build local (para flutter test / dev)
+            if (home.isNotEmpty)
+              '$home/.local/share/nix/bundle/lib/libsqlcipher_flutter_libs_plugin.so',
+            'build/linux/x64/release/bundle/lib/libsqlcipher_flutter_libs_plugin.so',
+            'build/linux/x64/debug/bundle/lib/libsqlcipher_flutter_libs_plugin.so',
+            // 3. Bibliotecas SQLCipher do sistema operacional (Debian/Alpine)
+            'libsqlcipher.so',
+            'libsqlcipher.so.1',
+            'libsqlcipher.so.0',
+            '/usr/lib/x86_64-linux-gnu/libsqlcipher.so.1',
+            '/usr/lib/x86_64-linux-gnu/libsqlcipher.so.0',
+            // 4. Fallback SQLite padrão (CI headless sem libsqlcipher compilada)
             'libsqlite3.so',
             'libsqlite3.so.0',
             '/usr/lib/x86_64-linux-gnu/libsqlite3.so.0',
             '/usr/lib/libsqlite3.so.0',
-            '${Platform.environment['HOME']}/.local/lib/libsqlite3.so',
-            '${Platform.environment['HOME']}/.local/share/nix/bundle/lib/libsqlite3.so',
+            if (home.isNotEmpty) '$home/.local/lib/libsqlite3.so',
+            if (home.isNotEmpty)
+              '$home/.local/share/nix/bundle/lib/libsqlite3.so',
           ];
           for (final path in candidates) {
             try {
-              return DynamicLibrary.open(path);
+              final lib = DynamicLibrary.open(path);
+              // Garante que a lib resolve sqlite3_open_v2
+              lib.lookup<NativeFunction<Void Function()>>('sqlite3_open_v2');
+              return lib;
             } catch (_) {}
           }
           return DynamicLibrary.open('libsqlite3.so');

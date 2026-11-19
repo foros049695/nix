@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/channel.dart';
 import '../../core/models/direct_message.dart';
+import '../../core/security/key_vault.dart';
 import '../../core/security/window_privacy_guard.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
@@ -47,6 +48,18 @@ class AppShell extends StatelessWidget {
             (activeArea == NixActiveArea.homePrivate &&
                 nixState.homeSubTab == HomeSubTab.directChat &&
                 nixState.selectedDm != null));
+
+    if (nixState.requiresPassphraseUnlock) {
+      return MediaQuery(
+        data: sanitizedMq,
+        child: Scaffold(
+          backgroundColor: NixColors.background,
+          body: Center(
+            child: _VaultUnlockPrompt(nixState: nixState),
+          ),
+        ),
+      );
+    }
 
     if (!nixState.isOnboarded && !nixState.onboardingNoticeDismissed) {
       return MediaQuery(
@@ -317,5 +330,113 @@ class AppShell extends StatelessWidget {
       case ChannelType.publication:
         return PublicationRoomView(key: ValueKey(channel.id), channel: channel);
     }
+  }
+}
+
+class _VaultUnlockPrompt extends StatefulWidget {
+  final NixState nixState;
+  const _VaultUnlockPrompt({required this.nixState});
+
+  @override
+  State<_VaultUnlockPrompt> createState() => _VaultUnlockPromptState();
+}
+
+class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
+  final TextEditingController _ctrl = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _unlock() async {
+    final pass = _ctrl.text;
+    if (pass.isEmpty) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final res = await widget.nixState.unlockWithPassphrase(pass);
+      if (!mounted) return;
+      if (res.status == VaultUnlockStatus.duressTriggered) {
+        // Panic wipe silencioso já ocorreu no State
+        _ctrl.clear();
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Frase-passe incorreta para desbloquear o cofre.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 420,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: NixColors.surfaceCard,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: NixColors.surfaceBorderStrong),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.lock_outline, color: NixColors.accentYellow, size: 22),
+              const SizedBox(width: 10),
+              Text(
+                'DESBLOQUEAR COFRE SOBERANO',
+                style: TextStyle(
+                  color: NixColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13.5,
+                  letterSpacing: 0.7,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Seu banco SQLCipher local está cifrado em repouso. Informe sua frase-passe mestra para descriptografar a sessão e carregar sua identidade.',
+            style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ctrl,
+            obscureText: true,
+            onSubmitted: (_) => _unlock(),
+            style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
+            decoration: InputDecoration(
+              labelText: 'Frase-passe mestra ou PIN de coação',
+              errorText: _error,
+              filled: true,
+              fillColor: NixColors.background,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: _busy ? null : _unlock,
+            icon: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.vpn_key_outlined, size: 17),
+            label: const Text('Desbloquear & Montar SQLCipher'),
+          ),
+        ],
+      ),
+    );
   }
 }

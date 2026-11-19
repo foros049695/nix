@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as std_crypto;
 import 'package:cryptography/cryptography.dart';
 
+export 'nix_pqxdh.dart';
+
 /// Gera uma identidade criptográfica soberana e compartimentalizada para o Project Nix.
 ///
 /// Separa formalmente o par Ed25519 (autenticação e assinatura) do par X25519
@@ -519,6 +521,58 @@ class DoubleRatchet {
       sendChainKey: null,
       recvChainKey: null,
     );
+  }
+
+  /// Exporta o estado completo da sessão Double Ratchet para persistência cifrada no SQLCipher.
+  Map<String, dynamic> exportState() {
+    return {
+      'v': 1,
+      'dhSelfSeed': _bytesToHex(_dhSelf.bytes),
+      'dhRemote': _dhRemote != null ? _bytesToHex(_dhRemote!.bytes) : null,
+      'rootKey': _bytesToHex(_rootKey),
+      'sendChainKey': _sendChainKey != null ? _bytesToHex(_sendChainKey!) : null,
+      'recvChainKey': _recvChainKey != null ? _bytesToHex(_recvChainKey!) : null,
+      'sendMessageNumber': _sendMessageNumber,
+      'recvMessageNumber': _recvMessageNumber,
+      'previousChainLength': _previousChainLength,
+      'skipped': {
+        for (final entry in _skippedMessageKeys.entries)
+          entry.key: _bytesToHex(entry.value),
+      },
+    };
+  }
+
+  /// Restaura uma sessão Double Ratchet a partir do snapshot gerado por [exportState].
+  static Future<DoubleRatchet> importState(Map<String, dynamic> state) async {
+    if ((state['v'] as int?) != 1) {
+      throw FormatException('Versão de estado DoubleRatchet não suportada: ${state['v']}');
+    }
+    final selfSeed = _hexToBytes(state['dhSelfSeed'] as String);
+    final selfPair = await (await _x25519.newKeyPairFromSeed(selfSeed)).extract();
+    final remoteHex = state['dhRemote'] as String?;
+    final remotePub = remoteHex != null
+        ? SimplePublicKey(_hexToBytes(remoteHex), type: KeyPairType.x25519)
+        : null;
+    final sendHex = state['sendChainKey'] as String?;
+    final recvHex = state['recvChainKey'] as String?;
+
+    final dr = DoubleRatchet._(
+      dhSelf: selfPair,
+      dhRemote: remotePub,
+      rootKey: _hexToBytes(state['rootKey'] as String),
+      sendChainKey: sendHex != null ? _hexToBytes(sendHex) : null,
+      recvChainKey: recvHex != null ? _hexToBytes(recvHex) : null,
+    );
+    dr._sendMessageNumber = state['sendMessageNumber'] as int? ?? 0;
+    dr._recvMessageNumber = state['recvMessageNumber'] as int? ?? 0;
+    dr._previousChainLength = state['previousChainLength'] as int? ?? 0;
+    final skipped = state['skipped'] as Map?;
+    if (skipped != null) {
+      for (final entry in skipped.entries) {
+        dr._skippedMessageKeys[entry.key.toString()] = _hexToBytes(entry.value.toString());
+      }
+    }
+    return dr;
   }
 
   SimplePublicKey get currentPublicKey => _dhSelf.publicKey;

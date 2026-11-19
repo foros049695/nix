@@ -2,6 +2,8 @@ package buffer
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -52,6 +54,14 @@ type StoreMetrics struct {
 	TotalPruned     int64 `json:"total_pruned"`
 }
 
+type capabilityRecord struct {
+	MailboxID     string          `json:"mailbox_id"`
+	Scope         CapabilityScope `json:"scope"`
+	TokenHashHex  string          `json:"token_hash_hex"`
+	ExpiresAtUnix int64           `json:"expires_at"`
+	RevokedAtUnix int64           `json:"revoked_at,omitempty"`
+}
+
 // BlindMailboxStore mantém caixas postais cegas com persistência opcional em disco e expurgo por TTL.
 type BlindMailboxStore struct {
 	mu                       sync.RWMutex
@@ -60,7 +70,7 @@ type BlindMailboxStore struct {
 	maxAttachmentBytes       int64
 	maxInFlightPerQuotaToken int64
 	mailboxes                map[string][]Envelope
-	mailboxReadTokens        map[string]string
+	capabilities             map[string][]capabilityRecord
 	quotaUsage               map[string]int64
 	storedBytes              int64
 	totalStored              int64
@@ -84,7 +94,7 @@ func NewBlindMailboxStore(dataDir string, baseTTL time.Duration, maxAttachmentBy
 		maxAttachmentBytes:       maxAttachmentBytes,
 		maxInFlightPerQuotaToken: maxInFlightPerQuotaToken,
 		mailboxes:                make(map[string][]Envelope),
-		mailboxReadTokens:        make(map[string]string),
+		capabilities:             make(map[string][]capabilityRecord),
 		quotaUsage:               make(map[string]int64),
 	}
 	if dataDir != "" {
@@ -96,6 +106,10 @@ func NewBlindMailboxStore(dataDir string, baseTTL time.Duration, maxAttachmentBy
 		}
 	}
 	return store, nil
+}
+
+func (s *BlindMailboxStore) Close() error {
+	return nil
 }
 
 func (s *BlindMailboxStore) Store(
@@ -390,10 +404,141 @@ func (s *BlindMailboxStore) loadFromDisk() error {
 			_ = os.Remove(filepath.Join(s.dataDir, entry.Name()))
 		}
 	}
+	_ = s.loadCapabilitiesLocked()
 	return nil
 }
 
-// ValidateCapability valida que o token apresentado confere autorização para o escopo e mailbox (Marco P0-4 / SEC01).
+func hashTokenHex(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *BlindMailboxStore) capabilitiesPath() string {
+	return filepath.Join(s.dataDir, ".capabilities.json")
+}
+
+func (s *BlindMailboxStore) persistCapabilitiesLocked() error {
+	if s.dataDir == "" {
+		return nil
+	}
+	var all []capabilityRecord
+	for _, list := range s.capabilities {
+		all = append(all, list...)
+	}
+	data, err := json.Marshal(all)
+	if err != nil {
+		return err
+	}
+	path := s.capabilitiesPath()
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
+}
+
+func (s *BlindMailboxStore) loadCapabilitiesLocked() error {
+	if s.dataDir == "" {
+		return nil
+	}
+	raw, err := os.ReadFile(s.capabilitiesPath())
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	var all []capabilityRecord
+	if err := json.Unmarshal(raw, &all); err != nil {
+		return err
+	}
+	nowUnix := time.Now().UTC().Unix()
+	for _, rec := range all {
+		if rec.ExpiresAtUnix > nowUnix && rec.RevokedAtUnix == 0 {
+			s.capabilities[rec.MailboxID] = append(s.capabilities[rec.MailboxID], rec)
+		}
+	}
+	return nil
+}
+
+// ProvisionCapability registra uma capability com hash SHA-256, escopo explícito e expiração em disco.
+func (s *BlindMailboxStore) ProvisionCapability(mailboxID, token string, scope CapabilityScope, ttl time.Duration) error {
+	if mailboxID == "" || token == "" {
+		return ErrInvalidMailbox
+	}
+	if ttl <= 0 {
+		ttl = 30 * 24 * time.Hour
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	rec := capabilityRecord{
+		MailboxID:     mailboxID,
+		Scope:         scope,
+		TokenHashHex:  hashTokenHex(token),
+		ExpiresAtUnix: time.Now().UTC().Add(ttl).Unix(),
+	}
+	// Atualiza ou insere mantendo imutabilidade de outros tokens
+	list := s.capabilities[mailboxID]
+	replaced := false
+	for i := range list {
+		if list[i].TokenHashHex == rec.TokenHashHex {
+			list[i] = rec
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		list = append(list, rec)
+	}
+	s.capabilities[mailboxID] = list
+	if err := s.persistCapabilitiesLocked(); err != nil {
+		return fmt.Errorf("%w: %v", ErrPersistence, err)
+	}
+	return nil
+}
+
+// RevokeCapability marca um token existente como revogado e persiste o estado em disco.
+func (s *BlindMailboxStore) RevokeCapability(mailboxID, token string) error {
+	if mailboxID == "" || token == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	targetHash := hashTokenHex(token)
+	nowUnix := time.Now().UTC().Unix()
+	list := s.capabilities[mailboxID]
+	changed := false
+	for i := range list {
+		if subtleConstantTimeCompare(list[i].TokenHashHex, targetHash) {
+			list[i].RevokedAtUnix = nowUnix
+			changed = true
+		}
+	}
+	if changed {
+		s.capabilities[mailboxID] = list
+		if err := s.persistCapabilitiesLocked(); err != nil {
+			return fmt.Errorf("%w: %v", ErrPersistence, err)
+		}
+	}
+	return nil
+}
+
+// HasExplicitScope indica se há ao menos uma capability ativa explícita para o escopo informado.
+func (s *BlindMailboxStore) HasExplicitScope(mailboxID string, scope CapabilityScope) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	nowUnix := time.Now().UTC().Unix()
+	for _, rec := range s.capabilities[mailboxID] {
+		if rec.RevokedAtUnix == 0 && rec.ExpiresAtUnix > nowUnix && rec.Scope == scope {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateCapability valida hash SHA-256, revogação, expiração e escopo do token (Marco P0-4 / SEC01).
 func (s *BlindMailboxStore) ValidateCapability(mailboxID, token string, scope CapabilityScope) bool {
 	if token == "" || mailboxID == "" {
 		return false
@@ -401,13 +546,36 @@ func (s *BlindMailboxStore) ValidateCapability(mailboxID, token string, scope Ca
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	expected, exists := s.mailboxReadTokens[mailboxID]
-	if !exists {
-		// Vincula na primeira requisição autenticada da mailbox
-		s.mailboxReadTokens[mailboxID] = token
-		return true
+	nowUnix := time.Now().UTC().Unix()
+	tokenHash := hashTokenHex(token)
+	records := s.capabilities[mailboxID]
+	if len(records) > 0 {
+		for _, rec := range records {
+			if rec.RevokedAtUnix != 0 || rec.ExpiresAtUnix <= nowUnix {
+				continue
+			}
+			if rec.Scope != scope && rec.Scope != ScopeAdmin {
+				continue
+			}
+			if subtle.ConstantTimeCompare([]byte(rec.TokenHashHex), []byte(tokenHash)) == 1 {
+				return true
+			}
+		}
+		return false
 	}
-	return subtleConstantTimeCompare(expected, token)
+
+	// Compatibilidade TOFU restrita ao escopo read_ack na primeira autenticação caso nenhuma capability tenha sido pré-provisionada.
+	if scope != ScopeReadAck {
+		return false
+	}
+	s.capabilities[mailboxID] = []capabilityRecord{{
+		MailboxID:     mailboxID,
+		Scope:         ScopeReadAck,
+		TokenHashHex:  tokenHash,
+		ExpiresAtUnix: time.Now().UTC().Add(30 * 24 * time.Hour).Unix(),
+	}}
+	_ = s.persistCapabilitiesLocked()
+	return true
 }
 
 func subtleConstantTimeCompare(a, b string) bool {

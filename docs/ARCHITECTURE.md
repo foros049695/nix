@@ -1,66 +1,45 @@
 # 🏛️ Arquitetura do Sistema — Projeto NIX
 
-## 1. Visão Geral dos Componentes
+## 1. Visão Geral dos Componentes Implementados
 
-O **Nix** é estruturado como um monorepo modular composto por:
-- **Cliente Multi-plataforma (`apps/nix_client`):** Desenvolvido em Flutter, executando no Android, Linux, Windows, macOS e iOS. É o responsável exclusivo por manter as chaves privadas e decifrar dados.
-- **Relay Transitório (`services/nix_relay`):** Desenvolvido em Go (ou Rust), projetado como uma fila cega (blind store-and-forward) para armazenar mensagens temporariamente até a entrega ou expiração via TTL.
-- **Módulos de Domínio (`modules/*`):** Bibliotecas isoladas com limites estritos de acesso à memória e rede.
+O **Nix** é estruturado como monorepo modular com fronteiras rígidas de criptografia, transporte e persistência:
+
+- **Cliente Multi-plataforma (`apps/nix_client`):** Flutter/Dart (Linux Desktop + Android). Mantém chaves privadas no **KeyVault** (Argon2id + XChaCha20-Poly1305) protegido por armazenamento nativo do SO (`libsecret` via FFI no Linux, `AndroidKeyStore` AES-256-GCM no Android ou frase-passe pura sem simulação) e banco **SQLCipher 4.10.0** em repouso.
+- **Módulo Criptográfico (`modules/core_crypto`):** Ed25519 (autenticação/assinatura), X25519 (ECDH), XChaCha20-Poly1305 AEAD, Argon2id, X3DH, Double Ratchet serializável, SignedRecord + ReplayGuard e combinador híbrido **PQXDH (`Nix-PQXDH-Hybrid-v1`)**.
+- **Módulo de Transporte (`modules/transport`):** Conector SOCKS5 estrito sem vazamento de DNS (`ATYP 0x03`), suporte **HTTPS/TLS real sobre SOCKS5** (`RawSecureSocket.secure` fail-closed contra certificados inválidos), cliente `TorControlClient` (`ADD_ONION`, `GETINFO`), gerenciador `EmbeddedTorManager`, malha Bluetooth `NIXB` e codec de rádio `<= 240B` (`RadioPacketCodec` + `DutyCycleGovernor` + `AtakCotBridge`).
+- **Relay Transitório (`services/nix_relay`):** Servidor Go cego com abstração **`RelayStore`** suportando armazenamento atômico em disco (`BlindMailboxStore` + `.capabilities.json` SHA-256) e **PostgreSQL 17+** (`PostgresMailboxStore` usando `database/schema/relay.sql`), métricas e provisionamento administrativo estritamente em loopback (`127.0.0.1`), zero logs de IP (`r.RemoteAddr` banido estaticamente) e `AutoPruner` por histerese.
 
 ```mermaid
 graph TD
-    subgraph Dispositivo do Usuário
-        UI[Flutter UI Layer]
-        State[Gerenciador de Estado / BLoC]
-        SQLCipher[(SQLCipher Local DB)]
-        CryptoEngine[Core Crypto FFI]
-        WalletProc[Processo Isolado Carteira XMR]
+    subgraph Dispositivo
+        UI[Flutter UI]
+        State[NixState & SovereignMessenger]
+        DB[(SQLCipher 4.10.0)]
+        Vault[KeyVault + OS Keyring]
     end
-
-    subgraph Redes & Transporte
-        TorClient[Tor Onion Proxy]
-        RadioBLE[BLE Adaptador LoRa / Reticulum]
-        LocalNet[LAN Wi-Fi / Bluetooth]
+    subgraph Transporte Privado
+        Tor[SOCKS5 Tor Onion v3 + TLS]
+        OffGrid[Bluetooth BTP / Radio <=240B]
     end
-
-    subgraph Infraestrutura Externa
-        RelayDaemon[Relay Go Server]
-        MinIO[(MinIO / S3 Object Storage)]
-        XMRNode[(Nó Monero Daemon)]
+    subgraph Servidor Relay
+        Public[Mux Onion v3 Publico]
+        Admin[Mux Admin Loopback 127.0.0.1]
+        PG[(PostgreSQL 17 / Blind Disk)]
     end
-
     UI --> State
-    State --> SQLCipher
-    State --> CryptoEngine
-    State -.->|IPC Restrito| WalletProc
-    State --> TorClient
-    State --> RadioBLE
-    State --> LocalNet
-
-    TorClient <==> RelayDaemon
-    RelayDaemon --> MinIO
-    WalletProc -.->|Socks5 / Tor| XMRNode
+    State --> Vault
+    State --> DB
+    State --> Tor
+    State --> OffGrid
+    Tor <==> Public
+    Public --> PG
+    Admin --> PG
 ```
 
 ---
 
-## 2. Fronteiras de Compartimentação
+## 2. Fronteiras de Compartimentação (ADR-0003)
 
-1. **Mensageria vs Carteira:**
-   - O processo da carteira é gerado separadamente ou isolado via sandbox FFI.
-   - A **Seed A** (mensageiro) nunca compartilha memória ou função de derivação com a **Seed B** (Monero).
-   - O comprometimento da chave de chat não permite assinar transações financeiras.
-2. **Mensageria vs Publicação (Archive):**
-   - O autor de uma publicação no Nix Archive utiliza uma persona editorial com chave Ed25519 independente.
-   - Nenhuma assinatura pública do Archive pode ser vinculada à identidade do mensageiro.
-3. **Mídia e Index vs Rede:**
-   - Buscar metadados de filmes/séries e consultar manifests de torrents são ações estritamente desconectadas de conexões P2P BitTorrent ou DHT pública.
-
----
-
-## 3. Decisões de Tecnologia
-
-- **Cliente:** Flutter (Dart). Permite UI de alto desempenho em múltiplas plataformas mantendo uma única base de código tática/escura.
-- **Banco de Dados Local:** SQLCipher (SQLite com criptografia transparente AES-256-CBC ou XChaCha20-Poly1305).
-- **Backend Relay:** Go. Alta concorrência nativa via goroutines, baixo consumo de memória (< 500 MB RSS para 50 conexões), binário estático e facilidade de compilação sem dependências de runtime.
-- **Serialização:** Protocol Buffers v3 (`proto/`). Garante tipagem estrita, retrocompatibilidade e serialização ultracompacta para rádio LoRa.
+1. **Seed A (Mensageria) vs Seed B (Monero P2P):** Mnemonic Seed A de 24 palavras (com checksum SHA-256) deriva exclusivamente chaves Ed25519/X25519 da mensageria (`Nix-SeedA-Ed25519-v1` / `X25519-v1`). `MoneroIsolationPolicy` impede reutilização de seed e bloqueia RPC claro não-Tor/não-loopback.
+2. **Nix Archive (`nix.archive.article.v1`):** Artigos e refutações canônicos assinados por Ed25519 com sanitização HTML anti-XSS em tabelas dedicadas (`archive_*`).
+3. **Nix Media / Starwire (`media_items` + FTS5):** Busca offline de catálogo separada de resolução magnet (bloqueada por padrão no modo Tor estrito) e estado de transferência sem acesso à Seed A.

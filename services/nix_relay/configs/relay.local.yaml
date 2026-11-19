@@ -1,11 +1,12 @@
-# Configuração Local do Nix Relay com Tor Onion v3 Ativo
+# Configuração Local Portátil do Nix Relay (Tor Onion v3 + Loopback Admin)
 server:
   host: "127.0.0.1"
   port: 8080
-  onion_service_host: "gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion"
+  onion_service_host: "" # Preenchido em runtime pelo ControlPort / Tor HiddenServiceDir
 
 storage:
-  base_dir: "/home/gus/.local/share/nix/relay/data"
+  base_dir: "./data"
+  postgres_dsn: "" # Opcional: postgresql://... (ou via env NIX_RELAY_PG_DSN)
   max_attachment_size_bytes: 52428800 # 50 MB
   max_in_flight_per_quota_token: 524288000 # 500 MB
   base_ttl_seconds: 604800 # 7 dias
@@ -18,5 +19,5 @@ pruning:
 
 metrics:
   enabled: true
-  listen_addr: "127.0.0.1:9090"
+  listen_addr: "127.0.0.1:9090" # Fail-closed: exige loopback
   zero_identifying_labels: true

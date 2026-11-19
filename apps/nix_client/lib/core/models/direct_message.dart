@@ -54,6 +54,7 @@ class DirectMessageThread {
 
   DirectMessageThread copyWith({
     String? peerName,
+    String? peerPublicId,
     String? statusText,
     int? unreadCount,
     bool? isSavedMessages,
@@ -67,7 +68,7 @@ class DirectMessageThread {
     return DirectMessageThread(
       id: id,
       peerName: peerName ?? this.peerName,
-      peerPublicId: peerPublicId,
+      peerPublicId: peerPublicId ?? this.peerPublicId,
       statusText: statusText ?? this.statusText,
       isOnline: isOnline ?? this.isOnline,
       isVerified: isVerified ?? this.isVerified,

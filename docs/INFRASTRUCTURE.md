@@ -2,32 +2,25 @@
 
 ## 1. Especificação da VPS de Referência
 
-A configuração inicial de referência visa provar que o Nix Relay opera com alta eficiência e baixo custo:
+Baseado nos testes de integração e benchmark da Fase 4:
 - **CPU:** 2 vCPU (x86_64 ou ARM64)
-- **RAM:** 2 GB
+- **RAM:** 2 GB mínimo (4 GB recomendado para rajadas concorrentes de anexos de 2 MB com folga de buffer)
 - **Disco:** 40 GB SSD / NVMe
-- **Sistema Operacional:** Alpine Linux ou Debian Minimal
-- **Orçamento Alvo:** US$ 5 a US$ 10 / mês
-- **Capacidade Inicial:** 50 usuários simultâneos com tráfego ativo de mensagens e anexos.
+- **Sistema Operacional:** Debian 13 (Trixie) ou Alpine Linux hardened (`services/nix_relay/deploy/provision_vps.sh`)
+- **Persistência:** Arquivos atômicos JSON (`BlindMailboxStore`) ou **PostgreSQL 17+ (`pgcrypto`)** via `storage.postgres_dsn` / `NIX_RELAY_PG_DSN`
 
 ---
 
-## 2. Separação de Serviços
+## 2. Separação de Listeners & Tor Onion v3
 
-A VPS de referência destina-se **exclusivamente** ao Relay de mensagens temporárias e ao bucket S3/MinIO local.
-- **Não inclui:** Nó completo de Monero (XMR), servidores de streaming de vídeo, renderizadores pesados ou indexadores públicos de torrents. Esses serviços exigem dimensionamento e nós dedicados independentes.
-
----
-
-## 3. Endurecimento do Servidor
-
-1. **Firewall com `nftables`:**
-   - Bloquear todo o tráfego de entrada, exceto a porta local do daemon Tor e porta SSH administrativa restrita por chave Ed25519.
-   - Desabilitar totalmente login por senha (`PasswordAuthentication no`).
-2. **Tor Hidden Service:**
-   - O relay escuta em um socket local associado a um Onion Service v3 configurado no `/etc/tor/torrc`.
-   - O endereço IP público da VPS não precisa ser exposto para os clientes Nix.
-3. **Métricas Prometheus Seguras:**
-   - Métricas expostas apenas em `127.0.0.1:9090` (ou acessíveis via SSH tunnel).
-   - Proibido o uso de labels como IP, User ID, Message ID ou dados de sessão.
-   - Apenas contadores agregados (ex: `nix_relay_active_connections_total`, `nix_relay_disk_bytes_used`).
+1. **Superfície Pública Onion (`NewMux`):**
+   - Vinculada em `127.0.0.1:8080` e exposta exclusivamente via Tor `HiddenServicePort 80 127.0.0.1:8080` (`services/nix_relay/deploy/torrc.onion.snippet`).
+   - Firewall (`ufw`/`nftables`) bloqueia todo tráfego HTTP externo direto; apenas SSH administrativo e rede Tor de saída são permitidos.
+2. **Listener Administrativo & Métricas (`NewAdminMux`):**
+   - `ValidateAdminListenAddr` recusa iniciar se `metrics.listen_addr` não apontar para endereço loopback (`127.0.0.1`, `::1` ou `localhost`).
+   - Expõe `/metrics` (Prometheus sem identificadores/IPs) e `/admin/capabilities` (`POST` / `DELETE` para provisionamento e revogação de capabilities SHA-256 com escopo).
+3. **Hardening Systemd (`services/nix_relay/deploy/nix-relay.service`):**
+   - Executa sob usuário sem shell (`nixrelay`), com `NoNewPrivileges=yes`, `PrivateTmp=yes`, `ProtectSystem=strict`, `ProtectHome=yes` e nenhuma capability Linux (`CapabilityBoundingSet=`).
+4. **Backup e Restauração PostgreSQL (`database/examples/backup_metadata.sh`, `restore_metadata.sh`):**
+   - Backups de metadados excluem estritamente payloads (`--exclude-table-data=nix.envelopes`).
+   - O script de restauração reconcilia contadores (`used_bytes=0`, `pending_count=0`) e purga capabilities expiradas/revogadas antes de reabrir o serviço.

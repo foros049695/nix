@@ -26,6 +26,7 @@ import '../core/security/security_context.dart';
 import '../core/database/local_database.dart';
 import '../core/database/repositories.dart';
 import '../core/security/key_vault.dart';
+import '../core/security/seed_recovery.dart';
 import '../core/security/anti_forensic_shredder.dart';
 import 'package:nix_transport/nix_transport.dart';
 import '../features/onboarding/sovereign_onboarding_model.dart';
@@ -176,15 +177,29 @@ class NixState extends ChangeNotifier {
 
   // Banco de Dados Local Cifrado & KeyVault (P0-2)
   LocalDatabase? _localDatabase;
-  final KeyVault _keyVault = KeyVault();
+  late final KeyVault _keyVault;
+  Uint8List? _activeMasterKey;
+  NixIdentity? _primaryIdentity;
+  String _localDeviceId = 'dev_primary';
+  bool _requiresPassphraseUnlock = false;
+
   IdentityRepository? _identityRepo;
   ContactRepository? _contactRepo;
   ConversationRepository? _conversationRepo;
   MessageRepository? _messageRepo;
   OutboxRepository? _outboxRepo;
   PreferencesRepository? _preferencesRepo;
+  KeyMaterialRepository? _keyMaterialRepo;
+  PreKeyRepository? _preKeyRepo;
+  SessionRepository? _sessionRepo;
+  ObjectChunkRepository? _objectChunkRepo;
+  MediaRepository? _mediaRepo;
+  ArchiveRepository? _archiveRepo;
 
   bool get isDatabaseReady => _localDatabase != null;
+  bool get requiresPassphraseUnlock => _requiresPassphraseUnlock;
+  NixIdentity? get primaryIdentity => _primaryIdentity;
+  String get localDeviceId => _localDeviceId;
   LocalDatabase? get localDatabase => _localDatabase;
   KeyVault get keyVault => _keyVault;
   IdentityRepository? get identityRepo => _identityRepo;
@@ -193,6 +208,12 @@ class NixState extends ChangeNotifier {
   MessageRepository? get messageRepo => _messageRepo;
   OutboxRepository? get outboxRepo => _outboxRepo;
   PreferencesRepository? get preferencesRepo => _preferencesRepo;
+  KeyMaterialRepository? get keyMaterialRepo => _keyMaterialRepo;
+  PreKeyRepository? get preKeyRepo => _preKeyRepo;
+  SessionRepository? get sessionRepo => _sessionRepo;
+  ObjectChunkRepository? get objectChunkRepo => _objectChunkRepo;
+  MediaRepository? get mediaRepo => _mediaRepo;
+  ArchiveRepository? get archiveRepo => _archiveRepo;
 
   // Gerenciador de Malha por Proximidade Bluetooth (estilo Briar BTP)
   late final BluetoothMeshManager _bluetoothMesh = BluetoothMeshManager(
@@ -241,6 +262,20 @@ class NixState extends ChangeNotifier {
     }
     if (publicId != null && publicId.isNotEmpty) {
       _userProfile = _userProfile.copyWith(publicId: publicId);
+    }
+
+    if (_localDatabase != null &&
+        _identityRepo != null &&
+        _userProfile.publicId.isNotEmpty) {
+      final primary = await _identityRepo!.getPrimaryIdentity();
+      if (primary != null) {
+        await _identityRepo!.saveProfile(
+          identityId: primary['id'] as String,
+          displayName: _userProfile.effectiveDisplayName,
+          bio: _userProfile.bio,
+          avatarObjectId: _userProfile.avatarStyle,
+        );
+      }
     }
 
     final snapshot = OnboardingStateSnapshot(
@@ -323,14 +358,68 @@ class NixState extends ChangeNotifier {
 
   /// Procedimento Anti-Forense / Botão de Pânico (estilo BleachBit):
   /// Destrói a memória RAM, fecha banco e sobrescreve arquivos em múltiplas passagens destrutivas.
-  Future<ShredReport> panicWipeAllData() async {
+  Future<ShredReport> panicWipeAllData({String? customBaseDir}) async {
     final report = await AntiForensicShredder.panicWipeAccount(
       activeDatabase: _localDatabase,
       activeVault: _keyVault,
+      customBaseDir: customBaseDir,
     );
+    if (_activeMasterKey != null) {
+      _activeMasterKey!.fillRange(0, _activeMasterKey!.length, 0);
+      _activeMasterKey = null;
+    }
+    _primaryIdentity = null;
+    _localDeviceId = 'dev_primary';
     _localDatabase = null;
+    _identityRepo = null;
+    _contactRepo = null;
+    _conversationRepo = null;
+    _messageRepo = null;
+    _outboxRepo = null;
+    _preferencesRepo = null;
+    _keyMaterialRepo = null;
+    _preKeyRepo = null;
+    _sessionRepo = null;
+    _objectChunkRepo = null;
+    _mediaRepo = null;
+    _archiveRepo = null;
+    _isOnboarded = false;
+    _requiresPassphraseUnlock = false;
+    _initializeProductionCleanState();
     notifyListeners();
     return report;
+  }
+
+  /// Deriva uma chave de envelopamento de material privado isolada por contexto HKDF-SHA256.
+  Future<SecretKeyData> _deriveWrappingKey(String domainInfo) async {
+    final master = _activeMasterKey;
+    if (master == null || master.isEmpty) {
+      throw StateError('[Fail-Closed] Cofre local não desbloqueado para envelopar chaves.');
+    }
+    final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
+    final derived = await hkdf.deriveKey(
+      secretKey: SecretKey(master),
+      nonce: utf8.encode('nix-keyvault-v1'),
+      info: utf8.encode(domainInfo),
+    );
+    final bytes = await derived.extractBytes();
+    return SecretKeyData(bytes);
+  }
+
+  void _instantiateRepositories() {
+    final db = _localDatabase!;
+    _identityRepo = IdentityRepository(db);
+    _contactRepo = ContactRepository(db);
+    _conversationRepo = ConversationRepository(db);
+    _messageRepo = MessageRepository(db);
+    _outboxRepo = OutboxRepository(db);
+    _preferencesRepo = PreferencesRepository(db);
+    _keyMaterialRepo = KeyMaterialRepository(db);
+    _preKeyRepo = PreKeyRepository(db);
+    _sessionRepo = SessionRepository(db);
+    _objectChunkRepo = ObjectChunkRepository(db);
+    _mediaRepo = MediaRepository(db);
+    _archiveRepo = ArchiveRepository(db);
   }
 
   /// Inicializa o cofre de chaves local com Argon2id + XChaCha20-Poly1305
@@ -341,35 +430,40 @@ class NixState extends ChangeNotifier {
     String? customVaultPath,
     String? migration001Sql,
     String? migration002Sql,
+    bool bindToOsKeyring = false,
+    String? duressPassphrase,
   }) async {
     try {
       Uint8List masterKey;
       if (await _keyVault.isInitialized(customPath: customVaultPath)) {
-        masterKey = await _keyVault.unlock(
+        final unlockResult = await _keyVault.unlockOrDuress(
           passphrase: passphrase,
           customPath: customVaultPath,
         );
+        if (unlockResult.status == VaultUnlockStatus.duressTriggered) {
+          await panicWipeAllData();
+          return false;
+        }
+        masterKey = unlockResult.masterKey!;
       } else {
         masterKey = await _keyVault.initialize(
           passphrase: passphrase,
           customPath: customVaultPath,
+          duressPassphrase: duressPassphrase,
+          bindToOsKeyring: bindToOsKeyring,
         );
       }
 
+      _activeMasterKey = Uint8List.fromList(masterKey);
       _localDatabase = await LocalDatabase.open(
         path: customDbPath,
-        rawCipherKey: masterKey,
+        rawCipherKey: Uint8List.fromList(masterKey),
         migration001Sql: migration001Sql,
         migration002Sql: migration002Sql,
       );
 
-      // Instanciação dos repositórios de domínio
-      _identityRepo = IdentityRepository(_localDatabase!);
-      _contactRepo = ContactRepository(_localDatabase!);
-      _conversationRepo = ConversationRepository(_localDatabase!);
-      _messageRepo = MessageRepository(_localDatabase!);
-      _outboxRepo = OutboxRepository(_localDatabase!);
-      _preferencesRepo = PreferencesRepository(_localDatabase!);
+      _instantiateRepositories();
+      _requiresPassphraseUnlock = false;
 
       notifyListeners();
       return true;
@@ -377,6 +471,353 @@ class NixState extends ChangeNotifier {
       debugPrint('[NixState] Erro ao inicializar banco de dados cifrado: $e');
       return false;
     }
+  }
+
+  /// Configura ou altera o PIN de coação (duress) no KeyVault ativo.
+  Future<bool> configureDuressPin({
+    required String vaultPassphrase,
+    required String duressPin,
+    String? customVaultPath,
+  }) async {
+    try {
+      await _keyVault.configureDuressPassphrase(
+        vaultPassphrase: vaultPassphrase,
+        duressPassphrase: duressPin,
+        customPath: customVaultPath,
+      );
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('[NixState] Falha ao configurar PIN de coação: $e');
+      return false;
+    }
+  }
+
+  /// Desbloqueia o KeyVault usando a frase-passe do usuário (ou executa apagamento silencioso
+  /// caso a senha fornecida corresponda ao PIN de coação configurado) e recarrega o estado local.
+  Future<VaultUnlockResult> unlockWithPassphrase(
+    String passphrase, {
+    String? customDbPath,
+    String? customVaultPath,
+    String? customWipeBaseDir,
+    bool loadState = true,
+  }) async {
+    final result = await _keyVault.unlockOrDuress(
+      passphrase: passphrase,
+      customPath: customVaultPath,
+    );
+    if (result.status == VaultUnlockStatus.duressTriggered) {
+      await panicWipeAllData(customBaseDir: customWipeBaseDir);
+      return result;
+    }
+    _activeMasterKey = Uint8List.fromList(result.masterKey!);
+    _localDatabase = await LocalDatabase.open(
+      path: customDbPath,
+      rawCipherKey: Uint8List.fromList(result.masterKey!),
+    );
+    _instantiateRepositories();
+    _requiresPassphraseUnlock = false;
+    if (loadState) {
+      await reloadFromDatabase();
+    }
+    notifyListeners();
+    return result;
+  }
+
+  /// Tenta desbloquear o KeyVault via chaveiro nativo do SO (libsecret / AndroidKeyStore)
+  /// e restaurar toda a conta (identidade, perfil, contatos, mensagens salvas) na inicialização.
+  Future<bool> tryAutoUnlockAndRestore({
+    String? customDbPath,
+    String? customVaultPath,
+  }) async {
+    try {
+      final initialized = await _keyVault.isInitialized(customPath: customVaultPath);
+      if (!initialized) return false;
+
+      final masterKey = await _keyVault.tryUnlockWithOsKeyring(
+        customPath: customVaultPath,
+      );
+      if (masterKey == null) {
+        _requiresPassphraseUnlock = true;
+        notifyListeners();
+        return false;
+      }
+
+      _activeMasterKey = Uint8List.fromList(masterKey);
+      _localDatabase = await LocalDatabase.open(
+        path: customDbPath,
+        rawCipherKey: Uint8List.fromList(masterKey),
+      );
+      _instantiateRepositories();
+      _requiresPassphraseUnlock = false;
+      await reloadFromDatabase();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('[NixState] Falha ao desbloquear automaticamente pelo SO: $e');
+      return false;
+    }
+  }
+
+  /// Persiste a identidade soberana Seed A (pública em `identities` + semente envelopada em `key_material`),
+  /// registra o dispositivo principal, salva o perfil local e garante a conversa de Mensagens Salvas.
+  Future<void> persistPrimaryIdentity({
+    required NixIdentity identity,
+    required String displayName,
+    String bio = '',
+    String avatarStyle = 'nyx_emblem',
+  }) async {
+    _primaryIdentity = identity;
+    final cleanName = displayName.trim().isEmpty ? 'Soberano Nix' : displayName.trim();
+    _userProfile = _userProfile.copyWith(
+      publicId: identity.publicId,
+      displayName: cleanName,
+      bio: bio,
+      avatarStyle: avatarStyle,
+    );
+    _securityContext = _securityContext.copyWith(
+      status: _localDatabase != null
+          ? SecuritySubsystemState.ready
+          : _securityContext.status,
+      isSqlCipherUnlocked: _localDatabase != null,
+      myFingerprint: identity.publicId,
+      myPersona: cleanName,
+    );
+
+    if (_localDatabase != null && _identityRepo != null && _keyMaterialRepo != null) {
+      final edPub = Uint8List.fromList(identity.ed25519PublicKey.bytes);
+      final xPub = Uint8List.fromList(identity.x25519PublicKey.bytes);
+      final edData = await identity.ed25519KeyPair.extract();
+      final xData = await identity.x25519KeyPair.extract();
+      final secretJson = utf8.encode(jsonEncode({
+        'publicId': identity.publicId,
+        'edSeed': base64Encode(edData.bytes),
+        'xSeed': base64Encode(xData.bytes),
+      }));
+      final wrapKey = await _deriveWrappingKey('Nix-IdentityWrap-v1');
+      final sealed = await SealedEnvelope.seal(
+        key: wrapKey,
+        plaintext: secretJson,
+        aad: utf8.encode('identity:${identity.publicId}'),
+      );
+
+      await _keyMaterialRepo!.storeKeyMaterial(
+        id: 'vault:identity_main',
+        purpose: 'identity_seed_a',
+        wrappedBytes: sealed.encode(),
+        wrappingKeyRef: 'keyvault:master',
+      );
+
+      final existing = await _identityRepo!.getPrimaryIdentity();
+      if (existing == null) {
+        await _identityRepo!.createIdentity(
+          id: identity.publicId,
+          publicId: identity.publicId,
+          edPublic: edPub,
+          xPublic: xPub,
+          keyRef: 'vault:identity_main',
+        );
+      }
+
+      final devices = await _identityRepo!.listDevices(identity.publicId);
+      if (devices.isEmpty) {
+        final grantSig = await identity.sign(
+          utf8.encode('nix-device-grant:${identity.publicId}:$_localDeviceId'),
+        );
+        await _identityRepo!.registerDevice(
+          deviceId: _localDeviceId,
+          identityId: identity.publicId,
+          signingPublic: edPub,
+          grant: Uint8List.fromList(grantSig),
+        );
+      } else {
+        _localDeviceId = devices.first['id'] as String;
+      }
+
+      await _identityRepo!.saveProfile(
+        identityId: identity.publicId,
+        displayName: cleanName,
+        bio: bio,
+        avatarObjectId: avatarStyle,
+      );
+
+      // Emite Card ID público assinado (revision 1) na tabela `cards`
+      final cardPayload = utf8.encode(jsonEncode({
+        'publicId': identity.publicId,
+        'ed': base64Encode(edPub),
+        'x': base64Encode(xPub),
+        'name': cleanName,
+        'rev': 1,
+      }));
+      final cardSig = await identity.sign(cardPayload);
+      await _identityRepo!.saveCard(
+        id: 'card_${identity.publicId}_r1',
+        identityId: identity.publicId,
+        revision: 1,
+        publicBundle: Uint8List.fromList(cardPayload),
+        signature: Uint8List.fromList(cardSig),
+        expiresAt: DateTime.now().toUtc().add(const Duration(days: 30)).millisecondsSinceEpoch,
+      );
+
+      // Garante a existência da conversa `dm_saved_messages` no SQLCipher
+      final savedConv = await _conversationRepo!.getConversation('dm_saved_messages');
+      if (savedConv == null) {
+        await _conversationRepo!.createConversation(
+          id: 'dm_saved_messages',
+          kind: 'saved',
+          ownerIdentityId: identity.publicId,
+          title: 'Mensagens Salvas',
+        );
+      }
+    }
+
+    // Sincroniza thread Mensagens Salvas em memória com o publicId real
+    final savedIdx = _directMessages.indexWhere((d) => d.id == 'dm_saved_messages');
+    if (savedIdx != -1) {
+      _directMessages[savedIdx] = _directMessages[savedIdx].copyWith(
+        peerPublicId: identity.publicId,
+      );
+      if (_selectedDm?.id == 'dm_saved_messages') {
+        _selectedDm = _directMessages[savedIdx];
+      }
+    }
+
+    notifyListeners();
+  }
+
+  /// Recarrega identidade, perfil, contatos, conversas e mensagens salvas após reinicialização.
+  Future<void> reloadFromDatabase() async {
+    if (_localDatabase == null || _identityRepo == null) return;
+
+    // 1. Varre mensagens efêmeras expiradas antes de montar o estado em memória
+    await _messageRepo?.sweepExpiredMessages();
+
+    final primaryRow = await _identityRepo!.getPrimaryIdentity();
+    if (primaryRow == null) return;
+
+    final identityId = primaryRow['id'] as String;
+    final publicId = primaryRow['public_id'] as String;
+    final keyRef = primaryRow['key_ref'] as String;
+
+    // 2. Desempacota o Seed A privado protegido em `key_material`
+    final matRow = await _keyMaterialRepo?.getKeyMaterial(keyRef);
+    if (matRow != null && _activeMasterKey != null) {
+      final wrapKey = await _deriveWrappingKey('Nix-IdentityWrap-v1');
+      final sealed = SealedPayload.decode(
+        Uint8List.fromList(matRow['wrapped_bytes'] as List<int>),
+      );
+      final clear = await SealedEnvelope.open(
+        key: wrapKey,
+        payload: sealed,
+        aad: utf8.encode('identity:$publicId'),
+      );
+      final decoded = jsonDecode(utf8.decode(clear)) as Map<String, dynamic>;
+      final edSeed = base64Decode(decoded['edSeed'] as String);
+      final xSeed = base64Decode(decoded['xSeed'] as String);
+      final restoredIdentity = await NixIdentity.fromSeeds(
+        ed25519Seed: edSeed,
+        x25519PrivateBytes: xSeed,
+      );
+      _primaryIdentity = restoredIdentity;
+      _securityContext = _securityContext.copyWith(
+        status: SecuritySubsystemState.ready,
+        isSqlCipherUnlocked: true,
+        myFingerprint: restoredIdentity.publicId,
+      );
+    }
+
+    final devices = await _identityRepo!.listDevices(identityId);
+    if (devices.isNotEmpty) {
+      _localDeviceId = devices.first['id'] as String;
+    }
+
+    final profileRow = await _identityRepo!.getProfile(identityId);
+    final restoredName =
+        (profileRow?['display_name'] as String?) ?? _userProfile.displayName;
+    _securityContext = _securityContext.copyWith(myPersona: restoredName);
+    _userProfile = _userProfile.copyWith(
+      publicId: publicId,
+      displayName: restoredName,
+      bio: (profileRow?['bio'] as String?) ?? _userProfile.bio,
+      avatarStyle: (profileRow?['avatar_object_id'] as String?) ?? _userProfile.avatarStyle,
+    );
+
+    // 3. Restaura contatos verificados e conversas diretas / Mensagens Salvas
+    final conversations = await _conversationRepo!.listConversations();
+    final savedIdx = _directMessages.indexWhere((d) => d.id == 'dm_saved_messages');
+    if (savedIdx != -1) {
+      final savedRows = await _messageRepo!.getMessagesForConversation('dm_saved_messages', limit: 200);
+      final loadedSavedMsgs = savedRows.map((r) => Message(
+        id: r['id'] as String,
+        channelId: 'dm_saved_messages',
+        senderName: _userProfile.effectiveDisplayName,
+        senderFingerprint: _securityContext.myFingerprint,
+        isMe: (r['author_key'] as String) == publicId,
+        text: (r['body'] as String?) ?? '',
+        timestamp: DateTime.fromMillisecondsSinceEpoch(r['created_at'] as int, isUtc: true),
+        isVerified: true,
+      )).toList();
+
+      final baseWelcome = _directMessages[savedIdx].messages.where((m) => m.id == 'saved_welcome').toList();
+      _directMessages[savedIdx] = _directMessages[savedIdx].copyWith(
+        peerPublicId: publicId,
+        messages: [...baseWelcome, ...loadedSavedMsgs],
+      );
+    }
+
+    for (final conv in conversations) {
+      final cid = conv['id'] as String;
+      if (cid == 'dm_saved_messages') continue;
+      if ((conv['kind'] as String) == 'direct') {
+        final msgRows = await _messageRepo!.getMessagesForConversation(cid, limit: 200);
+        final msgs = msgRows.map((r) => Message(
+          id: r['id'] as String,
+          channelId: cid,
+          senderName: (r['author_key'] as String) == publicId ? _userProfile.effectiveDisplayName : (conv['title'] as String),
+          senderFingerprint: r['author_key'] as String,
+          isMe: (r['author_key'] as String) == publicId,
+          text: (r['body'] as String?) ?? '',
+          timestamp: DateTime.fromMillisecondsSinceEpoch(r['created_at'] as int, isUtc: true),
+          isVerified: true,
+        )).toList();
+
+        final existingIdx = _directMessages.indexWhere((d) => d.id == cid);
+        final thread = DirectMessageThread(
+          id: cid,
+          peerName: conv['title'] as String,
+          peerPublicId: cid,
+          statusText: 'Sessão P2P Cifrada · Tor Onion v3',
+          isOnline: false,
+          isVerified: true,
+          trustLevel: NixTrustLevel.level2Yellow,
+          unreadCount: 0,
+          messages: msgs,
+        );
+        if (existingIdx == -1) {
+          _directMessages.add(thread);
+        } else {
+          _directMessages[existingIdx] = thread;
+        }
+      }
+    }
+
+    // 4. Restaura Acervo Cultural persistido em media_items
+    final mediaRows = await _mediaRepo?.listMediaItems(limit: 200) ?? [];
+    if (mediaRows.isNotEmpty) {
+      final items = <CulturalItem>[];
+      for (final row in mediaRows) {
+        try {
+          final meta = jsonDecode(row['metadata_json'] as String) as Map<String, dynamic>;
+          items.add(CulturalItem.fromJson(meta));
+        } catch (_) {}
+      }
+      if (items.isNotEmpty) {
+        _userProfile = _userProfile.copyWith(culturalItems: items);
+      }
+    }
+
+    _isOnboarded = true;
+    notifyListeners();
   }
 
   /// Envia mensagem com garantia de persistência local atômica no SQLCipher,
@@ -430,7 +871,7 @@ class NixState extends ChangeNotifier {
       }
     }
 
-    // 3. Serializa e cifra o envelope da mensagem
+    // 3. Serializa e cifra o envelope da mensagem (fail-closed: nunca grava plaintext em outbox.ciphertext)
     Uint8List payloadBytes;
     final clearJson = jsonEncode({
       'id': messageId,
@@ -457,11 +898,27 @@ class NixState extends ChangeNotifier {
           ..add(ephemPub.bytes)
           ..add(sealed.encode());
         payloadBytes = builder.toBytes();
-      } catch (_) {
-        payloadBytes = Uint8List.fromList(clearBytes);
+      } catch (e) {
+        debugPrint('[NixState] Fail-Closed E2EE ao cifrar para destinatário: $e');
+        return false;
+      }
+    } else if (_activeMasterKey != null) {
+      // Envelope selado local com chave derivada do cofre ativo quando ainda não há prekey X25519 do par
+      try {
+        final outboxKey = await _deriveWrappingKey('Nix-OutboxEnvelope-v1');
+        final sealed = await SealedEnvelope.seal(
+          key: outboxKey,
+          plaintext: clearBytes,
+          aad: utf8.encode('conv:$conversationId'),
+        );
+        payloadBytes = sealed.encode();
+      } catch (e) {
+        debugPrint('[NixState] Fail-Closed ao selar envelope da outbox: $e');
+        return false;
       }
     } else {
-      payloadBytes = Uint8List.fromList(clearBytes);
+      debugPrint('[NixState] Fail-Closed: tentativa de envio sem chave E2EE nem KeyVault desbloqueado.');
+      return false;
     }
 
     // 4. Enfileira na Outbox local com delivery ID e payload_hash estáveis
@@ -515,49 +972,53 @@ class NixState extends ChangeNotifier {
       if (await _outboxRepo!.isDuplicateEnvelope(mailboxId, deliveryId)) {
         return false;
       }
-      await _outboxRepo!.recordDeduplication(
-        mailboxId: mailboxId,
-        deliveryId: deliveryId,
-        payloadHash: payloadHash,
-        expiresAt: exp,
-      );
     }
 
-    // 2. Decifra o payload
+    // 2. Decifra e autentica o payload antes de persistir ou emitir deduplicação/ACK
     String plaintext = '';
     String senderId = 'desconhecido';
-    String conversationId = mailboxId;
+    final String conversationId = mailboxId;
     List<String> attachments = [];
 
     try {
-      if (sessionKey != null) {
-        final sealed = SealedPayload.decode(ciphertext);
-        final clear = await SealedEnvelope.open(key: sessionKey, payload: sealed);
-        final map = jsonDecode(utf8.decode(clear)) as Map<String, dynamic>;
-        plaintext = map['text'] as String? ?? '';
-        senderId = map['sender'] as String? ?? 'desconhecido';
-        attachments = (map['attachments'] as List?)?.cast<String>() ?? [];
-      } else {
-        final map = jsonDecode(utf8.decode(ciphertext)) as Map<String, dynamic>;
-        plaintext = map['text'] as String? ?? '';
-        senderId = map['sender'] as String? ?? 'desconhecido';
-        attachments = (map['attachments'] as List?)?.cast<String>() ?? [];
+      if (sessionKey == null) {
+        debugPrint('[NixState] Fail-Closed: envelope recebido sem chave de sessão autenticada.');
+        return false;
       }
-    } catch (_) {
-      plaintext = '[Mensagem Cifrada E2EE - ${ciphertext.length} bytes]';
+      final sealed = SealedPayload.decode(ciphertext);
+      final clear = await SealedEnvelope.open(key: sessionKey, payload: sealed);
+      final map = jsonDecode(utf8.decode(clear)) as Map<String, dynamic>;
+      plaintext = map['text'] as String? ?? '';
+      senderId = map['sender'] as String? ?? 'desconhecido';
+      attachments = (map['attachments'] as List?)?.cast<String>() ?? [];
+    } catch (e) {
+      debugPrint('[NixState] Fail-Closed: falha ao autenticar/decifrar envelope de entrada: $e');
+      return false;
     }
 
-    // 3. Persiste no banco de dados local antes de confirmar
+    // 3. Commit-before-ACK: persiste mensagem e registra dedup atomicamente no banco local
     final msgId = 'in_${now.millisecondsSinceEpoch}_$deliveryId';
-    if (_localDatabase != null && _messageRepo != null) {
-      await _messageRepo!.insertMessage(
-        id: msgId,
-        conversationId: conversationId,
-        authorKey: senderId,
-        deviceId: 'remote_client_dev',
-        body: plaintext,
-        deliveryState: 'received',
-      );
+    if (_localDatabase != null && _messageRepo != null && _outboxRepo != null) {
+      await _localDatabase!.rawDatabase.transaction((txn) async {
+        await txn.insert('messages', {
+          'id': msgId,
+          'conversation_id': conversationId,
+          'author_key': senderId,
+          'device_id': 'remote_client_dev',
+          'body': plaintext,
+          'created_at': now.millisecondsSinceEpoch,
+          'received_at': now.millisecondsSinceEpoch,
+          'revision': 1,
+          'delivery_state': 'received',
+        });
+        await txn.insert('inbox_dedup', {
+          'mailbox_id': mailboxId,
+          'delivery_id': deliveryId,
+          'payload_hash': payloadHash,
+          'committed_at': now.millisecondsSinceEpoch,
+          'expires_at': exp,
+        });
+      });
     }
 
     // 4. Atualiza a lista em memória para refletir na UI
@@ -581,7 +1042,8 @@ class NixState extends ChangeNotifier {
     return true;
   }
 
-  NixState({bool? loadMockData}) {
+  NixState({bool? loadMockData, KeyVault? keyVault}) {
+    _keyVault = keyVault ?? KeyVault();
     final isTest = Platform.environment['FLUTTER_TEST'] == 'true';
     final shouldLoadMock = loadMockData ?? isTest;
 
@@ -718,6 +1180,13 @@ class NixState extends ChangeNotifier {
 
   Future<void> _checkPersistedOnboardingStatus() async {
     try {
+      // 1. Tenta desbloqueio automático via chaveiro nativo do SO (libsecret / AndroidKeyStore)
+      final unlocked = await tryAutoUnlockAndRestore();
+      if (unlocked) {
+        return;
+      }
+
+      // 2. Fallback para metadados não-sensíveis caso o vault exija senha manual ou ainda não exista
       final snapshot = await OnboardingStateSnapshot.load();
       if (snapshot.isCompleted) {
         _isOnboarded = true;
@@ -898,28 +1367,41 @@ class NixState extends ChangeNotifier {
   String get torDiagnosticDetail => _torDiagnosticDetail;
   bool get isTorFailClosed => _settings.transportProfile.contains('Fail-Closed');
 
-  /// Diagnóstico real de conectividade ao daemon Tor SOCKS5 (127.0.0.1:9050).
+  /// Diagnóstico real de conectividade e handshake SOCKS5 + ControlPort do daemon Tor.
   Future<bool> checkTorDaemonStatus() async {
     if (Platform.environment.containsKey('FLUTTER_TEST')) {
       _isTorRunning = false;
       return false;
     }
     try {
-      final socket = await Socket.connect(
-        '127.0.0.1',
-        9050,
-        timeout: const Duration(milliseconds: 900),
+      final cookiePath = '${_embeddedTor.dataDirectory}/control_auth_cookie';
+      final diag = await TorDiagnostics.diagnose(
+        host: '127.0.0.1',
+        socksPort: _embeddedTor.socksPort,
+        controlPort: _embeddedTor.controlPort,
+        controlCookiePath: cookiePath,
       );
-      await socket.close();
-      _isTorRunning = true;
-      _torDiagnosticDetail =
-          'Proxy SOCKS5 (127.0.0.1:9050) conectado · Endpoint: $_onionAddress';
+      if (diag.socksReachable) {
+        _isTorRunning = true;
+        _torDiagnosticDetail =
+            '${diag.message} · Endpoint: $_onionAddress';
+        _securityContext = _securityContext.copyWith(
+          isTorConnected: true,
+          status: SecuritySubsystemState.ready,
+        );
+        notifyListeners();
+        return true;
+      }
+      _isTorRunning = false;
+      _torDiagnosticDetail = isTorFailClosed
+          ? '${diag.message} (Fallback IP direto bloqueado)'
+          : diag.message;
       _securityContext = _securityContext.copyWith(
-        isTorConnected: true,
-        status: SecuritySubsystemState.ready,
+        isTorConnected: false,
+        status: SecuritySubsystemState.failed,
       );
       notifyListeners();
-      return true;
+      return false;
     } catch (_) {
       _isTorRunning = false;
       _torDiagnosticDetail = isTorFailClosed
@@ -1421,21 +1903,60 @@ class NixState extends ChangeNotifier {
 
       // Persiste de forma atômica no banco local SQLCipher se ativo
       if (_localDatabase != null && _messageRepo != null) {
-        try {
-          _messageRepo!.insertMessage(
-            id: newMsg.id,
-            conversationId: _selectedDm!.id,
-            authorKey: _userProfile.publicId,
-            deviceId: 'local_client_dev',
-            body: text.trim(),
-            deliveryState: _selectedDm!.isSavedMessages ? 'received' : 'queued',
-          );
-        } catch (e) {
-          debugPrint('[NixState] Aviso ao persistir mensagem no banco local: $e');
-        }
+        unawaited(_persistDirectMessageToDb(
+          message: newMsg,
+          thread: _selectedDm!,
+          cleanBody: text.trim(),
+        ));
       }
 
       notifyListeners();
+    }
+  }
+
+  Future<void> _persistDirectMessageToDb({
+    required Message message,
+    required DirectMessageThread thread,
+    required String cleanBody,
+  }) async {
+    try {
+      final db = _localDatabase;
+      final convRepo = _conversationRepo;
+      final msgRepo = _messageRepo;
+      if (db == null || convRepo == null || msgRepo == null) return;
+
+      final existingConv = await convRepo.getConversation(thread.id);
+      if (existingConv == null) {
+        final primary = await _identityRepo?.getPrimaryIdentity();
+        final ownerId = (primary?['id'] as String?) ?? _userProfile.publicId;
+        if (ownerId.isNotEmpty) {
+          await convRepo.createConversation(
+            id: thread.id,
+            kind: thread.isSavedMessages ? 'saved' : 'direct',
+            ownerIdentityId: ownerId,
+            title: thread.peerName,
+          );
+        }
+      }
+
+      final nowMs = message.timestamp.toUtc().millisecondsSinceEpoch;
+      final expiresAt = message.ephemeralSeconds > 0
+          ? nowMs + (message.ephemeralSeconds * 1000)
+          : null;
+
+      await msgRepo.insertMessage(
+        id: message.id,
+        conversationId: thread.id,
+        authorKey: _userProfile.publicId,
+        deviceId: _localDeviceId,
+        body: cleanBody,
+        deliveryState: thread.isSavedMessages ? 'received' : 'queued',
+        replyToId: message.replyToMessageId,
+        createdAt: nowMs,
+        expiresAt: expiresAt,
+      );
+    } catch (e) {
+      debugPrint('[NixState] Aviso ao persistir mensagem no banco local: $e');
     }
   }
 
@@ -1664,12 +2185,77 @@ class NixState extends ChangeNotifier {
       avatarCropOffsetX: avatarCropOffsetX,
       avatarCropOffsetY: avatarCropOffsetY,
     );
+    if (_localDatabase != null &&
+        _identityRepo != null &&
+        _userProfile.publicId.isNotEmpty) {
+      unawaited(_identityRepo!.saveProfile(
+        identityId: _userProfile.publicId,
+        displayName: _userProfile.effectiveDisplayName,
+        bio: _userProfile.bio,
+        avatarObjectId: _userProfile.avatarStyle,
+      ));
+    }
     notifyListeners();
+  }
+
+  /// Restaura conta e identidade Seed A a partir da frase mnemônica de 24 palavras.
+  Future<NixIdentity> recoverAccountFromMnemonic({
+    required List<String> words,
+    required String passphrase,
+    String displayName = 'Soberano',
+    String? customDbPath,
+    String? customVaultPath,
+    bool bindToOsKeyring = false,
+  }) async {
+    final identity = await SeedRecoveryManager.deriveIdentityFromMnemonic(words);
+    final ok = await initializeEncryptedDatabase(
+      passphrase: passphrase,
+      customDbPath: customDbPath,
+      customVaultPath: customVaultPath,
+      bindToOsKeyring: bindToOsKeyring,
+    );
+    if (!ok) {
+      throw StateError('Falha ao inicializar banco SQLCipher na recuperação Seed A.');
+    }
+    await persistPrimaryIdentity(
+      identity: identity,
+      displayName: displayName,
+    );
+    return identity;
+  }
+
+  String _mapMediaKind(CulturalCategory category) {
+    switch (category) {
+      case CulturalCategory.movies:
+        return 'film';
+      case CulturalCategory.series:
+        return 'series';
+      case CulturalCategory.anime:
+        return 'anime';
+      case CulturalCategory.manga:
+        return 'manga';
+      case CulturalCategory.books:
+        return 'book';
+      case CulturalCategory.music:
+        return 'album';
+      case CulturalCategory.github:
+        return 'repository';
+    }
   }
 
   void addCulturalItem(CulturalItem item) {
     final updated = List<CulturalItem>.from(_userProfile.culturalItems)..insert(0, item);
     _userProfile = _userProfile.copyWith(culturalItems: updated);
+    if (_mediaRepo != null) {
+      unawaited(_mediaRepo!.upsertMediaItem(
+        id: item.id,
+        kind: _mapMediaKind(item.category),
+        title: item.title,
+        metadata: item.toJson(),
+        source: 'local_acervo',
+        sourceId: item.id,
+      ));
+    }
     _persistState();
     notifyListeners();
   }
@@ -1679,6 +2265,16 @@ class NixState extends ChangeNotifier {
       return item.id == updatedItem.id ? updatedItem : item;
     }).toList();
     _userProfile = _userProfile.copyWith(culturalItems: updated);
+    if (_mediaRepo != null) {
+      unawaited(_mediaRepo!.upsertMediaItem(
+        id: updatedItem.id,
+        kind: _mapMediaKind(updatedItem.category),
+        title: updatedItem.title,
+        metadata: updatedItem.toJson(),
+        source: 'local_acervo',
+        sourceId: updatedItem.id,
+      ));
+    }
     _persistState();
     notifyListeners();
   }
@@ -1686,18 +2282,33 @@ class NixState extends ChangeNotifier {
   void removeCulturalItem(String itemId) {
     final updated = _userProfile.culturalItems.where((i) => i.id != itemId).toList();
     _userProfile = _userProfile.copyWith(culturalItems: updated);
+    if (_mediaRepo != null) {
+      unawaited(_mediaRepo!.deleteMediaItem(itemId));
+    }
     _persistState();
     notifyListeners();
   }
 
   void toggleItemCardIdVisibility(String itemId) {
+    CulturalItem? modified;
     final updated = _userProfile.culturalItems.map((item) {
       if (item.id == itemId) {
-        return item.copyWith(isPublicInCardId: !item.isPublicInCardId);
+        modified = item.copyWith(isPublicInCardId: !item.isPublicInCardId);
+        return modified!;
       }
       return item;
     }).toList();
     _userProfile = _userProfile.copyWith(culturalItems: updated);
+    if (modified != null && _mediaRepo != null) {
+      unawaited(_mediaRepo!.upsertMediaItem(
+        id: modified!.id,
+        kind: _mapMediaKind(modified!.category),
+        title: modified!.title,
+        metadata: modified!.toJson(),
+        source: 'local_acervo',
+        sourceId: modified!.id,
+      ));
+    }
     _persistState();
     notifyListeners();
   }

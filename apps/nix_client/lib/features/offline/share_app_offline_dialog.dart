@@ -80,14 +80,25 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
         _sha256Digest = hash;
         _isPreparing = false;
       });
-    } else {
+    } else if (isTest) {
       final stubPayload = utf8.encode('NIX_OFFLINE_APK_VERIFIER_PLACEHOLDER_V4');
       final hash = sha256.convert(stubPayload).toString();
       _preparedBytes = Uint8List.fromList(stubPayload);
-      _packageName = 'nix-client-v0.4.0.apk (pacote de verificação local)';
+      _packageName = 'nix-client-v0.4.0.apk (modo teste)';
       _packageSizeBytes = stubPayload.length;
       _sha256Digest = hash;
       _isPreparing = false;
+    } else {
+      if (!mounted) return;
+      setState(() {
+        _preparedBytes = null;
+        _packageName = null;
+        _packageSizeBytes = 0;
+        _sha256Digest = null;
+        _isPreparing = false;
+        _errorMsg =
+            'Nenhum APK/pacote de release encontrado em dist/ ou build/. Gere/assinado um pacote antes de compartilhar.';
+      });
     }
   }
 

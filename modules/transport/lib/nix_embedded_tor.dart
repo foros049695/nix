@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'nix_transport.dart' show TorDiagnostics;
+
 /// Estado de inicialização e ciclo de vida do daemon Tor embutido.
 enum EmbeddedTorStatus {
   stopped,
@@ -300,19 +302,16 @@ class EmbeddedTorManager {
     }
   }
 
-  /// Testa se a porta de escuta local está aceitando sockets.
+  /// Verifica se já existe um proxy SOCKS5 Tor respondendo ao greeting RFC 1928.
   static Future<bool> _isPortListening(String host, int port) async {
     if (Platform.environment.containsKey('FLUTTER_TEST')) {
       return false;
     }
-    try {
-      final socket = await Socket.connect(host, port,
-          timeout: const Duration(milliseconds: 500));
-      await socket.close();
-      return true;
-    } catch (_) {
-      return false;
-    }
+    return TorDiagnostics.probeSocks5Proxy(
+      host,
+      port,
+      timeout: const Duration(milliseconds: 700),
+    );
   }
 
   static Future<void> _terminateProcess(Process process) async {

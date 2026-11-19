@@ -2,6 +2,8 @@ package buffer
 
 import (
 	"bufio"
+	"errors"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -13,6 +15,7 @@ type Config struct {
 	ServerPort               int
 	OnionServiceHost         string
 	DataDir                  string
+	PostgresDSN              string
 	MaxAttachmentSizeBytes   int64
 	MaxInFlightPerQuotaToken int64
 	BaseTTLSeconds           int64
@@ -23,6 +26,22 @@ type Config struct {
 	MetricsEnabled           bool
 	MetricsListenAddr        string
 	ZeroIdentifyingLabels    bool
+}
+
+// ValidateAdminListenAddr assegura isolamento estrito em loopback para endpoints administrativos e métricas (REL04).
+func ValidateAdminListenAddr(addr string) error {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		return errors.New("metrics.listen_addr inválido (esperado host:port)")
+	}
+	if strings.EqualFold(host, "localhost") {
+		return nil
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return errors.New("metrics.listen_addr deve vincular exclusivamente em endereço loopback (127.0.0.1/::1/localhost)")
+	}
+	return nil
 }
 
 // DefaultConfig retorna parâmetros seguros padrão (TTL de 7 dias e histerese 75/85/92).
@@ -92,6 +111,10 @@ func LoadYAMLConfig(path string) (Config, error) {
 			if val != "" {
 				cfg.DataDir = val
 			}
+		case "storage.postgres_dsn":
+			if val != "" {
+				cfg.PostgresDSN = val
+			}
 		case "storage.max_attachment_size_bytes":
 			if n, err := strconv.ParseInt(val, 10, 64); err == nil && n > 0 {
 				cfg.MaxAttachmentSizeBytes = n
@@ -129,6 +152,9 @@ func LoadYAMLConfig(path string) (Config, error) {
 		case "metrics.zero_identifying_labels":
 			cfg.ZeroIdentifyingLabels = strings.EqualFold(val, "true")
 		}
+	}
+	if envDSN := strings.TrimSpace(os.Getenv("NIX_RELAY_PG_DSN")); envDSN != "" {
+		cfg.PostgresDSN = envDSN
 	}
 	return cfg, scanner.Err()
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -18,7 +19,7 @@ import (
 	"github.com/projetonix/nix/services/nix_relay/internal/buffer"
 )
 
-func NewMux(cfg buffer.Config, store *buffer.BlindMailboxStore, pruner *buffer.AutoPruner) *http.ServeMux {
+func NewMux(cfg buffer.Config, store buffer.RelayStore, pruner *buffer.AutoPruner) *http.ServeMux {
 	mux := http.NewServeMux()
 	bodyLimit := attachmentBodyLimit(cfg.MaxAttachmentSizeBytes)
 
@@ -52,6 +53,17 @@ func NewMux(cfg buffer.Config, store *buffer.BlindMailboxStore, pruner *buffer.A
 		switch action {
 		case "envelopes":
 			if r.Method == http.MethodPost {
+				if store.HasExplicitScope(mailboxID, buffer.ScopeWrite) {
+					token, err := parseBearerToken(r)
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusUnauthorized)
+						return
+					}
+					if !store.ValidateCapability(mailboxID, token, buffer.ScopeWrite) {
+						http.Error(w, "capability de escrita não autorizada para esta mailbox", http.StatusForbidden)
+						return
+					}
+				}
 				var req struct {
 					PayloadB64 string `json:"payload_b64"`
 					TTLSeconds int64  `json:"ttl_seconds"`
@@ -160,7 +172,7 @@ func NewMux(cfg buffer.Config, store *buffer.BlindMailboxStore, pruner *buffer.A
 }
 
 // NewAdminMux cria mux exclusivo para listener administrativo/métricas local (Marco P0-4 / REL04).
-func NewAdminMux(store *buffer.BlindMailboxStore) *http.ServeMux {
+func NewAdminMux(store buffer.RelayStore) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -175,6 +187,55 @@ func NewAdminMux(store *buffer.BlindMailboxStore) *http.ServeMux {
 		fmt.Fprintf(w, "# TYPE nix_relay_total_stored counter\nnix_relay_total_stored %d\n", m.TotalStored)
 		fmt.Fprintf(w, "# TYPE nix_relay_total_acked counter\nnix_relay_total_acked %d\n", m.TotalAcked)
 		fmt.Fprintf(w, "# TYPE nix_relay_total_pruned counter\nnix_relay_total_pruned %d\n", m.TotalPruned)
+	})
+
+	// Provisionamento e revogação de capabilities SHA-256 restrito ao listener loopback administrativo.
+	mux.HandleFunc("/admin/capabilities", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			var req struct {
+				MailboxID  string `json:"mailbox_id"`
+				Token      string `json:"token"`
+				Scope      string `json:"scope"`
+				TTLSeconds int64  `json:"ttl_seconds"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+				http.Error(w, "json inválido", http.StatusBadRequest)
+				return
+			}
+			scope := buffer.CapabilityScope(req.Scope)
+			if scope == "" {
+				scope = buffer.ScopeReadAck
+			}
+			if scope != buffer.ScopeReadAck && scope != buffer.ScopeWrite && scope != buffer.ScopeAdmin {
+				http.Error(w, "escopo de capability inválido", http.StatusBadRequest)
+				return
+			}
+			ttl := time.Duration(req.TTLSeconds) * time.Second
+			if err := store.ProvisionCapability(req.MailboxID, req.Token, scope, ttl); err != nil {
+				writeStoreError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusCreated, map[string]any{"status": "provisioned", "scope": string(scope)})
+
+		case http.MethodDelete:
+			var req struct {
+				MailboxID string `json:"mailbox_id"`
+				Token     string `json:"token"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+				http.Error(w, "json inválido", http.StatusBadRequest)
+				return
+			}
+			if err := store.RevokeCapability(req.MailboxID, req.Token); err != nil {
+				writeStoreError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"status": "revoked"})
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
 	})
 	return mux
 }
@@ -231,15 +292,34 @@ func main() {
 		cfg = buffer.DefaultConfig()
 	}
 
-	store, err := buffer.NewBlindMailboxStore(
-		cfg.DataDir,
-		time.Duration(cfg.BaseTTLSeconds)*time.Second,
-		cfg.MaxAttachmentSizeBytes,
-		cfg.MaxInFlightPerQuotaToken,
-	)
-	if err != nil {
-		log.Fatalf("[NIX-RELAY] Erro ao iniciar armazenamento cego (%s): %v", cfg.DataDir, err)
+	var store buffer.RelayStore
+	if cfg.PostgresDSN != "" {
+		pgStore, pgErr := buffer.NewPostgresMailboxStore(
+			context.Background(),
+			cfg.PostgresDSN,
+			time.Duration(cfg.BaseTTLSeconds)*time.Second,
+			cfg.MaxAttachmentSizeBytes,
+			cfg.MaxInFlightPerQuotaToken,
+			true,
+		)
+		if pgErr != nil {
+			log.Fatalf("[NIX-RELAY] Erro ao conectar no PostgreSQL: %v", pgErr)
+		}
+		store = pgStore
+		log.Printf("[NIX-RELAY] Persistência ativa: PostgreSQL 17+ (schema nix.*).")
+	} else {
+		fsStore, fsErr := buffer.NewBlindMailboxStore(
+			cfg.DataDir,
+			time.Duration(cfg.BaseTTLSeconds)*time.Second,
+			cfg.MaxAttachmentSizeBytes,
+			cfg.MaxInFlightPerQuotaToken,
+		)
+		if fsErr != nil {
+			log.Fatalf("[NIX-RELAY] Erro ao iniciar armazenamento cego (%s): %v", cfg.DataDir, fsErr)
+		}
+		store = fsStore
 	}
+	defer func() { _ = store.Close() }()
 
 	pruner := buffer.NewAutoPruner(
 		cfg.LightThresholdPercent,
@@ -261,6 +341,9 @@ func main() {
 
 	var adminSrv *http.Server
 	if cfg.MetricsEnabled && cfg.MetricsListenAddr != "" {
+		if err := buffer.ValidateAdminListenAddr(cfg.MetricsListenAddr); err != nil {
+			log.Fatalf("[NIX-RELAY] Bloqueio de segurança administrativa: %v", err)
+		}
 		adminMux := NewAdminMux(store)
 		adminSrv = &http.Server{
 			Addr:              cfg.MetricsListenAddr,
