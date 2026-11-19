@@ -461,23 +461,86 @@ def create_catalog_database(db_path: str, records: List[Dict[str, Any]], version
     }
 
 
-def sign_catalog_artifact(db_path: str, manifest_path: str, version: int, entry_count: int, key_path: Optional[str] = None) -> Dict[str, Any]:
-    """Assina o banco do catálogo com chave Ed25519 e produz o manifesto."""
-    if key_path and os.path.exists(key_path):
-        with open(key_path, "rb") as f:
-            priv_key = ed25519.Ed25519PrivateKey.from_private_bytes(f.read())
-    else:
-        # Gera uma chave do publicador para a sessão / build
-        priv_key = ed25519.Ed25519PrivateKey.generate()
-        if key_path:
-            os.makedirs(os.path.dirname(os.path.abspath(key_path)), exist_ok=True)
-            with open(key_path, "wb") as f:
-                f.write(priv_key.private_bytes(
-                    encoding=serialization.Encoding.Raw,
-                    format=serialization.PrivateFormat.Raw,
-                    encryption_algorithm=serialization.NoEncryption()
-                ))
+KNOWN_TEST_KEY_PUB_HEX = "a805baa55178d7c0220a9d586a56db6359521455e3b66d9abf914b829a47f045"
+DEFAULT_TEST_KEY_PATH = os.path.join(os.path.dirname(__file__), "publisher_test_key.ed25519")
 
+
+def load_signing_key(key_path: Optional[str] = None, key_env: Optional[str] = None, is_production: bool = False) -> ed25519.Ed25519PrivateKey:
+    """Carrega ou provisiona de forma segura a chave Ed25519 de publicação de catálogo."""
+    raw_key_bytes = None
+
+    # 1. Tenta carregar de variável de ambiente segura (provisionamento CI/CD ou HSM)
+    env_var_name = key_env or "NIX_CATALOG_SIGNING_KEY"
+    env_val = os.environ.get(env_var_name)
+    if env_val:
+        env_val = env_val.strip()
+        if len(env_val) == 64:
+            # Hex encoded 32-byte seed
+            raw_key_bytes = bytes.fromhex(env_val)
+        elif os.path.exists(env_val):
+            key_path = env_val
+
+    # 2. Carrega de arquivo se raw bytes ainda não obtidos
+    if raw_key_bytes is None:
+        if key_path and os.path.exists(key_path):
+            abs_path = os.path.abspath(key_path)
+            # Em modo produção, checa permissões seguras do arquivo (0600 em Unix)
+            if is_production and hasattr(os, "stat"):
+                st = os.stat(abs_path)
+                mode = st.st_mode
+                if mode & 0o077 != 0:
+                    raise PermissionError(f"[Segurança] Chave de produção {abs_path} tem permissões excessivas ({oct(mode)}). Exija chmod 0600.")
+            with open(abs_path, "rb") as f:
+                raw_key_bytes = f.read()
+        elif not is_production:
+            # Em ambiente de teste/fixture local, gera ou usa fixture se permitido
+            if key_path and not os.path.exists(key_path):
+                priv = ed25519.Ed25519PrivateKey.generate()
+                os.makedirs(os.path.dirname(os.path.abspath(key_path)), exist_ok=True)
+                with open(key_path, "wb") as f:
+                    f.write(priv.private_bytes(
+                        encoding=serialization.Encoding.Raw,
+                        format=serialization.PrivateFormat.Raw,
+                        encryption_algorithm=serialization.NoEncryption()
+                    ))
+                return priv
+            elif os.path.exists(DEFAULT_TEST_KEY_PATH):
+                with open(DEFAULT_TEST_KEY_PATH, "rb") as f:
+                    raw_key_bytes = f.read()
+
+    if raw_key_bytes is None:
+        raise ValueError(
+            "Nenhuma chave Ed25519 de publicação fornecida. "
+            "Configure a variável NIX_CATALOG_SIGNING_KEY ou passe --key <caminho>."
+        )
+
+    priv_key = ed25519.Ed25519PrivateKey.from_private_bytes(raw_key_bytes)
+    pub_hex = priv_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw
+    ).hex()
+
+    # Em modo produção, REJEITA estritamente a chave de teste pública conhecida
+    if is_production and pub_hex == KNOWN_TEST_KEY_PUB_HEX:
+        raise ValueError(
+            f"[Segurança P0] Proibido utilizar a chave de teste ({KNOWN_TEST_KEY_PUB_HEX[:16]}...) em ambiente de produção!"
+        )
+
+    return priv_key
+
+
+def sign_catalog_artifact(
+    db_path: str,
+    manifest_path: str,
+    version: int,
+    entry_count: int,
+    key_path: Optional[str] = None,
+    key_env: Optional[str] = None,
+    is_production: bool = False,
+    previous_key_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """Assina o banco do catálogo com chave Ed25519 e produz o manifesto."""
+    priv_key = load_signing_key(key_path=key_path, key_env=key_env, is_production=is_production)
     pub_key = priv_key.public_key()
     pub_bytes = pub_key.public_bytes(
         encoding=serialization.Encoding.Raw,
@@ -505,7 +568,7 @@ def sign_catalog_artifact(db_path: str, manifest_path: str, version: int, entry_
     sig = priv_key.sign(canonical_payload)
     sig_hex = sig.hex()
 
-    manifest = {
+    manifest: Dict[str, Any] = {
         "domain": "NIX-CATALOG-MANIFEST-V1",
         "version": version,
         "artifact": os.path.basename(db_path),
@@ -514,8 +577,22 @@ def sign_catalog_artifact(db_path: str, manifest_path: str, version: int, entry_
         "issuedAtUnix": iat,
         "entryCount": entry_count,
         "signerEd25519Hex": pub_hex,
-        "signatureHex": sig_hex
+        "signatureHex": sig_hex,
+        "isProduction": is_production
     }
+
+    # Suporte a rotação de chaves: se previous_key_path for fornecido, assina prova de transição
+    if previous_key_path and os.path.exists(previous_key_path):
+        with open(previous_key_path, "rb") as pf:
+            prev_priv = ed25519.Ed25519PrivateKey.from_private_bytes(pf.read())
+            prev_pub_hex = prev_priv.public_key().public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw
+            ).hex()
+            rotation_claim = f"ROTATE:{prev_pub_hex}->{pub_hex}:{version}".encode("utf-8")
+            rotation_sig = prev_priv.sign(rotation_claim).hex()
+            manifest["previousSignerEd25519Hex"] = prev_pub_hex
+            manifest["rotationSignatureHex"] = rotation_sig
 
     os.makedirs(os.path.dirname(os.path.abspath(manifest_path)), exist_ok=True)
     with open(manifest_path, "w", encoding="utf-8") as f:
@@ -528,17 +605,34 @@ def main():
     parser = argparse.ArgumentParser(description="Nix Metadata Builder - Gera catálogo SQLite FTS5 assinado com Ed25519")
     parser.add_argument("--out-db", default="apps/nix_client/assets/catalog/seed_catalog.db", help="Caminho do banco SQLite de saída")
     parser.add_argument("--out-manifest", default="apps/nix_client/assets/catalog/seed_catalog_manifest.json", help="Caminho do manifesto de saída")
-    parser.add_argument("--key", default="tools/metadata_builder/publisher_test_key.ed25519", help="Arquivo da chave privada Ed25519 do publicador")
+    parser.add_argument("--key", default=None, help="Arquivo da chave privada Ed25519 do publicador")
+    parser.add_argument("--key-env", default=None, help="Nome da variável de ambiente com chave Ed25519")
+    parser.add_argument("--production", action="store_true", default=False, help="Modo estrito de produção (rejeita chaves de teste)")
+    parser.add_argument("--rotate-from", default=None, help="Caminho da chave anterior para assinar rotação")
     parser.add_argument("--version", type=int, default=1, help="Versão monotônica do catálogo")
     parser.add_argument("--seed", action="store_true", default=True, help="Popula com as obras culturais canônicas iniciais")
 
     args = parser.parse_args()
 
-    print(f"[Nix Metadata Builder] Iniciando pipeline de metadados culturais...")
+    key_path = args.key
+    if not key_path and not args.production and not args.key_env and not os.environ.get("NIX_CATALOG_SIGNING_KEY"):
+        key_path = DEFAULT_TEST_KEY_PATH
+        print(f"[Aviso] Utilizando chave de teste exclusiva para fixtures: {key_path}")
+
+    print(f"[Nix Metadata Builder] Iniciando pipeline de metadados culturais (production={args.production})...")
     meta = create_catalog_database(args.out_db, SAMPLE_SEED_RECORDS, version=args.version)
     print(f"[OK] Banco gerado com {meta['entry_count']} obras em {meta['path']} ({meta['byte_size']} bytes, SHA-256: {meta['sha256'][:16]}...)")
 
-    manifest = sign_catalog_artifact(args.out_db, args.out_manifest, version=args.version, entry_count=meta['entry_count'], key_path=args.key)
+    manifest = sign_catalog_artifact(
+        args.out_db,
+        args.out_manifest,
+        version=args.version,
+        entry_count=meta['entry_count'],
+        key_path=key_path,
+        key_env=args.key_env,
+        is_production=args.production,
+        previous_key_path=args.rotate_from
+    )
     print(f"[OK] Manifesto assinado com Ed25519 gravado em {args.out_manifest}")
     print(f"     Signer (Ed25519 Pub): {manifest['signerEd25519Hex']}")
     print(f"     Signature (Ed25519): {manifest['signatureHex'][:32]}...")

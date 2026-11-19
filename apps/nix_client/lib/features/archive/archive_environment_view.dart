@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/archive/archive_verification_status.dart';
 import '../../core/archive/nix_archive_service.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
@@ -21,6 +22,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
 
   List<Map<String, dynamic>> _recentArticles = [];
   List<Map<String, dynamic>> _userDrafts = [];
+  final Map<String, ArchiveCryptoVerificationStatus> _verificationCache = {};
   bool _isLoading = false;
 
   // Controlador do editor de novo artigo
@@ -60,6 +62,30 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
   NixState get _nixState => context.read<NixState>();
   NixArchiveService get _archiveService => _nixState.archiveService!;
 
+  Future<void> _verifyObject(String objectHash) async {
+    if (_verificationCache[objectHash] == ArchiveCryptoVerificationStatus.verified ||
+        _verificationCache[objectHash] == ArchiveCryptoVerificationStatus.invalidSignature) {
+      return;
+    }
+    try {
+      final isValid = await _archiveService.verifyStoredObject(objectHash);
+      if (mounted) {
+        setState(() {
+          _verificationCache[objectHash] = isValid
+              ? ArchiveCryptoVerificationStatus.verified
+              : ArchiveCryptoVerificationStatus.invalidSignature;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _verificationCache[objectHash] =
+              ArchiveCryptoVerificationStatus.verificationError;
+        });
+      }
+    }
+  }
+
   Future<void> _loadArticles() async {
     setState(() => _isLoading = true);
     try {
@@ -69,6 +95,13 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
           _recentArticles = objects;
           _isLoading = false;
         });
+        for (final obj in objects) {
+          final h = obj['hash'] as String?;
+          if (h != null) {
+            _verificationCache[h] ??= ArchiveCryptoVerificationStatus.notVerified;
+            _verifyObject(h);
+          }
+        }
       }
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
@@ -346,11 +379,9 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
                       ),
                     ),
                     const Spacer(),
-                    const Icon(Icons.verified_rounded, size: 14, color: Colors.greenAccent),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Ed25519 OK',
-                      style: const TextStyle(color: Colors.greenAccent, fontSize: 11),
+                    ArchiveCryptoBadge(
+                      status: _verificationCache[hash] ??
+                          ArchiveCryptoVerificationStatus.notVerified,
                     ),
                   ],
                 ),
