@@ -5,7 +5,7 @@ server:
   onion_service_host: "" # Preenchido em runtime pelo ControlPort / Tor HiddenServiceDir
 
 storage:
-  base_dir: "./data"
+  base_dir: "~/.local/share/nix/relay/data"
   postgres_dsn: "" # Opcional: postgresql://... (ou via env NIX_RELAY_PG_DSN)
   max_attachment_size_bytes: 52428800 # 50 MB
   max_in_flight_per_quota_token: 524288000 # 500 MB
