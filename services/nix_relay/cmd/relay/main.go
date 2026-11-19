@@ -286,8 +286,17 @@ func main() {
 	configPath := flag.String("config", "configs/relay.example.yaml", "Caminho do arquivo de configuração do relay")
 	flag.Parse()
 
+	configExplicit := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "config" {
+			configExplicit = true
+		}
+	})
 	cfg, err := buffer.LoadYAMLConfig(*configPath)
 	if err != nil {
+		if configExplicit {
+			log.Fatalf("[NIX-RELAY] Erro ao carregar configuração %s: %v", *configPath, err)
+		}
 		log.Printf("[NIX-RELAY] Aviso ao ler %s (%v); usando configuração padrão em memória/local.", *configPath, err)
 		cfg = buffer.DefaultConfig()
 	}
