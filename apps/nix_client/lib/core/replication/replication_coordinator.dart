@@ -102,6 +102,7 @@ class ReplicationOutboxItem {
   final int maxRetries;
   final int nextRetryAt;
   final String? lastError;
+  final Map<String, String> metadata;
   final int createdAt;
   final int updatedAt;
 
@@ -115,11 +116,20 @@ class ReplicationOutboxItem {
     this.maxRetries = 5,
     required this.nextRetryAt,
     this.lastError,
+    this.metadata = const {},
     required this.createdAt,
     required this.updatedAt,
   });
 
   factory ReplicationOutboxItem.fromRow(Map<String, dynamic> row) {
+    var meta = <String, String>{};
+    try {
+      final rawMeta = row['metadata_json'];
+      if (rawMeta is String && rawMeta.isNotEmpty) {
+        meta = Map<String, String>.from(jsonDecode(rawMeta) as Map);
+      }
+    } catch (_) {}
+
     return ReplicationOutboxItem(
       id: row['id'] as String,
       objectHash: row['object_hash'] as String,
@@ -133,6 +143,7 @@ class ReplicationOutboxItem {
       maxRetries: row['max_retries'] as int? ?? 5,
       nextRetryAt: row['next_retry_at'] as int? ?? 0,
       lastError: row['last_error'] as String?,
+      metadata: meta,
       createdAt: row['created_at'] as int? ?? 0,
       updatedAt: row['updated_at'] as int? ?? 0,
     );
@@ -148,6 +159,7 @@ class ReplicationOutboxItem {
         'max_retries': maxRetries,
         'next_retry_at': nextRetryAt,
         'last_error': lastError,
+        'metadata_json': jsonEncode(metadata),
         'created_at': createdAt,
         'updated_at': updatedAt,
       };
@@ -204,10 +216,15 @@ class ReplicationQueueRepository {
         max_retries INTEGER NOT NULL DEFAULT 5,
         next_retry_at INTEGER NOT NULL,
         last_error TEXT,
+        metadata_json TEXT DEFAULT '{}',
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
     ''');
+
+    try {
+      await db.execute("ALTER TABLE replication_outbox ADD COLUMN metadata_json TEXT DEFAULT '{}'");
+    } catch (_) {}
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS replication_records (
@@ -227,6 +244,7 @@ class ReplicationQueueRepository {
     required String objectHash,
     required String kind,
     required List<int> canonicalBytes,
+    Map<String, String> metadata = const {},
     int maxRetries = 5,
   }) async {
     final now = DateTime.now().toUtc().millisecondsSinceEpoch;
@@ -244,6 +262,7 @@ class ReplicationQueueRepository {
         'max_retries': maxRetries,
         'next_retry_at': now,
         'last_error': null,
+        'metadata_json': jsonEncode(metadata),
         'created_at': now,
         'updated_at': now,
       },
@@ -383,6 +402,8 @@ abstract class ReplicationAdapter {
   Future<bool> verifyObjectExists(String hash);
 
   Future<bool> deleteObject(String hash);
+
+  Future<Map<String, String>?> retrieveMetadata(String hash);
 }
 
 /// Assinador AWS SigV4 puro Dart para S3, MinIO, Wasabi e Cloudflare R2.
@@ -480,6 +501,7 @@ class S3ReplicationAdapter implements ReplicationAdapter {
   final Duration timeout;
   final HttpClient? customHttpClient;
   final Map<String, List<int>> _mockStorage = {};
+  final Map<String, Map<String, String>> _mockMetadata = {};
   bool isOnline = true;
 
   S3ReplicationAdapter({
@@ -532,6 +554,7 @@ class S3ReplicationAdapter implements ReplicationAdapter {
 
     if (!isRealHttp) {
       _mockStorage[hash.toLowerCase()] = List<int>.from(bytes);
+      _mockMetadata[hash.toLowerCase()] = Map<String, String>.from(metadata);
       return true;
     }
 
@@ -662,6 +685,7 @@ class S3ReplicationAdapter implements ReplicationAdapter {
 
     if (!isRealHttp) {
       _mockStorage.remove(hash.toLowerCase());
+      _mockMetadata.remove(hash.toLowerCase());
       return true;
     }
 
@@ -690,6 +714,56 @@ class S3ReplicationAdapter implements ReplicationAdapter {
       return res.statusCode == 200 || res.statusCode == 204 || res.statusCode == 404;
     } catch (_) {
       return false;
+    } finally {
+      if (customHttpClient == null) client.close();
+    }
+  }
+
+  @override
+  Future<Map<String, String>?> retrieveMetadata(String hash) async {
+    if (!isOnline) return null;
+
+    if (!isRealHttp) {
+      return _mockMetadata[hash.toLowerCase()];
+    }
+
+    final uri = _buildObjectUri(hash);
+    _assertTlsPolicy(uri);
+
+    final signer = AwsSigV4Signer(
+      accessKey: accessKey!,
+      secretKey: secretKey!,
+      region: region,
+      service: 's3',
+    );
+
+    final headers = signer.sign(
+      method: 'HEAD',
+      uri: uri,
+      body: const [],
+    );
+
+    final client = customHttpClient ?? HttpClient();
+    try {
+      final req = await client.openUrl('HEAD', uri).timeout(timeout);
+      headers.forEach(req.headers.set);
+      final res = await req.close().timeout(timeout);
+      await res.drain<void>();
+
+      if (res.statusCode == 200) {
+        final meta = <String, String>{};
+        res.headers.forEach((name, values) {
+          final lower = name.toLowerCase();
+          if (lower.startsWith('x-amz-meta-')) {
+            final key = lower.substring('x-amz-meta-'.length);
+            meta[key] = values.join(',');
+          }
+        });
+        return meta;
+      }
+      return null;
+    } catch (_) {
+      return null;
     } finally {
       if (customHttpClient == null) client.close();
     }
@@ -740,6 +814,7 @@ class IpfsReplicationAdapter implements ReplicationAdapter {
   final Duration timeout;
   final HttpClient? customHttpClient;
   final Map<String, List<int>> _mockStorage = {};
+  final Map<String, Map<String, String>> _mockMetadata = {};
   final Map<String, String> _hashToCid = {};
   bool isOnline = true;
 
@@ -780,6 +855,7 @@ class IpfsReplicationAdapter implements ReplicationAdapter {
 
     if (!isRealHttp) {
       _mockStorage[hash.toLowerCase()] = List<int>.from(bytes);
+      _mockMetadata[hash.toLowerCase()] = Map<String, String>.from(metadata);
       return true;
     }
 
@@ -891,6 +967,7 @@ class IpfsReplicationAdapter implements ReplicationAdapter {
 
     if (!isRealHttp) {
       _mockStorage.remove(hash.toLowerCase());
+      _mockMetadata.remove(hash.toLowerCase());
       return true;
     }
 
@@ -910,6 +987,12 @@ class IpfsReplicationAdapter implements ReplicationAdapter {
       if (customHttpClient == null) client.close();
     }
   }
+
+  @override
+  Future<Map<String, String>?> retrieveMetadata(String hash) async {
+    if (!isOnline) return null;
+    return _mockMetadata[hash.toLowerCase()];
+  }
 }
 
 /// Coordenador de replicação distribuída com barreira estrita de privacidade,
@@ -923,6 +1006,7 @@ class NixReplicationCoordinator {
     'article',
     'catalog_package',
     'public_refutation',
+    'comment',
   };
 
   NixReplicationCoordinator({
@@ -942,6 +1026,7 @@ class NixReplicationCoordinator {
     required String objectHash,
     required String kind,
     required List<int> canonicalBytes,
+    Map<String, String> metadata = const {},
     int maxRetries = 5,
   }) async {
     // 1. Barreira de Privacidade
@@ -965,6 +1050,7 @@ class NixReplicationCoordinator {
         objectHash: objectHash,
         kind: kind,
         canonicalBytes: canonicalBytes,
+        metadata: metadata,
         maxRetries: maxRetries,
       );
     }
@@ -974,6 +1060,7 @@ class NixReplicationCoordinator {
       objectHash: objectHash,
       kind: kind,
       canonicalBytes: canonicalBytes,
+      metadata: metadata,
       retryCount: 0,
       maxRetries: maxRetries,
     );
@@ -983,6 +1070,7 @@ class NixReplicationCoordinator {
     required String objectHash,
     required String kind,
     required List<int> canonicalBytes,
+    Map<String, String> metadata = const {},
     required int retryCount,
     int maxRetries = 5,
   }) async {
@@ -1012,6 +1100,7 @@ class NixReplicationCoordinator {
         final ok = await adapter.storeObject(
           hash: objectHash,
           bytes: canonicalBytes,
+          metadata: metadata,
         );
         if (ok) {
           successfulEndpoints.add(adapter.endpoint);
@@ -1075,6 +1164,7 @@ class NixReplicationCoordinator {
         objectHash: item.objectHash,
         kind: item.kind,
         canonicalBytes: item.payloadBytes,
+        metadata: item.metadata,
         retryCount: item.retryCount,
         maxRetries: item.maxRetries,
       );
@@ -1098,6 +1188,26 @@ class NixReplicationCoordinator {
           final actualSha = std_crypto.sha256.convert(bytes).toString().toLowerCase();
           if (actualSha == objectHash.toLowerCase()) {
             return bytes; // Integridade confirmada
+          }
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// Recupera objeto canônico e seus metadados de distribuição a partir da malha,
+  /// validando a integridade estrita SHA-256 dos bytes recuperados contra [objectHash].
+  Future<({Uint8List bytes, Map<String, String> metadata})?> fetchVerifiedObjectWithMetadata(
+    String objectHash,
+  ) async {
+    for (final adapter in _adapters) {
+      try {
+        final bytes = await adapter.retrieveObject(objectHash);
+        if (bytes != null) {
+          final actualSha = std_crypto.sha256.convert(bytes).toString().toLowerCase();
+          if (actualSha == objectHash.toLowerCase()) {
+            final meta = await adapter.retrieveMetadata(objectHash) ?? const <String, String>{};
+            return (bytes: bytes, metadata: meta);
           }
         }
       } catch (_) {}

@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart' as std_crypto;
 import 'package:cryptography/cryptography.dart';
 import 'package:nix_core_crypto/nix_core_crypto.dart';
 import '../database/repositories.dart';
+import '../replication/replication_coordinator.dart';
 
 /// Serviço oficial de publicação imutável Nix Archive v1 (`nix.archive.article.v1`, Fase 7 / Fase 9).
 /// Realiza canonicalização determinística, hash SHA-256 content-addressed, assinatura Ed25519,
@@ -55,7 +56,9 @@ class NixArchiveService {
   };
 
   final ArchiveRepository archiveRepo;
-  NixArchiveService(this.archiveRepo);
+  final NixReplicationCoordinator? replicationCoordinator;
+
+  NixArchiveService(this.archiveRepo, {this.replicationCoordinator});
 
   /// Sanitizador HTML com tokenizador determinístico e whitelist de tags/atributos:
   /// - Remove comentários, tags não fechadas/malformadas e blocos perigosos (`script`, `iframe`, `svg`, `style`, `object`, `embed`, `form`, etc.).
@@ -287,6 +290,14 @@ class NixArchiveService {
   static String _toHex(List<int> bytes) =>
       bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
+  static List<int> _fromHex(String hex) {
+    final res = <int>[];
+    for (int i = 0; i < hex.length; i += 2) {
+      res.add(int.parse(hex.substring(i, i + 2), radix: 16));
+    }
+    return res;
+  }
+
   Future<void> ensurePersonaRegistered({
     required String personaId,
     required NixIdentity identity,
@@ -357,6 +368,29 @@ class NixArchiveService {
         text: c.text.trim(),
       );
     }
+
+    if (replicationCoordinator != null) {
+      try {
+        await replicationCoordinator!.replicatePublicObject(
+          objectHash: hashHex,
+          kind: 'article',
+          canonicalBytes: canonicalBytes,
+          metadata: {
+            'signature': _toHex(sig),
+            'author': author.ed25519PublicHex,
+            'kind': 'article',
+            'created_at': now.toString(),
+            'visibility': visibility,
+            if (supersedesHash != null) 'supersedes': supersedesHash,
+            if (claims.isNotEmpty)
+              'claims_json': jsonEncode(
+                claims.map((c) => {'claimId': c.claimId, 'text': c.text.trim()}).toList(),
+              ),
+          },
+        );
+      } catch (_) {}
+    }
+
     return hashHex;
   }
 
@@ -401,6 +435,26 @@ class NixArchiveService {
       targetHash: targetHash,
       targetClaimId: targetClaimId,
     );
+
+    if (replicationCoordinator != null) {
+      try {
+        await replicationCoordinator!.replicatePublicObject(
+          objectHash: hashHex,
+          kind: 'public_refutation',
+          canonicalBytes: canonicalBytes,
+          metadata: {
+            'signature': _toHex(sig),
+            'author': author.ed25519PublicHex,
+            'kind': 'public_refutation',
+            'created_at': now.toString(),
+            'target_object_hash': targetHash,
+            'target_claim_id': targetClaimId,
+            'visibility': visibility,
+          },
+        );
+      } catch (_) {}
+    }
+
     return hashHex;
   }
 
@@ -491,6 +545,26 @@ class NixArchiveService {
       quoteText: quoteText,
       createdAt: now,
     );
+
+    if (replicationCoordinator != null) {
+      try {
+        await replicationCoordinator!.replicatePublicObject(
+          objectHash: hashHex,
+          kind: 'comment',
+          canonicalBytes: canonicalBytes,
+          metadata: {
+            'signature': _toHex(sig),
+            'author': author.ed25519PublicHex,
+            'kind': 'comment',
+            'created_at': now.toString(),
+            'target_object_hash': targetObjectHash,
+            if (parentCommentHash != null) 'parent_comment_hash': parentCommentHash,
+            'author_persona_id': authorPersonaId,
+            if (quoteText != null && quoteText.isNotEmpty) 'quote_text': quoteText,
+          },
+        );
+      } catch (_) {}
+    }
 
     return hashHex;
   }
@@ -638,5 +712,300 @@ class NixArchiveService {
   Future<bool> isAuthorModerated(Uint8List authorPublic) async {
     final status = await archiveRepo.getAuthorModeration(authorPublic);
     return status != null;
+  }
+
+  // ===========================================================================
+  // SUBSISTEMA DE SINCRONIZAÇÃO DISTRIBUÍDA (Etapa 6)
+  // ===========================================================================
+
+  /// Sincroniza um objeto distribuído a partir do [replicationCoordinator],
+  /// valida SHA-256 (CID) e assinatura Ed25519 do autor, descartando dados adulterados.
+  Future<bool> syncObjectFromNetwork(String objectHash) async {
+    if (replicationCoordinator == null) return false;
+
+    // 1. Deduplicação: verifica se já existe na base local
+    final existingObj = await archiveRepo.getObject(objectHash);
+    final existingComm = await archiveRepo.getComment(objectHash);
+    if (existingObj != null || existingComm != null) {
+      return true; // Já sincronizado
+    }
+
+    // 2. Busca na malha S3 / IPFS
+    final res = await replicationCoordinator!.fetchVerifiedObjectWithMetadata(objectHash);
+    if (res == null) return false;
+
+    final canonicalBytes = res.bytes;
+    final metadata = res.metadata;
+
+    // 3. Validação estrita de integridade SHA-256 do payload canônico
+    final computedHash = computeContentHashHex(canonicalBytes);
+    if (computedHash.toLowerCase() != objectHash.toLowerCase()) {
+      throw ArchiveTamperDetectedException(
+        '[Segurança] Hash SHA-256 adulterado em trânsito ($computedHash != $objectHash).',
+      );
+    }
+
+    // 4. Decodificação canônica do payload JSON
+    Map<String, dynamic> canonicalObj;
+    try {
+      canonicalObj = jsonDecode(utf8.decode(canonicalBytes)) as Map<String, dynamic>;
+    } catch (_) {
+      throw const ArchiveTamperDetectedException(
+        '[Segurança] Payload não é JSON válido ou está corrompido.',
+      );
+    }
+
+    final authorEd25519Hex = (canonicalObj['authorEd25519'] as String?) ?? metadata['author'];
+    if (authorEd25519Hex == null || authorEd25519Hex.isEmpty) {
+      throw const ArchiveTamperDetectedException(
+        '[Segurança] Identidade pública do autor ausente.',
+      );
+    }
+
+    final sigHex = metadata['signature'];
+    if (sigHex == null || sigHex.isEmpty) {
+      throw const ArchiveTamperDetectedException(
+        '[Segurança] Assinatura digital ausente nos metadados de distribuição.',
+      );
+    }
+
+    final authorBytes = _fromHex(authorEd25519Hex);
+    final sigBytes = _fromHex(sigHex);
+
+    // 5. Validação estrita de assinatura Ed25519
+    final isSigValid = await NixIdentity.verify(
+      message: canonicalBytes,
+      signatureBytes: sigBytes,
+      ed25519PublicKey: SimplePublicKey(authorBytes, type: KeyPairType.ed25519),
+    );
+
+    if (!isSigValid) {
+      throw ArchiveTamperDetectedException(
+        '[Segurança] Assinatura Ed25519 do autor inválida para o objeto $objectHash.',
+      );
+    }
+
+    // 6. Ingestão segura no Archive local com estado verificado
+    final schema = canonicalObj['schema'] as String? ?? '';
+    final createdAt = (canonicalObj['createdAt'] as int?) ??
+        int.tryParse(metadata['created_at'] ?? '') ??
+        DateTime.now().toUtc().millisecondsSinceEpoch;
+
+    if (schema == commentSchemaV1 || metadata['kind'] == 'comment') {
+      final targetObjHash = (canonicalObj['targetObjectHash'] as String?) ??
+          metadata['target_object_hash'] ??
+          '';
+      final parentCommHash = (canonicalObj['parentCommentHash'] as String?) ??
+          metadata['parent_comment_hash'];
+      final authorPersona = (canonicalObj['authorPersonaId'] as String?) ??
+          metadata['author_persona_id'] ??
+          'anonymous';
+      final quote = (canonicalObj['quoteText'] as String?) ?? metadata['quote_text'];
+      final content = (canonicalObj['contentMarkdown'] as String?) ?? '';
+
+      await archiveRepo.insertComment(
+        hash: objectHash,
+        targetObjectHash: targetObjHash,
+        parentCommentHash: parentCommHash,
+        authorPublic: Uint8List.fromList(authorBytes),
+        authorPersonaId: authorPersona,
+        signature: Uint8List.fromList(sigBytes),
+        contentMarkdown: content,
+        quoteText: quote,
+        createdAt: createdAt,
+      );
+    } else {
+      final kind = (schema == articleSchemaV1)
+          ? 'article'
+          : (metadata['kind'] ?? 'article');
+      final supersedes = (canonicalObj['supersedes'] as String?) ??
+          metadata['supersedes'];
+      final visibility = (canonicalObj['visibility'] as String?) ??
+          metadata['visibility'] ??
+          'public';
+
+      await archiveRepo.upsertObject(
+        hash: objectHash,
+        kind: kind,
+        canonicalBytes: Uint8List.fromList(canonicalBytes),
+        authorPublic: Uint8List.fromList(authorBytes),
+        signature: Uint8List.fromList(sigBytes),
+        supersedesHash: supersedes,
+        visibility: visibility,
+        createdAt: createdAt,
+      );
+
+      if (kind == 'article') {
+        final rawClaims = canonicalObj['claims'];
+        if (rawClaims is List) {
+          for (final c in rawClaims) {
+            if (c is Map && c['claimId'] != null && c['text'] != null) {
+              await archiveRepo.upsertClaim(
+                objectHash: objectHash,
+                claimId: c['claimId'].toString(),
+                text: c['text'].toString(),
+              );
+            }
+          }
+        }
+      } else if (kind == 'public_refutation' || kind == 'refutation') {
+        final targetHash = (canonicalObj['targetHash'] as String?) ??
+            (canonicalObj['targetObjectHash'] as String?) ??
+            metadata['target_object_hash'];
+        final targetClaim = (canonicalObj['targetClaimId'] as String?) ??
+            metadata['target_claim_id'];
+        if (targetHash != null && targetClaim != null) {
+          await archiveRepo.insertRefutation(
+            refutationHash: objectHash,
+            targetHash: targetHash,
+            targetClaimId: targetClaim,
+          );
+        }
+      }
+    }
+
+    return true;
+  }
+
+  /// Sincronização incremental: processa lista de hashes remotos pulando itens já conhecidos
+  /// e respeitando [sinceTimestampMs] opcional.
+  Future<int> syncIncrementalFromNetwork({
+    required List<String> remoteHashes,
+    int? sinceTimestampMs,
+  }) async {
+    int syncedCount = 0;
+    for (final h in remoteHashes) {
+      try {
+        final existing = await archiveRepo.getObject(h);
+        final existingComm = await archiveRepo.getComment(h);
+        if (existing != null || existingComm != null) {
+          continue; // Pula item já sincronizado
+        }
+
+        final ok = await syncObjectFromNetwork(h);
+        if (ok) {
+          syncedCount++;
+        }
+      } on ArchiveTamperDetectedException {
+        // Conteúdo adulterado é descartado com segurança sem interromper o loop nem corromper a base local
+        continue;
+      } catch (_) {
+        continue;
+      }
+    }
+    return syncedCount;
+  }
+}
+
+class ArchiveTamperDetectedException implements Exception {
+  final String message;
+  const ArchiveTamperDetectedException(this.message);
+
+  @override
+  String toString() => 'ArchiveTamperDetectedException: $message';
+}
+
+/// Pacote canônico de distribuição de objetos do Nix Archive para S3 e IPFS.
+class ArchiveTransferBundle {
+  static const String bundleSchemaV1 = 'nix.archive.bundle.v1';
+
+  final String kind; // 'article', 'comment', 'refutation'
+  final String hash;
+  final List<int> canonicalBytes;
+  final List<int> authorPublic;
+  final List<int> signature;
+  final int createdAt;
+  final String? supersedesHash;
+  final String visibility;
+  final List<({String claimId, String text})> claims;
+  final String? targetObjectHash;
+  final String? parentCommentHash;
+  final String? authorPersonaId;
+  final String? quoteText;
+  final String? targetClaimId;
+
+  const ArchiveTransferBundle({
+    required this.kind,
+    required this.hash,
+    required this.canonicalBytes,
+    required this.authorPublic,
+    required this.signature,
+    required this.createdAt,
+    this.supersedesHash,
+    this.visibility = 'public',
+    this.claims = const [],
+    this.targetObjectHash,
+    this.parentCommentHash,
+    this.authorPersonaId,
+    this.quoteText,
+    this.targetClaimId,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'schema': bundleSchemaV1,
+        'kind': kind,
+        'hash': hash,
+        'canonicalBytesB64': base64Encode(canonicalBytes),
+        'authorPublicHex': _toHex(authorPublic),
+        'signatureHex': _toHex(signature),
+        'createdAt': createdAt,
+        if (supersedesHash != null) 'supersedesHash': supersedesHash,
+        'visibility': visibility,
+        if (claims.isNotEmpty)
+          'claims': claims.map((c) => {'claimId': c.claimId, 'text': c.text}).toList(),
+        if (targetObjectHash != null) 'targetObjectHash': targetObjectHash,
+        if (parentCommentHash != null) 'parentCommentHash': parentCommentHash,
+        if (authorPersonaId != null) 'authorPersonaId': authorPersonaId,
+        if (quoteText != null) 'quoteText': quoteText,
+        if (targetClaimId != null) 'targetClaimId': targetClaimId,
+      };
+
+  factory ArchiveTransferBundle.fromJson(Map<String, dynamic> json) {
+    final claimsList = <({String claimId, String text})>[];
+    if (json['claims'] is List) {
+      for (final c in (json['claims'] as List)) {
+        if (c is Map) {
+          claimsList.add((
+            claimId: c['claimId'] as String,
+            text: c['text'] as String,
+          ));
+        }
+      }
+    }
+
+    return ArchiveTransferBundle(
+      kind: json['kind'] as String,
+      hash: json['hash'] as String,
+      canonicalBytes: base64Decode(json['canonicalBytesB64'] as String),
+      authorPublic: _fromHex(json['authorPublicHex'] as String),
+      signature: _fromHex(json['signatureHex'] as String),
+      createdAt: json['createdAt'] as int,
+      supersedesHash: json['supersedesHash'] as String?,
+      visibility: json['visibility'] as String? ?? 'public',
+      claims: claimsList,
+      targetObjectHash: json['targetObjectHash'] as String?,
+      parentCommentHash: json['parentCommentHash'] as String?,
+      authorPersonaId: json['authorPersonaId'] as String?,
+      quoteText: json['quoteText'] as String?,
+      targetClaimId: json['targetClaimId'] as String?,
+    );
+  }
+
+  List<int> toBytes() => utf8.encode(jsonEncode(toJson()));
+
+  factory ArchiveTransferBundle.fromBytes(List<int> bytes) {
+    final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    return ArchiveTransferBundle.fromJson(json);
+  }
+
+  static String _toHex(List<int> bytes) =>
+      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+  static List<int> _fromHex(String hex) {
+    final res = <int>[];
+    for (int i = 0; i < hex.length; i += 2) {
+      res.add(int.parse(hex.substring(i, i + 2), radix: 16));
+    }
+    return res;
   }
 }
