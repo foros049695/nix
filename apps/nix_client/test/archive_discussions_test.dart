@@ -240,5 +240,75 @@ void main() {
       expect(refutations.first['target_claim_id'], equals('claim_alpha'));
       expect(refutations.first['refutation_hash'], equals(refutationHash));
     });
+
+    test('Detecção rigorosa de adulteração de conteúdo (Tamper Rejection) em artigos e comentários', () async {
+      final articleHash = await archiveService.publishArticle(
+        author: authorAlice,
+        title: 'Artigo Imutável',
+        rawHtmlBody: '<p>Texto legítimo e autêntico.</p>',
+      );
+      expect(await archiveService.verifyStoredObject(articleHash), isTrue);
+
+      // Simula adulteração maliciosa de bytes no SQLite local
+      await localDb.rawDatabase.rawUpdate(
+        'UPDATE archive_objects SET canonical_bytes = ? WHERE hash = ?',
+        [Uint8List.fromList([99, 99, 99, 99]), articleHash],
+      );
+
+      // A verificação DEVE falhar fail-closed (retornando false)
+      expect(await archiveService.verifyStoredObject(articleHash), isFalse);
+
+      // Comentário legítimo
+      final commentHash = await archiveService.publishComment(
+        author: authorBob,
+        authorPersonaId: 'persona_bob',
+        targetObjectHash: articleHash,
+        contentMarkdown: 'Comentário original.',
+      );
+      expect(await archiveService.verifyStoredComment(commentHash), isTrue);
+
+      // Adulteração do comentário no banco
+      await localDb.rawDatabase.rawUpdate(
+        'UPDATE archive_comments SET content_markdown = ? WHERE hash = ?',
+        ['Comentário alterado por terceiros.', commentHash],
+      );
+      expect(await archiveService.verifyStoredComment(commentHash), isFalse);
+    });
+
+    test('Cadeia histórica de revisões (supersedes) e persistência pós-reinicialização', () async {
+      // 1. Versão inicial
+      final v1Hash = await archiveService.publishArticle(
+        author: authorAlice,
+        title: 'Artigo Científico v1',
+        rawHtmlBody: '<p>Primeira iteração da pesquisa.</p>',
+      );
+
+      // 2. Versão revisada apontando para v1 via supersedes
+      final v2Hash = await archiveService.publishArticle(
+        author: authorAlice,
+        title: 'Artigo Científico v2',
+        rawHtmlBody: '<p>Segunda iteração corrigida com dados experimentais.</p>',
+        supersedesHash: v1Hash,
+      );
+
+      // 3. Versão revisada final apontando para v2
+      final v3Hash = await archiveService.publishArticle(
+        author: authorAlice,
+        title: 'Artigo Científico v3 Final',
+        rawHtmlBody: '<p>Versão final homologada.</p>',
+        supersedesHash: v2Hash,
+      );
+
+      final revisionHistory = await archiveService.getRevisionHistory(v3Hash);
+      expect(revisionHistory.length, equals(3));
+      expect(revisionHistory[0]['hash'], equals(v3Hash));
+      expect(revisionHistory[1]['hash'], equals(v2Hash));
+      expect(revisionHistory[2]['hash'], equals(v1Hash));
+
+      // 4. Verificação de persistência e integridade de todos os nós da cadeia
+      expect(await archiveService.verifyStoredObject(v1Hash), isTrue);
+      expect(await archiveService.verifyStoredObject(v2Hash), isTrue);
+      expect(await archiveService.verifyStoredObject(v3Hash), isTrue);
+    });
   });
 }

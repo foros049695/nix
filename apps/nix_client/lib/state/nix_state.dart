@@ -496,6 +496,16 @@ class NixState extends ChangeNotifier {
   MediaRepository get mediaRepository => _mediaRepo!;
   ArchiveRepository get archiveRepository => _archiveRepo!;
 
+  void debugOverrideArchive(
+    ArchiveRepository repo,
+    NixArchiveService service,
+    NixIdentity identity,
+  ) {
+    _archiveRepo = repo;
+    _archiveService = service;
+    _primaryIdentity = identity;
+  }
+
   Future<void> ensureCatalogDatabaseOpened() async {
     if (_catalogDatabase == null) {
       _catalogDatabase = await CatalogDatabase.open();

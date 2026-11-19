@@ -437,6 +437,14 @@ class NixArchiveService {
     return chain;
   }
 
+  /// Retorna as alegações (claims) vinculadas a um artigo auditável.
+  Future<List<Map<String, dynamic>>> getClaimsForObject(String objectHash) =>
+      archiveRepo.getClaimsForObject(objectHash);
+
+  /// Retorna as refutações registradas contra um artigo ou claim alvo.
+  Future<List<Map<String, dynamic>>> listRefutationsForTarget(String targetHash) =>
+      archiveRepo.listRefutationsForTarget(targetHash);
+
   // ===========================================================================
   // SUBSISTEMA DE DISCUSSÕES, RASCUNHOS E MODERAÇÃO LOCAL (Fase 19)
   // ===========================================================================
