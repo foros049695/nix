@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as std_crypto;
 import 'package:cryptography/cryptography.dart';
+import 'package:nix_transport/nix_transport.dart';
+import '../security/platform_runtime.dart';
 import 'catalog_database.dart';
 
 class CatalogRollbackRejectedException implements Exception {
@@ -452,7 +455,7 @@ class MediaIndexUpdater {
     // Validação de integridade do SQLite e FTS5 no arquivo incoming
     CatalogDatabase? incomingDb;
     try {
-      incomingDb = await CatalogDatabase.open(path: incomingPath);
+      incomingDb = await CatalogDatabase.open(path: incomingPath, readOnly: true);
       final check = await incomingDb.rawDatabase.rawQuery('PRAGMA integrity_check;');
       if (check.isEmpty || check.first.values.first != 'ok') {
         throw CatalogIntegrityVerificationException(
@@ -499,5 +502,582 @@ class MediaIndexUpdater {
       }
       rethrow;
     }
+  }
+}
+
+class CatalogUpdateCancelledException implements Exception {
+  final String message;
+  const CatalogUpdateCancelledException([this.message = 'Atualização cancelada pelo usuário.']);
+  @override
+  String toString() => 'CatalogUpdateCancelledException: $message';
+}
+
+enum CatalogUpdateStage {
+  idle,
+  checking,
+  updateAvailable,
+  upToDate,
+  downloading,
+  verifying,
+  applying,
+  completed,
+  cancelled,
+  error,
+}
+
+class CatalogUpdateProgress {
+  final CatalogUpdateStage stage;
+  final int bytesDownloaded;
+  final int totalBytes;
+  final double progressPercent;
+  final String statusMessage;
+  final String? errorMessage;
+  final SignedCatalogManifest? availableManifest;
+
+  const CatalogUpdateProgress({
+    required this.stage,
+    this.bytesDownloaded = 0,
+    this.totalBytes = 0,
+    this.progressPercent = 0.0,
+    this.statusMessage = '',
+    this.errorMessage,
+    this.availableManifest,
+  });
+
+  bool get isTerminal =>
+      stage == CatalogUpdateStage.completed ||
+      stage == CatalogUpdateStage.error ||
+      stage == CatalogUpdateStage.cancelled;
+}
+
+class CatalogVersionEntry {
+  final int version;
+  final String artifactName;
+  final String sha256Hex;
+  final int entryCount;
+  final String signerPublicKeyHex;
+  final int appliedAtUnix;
+  final String status;
+
+  const CatalogVersionEntry({
+    required this.version,
+    required this.artifactName,
+    required this.sha256Hex,
+    required this.entryCount,
+    required this.signerPublicKeyHex,
+    required this.appliedAtUnix,
+    required this.status,
+  });
+
+  factory CatalogVersionEntry.fromJson(Map<String, dynamic> json) =>
+      CatalogVersionEntry(
+        version: json['version'] as int,
+        artifactName: json['artifactName'] as String,
+        sha256Hex: json['sha256Hex'] as String,
+        entryCount: json['entryCount'] as int? ?? 0,
+        signerPublicKeyHex: json['signerPublicKeyHex'] as String? ?? '',
+        appliedAtUnix: json['appliedAtUnix'] as int,
+        status: json['status'] as String? ?? 'success',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'version': version,
+        'artifactName': artifactName,
+        'sha256Hex': sha256Hex,
+        'entryCount': entryCount,
+        'signerPublicKeyHex': signerPublicKeyHex,
+        'appliedAtUnix': appliedAtUnix,
+        'status': status,
+      };
+}
+
+/// Gerenciador de atualizações privadas e seguras do Nix Media Index.
+class CatalogUpdateManager {
+  final CatalogPublisherKeyring keyring;
+  TransportPolicy transportPolicy;
+  final String targetDbPath;
+  final String historyFilePath;
+
+  bool _isCancelled = false;
+  HttpClient? _activeHttpClient;
+  RawSocket? _activeRawSocket;
+  final StreamController<CatalogUpdateProgress> _progressController =
+      StreamController<CatalogUpdateProgress>.broadcast();
+
+  CatalogUpdateProgress _currentProgress =
+      const CatalogUpdateProgress(stage: CatalogUpdateStage.idle);
+
+  CatalogUpdateManager({
+    CatalogPublisherKeyring? keyring,
+    TransportPolicy? transportPolicy,
+    String? targetDbPath,
+    String? historyFilePath,
+  })  : keyring = keyring ??
+            CatalogPublisherKeyring(
+              trustedKeysHex: {CatalogPublisherKeyring.fixtureTestPublisherKeyHex},
+              allowTestFixtureKey: true,
+            ),
+        transportPolicy = transportPolicy ?? const TransportPolicy(),
+        targetDbPath = targetDbPath ?? CatalogDatabase.getDefaultCatalogPath(),
+        historyFilePath = historyFilePath ??
+            NixPlatformPaths.resolveDataFile('catalog_update_history.json');
+
+  Stream<CatalogUpdateProgress> get progressStream => _progressController.stream;
+  CatalogUpdateProgress get currentProgress => _currentProgress;
+  bool get isBusy =>
+      _currentProgress.stage == CatalogUpdateStage.checking ||
+      _currentProgress.stage == CatalogUpdateStage.downloading ||
+      _currentProgress.stage == CatalogUpdateStage.verifying ||
+      _currentProgress.stage == CatalogUpdateStage.applying;
+
+  void _emitProgress(CatalogUpdateProgress progress) {
+    _currentProgress = progress;
+    if (!_progressController.isClosed) {
+      _progressController.add(progress);
+    }
+  }
+
+  Future<int> getInstalledVersion() async {
+    final file = File(targetDbPath);
+    if (!await file.exists()) {
+      return 0;
+    }
+    try {
+      final db = await CatalogDatabase.open(path: targetDbPath, readOnly: true);
+      final ver = await db.getVersion();
+      await db.close();
+      return ver;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<SignedCatalogManifest?> checkForUpdate({
+    required Uri manifestUri,
+  }) async {
+    _isCancelled = false;
+    _emitProgress(const CatalogUpdateProgress(
+      stage: CatalogUpdateStage.checking,
+      statusMessage: 'Consultando versão disponível via transporte seguro...',
+    ));
+
+    try {
+      transportPolicy.assertAllowedUri(manifestUri);
+
+      final manifestBytes = await _downloadBytes(manifestUri);
+      if (_isCancelled) {
+        throw const CatalogUpdateCancelledException();
+      }
+
+      final manifestJson =
+          jsonDecode(utf8.decode(manifestBytes)) as Map<String, dynamic>;
+      final manifest = SignedCatalogManifest.fromJson(manifestJson);
+
+      // Validação antecipada do publicador
+      final signerLower = manifest.signerEd25519Hex.toLowerCase();
+      if (keyring.isKeyRevoked(signerLower)) {
+        throw CatalogKeyRevokedException(
+          'Chave do publicador ($signerLower) foi revogada.',
+        );
+      }
+      if ((keyring.isProductionMode || manifest.isProduction) &&
+          signerLower == CatalogPublisherKeyring.fixtureTestPublisherKeyHex.toLowerCase() &&
+          !keyring.allowTestFixtureKey) {
+        throw const CatalogTestKeyRejectedException(
+          'Chave de teste rejeitada em ambiente de produção.',
+        );
+      }
+      if (!keyring.isKeyTrusted(signerLower)) {
+        throw CatalogUntrustedSignerException(
+          'Publicador ($signerLower) não consta no anel de chaves confiáveis.',
+        );
+      }
+
+      final currentVersion = await getInstalledVersion();
+      if (manifest.version > currentVersion) {
+        _emitProgress(CatalogUpdateProgress(
+          stage: CatalogUpdateStage.updateAvailable,
+          availableManifest: manifest,
+          statusMessage:
+              'Nova versão ${manifest.version} disponível (${manifest.entryCount} obras, ${(manifest.byteSize / 1024 / 1024).toStringAsFixed(1)} MB).',
+        ));
+        return manifest;
+      } else {
+        _emitProgress(CatalogUpdateProgress(
+          stage: CatalogUpdateStage.upToDate,
+          availableManifest: manifest,
+          statusMessage:
+              'O catálogo já está atualizado na versão mais recente ($currentVersion).',
+        ));
+        return null;
+      }
+    } catch (e) {
+      if (_isCancelled) {
+        _emitProgress(const CatalogUpdateProgress(
+          stage: CatalogUpdateStage.cancelled,
+          statusMessage: 'Verificação cancelada.',
+        ));
+        return null;
+      }
+      _emitProgress(CatalogUpdateProgress(
+        stage: CatalogUpdateStage.error,
+        errorMessage: e.toString(),
+        statusMessage: 'Falha na verificação de atualização.',
+      ));
+      rethrow;
+    }
+  }
+
+  Future<CatalogDatabase> downloadAndApplyUpdate({
+    required SignedCatalogManifest manifest,
+    required Uri packageUri,
+    void Function(CatalogUpdateProgress)? onProgress,
+  }) async {
+    _isCancelled = false;
+    _emitProgress(CatalogUpdateProgress(
+      stage: CatalogUpdateStage.downloading,
+      availableManifest: manifest,
+      statusMessage: 'Iniciando download seguro via Tor...',
+      totalBytes: manifest.byteSize,
+    ));
+
+    try {
+      transportPolicy.assertAllowedUri(packageUri);
+
+      final packageBytes = await _downloadBytes(
+        packageUri,
+        expectedLength: manifest.byteSize,
+        onProgress: (received, total) {
+          final percent = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.0;
+          final p = CatalogUpdateProgress(
+            stage: CatalogUpdateStage.downloading,
+            availableManifest: manifest,
+            bytesDownloaded: received,
+            totalBytes: total,
+            progressPercent: percent,
+            statusMessage:
+                'Baixando pacote: ${(received / 1024 / 1024).toStringAsFixed(1)} MB de ${(total / 1024 / 1024).toStringAsFixed(1)} MB (${(percent * 100).toStringAsFixed(0)}%)',
+          );
+          _emitProgress(p);
+          onProgress?.call(p);
+        },
+      );
+
+      if (_isCancelled) {
+        throw const CatalogUpdateCancelledException();
+      }
+
+      _emitProgress(CatalogUpdateProgress(
+        stage: CatalogUpdateStage.verifying,
+        availableManifest: manifest,
+        statusMessage: 'Verificando integridade SHA-256 e assinatura Ed25519...',
+      ));
+
+      _emitProgress(CatalogUpdateProgress(
+        stage: CatalogUpdateStage.applying,
+        availableManifest: manifest,
+        statusMessage: 'Aplicando pacote e validando banco SQLite FTS5...',
+      ));
+
+      final updatedDb = await MediaIndexUpdater.applySignedCatalogPackage(
+        packageBytes: packageBytes,
+        manifest: manifest,
+        keyring: keyring,
+        targetDbPath: targetDbPath,
+      );
+
+      // Grava no histórico de versões
+      await _recordHistory(CatalogVersionEntry(
+        version: manifest.version,
+        artifactName: manifest.artifactName,
+        sha256Hex: manifest.sha256Hex,
+        entryCount: manifest.entryCount,
+        signerPublicKeyHex: manifest.signerEd25519Hex,
+        appliedAtUnix: DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000,
+        status: 'success',
+      ));
+
+      _emitProgress(CatalogUpdateProgress(
+        stage: CatalogUpdateStage.completed,
+        availableManifest: manifest,
+        statusMessage:
+            'Catálogo atualizado com sucesso para versão ${manifest.version} (${manifest.entryCount} obras)!',
+      ));
+
+      return updatedDb;
+    } catch (e) {
+      // Limpeza defensiva do incoming
+      final inc = File('$targetDbPath.incoming');
+      if (await inc.exists()) {
+        try {
+          await inc.delete();
+        } catch (_) {}
+      }
+
+      if (_isCancelled) {
+        _emitProgress(const CatalogUpdateProgress(
+          stage: CatalogUpdateStage.cancelled,
+          statusMessage: 'Atualização cancelada pelo usuário.',
+        ));
+        rethrow;
+      }
+
+      await _recordHistory(CatalogVersionEntry(
+        version: manifest.version,
+        artifactName: manifest.artifactName,
+        sha256Hex: manifest.sha256Hex,
+        entryCount: manifest.entryCount,
+        signerPublicKeyHex: manifest.signerEd25519Hex,
+        appliedAtUnix: DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000,
+        status: 'failed: $e',
+      ));
+
+      _emitProgress(CatalogUpdateProgress(
+        stage: CatalogUpdateStage.error,
+        errorMessage: e.toString(),
+        statusMessage: 'Erro durante atualização do catálogo.',
+      ));
+      rethrow;
+    }
+  }
+
+  void cancel() {
+    _isCancelled = true;
+    _activeHttpClient?.close(force: true);
+    _activeHttpClient = null;
+    try {
+      _activeRawSocket?.close();
+    } catch (_) {}
+    _activeRawSocket = null;
+
+    final inc = File('$targetDbPath.incoming');
+    if (inc.existsSync()) {
+      try {
+        inc.deleteSync();
+      } catch (_) {}
+    }
+
+    _emitProgress(const CatalogUpdateProgress(
+      stage: CatalogUpdateStage.cancelled,
+      statusMessage: 'Operação cancelada.',
+    ));
+  }
+
+  Future<Uint8List> _downloadBytes(
+    Uri uri, {
+    int? expectedLength,
+    void Function(int received, int total)? onProgress,
+  }) async {
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      throw UnsupportedTransportSchemeException(uri.scheme);
+    }
+
+    if (TransportPolicy.isLoopbackHost(uri.host) &&
+        transportPolicy.mode == TransportMode.loopbackTest) {
+      return _downloadLoopback(uri, expectedLength: expectedLength, onProgress: onProgress);
+    }
+
+    return _downloadSocksTor(uri, expectedLength: expectedLength, onProgress: onProgress);
+  }
+
+  Future<Uint8List> _downloadLoopback(
+    Uri uri, {
+    int? expectedLength,
+    void Function(int received, int total)? onProgress,
+  }) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
+    _activeHttpClient = client;
+
+    try {
+      final req = await client.getUrl(uri);
+      // Privacy guarantee: zero extra headers, zero telemetry, zero identifiers
+      req.headers.clear();
+      req.headers.set(HttpHeaders.hostHeader, uri.host);
+      req.headers.set(HttpHeaders.connectionHeader, 'close');
+
+      final res = await req.close();
+      if (res.statusCode != 200) {
+        throw HttpException('Falha HTTP ${res.statusCode} ao obter ${uri.path}');
+      }
+
+      final total = res.contentLength > 0 ? res.contentLength : (expectedLength ?? 0);
+      final builder = BytesBuilder(copy: false);
+      int received = 0;
+
+      await for (final chunk in res) {
+        if (_isCancelled) {
+          throw const CatalogUpdateCancelledException();
+        }
+        builder.add(chunk);
+        received += chunk.length;
+        onProgress?.call(received, total);
+      }
+
+      return builder.takeBytes();
+    } finally {
+      client.close(force: true);
+      _activeHttpClient = null;
+    }
+  }
+
+  Future<Uint8List> _downloadSocksTor(
+    Uri uri, {
+    int? expectedLength,
+    void Function(int received, int total)? onProgress,
+    Duration timeout = const Duration(seconds: 45),
+  }) async {
+    final connector = Socks5Connector(
+      proxyHost: transportPolicy.socksHost,
+      proxyPort: transportPolicy.socksPort,
+    );
+    final port = uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
+    final conn = await connector.connectRaw(uri.host, port, requireOnionV3: true, timeout: timeout);
+
+    RawSocket activeSocket = conn.socket;
+    _activeRawSocket = activeSocket;
+
+    try {
+      if (uri.scheme == 'https') {
+        final secure = await RawSecureSocket.secure(
+          conn.socket,
+          subscription: conn.subscription,
+          host: uri.host,
+        ).timeout(timeout);
+        activeSocket = secure;
+        _activeRawSocket = secure;
+      }
+
+      // Privacy: pure static request without cookies, user identifiers or query search params
+      final path = uri.path.isEmpty ? '/' : uri.path;
+      final reqString = 'GET $path HTTP/1.1\r\nHost: ${uri.host}\r\nConnection: close\r\n\r\n';
+      activeSocket.write(utf8.encode(reqString));
+
+      final completer = Completer<Uint8List>();
+      final builder = BytesBuilder(copy: false);
+      int received = 0;
+      int total = expectedLength ?? 0;
+      bool headersParsed = false;
+      List<int> headerBuffer = [];
+
+      conn.subscription.onData((event) {
+        if (_isCancelled) {
+          activeSocket.close();
+          if (!completer.isCompleted) {
+            completer.completeError(const CatalogUpdateCancelledException());
+          }
+          return;
+        }
+
+        if (event == RawSocketEvent.read) {
+          while (true) {
+            final chunk = activeSocket.read();
+            if (chunk == null || chunk.isEmpty) break;
+
+            if (!headersParsed) {
+              headerBuffer.addAll(chunk);
+              final idx = _findHeaderEnd(headerBuffer);
+              if (idx != -1) {
+                headersParsed = true;
+                final headerStr = utf8.decode(headerBuffer.sublist(0, idx), allowMalformed: true);
+                final clMatch = RegExp(r'content-length:\s*(\d+)', caseSensitive: false).firstMatch(headerStr);
+                if (clMatch != null) {
+                  total = int.parse(clMatch.group(1)!);
+                }
+                final remainingBody = headerBuffer.sublist(idx + 4);
+                if (remainingBody.isNotEmpty) {
+                  builder.add(remainingBody);
+                  received += remainingBody.length;
+                  onProgress?.call(received, total);
+                }
+                headerBuffer.clear();
+              }
+            } else {
+              builder.add(chunk);
+              received += chunk.length;
+              onProgress?.call(received, total);
+            }
+          }
+        } else if (event == RawSocketEvent.readClosed || event == RawSocketEvent.closed) {
+          if (!completer.isCompleted) {
+            completer.complete(builder.takeBytes());
+          }
+        }
+      });
+
+      conn.subscription.onError((err) {
+        if (!completer.isCompleted) {
+          completer.completeError(err);
+        }
+      });
+
+      return await completer.future.timeout(timeout, onTimeout: () {
+        throw const SocketException('Timeout ao baixar pacote via Tor SOCKS5.');
+      });
+    } finally {
+      try {
+        activeSocket.close();
+      } catch (_) {}
+      _activeRawSocket = null;
+    }
+  }
+
+  static int _findHeaderEnd(List<int> bytes) {
+    for (int i = 0; i < bytes.length - 3; i++) {
+      if (bytes[i] == 13 && bytes[i + 1] == 10 && bytes[i + 2] == 13 && bytes[i + 3] == 10) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  Future<void> _recordHistory(CatalogVersionEntry entry) async {
+    try {
+      final list = await getVersionHistory();
+      list.removeWhere((e) => e.version == entry.version);
+      list.insert(0, entry);
+      final file = File(historyFilePath);
+      if (!file.parent.existsSync()) {
+        file.parent.createSync(recursive: true);
+      }
+      await file.writeAsString(
+        jsonEncode(list.map((e) => e.toJson()).toList()),
+        flush: true,
+      );
+    } catch (_) {}
+  }
+
+  Future<List<CatalogVersionEntry>> getVersionHistory() async {
+    try {
+      final file = File(historyFilePath);
+      if (!await file.exists()) {
+        return [];
+      }
+      final raw = await file.readAsString();
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list
+          .map((e) => CatalogVersionEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<int> cleanupStorage() async {
+    int freed = 0;
+    final incoming = File('$targetDbPath.incoming');
+    if (await incoming.exists()) {
+      freed += await incoming.length();
+      await incoming.delete();
+    }
+    final bak = File('$targetDbPath.bak');
+    if (await bak.exists()) {
+      freed += await bak.length();
+      await bak.delete();
+    }
+    return freed;
+  }
+
+  void dispose() {
+    _progressController.close();
   }
 }

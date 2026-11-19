@@ -37,6 +37,7 @@ import '../core/p2p/monero_ad_verifier.dart';
 import '../core/archive/nix_archive_service.dart';
 import '../core/media/media_catalog_service.dart';
 import '../core/media/catalog_database.dart';
+import '../core/media/media_index_updater.dart';
 import '../features/calls/call_view_model.dart';
 import '../features/home/peer_hover_view_model.dart';
 import '../features/discovery/starwire_filter_view_model.dart';
@@ -511,10 +512,25 @@ class NixState extends ChangeNotifier {
       _catalogDatabase = await CatalogDatabase.open();
       _catalogRepo = CatalogRepository(_catalogDatabase!);
       if (_mediaRepo != null) {
-        _mediaCatalogService = MediaCatalogService(_mediaRepo!, catalogRepo: _catalogRepo);
+        _mediaCatalogService =
+            MediaCatalogService(_mediaRepo!, catalogRepo: _catalogRepo);
       }
       notifyListeners();
     }
+  }
+
+  CatalogUpdateManager? _catalogUpdateManager;
+  CatalogUpdateManager get catalogUpdateManager =>
+      _catalogUpdateManager ??= CatalogUpdateManager();
+
+  void setCatalogDatabase(CatalogDatabase newDb) {
+    _catalogDatabase = newDb;
+    _catalogRepo = CatalogRepository(_catalogDatabase!);
+    if (_mediaRepo != null) {
+      _mediaCatalogService =
+          MediaCatalogService(_mediaRepo!, catalogRepo: _catalogRepo);
+    }
+    notifyListeners();
   }
 
   void _rebuildSovereignMessenger() {

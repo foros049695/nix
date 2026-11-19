@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/media/catalog_database.dart';
+import '../../core/media/media_index_updater.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
@@ -312,6 +313,286 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
     }
   }
 
+  Future<void> _openCatalogUpdateDialog() async {
+    final updateManager = _nixState.catalogUpdateManager;
+    int currentVer = await updateManager.getInstalledVersion();
+    List<CatalogVersionEntry> history = await updateManager.getVersionHistory();
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDlgState) {
+            final progress = updateManager.currentProgress;
+
+            return StreamBuilder<CatalogUpdateProgress>(
+              stream: updateManager.progressStream,
+              initialData: progress,
+              builder: (context, snapshot) {
+                final currentProgress = snapshot.data ?? progress;
+                final isUpdating = updateManager.isBusy;
+
+                return AlertDialog(
+                  backgroundColor: NixColors.surfaceCard,
+                  shape: RoundedRectangleBorder(borderRadius: NixTokens.borderMd),
+                  title: Row(
+                    children: [
+                      const Icon(Icons.shield_outlined, color: Colors.greenAccent, size: 22),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Atualizações Privadas do Catálogo',
+                          style: TextStyle(
+                            color: NixColors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  content: SingleChildScrollView(
+                    child: SizedBox(
+                      width: 480,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: NixColors.surfaceSidebar,
+                              borderRadius: NixTokens.borderSm,
+                              border: Border.all(color: NixColors.surfaceBorder),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.inventory_2_outlined, size: 16, color: Colors.amber),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Versão Instalada: ${currentVer > 0 ? "v$currentVer" : "Catálogo Inicial"}',
+                                      style: TextStyle(
+                                        color: NixColors.textPrimary,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.vpn_lock_rounded, size: 16, color: Colors.greenAccent),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Transporte: Tor SOCKS5 (Zero vazamento pessoal)',
+                                      style: TextStyle(
+                                        color: NixColors.textSecondary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          if (currentProgress.statusMessage.isNotEmpty) ...[
+                            Text(
+                              currentProgress.statusMessage,
+                              style: TextStyle(
+                                color: currentProgress.stage == CatalogUpdateStage.error
+                                    ? Colors.redAccent
+                                    : NixColors.textPrimary,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          if (isUpdating) ...[
+                            LinearProgressIndicator(
+                              value: currentProgress.progressPercent > 0
+                                  ? currentProgress.progressPercent
+                                  : null,
+                              backgroundColor: NixColors.surfaceSidebar,
+                              color: Colors.amber,
+                            ),
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton.icon(
+                                icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.redAccent),
+                                label: const Text('Cancelar', style: TextStyle(color: Colors.redAccent)),
+                                onPressed: () {
+                                  updateManager.cancel();
+                                  setDlgState(() {});
+                                },
+                              ),
+                            ),
+                          ],
+                          if (currentProgress.availableManifest != null &&
+                              currentProgress.stage == CatalogUpdateStage.updateAvailable) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withOpacity(0.08),
+                                borderRadius: NixTokens.borderSm,
+                                border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Nova Versão ${currentProgress.availableManifest!.version} Detectada',
+                                    style: const TextStyle(
+                                      color: Colors.amber,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Obras: ${currentProgress.availableManifest!.entryCount} | Tamanho: ${(currentProgress.availableManifest!.byteSize / 1024 / 1024).toStringAsFixed(1)} MB',
+                                    style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Assinatura: ${currentProgress.availableManifest!.signatureHex.substring(0, 16)}...',
+                                    style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (history.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            Text(
+                              'Histórico de Atualizações:',
+                              style: TextStyle(
+                                color: NixColors.textSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 120),
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: history.length,
+                                itemBuilder: (ctx, idx) {
+                                  final item = history[idx];
+                                  final date = DateTime.fromMillisecondsSinceEpoch(item.appliedAtUnix * 1000).toLocal();
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 3),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          item.status == 'success'
+                                              ? Icons.check_circle_outline
+                                              : Icons.error_outline,
+                                          size: 14,
+                                          color: item.status == 'success' ? Colors.greenAccent : Colors.redAccent,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'v${item.version} (${item.entryCount} obras)',
+                                          style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
+                                        ),
+                                        const Spacer(),
+                                        Text(
+                                          '${date.day}/${date.month}/${date.year}',
+                                          style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              TextButton.icon(
+                                icon: const Icon(Icons.cleaning_services_outlined, size: 14),
+                                label: const Text('Limpar Cache / Temporários', style: TextStyle(fontSize: 11)),
+                                onPressed: () async {
+                                  final freed = await updateManager.cleanupStorage();
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Armazenamento limpo: ${(freed / 1024).toStringAsFixed(1)} KB liberados.')),
+                                    );
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      child: Text('Fechar', style: TextStyle(color: NixColors.textSecondary)),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                    ),
+                    if (!isUpdating &&
+                        currentProgress.stage == CatalogUpdateStage.updateAvailable &&
+                        currentProgress.availableManifest != null)
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.download_rounded, size: 16),
+                        label: const Text('Aplicar Atualização'),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
+                        onPressed: () async {
+                          setDlgState(() {});
+                          try {
+                            final newDb = await updateManager.downloadAndApplyUpdate(
+                              manifest: currentProgress.availableManifest!,
+                              packageUri: Uri.parse('http://127.0.0.1:9050/nix_catalog_v2.db'),
+                            );
+                            _nixState.setCatalogDatabase(newDb);
+                            currentVer = await updateManager.getInstalledVersion();
+                            history = await updateManager.getVersionHistory();
+                            await _executeSearch();
+                            setDlgState(() {});
+                          } catch (_) {
+                            setDlgState(() {});
+                          }
+                        },
+                      )
+                    else if (!isUpdating)
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                        label: const Text('Verificar Agora'),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
+                        onPressed: () async {
+                          setDlgState(() {});
+                          try {
+                            await updateManager.checkForUpdate(
+                              manifestUri: Uri.parse('http://127.0.0.1:9050/nix_catalog_manifest.json'),
+                            );
+                          } catch (_) {}
+                          setDlgState(() {});
+                        },
+                      ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isCompact = MediaQuery.of(context).size.width < 700;
@@ -321,6 +602,14 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
       appBar: AppBar(
         backgroundColor: NixColors.surfaceCard,
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Atualizações Privadas do Catálogo (Tor)',
+            icon: const Icon(Icons.cloud_sync_rounded, color: Colors.amber),
+            onPressed: _openCatalogUpdateDialog,
+          ),
+          const SizedBox(width: 8),
+        ],
         title: FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
