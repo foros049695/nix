@@ -560,6 +560,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                       return;
                     }
                     storedPath = await LocalImageHelper.sanitizeAndStoreImage(rawPath);
+                    if (!context.mounted || !ctx.mounted) return;
                     if (storedPath == null) {
                       setModalState(() => imgError = 'Imagem local não encontrada.');
                       return;
