@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Relato Confidencial de Vulnerabilidade (Segurança)
+    url: https://github.com/foros049695/nix/security/advisories/new
+    about: Relate falhas de segurança, criptografia ou vazamento de metadados em caráter privado (não abra issue pública).

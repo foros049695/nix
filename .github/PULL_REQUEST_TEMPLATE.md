@@ -16,6 +16,12 @@ Uma breve descrição das mudanças introduzidas por este PR.
 - [ ] `./scripts/verify_privacy_matrix.sh` executado com sucesso.
 - [ ] Verificação de ausência de vazamento de plaintext em disco ou logs.
 
+- **Comando isolado executado:** [ex: `HOME="$(mktemp -d)" flutter test` / namespace de rede isolado]
+- **Versões dos SDKs:** [ex: Flutter 3.x / Dart 3.x / Go 1.23]
+- **Testes não executados:** [ex: N/A, PostgreSQL (`NIX_TEST_PG_DSN`), Android físico, Tor público]
+
 ## 📌 Rastreabilidade
+- **Commit Base:** [ex: `abc1234`]
 - **Fase do Roadmap:** [ex: Fase 1, Fase 2]
 - **Issue Relacionada:** Closes #...
+- **Novas Dependências / ADR:** [Nenhuma | `docs/adr/000X-...md`]
