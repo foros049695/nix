@@ -2,7 +2,9 @@ package buffer
 
 import (
 	"bufio"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -90,7 +92,11 @@ func LoadYAMLConfig(path string) (Config, error) {
 			cfg.OnionServiceHost = val
 		case "storage.base_dir":
 			if val != "" {
-				cfg.DataDir = val
+				expanded, err := expandBaseDir(val)
+				if err != nil {
+					return cfg, err
+				}
+				cfg.DataDir = expanded
 			}
 		case "storage.max_attachment_size_bytes":
 			if n, err := strconv.ParseInt(val, 10, 64); err == nil && n > 0 {
@@ -131,4 +137,35 @@ func LoadYAMLConfig(path string) (Config, error) {
 		}
 	}
 	return cfg, scanner.Err()
+}
+
+func expandBaseDir(raw string) (string, error) {
+	switch {
+	case raw == "~":
+		return resolveHomeDir("")
+	case strings.HasPrefix(raw, "~/"):
+		return resolveHomeDir(raw[2:])
+	case raw == "$HOME", raw == "${HOME}":
+		return resolveHomeDir("")
+	case strings.HasPrefix(raw, "$HOME/"):
+		return resolveHomeDir(strings.TrimPrefix(raw, "$HOME/"))
+	case strings.HasPrefix(raw, "${HOME}/"):
+		return resolveHomeDir(strings.TrimPrefix(raw, "${HOME}/"))
+	default:
+		return raw, nil
+	}
+}
+
+func resolveHomeDir(rel string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		if err != nil {
+			return "", fmt.Errorf("storage.base_dir requer HOME válido: %w", err)
+		}
+		return "", fmt.Errorf("storage.base_dir requer HOME válido")
+	}
+	if rel == "" {
+		return home, nil
+	}
+	return filepath.Join(home, rel), nil
 }

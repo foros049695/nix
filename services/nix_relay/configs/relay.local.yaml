@@ -5,7 +5,7 @@ server:
   onion_service_host: "gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion"
 
 storage:
-  base_dir: "/home/gus/.local/share/nix/relay/data"
+  base_dir: "~/.local/share/nix/relay/data"
   max_attachment_size_bytes: 52428800 # 50 MB
   max_in_flight_per_quota_token: 524288000 # 500 MB
   base_ttl_seconds: 604800 # 7 dias
