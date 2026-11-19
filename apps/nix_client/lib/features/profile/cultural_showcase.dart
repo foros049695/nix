@@ -19,17 +19,33 @@ class CulturalShowcase extends StatefulWidget {
 
 class _CulturalShowcaseState extends State<CulturalShowcase> {
   CulturalCategory? _selectedFilter;
+  String _searchQuery = '';
+  final TextEditingController _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
     final allItems = nixState.userProfile.culturalItems;
+    final queryLower = _searchQuery.trim().toLowerCase();
 
-    final filteredItems = _selectedFilter == null
+    final categoryItems = _selectedFilter == null
         ? allItems
         : allItems.where((i) => i.category == _selectedFilter).toList();
+    final filteredItems = queryLower.isEmpty
+        ? categoryItems
+        : categoryItems.where((i) {
+            return i.title.toLowerCase().contains(queryLower) ||
+                i.creatorOrYear.toLowerCase().contains(queryLower) ||
+                (i.language?.toLowerCase().contains(queryLower) ?? false);
+          }).toList();
 
-    final musicVinyls = allItems.where((i) => i.category == CulturalCategory.music).toList();
+    final musicVinyls = filteredItems.where((i) => i.category == CulturalCategory.music).toList();
     final visualWorks = filteredItems.where((i) => i.category != CulturalCategory.music && i.category != CulturalCategory.github).toList();
     final githubRepos = filteredItems.where((i) => i.category == CulturalCategory.github).toList();
 
@@ -75,6 +91,52 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                 onPressed: () => _showAddCulturalItemDialog(context),
                 icon: const Icon(Icons.add, size: 14),
                 label: const Text('Adicionar ao Acervo', style: TextStyle(fontSize: 11)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const Key('cultural_catalog_search_input'),
+                  controller: _searchCtrl,
+                  onChanged: (value) {
+                    setState(() => _searchQuery = value);
+                    nixState.searchCulturalCatalog(value);
+                  },
+                  style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
+                  decoration: InputDecoration(
+                    hintText: 'Busca local FTS5 no acervo (título, autor, linguagem)...',
+                    prefixIcon: Icon(Icons.search_rounded, size: 16, color: NixColors.textMuted),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    filled: true,
+                    fillColor: NixColors.surfaceCard,
+                    border: OutlineInputBorder(
+                      borderRadius: NixTokens.borderSm,
+                      borderSide: BorderSide(color: NixColors.surfaceBorder),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                key: const Key('cultural_catalog_stage_badge'),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: NixColors.surfaceCard,
+                  borderRadius: NixTokens.borderSm,
+                  border: Border.all(color: NixColors.surfaceBorder),
+                ),
+                child: Text(
+                  'BUSCA LOCAL · OPT-IN REMOTO ISOLADO',
+                  style: TextStyle(
+                    color: NixColors.textSecondary,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ],
           ),

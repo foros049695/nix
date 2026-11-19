@@ -69,12 +69,14 @@ class KeyVault {
   final OsKeyStorage _osKeyStorage;
   Uint8List? _cachedMasterKey;
   bool _isUnlocked = false;
+  bool _lastKeyringBindSucceeded = false;
 
   KeyVault({OsKeyStorage? osKeyStorage})
       : _osKeyStorage = osKeyStorage ?? OsKeyStorage.createDefault();
 
   OsKeyStorage get osKeyStorage => _osKeyStorage;
   bool get isUnlocked => _isUnlocked && _cachedMasterKey != null;
+  bool get lastKeyringBindSucceeded => _lastKeyringBindSucceeded;
 
   /// Retorna a chave mestre de 32 bytes se desbloqueado; lança [StateError] se bloqueado.
   Uint8List get masterKey {
@@ -183,13 +185,66 @@ class KeyVault {
 
     await _writeBootstrapAtomic(path, bootstrapData);
 
+    _lastKeyringBindSucceeded = false;
     if (bindToOsKeyring && _osKeyStorage.isHardwareOrOsBacked) {
-      await _osKeyStorage.storeSecret(_keyringKey(path), passphrase);
+      _lastKeyringBindSucceeded =
+          await _osKeyStorage.storeSecret(_keyringKey(path), passphrase);
     }
 
     _cachedMasterKey = masterBytes;
     _isUnlocked = true;
     return Uint8List.fromList(masterBytes);
+  }
+
+  /// Exporta o envelope criptografado do KeyVault (sem expor a chave mestre em claro) para backup seguro.
+  Future<Map<String, dynamic>> exportEncryptedBackupBundle({
+    String? customPath,
+  }) async {
+    final path = customPath ?? getDefaultBootstrapPath();
+    final file = File(path);
+    if (!await file.exists()) {
+      throw const VaultNotInitializedException();
+    }
+    final raw = await file.readAsString();
+    final map = jsonDecode(raw) as Map<String, dynamic>;
+    if (!map.containsKey('version') ||
+        !map.containsKey('kdf') ||
+        !map.containsKey('wrappedKey')) {
+      throw const VaultAuthenticationException('Estrutura de cofre inválida para backup.');
+    }
+    return Map<String, dynamic>.from(map);
+  }
+
+  /// Restaura e autentica um envelope de backup criptografado do KeyVault validando a frase-passe antes de gravar.
+  Future<Uint8List> importEncryptedBackupBundle(
+    Map<String, dynamic> bundle, {
+    required String passphrase,
+    String? customPath,
+    bool bindToOsKeyring = false,
+  }) async {
+    final path = customPath ?? getDefaultBootstrapPath();
+    final tempCheckPath = '$path.restore_verify_${DateTime.now().microsecondsSinceEpoch}';
+    try {
+      await _writeBootstrapAtomic(tempCheckPath, bundle);
+      final unlocked = await unlock(
+        passphrase: passphrase,
+        customPath: tempCheckPath,
+      );
+      await _writeBootstrapAtomic(path, bundle);
+      _lastKeyringBindSucceeded = false;
+      if (bindToOsKeyring && _osKeyStorage.isHardwareOrOsBacked) {
+        _lastKeyringBindSucceeded =
+            await _osKeyStorage.storeSecret(_keyringKey(path), passphrase);
+      }
+      return unlocked;
+    } finally {
+      final tmp = File(tempCheckPath);
+      if (await tmp.exists()) {
+        try {
+          await tmp.delete();
+        } catch (_) {}
+      }
+    }
   }
 
   /// Tenta desbloqueio automático seguro utilizando credencial isolada no Keyring do SO.

@@ -5,43 +5,261 @@ import 'package:cryptography/cryptography.dart';
 import 'package:nix_core_crypto/nix_core_crypto.dart';
 import '../database/repositories.dart';
 
-/// Serviço oficial de publicação imutável Nix Archive v1 (`nix.archive.article.v1`, Fase 7).
+/// Serviço oficial de publicação imutável Nix Archive v1 (`nix.archive.article.v1`, Fase 7 / Fase 9).
 /// Realiza canonicalização determinística, hash SHA-256 content-addressed, assinatura Ed25519,
-/// sanitização HTML anti-XSS e grafo de alegações/refutações/substituições (`supersedes`).
+/// sanitização HTML com parser/tokenizador por whitelist estrita e grafo de alegações/refutações/substituições (`supersedes`).
 class NixArchiveService {
   static const String articleSchemaV1 = 'nix.archive.article.v1';
   static const String refutationSchemaV1 = 'nix.archive.refutation.v1';
 
+  static const Set<String> _allowedHtmlTags = {
+    'p',
+    'br',
+    'b',
+    'i',
+    'em',
+    'strong',
+    'u',
+    'code',
+    'pre',
+    'blockquote',
+    'ul',
+    'ol',
+    'li',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'a',
+    'span',
+    'hr',
+  };
+
+  static const Set<String> _voidHtmlTags = {'br', 'hr'};
+
+  static const Set<String> _dropBlockTagsWithContent = {
+    'script',
+    'iframe',
+    'object',
+    'embed',
+    'svg',
+    'style',
+    'form',
+    'meta',
+    'link',
+    'base',
+    'applet',
+    'math',
+    'template',
+    'noscript',
+  };
+
   final ArchiveRepository archiveRepo;
   NixArchiveService(this.archiveRepo);
 
-  /// Sanitizador HTML estrito: remove scripts, iframes, objetos embebidos, SVG ativo, handlers on* e URIs javascript:/data:.
+  /// Sanitizador HTML com tokenizador determinístico e whitelist de tags/atributos:
+  /// - Remove comentários, tags não fechadas/malformadas e blocos perigosos (`script`, `iframe`, `svg`, `style`, `object`, `embed`, `form`, etc.).
+  /// - Decodifica entidades HTML numéricas/hexadecimais/nomeadas antes de inspecionar atributos e esquemas de URI.
+  /// - Preserva apenas tags estruturais da whitelist e o atributo `href` em `<a>` (exclusivamente `https://`, `http://` ou `#`).
   static String sanitizeRichTextHtml(String rawHtml) {
-    var s = rawHtml;
-    // Remove blocos completos perigosos (case-insensitive, multiline)
-    s = s.replaceAll(
-      RegExp(r'<\s*(script|iframe|object|embed|svg|style|form|meta|link)\b[^>]*>.*?<\s*/\s*\1\s*>',
-          caseSensitive: false, dotAll: true),
-      '',
+    // 1. Remove caracteres nulos de evasão e comentários HTML (inclusive truncados no fim)
+    var input = rawHtml.replaceAll('\x00', '');
+    input = input.replaceAll(RegExp(r'<!--[\s\S]*?(?:-->|$)'), '');
+
+    final out = StringBuffer();
+    int i = 0;
+    final len = input.length;
+    String? skippingBlockTag;
+
+    while (i < len) {
+      final lt = input.indexOf('<', i);
+      if (lt == -1) {
+        if (skippingBlockTag == null) {
+          out.write(_neutralizeBareDangerousSchemes(input.substring(i)));
+        }
+        break;
+      }
+
+      if (lt > i && skippingBlockTag == null) {
+        out.write(_neutralizeBareDangerousSchemes(input.substring(i, lt)));
+      }
+
+      // Localiza o '>' correspondente respeitando aspas de atributos; se não houver '>', trata como tag truncada até EOF
+      final gt = _findTagEnd(input, lt + 1);
+      final rawTagBody =
+          gt == -1 ? input.substring(lt + 1) : input.substring(lt + 1, gt);
+      i = gt == -1 ? len : gt + 1;
+
+      final parsed = _parseHtmlTagToken(rawTagBody);
+      if (parsed == null) {
+        continue;
+      }
+
+      final tagName = parsed.tagName;
+      final isClosing = parsed.isClosing;
+
+      if (skippingBlockTag != null) {
+        if (isClosing && tagName == skippingBlockTag) {
+          skippingBlockTag = null;
+        }
+        continue;
+      }
+
+      if (_dropBlockTagsWithContent.contains(tagName)) {
+        if (!isClosing && !parsed.isSelfClosing && gt != -1) {
+          skippingBlockTag = tagName;
+        }
+        continue;
+      }
+
+      if (!_allowedHtmlTags.contains(tagName)) {
+        continue;
+      }
+
+      if (isClosing) {
+        if (!_voidHtmlTags.contains(tagName)) {
+          out.write('</$tagName>');
+        }
+        continue;
+      }
+
+      if (tagName == 'a') {
+        final safeHref = _extractSafeHref(parsed.rawAttributes);
+        if (safeHref != null) {
+          out.write('<a href="$safeHref">');
+        } else {
+          out.write('<a>');
+        }
+      } else if (_voidHtmlTags.contains(tagName)) {
+        out.write('<$tagName>');
+      } else {
+        out.write('<$tagName>');
+      }
+    }
+
+    return out.toString().trim();
+  }
+
+  static int _findTagEnd(String s, int start) {
+    String? quote;
+    for (int idx = start; idx < s.length; idx++) {
+      final ch = s[idx];
+      if (quote != null) {
+        if (ch == quote) quote = null;
+      } else {
+        if (ch == '"' || ch == "'") {
+          quote = ch;
+        } else if (ch == '>') {
+          return idx;
+        }
+      }
+    }
+    return -1;
+  }
+
+  static ({
+    String tagName,
+    bool isClosing,
+    bool isSelfClosing,
+    String rawAttributes
+  })? _parseHtmlTagToken(String rawTagBody) {
+    var body = rawTagBody.trim();
+    if (body.isEmpty || body.startsWith('!') || body.startsWith('?')) {
+      return null;
+    }
+    bool isClosing = false;
+    if (body.startsWith('/')) {
+      isClosing = true;
+      body = body.substring(1).trimLeft();
+    }
+    bool isSelfClosing = false;
+    if (body.endsWith('/')) {
+      isSelfClosing = true;
+      body = body.substring(0, body.length - 1).trimRight();
+    }
+    final match = RegExp(r'^([a-zA-Z][a-zA-Z0-9:-]*)([\s\S]*)$').firstMatch(body);
+    if (match == null) return null;
+    final tagName = match.group(1)!.toLowerCase();
+    final rawAttrs = match.group(2) ?? '';
+    return (
+      tagName: tagName,
+      isClosing: isClosing,
+      isSelfClosing: isSelfClosing,
+      rawAttributes: rawAttrs,
     );
-    // Remove tags auto-fechadas perigosas remanescentes
-    s = s.replaceAll(
-      RegExp(r'<\s*/?\s*(script|iframe|object|embed|svg|style|form|meta|link)\b[^>]*>',
-          caseSensitive: false),
-      '',
-    );
-    // Remove manipuladores de evento inline (onclick=, onerror=, onload=, etc.)
-    s = s.replaceAll(
-      RegExp(r'''\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)''',
-          caseSensitive: false),
-      '',
-    );
-    // Bloqueia pseudoprotocolos javascript:, vbscript:, data:text/html
-    s = s.replaceAll(
-      RegExp(r'''(?:javascript|vbscript|data)\s*:''', caseSensitive: false),
-      'blocked:',
-    );
-    return s.trim();
+  }
+
+  static String? _extractSafeHref(String rawAttrs) {
+    final attrMatches = RegExp(
+      r'''([a-zA-Z0-9_:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))''',
+    ).allMatches(rawAttrs);
+    for (final m in attrMatches) {
+      final name = _decodeHtmlEntities(m.group(1)!).trim().toLowerCase();
+      if (name != 'href') continue;
+      final rawVal = m.group(2) ?? m.group(3) ?? m.group(4) ?? '';
+      return _sanitizeHrefValue(rawVal);
+    }
+    return null;
+  }
+
+  static String _sanitizeHrefValue(String rawVal) {
+    final decoded = _decodeHtmlEntities(rawVal);
+    // Remove caracteres de controle e espaços invisíveis usados para ofuscar `java\tscript:`
+    final compact =
+        decoded.replaceAll(RegExp(r'[\x00-\x20\x7f]+'), '').toLowerCase();
+    if (compact.startsWith('javascript:') ||
+        compact.startsWith('vbscript:') ||
+        compact.startsWith('data:') ||
+        compact.startsWith('file:')) {
+      return 'blocked:';
+    }
+    final trimmed = decoded.trim();
+    final lower = trimmed.toLowerCase();
+    if (lower.startsWith('https://') ||
+        lower.startsWith('http://') ||
+        lower.startsWith('#')) {
+      return trimmed
+          .replaceAll('&', '&amp;')
+          .replaceAll('"', '&quot;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;');
+    }
+    return 'blocked:';
+  }
+
+  static String _neutralizeBareDangerousSchemes(String text) {
+    final decoded = _decodeHtmlEntities(text);
+    if (RegExp(r'(?:javascript|vbscript|data)\s*:', caseSensitive: false)
+        .hasMatch(decoded)) {
+      return decoded.replaceAll(
+        RegExp(r'(?:javascript|vbscript|data)\s*:', caseSensitive: false),
+        'blocked:',
+      );
+    }
+    return text;
+  }
+
+  static String _decodeHtmlEntities(String input) {
+    var s = input;
+    s = s.replaceAllMapped(RegExp(r'&#x([0-9a-fA-F]+);?'), (m) {
+      final code = int.tryParse(m.group(1)!, radix: 16);
+      if (code == null || code <= 0 || code > 0x10FFFF) return '';
+      return String.fromCharCode(code);
+    });
+    s = s.replaceAllMapped(RegExp(r'&#([0-9]+);?'), (m) {
+      final code = int.tryParse(m.group(1)!);
+      if (code == null || code <= 0 || code > 0x10FFFF) return '';
+      return String.fromCharCode(code);
+    });
+    return s
+        .replaceAll(RegExp(r'&colon;?', caseSensitive: false), ':')
+        .replaceAll(RegExp(r'&tab;?', caseSensitive: false), '\t')
+        .replaceAll(RegExp(r'&newline;?', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'&quot;?', caseSensitive: false), '"')
+        .replaceAll(RegExp(r'&apos;?', caseSensitive: false), "'")
+        .replaceAll(RegExp(r'&lt;?', caseSensitive: false), '<')
+        .replaceAll(RegExp(r'&gt;?', caseSensitive: false), '>')
+        .replaceAll(RegExp(r'&amp;?', caseSensitive: false), '&');
   }
 
   /// Gera bytes canônicos JSON ordenados recursivamente para estabilidade de hash entre plataformas.
@@ -199,5 +417,20 @@ class NixArchiveService {
       signatureBytes: sig,
       ed25519PublicKey: SimplePublicKey(authorPub, type: KeyPairType.ed25519),
     );
+  }
+
+  /// Retorna a cadeia histórica de revisões (`supersedes`) a partir de um hash mais recente.
+  Future<List<Map<String, dynamic>>> getRevisionHistory(String latestHash) async {
+    final chain = <Map<String, dynamic>>[];
+    String? current = latestHash;
+    final visited = <String>{};
+    while (current != null && current.isNotEmpty && !visited.contains(current)) {
+      visited.add(current);
+      final row = await archiveRepo.getObject(current);
+      if (row == null) break;
+      chain.add(row);
+      current = row['supersedes_hash'] as String?;
+    }
+    return chain;
   }
 }

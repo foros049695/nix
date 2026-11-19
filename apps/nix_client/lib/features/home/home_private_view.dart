@@ -512,6 +512,19 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (!dm.isSavedMessages)
+                  IconButton(
+                    key: const Key('dm_sync_relay_button'),
+                    icon: Icon(
+                      Icons.sync_rounded,
+                      size: 17,
+                      color: NixColors.textSecondary,
+                    ),
+                    tooltip: 'Sincronizar Outbox / Inbox via Relay',
+                    onPressed: () async {
+                      await state.syncWithRelay();
+                    },
+                  ),
                 IconButton(
                   key: const Key('dm_info_panel_button'),
                   icon: Icon(
@@ -528,6 +541,42 @@ class _HomePrivateViewState extends State<HomePrivateView> {
             ),
           ),
         ),
+
+        // Banner de erro de envio / transporte E2EE
+        if (state.lastMessagingError != null)
+          Container(
+            key: const Key('dm_messaging_error_banner'),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.redAccent.withValues(alpha: 0.14),
+              border: Border(
+                bottom: BorderSide(color: Colors.redAccent.withValues(alpha: 0.45)),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline_rounded, size: 16, color: Colors.redAccent),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    state.lastMessagingError!,
+                    style: const TextStyle(color: Colors.redAccent, fontSize: 11.5),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => state.syncWithRelay(),
+                  child: const Text('Retentar Outbox', style: TextStyle(fontSize: 11)),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close, size: 14, color: NixColors.textMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: state.clearLastMessagingError,
+                ),
+              ],
+            ),
+          ),
 
         // Faixa compacta de Mensagem Fixada (estilo Telegram)
         if (pinnedMsgs.isNotEmpty)
@@ -646,17 +695,17 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 1.0)),
-                        SizedBox(height: 6),
-                        Text('4.825000000000 XMR',
-                            style: TextStyle(
+                        const SizedBox(height: 6),
+                        Text(state.moneroWalletBalanceLabel,
+                            style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 22,
+                                fontSize: 20,
                                 fontWeight: FontWeight.w800,
                                 fontFamily: 'monospace')),
                       ],
                     ),
                     Chip(
-                      label: Text('Nó Remoto .onion Ativo', style: TextStyle(fontSize: 11)),
+                      label: Text(state.moneroWalletStatusLabel, style: const TextStyle(fontSize: 11)),
                       backgroundColor: NixColors.surfaceCard,
                     ),
                   ],

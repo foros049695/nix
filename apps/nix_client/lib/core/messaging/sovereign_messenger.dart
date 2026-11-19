@@ -116,6 +116,16 @@ class PollCommitResult {
   });
 }
 
+/// Estágios de injeção controlada de falhas para verificação transacional (Fase 4).
+enum MessagingFaultStage {
+  beforeSessionSave,
+  afterSessionSave,
+  afterMessageInsert,
+  duringOutboxInsert,
+  duringRelaySend,
+  afterRemoteAcceptBeforeLocalConfirm,
+}
+
 /// Motor real de mensageria E2EE, Outbox, Inbox Commit-before-ACK,
 /// Anexos em chunks e Grupos com Sender Keys (Fase 3 / Gate 3).
 class SovereignMessenger {
@@ -129,6 +139,7 @@ class SovereignMessenger {
   final Uint8List vaultMasterKey;
   final String storageRootDir;
 
+  late final IdentityRepository identityRepo = IdentityRepository(database);
   late final ContactRepository contactRepo = ContactRepository(database);
   late final ConversationRepository conversationRepo =
       ConversationRepository(database);
@@ -147,7 +158,29 @@ class SovereignMessenger {
     required this.vaultMasterKey,
     this.localDeviceId = 'dev_primary',
     String? storageRootDir,
-  }) : storageRootDir = storageRootDir ?? Directory.systemTemp.path;
+  }) : storageRootDir = storageRootDir ?? _resolveDefaultStorageRootDir();
+
+  /// Deriva credenciais de mailbox determinísticas para um `publicId` local.
+  static MailboxCredentials deriveMailboxCredentials(String publicId) {
+    final clean = publicId.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final mbId = 'mbx_${clean.isEmpty ? "default" : clean}';
+    final tokenDigest = std_crypto.sha256
+        .convert(utf8.encode('nix-mailbox-capability-v1:$publicId'))
+        .toString();
+    return MailboxCredentials(
+      mailboxId: mbId,
+      readToken: 'read_$tokenDigest',
+      writeQuotaToken: 'quota_$tokenDigest',
+    );
+  }
+
+  static String _resolveDefaultStorageRootDir() {
+    if (Platform.environment['FLUTTER_TEST'] == 'true') {
+      return '${Directory.systemTemp.path}/nix_test_storage_$pid';
+    }
+    final dbParent = File(LocalDatabase.getDefaultDatabasePath()).parent.path;
+    return '$dbParent/encrypted_objects';
+  }
 
   Future<SecretKeyData> _deriveSessionWrapKey() async {
     final derived = await _hkdf.deriveKey(
@@ -374,6 +407,7 @@ class SovereignMessenger {
     required String peerDeviceId,
     required SignedPreKeyBundle peerBundle,
     String peerTitle = '',
+    String? peerMailbox,
   }) async {
     final existingConv = await conversationRepo.getConversation(conversationId);
     if (existingConv == null) {
@@ -402,6 +436,7 @@ class SovereignMessenger {
       'ekPubHex': _toHex(x3dhRes.ephemeralKeyPair.publicKey.bytes),
       'peerPublicId': peerPublicId,
       'peerSpkHex': _toHex(peerBundle.signedPreKey.bytes),
+      if (peerMailbox != null) 'peerMailbox': peerMailbox,
     };
 
     await _saveEncryptedSession(
@@ -411,6 +446,13 @@ class SovereignMessenger {
       stateObj: stateObj,
       revision: 1,
     );
+  }
+
+  /// Retorna metadados decifrados da sessão (`peerPublicId`, `peerMailbox`, `needsHandshake`) se existir.
+  Future<Map<String, dynamic>?> getSessionMetadata(String conversationId) async {
+    final loaded = await _loadEncryptedSession(conversationId);
+    if (loaded == null) return null;
+    return loaded.$2;
   }
 
   Future<void> _saveEncryptedSession({
@@ -459,12 +501,17 @@ class SovereignMessenger {
 
   /// Divide um anexo binário em chunks cifrados com XChaCha20-Poly1305 e grava localmente.
   /// Imagens passam obrigatoriamente por remoção de metadados (EXIF/chunks).
+  /// Suporta cancelamento cooperativo via [isCancelled] com limpeza automática de chunks parciais.
   Future<AttachmentManifest> prepareEncryptedAttachment({
     required String fileName,
     required String mimeType,
     required Uint8List rawBytes,
     int chunkSize = 65536,
+    bool Function()? isCancelled,
   }) async {
+    if (isCancelled?.call() == true) {
+      throw StateError('Preparação de anexo cancelada antes do início.');
+    }
     var cleanBytes = rawBytes;
     if (LocalImageHelper.isSupportedExtension(fileName)) {
       cleanBytes = LocalImageHelper.stripMetadataBytes(rawBytes);
@@ -479,78 +526,115 @@ class SovereignMessenger {
     final baseObjDir = Directory('$storageRootDir/objects');
     await baseObjDir.create(recursive: true);
     final manifestPath = '${baseObjDir.path}/$objectId.manifest';
+    final writtenPaths = <String>[];
 
     final chunksB64 = <String>[];
     final chunkHashes = <String>[];
     int chunkNo = 0;
 
-    await objectChunkRepo.upsertObject(
-      id: objectId,
-      sha256Digest: digest,
-      mimeType: mimeType,
-      byteSize: cleanBytes.length,
-      keyRef: 'object_inline:$objectId',
-      encryptedPath: manifestPath,
-    );
+    try {
+      await objectChunkRepo.upsertObject(
+        id: objectId,
+        sha256Digest: digest,
+        mimeType: mimeType,
+        byteSize: cleanBytes.length,
+        keyRef: 'object_inline:$objectId',
+        encryptedPath: manifestPath,
+      );
 
-    if (cleanBytes.isEmpty) {
-      final sealed = await SealedEnvelope.seal(
-        key: objKeyData,
-        plaintext: const [],
-        aad: utf8.encode('nix-chunk:$objectId:0'),
-      );
-      final encoded = sealed.encode();
-      final cHash = Uint8List.fromList(std_crypto.sha256.convert(encoded).bytes);
-      final chunkPath = '${baseObjDir.path}/$objectId.0.chk';
-      await File(chunkPath).writeAsBytes(encoded, flush: true);
-      await objectChunkRepo.upsertChunk(
-        objectId: objectId,
-        chunkNo: 0,
-        ciphertextHash: cHash,
-        cipherSize: encoded.length,
-        encryptedPath: chunkPath,
-      );
-      chunksB64.add(base64Encode(encoded));
-      chunkHashes.add(_toHex(cHash));
-    } else {
-      for (int offset = 0; offset < cleanBytes.length; offset += chunkSize) {
-        final end = (offset + chunkSize > cleanBytes.length)
-            ? cleanBytes.length
-            : offset + chunkSize;
-        final slice = cleanBytes.sublist(offset, end);
+      if (cleanBytes.isEmpty) {
+        if (isCancelled?.call() == true) {
+          throw StateError('Preparação de anexo cancelada.');
+        }
         final sealed = await SealedEnvelope.seal(
           key: objKeyData,
-          plaintext: slice,
-          aad: utf8.encode('nix-chunk:$objectId:$chunkNo'),
+          plaintext: const [],
+          aad: utf8.encode('nix-chunk:$objectId:0'),
         );
         final encoded = sealed.encode();
-        final cHash =
-            Uint8List.fromList(std_crypto.sha256.convert(encoded).bytes);
-        final chunkPath = '${baseObjDir.path}/$objectId.$chunkNo.chk';
+        final cHash = Uint8List.fromList(std_crypto.sha256.convert(encoded).bytes);
+        final chunkPath = '${baseObjDir.path}/$objectId.0.chk';
         await File(chunkPath).writeAsBytes(encoded, flush: true);
+        writtenPaths.add(chunkPath);
         await objectChunkRepo.upsertChunk(
           objectId: objectId,
-          chunkNo: chunkNo,
+          chunkNo: 0,
           ciphertextHash: cHash,
           cipherSize: encoded.length,
           encryptedPath: chunkPath,
         );
         chunksB64.add(base64Encode(encoded));
         chunkHashes.add(_toHex(cHash));
-        chunkNo++;
+      } else {
+        for (int offset = 0; offset < cleanBytes.length; offset += chunkSize) {
+          if (isCancelled?.call() == true) {
+            throw StateError('Preparação de anexo cancelada durante fragmentação.');
+          }
+          final end = (offset + chunkSize > cleanBytes.length)
+              ? cleanBytes.length
+              : offset + chunkSize;
+          final slice = cleanBytes.sublist(offset, end);
+          final sealed = await SealedEnvelope.seal(
+            key: objKeyData,
+            plaintext: slice,
+            aad: utf8.encode('nix-chunk:$objectId:$chunkNo'),
+          );
+          final encoded = sealed.encode();
+          final cHash =
+              Uint8List.fromList(std_crypto.sha256.convert(encoded).bytes);
+          final chunkPath = '${baseObjDir.path}/$objectId.$chunkNo.chk';
+          await File(chunkPath).writeAsBytes(encoded, flush: true);
+          writtenPaths.add(chunkPath);
+          await objectChunkRepo.upsertChunk(
+            objectId: objectId,
+            chunkNo: chunkNo,
+            ciphertextHash: cHash,
+            cipherSize: encoded.length,
+            encryptedPath: chunkPath,
+          );
+          chunksB64.add(base64Encode(encoded));
+          chunkHashes.add(_toHex(cHash));
+          chunkNo++;
+        }
+      }
+
+      final manifest = AttachmentManifest(
+        objectId: objectId,
+        fileName: fileName,
+        mimeType: mimeType,
+        byteSize: cleanBytes.length,
+        plaintextSha256Hex: _toHex(digest),
+        objectKeyBase64: base64Encode(objKeyData.bytes),
+        chunkCiphertextsBase64: chunksB64,
+        chunkHashesHex: chunkHashes,
+      );
+      await File(manifestPath).writeAsString(jsonEncode(manifest.toJson()), flush: true);
+      writtenPaths.add(manifestPath);
+      return manifest;
+    } catch (_) {
+      await cleanupTemporaryStagingFiles(writtenPaths);
+      try {
+        await database.rawDatabase.delete('object_chunks', where: 'object_id = ?', whereArgs: [objectId]);
+        await database.rawDatabase.delete('objects', where: 'id = ?', whereArgs: [objectId]);
+      } catch (_) {}
+      rethrow;
+    }
+  }
+
+  /// Remove arquivos temporários de staging após envio ou cancelamento.
+  Future<int> cleanupTemporaryStagingFiles(List<String> paths) async {
+    int deleted = 0;
+    for (final p in paths) {
+      if (p.trim().isEmpty) continue;
+      final f = File(p);
+      if (await f.exists()) {
+        try {
+          await f.delete();
+          deleted++;
+        } catch (_) {}
       }
     }
-
-    return AttachmentManifest(
-      objectId: objectId,
-      fileName: fileName,
-      mimeType: mimeType,
-      byteSize: cleanBytes.length,
-      plaintextSha256Hex: _toHex(digest),
-      objectKeyBase64: base64Encode(objKeyData.bytes),
-      chunkCiphertextsBase64: chunksB64,
-      chunkHashesHex: chunkHashes,
-    );
+    return deleted;
   }
 
   /// Verifica integridade de todos os chunks + SHA-256 global e remonta os bytes originais.
@@ -582,7 +666,9 @@ class SovereignMessenger {
     return joined;
   }
 
-  /// Cifra via Double Ratchet, grava em `messages`, atualiza `sessions` e enfileira em `outbox`.
+  /// Cifra via Double Ratchet e persiste `sessions`, `messages`, `message_attachments` e `outbox`
+  /// dentro de uma ÚNICA transação SQLite atômica (Fase 4).
+  /// Qualquer falha em [onFaultStage] ou erro de banco desfaz todas as gravações sem avançar a sessão.
   Future<({String messageId, String outboxId})> enqueueDirectMessage({
     required String conversationId,
     required String destinationMailbox,
@@ -590,13 +676,14 @@ class SovereignMessenger {
     required String text,
     int? ephemeralTtlSeconds,
     List<AttachmentManifest> attachments = const [],
+    void Function(MessagingFaultStage stage)? onFaultStage,
   }) async {
     final loaded = await _loadEncryptedSession(conversationId);
     if (loaded == null) {
       throw StateError('Sessão Double Ratchet não encontrada para $conversationId.');
     }
     final row = loaded.$1;
-    final stateObj = loaded.$2;
+    final stateObj = Map<String, dynamic>.from(loaded.$2);
     final ratchet = await DoubleRatchet.importState(
       Map<String, dynamic>.from(stateObj['ratchet'] as Map),
     );
@@ -646,45 +733,90 @@ class SovereignMessenger {
     };
     final wireBytes = Uint8List.fromList(utf8.encode(jsonEncode(wireEnvelope)));
 
-    // Atualiza estado da sessão + grava mensagem + enfileira outbox atomicamente
+    // Prepara o blob cifrado da sessão candidata em memória antes de abrir a transação
     stateObj['ratchet'] = ratchet.exportState();
+    final sessionId = row['id'] as String;
+    final peerDeviceId = row['peer_device_id'] as String;
     final nextRev = (row['revision'] as int? ?? 0) + 1;
-    await _saveEncryptedSession(
-      sessionId: row['id'] as String,
-      conversationId: conversationId,
-      peerDeviceId: row['peer_device_id'] as String,
-      stateObj: stateObj,
-      revision: nextRev,
+    final wrapKey = await _deriveSessionWrapKey();
+    final sealedSession = await SealedEnvelope.seal(
+      key: wrapKey,
+      plaintext: utf8.encode(jsonEncode(stateObj)),
+      aad: utf8.encode('sess:$conversationId:$peerDeviceId'),
     );
+    final payloadHash =
+        Uint8List.fromList(std_crypto.sha256.convert(wireBytes).bytes);
+    final outboxExpiresAt = nowMs + const Duration(days: 7).inMilliseconds;
 
-    await messageRepo.insertMessage(
-      id: msgId,
-      conversationId: conversationId,
-      authorKey: identity.publicId,
-      deviceId: localDeviceId,
-      body: text,
-      deliveryState: 'queued',
-      createdAt: nowMs,
-      expiresAt: expiresAtMs,
-    );
+    // Transação atômica: ou grava sessão + mensagem + anexos + outbox juntos, ou faz rollback completo!
+    await database.rawDatabase.transaction((txn) async {
+      onFaultStage?.call(MessagingFaultStage.beforeSessionSave);
 
-    for (int i = 0; i < attachments.length; i++) {
-      await objectChunkRepo.linkAttachment(
-        messageId: msgId,
-        objectId: attachments[i].objectId,
-        fileName: attachments[i].fileName,
-        ordinal: i,
-      );
-    }
+      await txn.rawInsert('''
+        INSERT OR REPLACE INTO sessions(
+          id, conversation_id, local_device_id, peer_device_id,
+          state_blob, format_version, revision, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 1, ?, ?);
+      ''', [
+        sessionId,
+        conversationId,
+        localDeviceId,
+        peerDeviceId,
+        sealedSession.encode(),
+        nextRev,
+        nowMs,
+      ]);
 
-    await outboxRepo.enqueue(
-      id: outboxId,
-      destinationMailbox: destinationMailbox,
-      ciphertext: wireBytes,
-      messageId: msgId,
-      sessionId: row['id'] as String,
-      expiresAt: nowMs + const Duration(days: 7).inMilliseconds,
-    );
+      onFaultStage?.call(MessagingFaultStage.afterSessionSave);
+
+      await txn.rawInsert('''
+        INSERT INTO messages(
+          id, conversation_id, author_key, device_id, body,
+          created_at, expires_at, revision, delivery_state
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'queued');
+      ''', [
+        msgId,
+        conversationId,
+        identity.publicId,
+        localDeviceId,
+        text,
+        nowMs,
+        expiresAtMs,
+      ]);
+
+      onFaultStage?.call(MessagingFaultStage.afterMessageInsert);
+
+      for (int i = 0; i < attachments.length; i++) {
+        await txn.rawInsert('''
+          INSERT OR REPLACE INTO attachments(
+            message_id, object_id, file_name, ordinal
+          ) VALUES (?, ?, ?, ?);
+        ''', [
+          msgId,
+          attachments[i].objectId,
+          attachments[i].fileName,
+          i,
+        ]);
+      }
+
+      onFaultStage?.call(MessagingFaultStage.duringOutboxInsert);
+
+      await txn.rawInsert('''
+        INSERT INTO outbox(
+          id, message_id, session_id, destination_mailbox,
+          ciphertext, payload_hash, transport_state, attempts,
+          next_attempt_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, 0, ?);
+      ''', [
+        outboxId,
+        msgId,
+        sessionId,
+        destinationMailbox,
+        wireBytes,
+        payloadHash,
+        outboxExpiresAt,
+      ]);
+    });
 
     return (messageId: msgId, outboxId: outboxId);
   }
@@ -694,6 +826,7 @@ class SovereignMessenger {
     required RelayClient relayClient,
     String? quotaToken,
     int retryDelayMs = 2000,
+    void Function(MessagingFaultStage stage)? onFaultStage,
   }) async {
     final pending = await outboxRepo.getPendingEnvelopes(limit: 50);
     int accepted = 0;
@@ -705,18 +838,53 @@ class SovereignMessenger {
       final msgId = row['message_id'] as String?;
       final cipher = Uint8List.fromList(row['ciphertext'] as List<int>);
       try {
+        onFaultStage?.call(MessagingFaultStage.duringRelaySend);
         final relayEnvId = await relayClient.storeEnvelope(
           mailboxId: destMailbox,
           cipherPayload: cipher,
           quotaToken: quotaToken,
         );
-        await outboxRepo.markEnvelopeAccepted(outboxId, relayEnvId);
-        if (msgId != null) {
-          await messageRepo.updateDeliveryState(msgId, 'accepted');
-        }
+        onFaultStage?.call(MessagingFaultStage.afterRemoteAcceptBeforeLocalConfirm);
+        await database.rawDatabase.transaction((txn) async {
+          await txn.update(
+            'outbox',
+            {
+              'transport_state': 'accepted',
+              'relay_envelope_id': relayEnvId,
+            },
+            where: 'id = ?',
+            whereArgs: [outboxId],
+          );
+          if (msgId != null) {
+            await txn.update(
+              'messages',
+              {'delivery_state': 'accepted'},
+              where: 'id = ?',
+              whereArgs: [msgId],
+            );
+          }
+        });
         accepted++;
       } catch (_) {
-        await outboxRepo.markEnvelopeFailed(outboxId, retryDelayMs);
+        final nextRetry =
+            DateTime.now().toUtc().millisecondsSinceEpoch + retryDelayMs;
+        await database.rawDatabase.transaction((txn) async {
+          await txn.rawUpdate('''
+            UPDATE outbox
+            SET transport_state = 'failed',
+                attempts = attempts + 1,
+                next_attempt_at = ?
+            WHERE id = ?;
+          ''', [nextRetry, outboxId]);
+          if (msgId != null) {
+            await txn.update(
+              'messages',
+              {'delivery_state': 'failed'},
+              where: 'id = ? AND delivery_state != ?',
+              whereArgs: [msgId, 'accepted'],
+            );
+          }
+        });
         failed++;
       }
     }
@@ -751,8 +919,34 @@ class SovereignMessenger {
             jsonDecode(utf8.decode(rawBytes)) as Map<String, dynamic>;
         final convId = wire['convId'] as String;
         final senderId = wire['sender'] as String;
+        final wireMsgId = wire['msgId'] as String?;
         final ratchetBytes = base64Decode(wire['ratchetB64'] as String);
         final cipher = RatchetCiphertext.decode(ratchetBytes);
+
+        // 1b. Deduplicação por msgId (quando remetente retransmitiu mesmo ciphertext após falha pós-POST)
+        if (wireMsgId != null) {
+          final existingMsg = await database.rawDatabase.query(
+            'messages',
+            columns: ['id'],
+            where: 'id = ?',
+            whereArgs: [wireMsgId],
+            limit: 1,
+          );
+          if (existingMsg.isNotEmpty) {
+            final nowMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+            final payloadHash =
+                Uint8List.fromList(std_crypto.sha256.convert(rawBytes).bytes);
+            await outboxRepo.recordDeduplication(
+              mailboxId: creds.mailboxId,
+              deliveryId: env.id,
+              payloadHash: payloadHash,
+              expiresAt: nowMs + const Duration(days: 7).inMilliseconds,
+            );
+            skippedDuplicates++;
+            ackIds.add(env.id);
+            continue;
+          }
+        }
 
         // Valida que remetente não sofreu alteração silenciosa de chave
         final contact = await contactRepo.getContact(senderId);
@@ -839,6 +1033,9 @@ class SovereignMessenger {
           }
         }
 
+        if (wire['senderMailbox'] is String) {
+          stateObj['peerMailbox'] = wire['senderMailbox'] as String;
+        }
         stateObj['ratchet'] = ratchet.exportState();
         final wrapKey = await _deriveSessionWrapKey();
         final effectivePeerId =
@@ -907,6 +1104,34 @@ class SovereignMessenger {
             nowMs,
             expiresAt,
           ]);
+
+          for (int i = 0; i < parsedAttachments.length; i++) {
+            final att = parsedAttachments[i];
+            final shaBytes = _fromHex(att.plaintextSha256Hex);
+            await txn.rawInsert('''
+              INSERT OR REPLACE INTO objects(
+                id, sha256, mime_type, byte_size, key_ref, encrypted_path, created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?);
+            ''', [
+              att.objectId,
+              shaBytes,
+              att.mimeType,
+              att.byteSize,
+              'object_inline:${att.objectId}',
+              '$storageRootDir/objects/${att.objectId}_${msgId}_$i.manifest',
+              nowMs,
+            ]);
+            await txn.rawInsert('''
+              INSERT OR REPLACE INTO attachments(
+                message_id, object_id, file_name, ordinal
+              ) VALUES (?, ?, ?, ?);
+            ''', [
+              msgId,
+              att.objectId,
+              att.fileName,
+              i,
+            ]);
+          }
 
           await txn.rawInsert('''
             INSERT OR IGNORE INTO inbox_dedup(

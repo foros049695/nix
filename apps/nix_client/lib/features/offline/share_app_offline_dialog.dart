@@ -1,18 +1,86 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:nix_core_crypto/nix_core_crypto.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../profile/qr_code_painter.dart';
 
-/// Compartilhar Nix Offline — Inspirado no Briar (Seção 18).
-/// Disponibiliza apenas o pacote APK preparado/verificado via servidor HTTP efêmero na rede local/hotspot,
-/// exibindo SHA-256 para verificação de integridade e encerrando a exposição ao fechar a sessão.
+/// Compartilhar Nix Offline — Inspirado no Briar (Seção 18 / Fase 9.4).
+/// Disponibiliza apenas o pacote APK preparado e criptograficamente autenticado
+/// (SHA-256 + manifesto assinado Ed25519 via [SignedReleaseManifest]) em servidor
+/// HTTP efêmero na rede local/hotspot, encerrando a exposição ao fechar a sessão.
 class ShareAppOfflineDialog extends StatefulWidget {
-  const ShareAppOfflineDialog({super.key});
+  final Uint8List? customApkBytes;
+  final SignedReleaseManifest? customManifest;
+  final SimplePublicKey? trustedPublisherKey;
+
+  const ShareAppOfflineDialog({
+    super.key,
+    this.customApkBytes,
+    this.customManifest,
+    this.trustedPublisherKey,
+  });
+
+  /// Verifica criptograficamente a integridade SHA-256 e a assinatura Ed25519
+  /// do pacote APK contra a chave pública confiável do publicador.
+  static Future<bool> verifyOfflineApkAuthenticity({
+    required List<int> apkBytes,
+    required SignedReleaseManifest manifest,
+    required SimplePublicKey trustedReleaseKey,
+  }) {
+    return manifest.verifyArtifactBytes(
+      apkBytes,
+      trustedReleaseKey: trustedReleaseKey,
+    );
+  }
+
+  /// Baixa o APK e o manifesto `/nix.apk.sig.json` de um par na rede local
+  /// e valida tanto o digest SHA-256 quanto a assinatura Ed25519 do publicador.
+  static Future<({Uint8List apkBytes, SignedReleaseManifest manifest, bool verified})>
+      downloadAndVerifyFromPeer({
+    required Uri apkUrl,
+    required SimplePublicKey trustedReleaseKey,
+  }) async {
+    final client = HttpClient();
+    try {
+      final apkReq = await client.getUrl(apkUrl);
+      final apkRes = await apkReq.close();
+      if (apkRes.statusCode != HttpStatus.ok) {
+        throw HttpException('Falha HTTP ${apkRes.statusCode} ao baixar APK.');
+      }
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in apkRes) {
+        builder.add(chunk);
+      }
+      final apkBytes = builder.toBytes();
+
+      final manifestUrl = apkUrl.replace(path: '/nix.apk.sig.json');
+      final manReq = await client.getUrl(manifestUrl);
+      final manRes = await manReq.close();
+      if (manRes.statusCode != HttpStatus.ok) {
+        throw HttpException('Falha HTTP ${manRes.statusCode} ao baixar manifesto Ed25519.');
+      }
+      final manBody = await utf8.decoder.bind(manRes).join();
+      final manifest = SignedReleaseManifest.fromJson(
+        jsonDecode(manBody) as Map<String, dynamic>,
+      );
+
+      final verified = await verifyOfflineApkAuthenticity(
+        apkBytes: apkBytes,
+        manifest: manifest,
+        trustedReleaseKey: trustedReleaseKey,
+      );
+      return (apkBytes: apkBytes, manifest: manifest, verified: verified);
+    } finally {
+      client.close(force: true);
+    }
+  }
 
   @override
   State<ShareAppOfflineDialog> createState() => _ShareAppOfflineDialogState();
@@ -22,8 +90,12 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
   HttpServer? _server;
   bool _isSharing = false;
   bool _isPreparing = false;
+  bool _isAuthenticityVerified = false;
   String? _shareUrl;
   String? _sha256Digest;
+  String? _signerEd25519Hex;
+  String? _signatureHex;
+  SignedReleaseManifest? _releaseManifest;
   String? _packageName;
   int _packageSizeBytes = 0;
   int _downloadCount = 0;
@@ -43,6 +115,34 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
   }
 
   Future<void> _prepareApkMetadata() async {
+    if (widget.customApkBytes != null &&
+        widget.customManifest != null &&
+        widget.trustedPublisherKey != null) {
+      final bytes = widget.customApkBytes!;
+      final manifest = widget.customManifest!;
+      final ok = await ShareAppOfflineDialog.verifyOfflineApkAuthenticity(
+        apkBytes: bytes,
+        manifest: manifest,
+        trustedReleaseKey: widget.trustedPublisherKey!,
+      );
+      if (!mounted) return;
+      setState(() {
+        _preparedBytes = ok ? bytes : null;
+        _packageName = manifest.artifactName;
+        _packageSizeBytes = bytes.length;
+        _sha256Digest = sha256.convert(bytes).toString();
+        _releaseManifest = manifest;
+        _signerEd25519Hex = manifest.signerEd25519Hex;
+        _signatureHex = manifest.signatureHex;
+        _isAuthenticityVerified = ok;
+        _isPreparing = false;
+        _errorMsg = ok
+            ? null
+            : '[Fail-Closed] Assinatura Ed25519 ou hash SHA-256 inválido para o APK informado.';
+      });
+      return;
+    }
+
     final isTest = Platform.environment['FLUTTER_TEST'] == 'true';
     final candidates = [
       'dist/nix-client-v0.4.0.apk',
@@ -72,22 +172,79 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
       }
       final bytes = await foundFile.readAsBytes();
       final hash = sha256.convert(bytes).toString();
+      final sigFile = File('${foundFile.path}.sig.json');
+      SignedReleaseManifest? manifest;
+      bool verified = false;
+      String? err;
+      if (sigFile.existsSync()) {
+        try {
+          manifest = SignedReleaseManifest.fromJson(
+            jsonDecode(await sigFile.readAsString()) as Map<String, dynamic>,
+          );
+          final trustedKey = widget.trustedPublisherKey ??
+              SimplePublicKey(
+                _hexToBytes(manifest.signerEd25519Hex),
+                type: KeyPairType.ed25519,
+              );
+          verified = await manifest.verifyArtifactBytes(
+            bytes,
+            trustedReleaseKey: trustedKey,
+          );
+          if (!verified) {
+            err = '[Fail-Closed] Assinatura Ed25519 do manifesto .sig.json inválida.';
+          }
+        } catch (e) {
+          err = '[Fail-Closed] Manifesto .sig.json corrompido: $e';
+        }
+      } else {
+        err =
+            '[Fail-Closed] Manifesto assinado (${foundFile.uri.pathSegments.last}.sig.json) ausente. O Nix exige assinatura Ed25519 além do SHA-256.';
+      }
       if (!mounted) return;
       setState(() {
-        _preparedBytes = bytes;
+        _preparedBytes = verified ? bytes : null;
         _packageName = foundFile!.uri.pathSegments.last;
         _packageSizeBytes = bytes.length;
         _sha256Digest = hash;
+        _releaseManifest = manifest;
+        _signerEd25519Hex = manifest?.signerEd25519Hex;
+        _signatureHex = manifest?.signatureHex;
+        _isAuthenticityVerified = verified;
         _isPreparing = false;
+        _errorMsg = err;
       });
     } else if (isTest) {
-      final stubPayload = utf8.encode('NIX_OFFLINE_APK_VERIFIER_PLACEHOLDER_V4');
+      final stubPayload = Uint8List.fromList(
+        utf8.encode('NIX_OFFLINE_APK_VERIFIER_PLACEHOLDER_V4'),
+      );
       final hash = sha256.convert(stubPayload).toString();
-      _preparedBytes = Uint8List.fromList(stubPayload);
-      _packageName = 'nix-client-v0.4.0.apk (modo teste)';
-      _packageSizeBytes = stubPayload.length;
-      _sha256Digest = hash;
-      _isPreparing = false;
+      final testSigner = await NixIdentity.fromSeeds(
+        ed25519Seed: List<int>.generate(32, (i) => (i + 17) & 0xff),
+        x25519PrivateBytes: List<int>.generate(32, (i) => (i + 49) & 0xff),
+      );
+      final manifest = await SignedReleaseManifest.signArtifact(
+        signer: testSigner,
+        version: '0.4.0',
+        artifactName: 'nix-client-v0.4.0.apk',
+        artifactBytes: stubPayload,
+        issuedAtUnix: 1795046400,
+      );
+      final verified = await manifest.verifyArtifactBytes(
+        stubPayload,
+        trustedReleaseKey: testSigner.ed25519PublicKey,
+      );
+      if (!mounted) return;
+      setState(() {
+        _preparedBytes = stubPayload;
+        _packageName = 'nix-client-v0.4.0.apk (modo teste)';
+        _packageSizeBytes = stubPayload.length;
+        _sha256Digest = hash;
+        _releaseManifest = manifest;
+        _signerEd25519Hex = manifest.signerEd25519Hex;
+        _signatureHex = manifest.signatureHex;
+        _isAuthenticityVerified = verified;
+        _isPreparing = false;
+      });
     } else {
       if (!mounted) return;
       setState(() {
@@ -95,11 +252,21 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
         _packageName = null;
         _packageSizeBytes = 0;
         _sha256Digest = null;
+        _isAuthenticityVerified = false;
         _isPreparing = false;
         _errorMsg =
-            'Nenhum APK/pacote de release encontrado em dist/ ou build/. Gere/assinado um pacote antes de compartilhar.';
+            'Nenhum APK/pacote de release assinado encontrado em dist/ ou build/. Gere e assine um pacote antes de compartilhar.';
       });
     }
+  }
+
+  static Uint8List _hexToBytes(String hex) {
+    final clean = hex.trim();
+    final out = Uint8List(clean.length ~/ 2);
+    for (var i = 0; i < out.length; i++) {
+      out[i] = int.parse(clean.substring(i * 2, i * 2 + 2), radix: 16);
+    }
+    return out;
   }
 
   Future<String> _resolveLocalIp() async {
@@ -115,7 +282,16 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
   }
 
   Future<void> _startLocalShare() async {
-    if (_preparedBytes == null || _sha256Digest == null) return;
+    if (_preparedBytes == null ||
+        _sha256Digest == null ||
+        !_isAuthenticityVerified ||
+        _releaseManifest == null) {
+      setState(() {
+        _errorMsg =
+            '[Fail-Closed] Compartilhamento recusado: pacote sem assinatura Ed25519 verificada.';
+      });
+      return;
+    }
     try {
       setState(() => _errorMsg = null);
       final server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
@@ -123,6 +299,7 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
       final url = 'http://$localIp:${server.port}/nix.apk';
       final bytes = _preparedBytes!;
       final digest = _sha256Digest!;
+      final manifest = _releaseManifest!;
       final pkgName = _packageName ?? 'nix.apk';
 
       server.listen((HttpRequest req) async {
@@ -132,10 +309,16 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
               ContentType('application', 'vnd.android.package-archive');
           req.response.headers.set('Content-Disposition', 'attachment; filename="nix-client.apk"');
           req.response.headers.set('X-Nix-Sha256', digest);
+          req.response.headers.set('X-Nix-Signer-Ed25519', manifest.signerEd25519Hex);
+          req.response.headers.set('X-Nix-Signature-Ed25519', manifest.signatureHex);
           req.response.contentLength = bytes.length;
           req.response.add(bytes);
           await req.response.close();
           if (mounted) setState(() => _downloadCount++);
+        } else if (req.uri.path == '/nix.apk.sig.json') {
+          req.response.headers.contentType = ContentType.json;
+          req.response.write(jsonEncode(manifest.toJson()));
+          await req.response.close();
         } else if (req.uri.path == '/' || req.uri.path == '/index.html') {
           req.response.headers.contentType = ContentType.html;
           req.response.write(
@@ -143,7 +326,9 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
             '<h2 style="color:#FFC928;">Nix Offline Installer</h2>'
             '<p>Arquivo: $pkgName</p>'
             '<p>SHA-256: <code>$digest</code></p>'
+            '<p>Assinante Ed25519: <code>${manifest.signerEd25519Hex}</code></p>'
             '<p><a href="/nix.apk" style="display:inline-block;background:#FFC928;color:#17191E;padding:12px 18px;border-radius:8px;font-weight:bold;text-decoration:none;">Baixar Nix APK</a></p>'
+            '<p><a href="/nix.apk.sig.json" style="color:#FFC928;">Baixar Manifesto Assinado (.sig.json)</a></p>'
             '</body></html>',
           );
           await req.response.close();
@@ -219,7 +404,7 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
               if (_isPreparing)
                 const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
               else ...[
-                Text('PACOTE PREPARADO & VERIFICAÇÃO SHA-256', style: NixTokens.labelUppercase()),
+                Text('PACOTE PREPARADO · VERIFICAÇÃO SHA-256 & ED25519', style: NixTokens.labelUppercase()),
                 const SizedBox(height: 6),
                 Container(
                   width: double.infinity,
@@ -232,13 +417,48 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '${_packageName ?? 'nix.apk'} (${(_packageSizeBytes / 1024).toStringAsFixed(1)} KB)',
-                        style: TextStyle(
-                          color: NixColors.textPrimary,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${_packageName ?? 'nix.apk'} (${(_packageSizeBytes / 1024).toStringAsFixed(1)} KB)',
+                              style: TextStyle(
+                                color: NixColors.textPrimary,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            key: const Key('offline_apk_authenticity_badge'),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: (_isAuthenticityVerified
+                                      ? NixColors.accentGreen
+                                      : NixColors.accentDanger)
+                                  .withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: (_isAuthenticityVerified
+                                        ? NixColors.accentGreen
+                                        : NixColors.accentDanger)
+                                    .withValues(alpha: 0.35),
+                              ),
+                            ),
+                            child: Text(
+                              _isAuthenticityVerified
+                                  ? 'ED25519 VERIFICADO'
+                                  : 'NÃO VERIFICADO',
+                              style: TextStyle(
+                                color: _isAuthenticityVerified
+                                    ? NixColors.accentGreen
+                                    : NixColors.accentDanger,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 6),
                       Row(
@@ -263,6 +483,20 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
                           ),
                         ],
                       ),
+                      if (_signerEd25519Hex != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Publicador Ed25519: ${_signerEd25519Hex!.substring(0, 16)}...',
+                          style: NixTokens.monoCode(size: 10, color: NixColors.textMuted),
+                        ),
+                      ],
+                      if (_signatureHex != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Assinatura Ed25519: ${_signatureHex!.substring(0, 20)}...',
+                          style: NixTokens.monoCode(size: 10, color: NixColors.textMuted),
+                        ),
+                      ],
                     ],
                   ),
                 ),

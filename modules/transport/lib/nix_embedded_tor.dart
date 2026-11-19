@@ -175,8 +175,23 @@ class EmbeddedTorManager {
   }) async {
     if (_status == EmbeddedTorStatus.ready) return true;
 
-    // Se já houver um Tor rodando na porta SOCKS 9050, reutiliza o túnel ativo
+    // Se já houver um listener respondendo na porta SOCKS, valida se é SOCKS5 Tor
+    // e se o ControlPort (quando cookie presente) reporta circuito 100% operacional.
     if (await _portProbe('127.0.0.1', socksPort)) {
+      final cookieFile = File('$dataDirectory/control_auth_cookie');
+      if (await cookieFile.exists()) {
+        final diag = await TorDiagnostics.diagnose(
+          host: '127.0.0.1',
+          socksPort: socksPort,
+          controlPort: controlPort,
+          controlCookiePath: cookieFile.path,
+        );
+        if (!diag.socksReachable) {
+          _status = EmbeddedTorStatus.error;
+          _lastSummary = diag.message;
+          return false;
+        }
+      }
       _status = EmbeddedTorStatus.ready;
       _currentProgress = 100;
       _lastSummary = 'Conectado a túnel SOCKS5 Tor ativo';
@@ -300,6 +315,44 @@ class EmbeddedTorManager {
         }
       }
     }
+  }
+
+  /// Diferencia daemon SOCKS5 ativo de circuito Tor 100% operacional.
+  Future<({bool daemonSocksActive, bool circuitOperational, String detail})>
+      verifyOperationalState() async {
+    final socksOk = await _portProbe('127.0.0.1', socksPort);
+    if (!socksOk) {
+      return (
+        daemonSocksActive: false,
+        circuitOperational: false,
+        detail: 'Porta SOCKS5 127.0.0.1:$socksPort inativa ou protocolo inválido.',
+      );
+    }
+    final cookieFile = File('$dataDirectory/control_auth_cookie');
+    if (await cookieFile.exists()) {
+      final diag = await TorDiagnostics.diagnose(
+        host: '127.0.0.1',
+        socksPort: socksPort,
+        controlPort: controlPort,
+        controlCookiePath: cookieFile.path,
+      );
+      final circuitOk = diag.socksReachable &&
+          (diag.bootstrapStatus == null ||
+              diag.bootstrapStatus!.contains('PROGRESS=100'));
+      return (
+        daemonSocksActive: true,
+        circuitOperational: circuitOk,
+        detail: diag.message,
+      );
+    }
+    final circuitOk = _status == EmbeddedTorStatus.ready && _currentProgress == 100;
+    return (
+      daemonSocksActive: true,
+      circuitOperational: circuitOk,
+      detail: circuitOk
+          ? 'SOCKS5 Tor operacional e bootstrap em 100%.'
+          : 'Daemon SOCKS5 ativo, porém circuito Tor ainda não confirmou 100% de bootstrap.',
+    );
   }
 
   /// Verifica se já existe um proxy SOCKS5 Tor respondendo ao greeting RFC 1928.

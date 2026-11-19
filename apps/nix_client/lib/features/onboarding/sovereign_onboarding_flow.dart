@@ -125,6 +125,12 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
     setState(() {
       _currentStep = snapshot.currentStep;
       _torConsentChecked = snapshot.torConsentAccepted;
+      _bootstrapPercent = snapshot.torBootstrapped ? 100 : 0;
+      _torSocksAlive = snapshot.torVerified;
+      _torFailClosedVerified = snapshot.torVerified;
+      _torCircuitsReady = snapshot.torBootstrapped && snapshot.torVerified;
+      _paperBackupConfirmed = snapshot.backupConfirmed;
+      _challengePassed = snapshot.backupConfirmed;
       if (snapshot.displayName != null && snapshot.displayName!.isNotEmpty) {
         _displayNameController.text = snapshot.displayName!;
       }
@@ -136,14 +142,10 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       }
     });
 
-    // Se já passou do consentimento e precisa do Tor, verifica se o Tor já está ativo
+    // Se já passou do consentimento e precisa do Tor, revalida estado real sem presumir
     if (_currentStep.index >= OnboardingStep.torBootstrap.index) {
       if (widget.nixState.embeddedTor.status == EmbeddedTorStatus.ready) {
-        _bootstrapPercent = 100;
-        _bootstrapSummary = 'Tor embutido ativo e sincronizado.';
-        _torSocksAlive = true;
-        _torFailClosedVerified = true;
-        _torCircuitsReady = true;
+        await _runTorVerification();
       }
     }
   }
@@ -274,27 +276,22 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       _torSocksAlive = false;
       _torFailClosedVerified = false;
       _torCircuitsReady = false;
-      _diagnosticsLogs.add('[Verificação] Testando conexão com loopback SOCKS5...');
+      _diagnosticsLogs.add('[Verificação] Auditando SOCKS5, circuito Tor e bloqueio ativo de clearnet...');
     });
 
-    await Future.delayed(const Duration(milliseconds: 350));
-    final torStatus = await widget.nixState.checkTorDaemonStatus();
+    final report = await widget.nixState.verifyTorTransportAndFailClosed();
 
     if (!mounted) return;
 
     setState(() {
       _isVerifyingTor = false;
-      _torSocksAlive = torStatus;
-      _torFailClosedVerified = true; // Roteamento direto clearnet é bloqueado por design
-      _torCircuitsReady = torStatus;
-      _diagnosticsLogs.add(
-        torStatus
-            ? '[Verificação] Porta SOCKS5 127.0.0.1:9050 ativa. Isolamento de rede verificado.'
-            : '[Verificação Falha] SOCKS5 não respondeu no loopback.',
-      );
+      _torSocksAlive = report.socksActive;
+      _torCircuitsReady = report.circuitOperational;
+      _torFailClosedVerified = report.failClosedVerified;
+      _diagnosticsLogs.add('[Verificação] ${report.detail}');
     });
 
-    _persistCheckpoint();
+    await _persistCheckpoint();
   }
 
   String _generateRandomHexPassphrase() {
@@ -580,9 +577,8 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: SizedBox(
-        width: 680,
-        height: 720,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 680, maxHeight: 720),
         child: Container(
           decoration: BoxDecoration(
             color: NixColors.surfaceElevatedHigh,
@@ -1011,7 +1007,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
         const SizedBox(height: 16),
         if (_isVerifyingTor)
           const Center(child: CircularProgressIndicator())
-        else if (!_torSocksAlive)
+        else if (!_torSocksAlive || !_torFailClosedVerified || !_torCircuitsReady)
           Center(
             child: TextButton.icon(
               onPressed: _runTorVerification,
@@ -1672,17 +1668,18 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       case OnboardingStep.torBootstrap:
         return _bootstrapPercent == 100 && !_isLoading;
       case OnboardingStep.torVerification:
-        return _torSocksAlive && _torFailClosedVerified;
+        return _torSocksAlive && _torFailClosedVerified && _torCircuitsReady;
       case OnboardingStep.identityGeneration:
-        return _seedWords.isNotEmpty && !_isGeneratingIdentity;
+        return (_seedWords.isNotEmpty || _derivedPublicId.isNotEmpty) && !_isGeneratingIdentity;
       case OnboardingStep.recoveryBackup:
         return _challengePassed && _paperBackupConfirmed;
       case OnboardingStep.publicId:
         return _derivedPublicId.isNotEmpty || widget.nixState.userProfile.publicId.isNotEmpty;
       case OnboardingStep.profileSetup:
-        return true;
+        return _derivedPublicId.isNotEmpty || widget.nixState.userProfile.publicId.isNotEmpty;
       case OnboardingStep.ready:
-        return true;
+        return (_derivedPublicId.isNotEmpty || widget.nixState.userProfile.publicId.isNotEmpty) &&
+            _torConsentChecked;
     }
   }
 
@@ -1701,7 +1698,6 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
         break;
       case OnboardingStep.torVerification:
         _goToStep(OnboardingStep.identityGeneration);
-        _generatePrivateIdentity();
         break;
       case OnboardingStep.identityGeneration:
         _goToStep(OnboardingStep.recoveryBackup);

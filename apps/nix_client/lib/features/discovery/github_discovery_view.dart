@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:nix_transport/nix_transport.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/github_repo.dart';
 import '../../core/theme.dart';
@@ -935,6 +936,32 @@ class _RepoListItem extends StatelessWidget {
   }
 }
 
+/// Impõe a política de transporte fail-closed para downloads do catálogo Starwire:
+/// proíbe qualquer bypass clearnet quando `strictTorMode` está ativo.
+TransportPolicy enforceStarwireDownloadTransport({
+  required bool strictTorMode,
+  bool allowClearnetBypass = false,
+  int socksPort = 9050,
+}) {
+  if (strictTorMode && allowClearnetBypass) {
+    throw const TransportBlockedException(
+      '[Fail-Closed] Bypass clearnet proibido no Modo Tor Estrito (Starwire GitHub Discovery).',
+    );
+  }
+  if (strictTorMode) {
+    return TransportPolicy(
+      mode: TransportMode.torFailClosed,
+      socksHost: '127.0.0.1',
+      socksPort: socksPort,
+    );
+  }
+  return TransportPolicy(
+    mode: TransportMode.loopbackTest,
+    socksHost: '127.0.0.1',
+    socksPort: socksPort,
+  );
+}
+
 class _RepoZipDownloadDialog extends StatefulWidget {
   final GithubRepository repo;
   final bool strictTorMode;
@@ -963,19 +990,23 @@ class _RepoZipDownloadDialogState extends State<_RepoZipDownloadDialog> {
     super.dispose();
   }
 
-  Future<void> _startClearnetDownload() async {
+  Future<void> _startPolicyCompliantDownload() async {
     setState(() {
       _downloading = true;
       _cancelled = false;
       _completed = false;
       _progress = null;
-      _statusText = 'Conectando ao arquivo fonte do GitHub...';
+      _statusText = widget.strictTorMode
+          ? 'Validando política Tor fail-closed (bypass clearnet proibido)...'
+          : 'Conectando ao arquivo fonte do repositório...';
       _savedPath = null;
     });
 
-    final client = HttpClient();
-    _httpClient = client;
     try {
+      final policy = enforceStarwireDownloadTransport(
+        strictTorMode: widget.strictTorMode,
+        allowClearnetBypass: false,
+      );
       final home = Platform.environment['HOME'] ?? Directory.systemTemp.path;
       final outDir = Directory('$home/.local/share/nix/downloads');
       final outFile = resolveStarwireZipFile(
@@ -984,58 +1015,68 @@ class _RepoZipDownloadDialogState extends State<_RepoZipDownloadDialog> {
         widget.repo.name,
       );
       final zipUrl = Uri.parse('${widget.repo.htmlUrl}/archive/HEAD.zip');
-      final req = await client.getUrl(zipUrl);
-      req.headers.set(HttpHeaders.userAgentHeader, 'NixClient/0.4.0');
-      final res = await req.close();
 
-      if (_cancelled || !mounted) return;
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        setState(() {
-          _downloading = false;
-          _statusText = 'Falha HTTP ${res.statusCode} ao obter arquivo.';
-        });
-        return;
+      if (widget.strictTorMode) {
+        // Fail-closed estrito: bloqueia qualquer destino clearnet (ex: github.com) sem bypass
+        policy.assertAllowedUri(zipUrl);
       }
 
-      outDir.createSync(recursive: true);
-      final sink = outFile.openWrite();
-      final total = res.contentLength;
-      var received = 0;
+      final client = HttpClient();
+      _httpClient = client;
+      try {
+        final req = await client.getUrl(zipUrl);
+        req.headers.set(HttpHeaders.userAgentHeader, 'NixClient/0.4.0');
+        final res = await req.close();
 
-      await for (final chunk in res) {
-        if (_cancelled) {
-          await sink.close();
-          if (outFile.existsSync()) outFile.deleteSync();
+        if (_cancelled || !mounted) return;
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          setState(() {
+            _downloading = false;
+            _statusText = 'Falha HTTP ${res.statusCode} ao obter arquivo.';
+          });
           return;
         }
-        sink.add(chunk);
-        received += chunk.length;
-        if (mounted) {
+
+        outDir.createSync(recursive: true);
+        final sink = outFile.openWrite();
+        final total = res.contentLength;
+        var received = 0;
+
+        await for (final chunk in res) {
+          if (_cancelled) {
+            await sink.close();
+            if (outFile.existsSync()) outFile.deleteSync();
+            return;
+          }
+          sink.add(chunk);
+          received += chunk.length;
+          if (mounted) {
+            setState(() {
+              _progress = total > 0 ? (received / total).clamp(0.0, 1.0) : null;
+              _statusText = 'Baixando ${(received / 1024).toStringAsFixed(1)} KB...';
+            });
+          }
+        }
+        await sink.close();
+        if (mounted && !_cancelled) {
           setState(() {
-            _progress = total > 0 ? (received / total).clamp(0.0, 1.0) : null;
-            _statusText = 'Baixando ${(received / 1024).toStringAsFixed(1)} KB...';
+            _downloading = false;
+            _completed = true;
+            _progress = 1.0;
+            _savedPath = outFile.path;
+            _statusText = 'Código-fonte salvo em disco.';
           });
         }
-      }
-      await sink.close();
-      if (mounted && !_cancelled) {
-        setState(() {
-          _downloading = false;
-          _completed = true;
-          _progress = 1.0;
-          _savedPath = outFile.path;
-          _statusText = 'Código-fonte salvo em disco.';
-        });
+      } finally {
+        client.close(force: true);
       }
     } catch (e) {
       if (mounted && !_cancelled) {
         setState(() {
           _downloading = false;
-          _statusText = 'Conexão falhou ou bloqueada: $e';
+          _statusText = '[Fail-Closed] Conexão bloqueada ou indisponível: $e';
         });
       }
-    } finally {
-      client.close(force: true);
     }
   }
 
@@ -1079,6 +1120,7 @@ class _RepoZipDownloadDialogState extends State<_RepoZipDownloadDialog> {
             const SizedBox(height: 12),
             if (widget.strictTorMode) ...[
               Container(
+                key: const Key('strict_tor_no_clearnet_bypass_banner'),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: NixColors.accentDanger.withValues(alpha: 0.10),
@@ -1089,7 +1131,7 @@ class _RepoZipDownloadDialogState extends State<_RepoZipDownloadDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Política Fail-Closed Ativa',
+                      'Política Fail-Closed Ativa (Bypass Clearnet Bloqueado)',
                       style: TextStyle(
                         color: NixColors.accentDanger,
                         fontSize: 11.5,
@@ -1098,7 +1140,7 @@ class _RepoZipDownloadDialogState extends State<_RepoZipDownloadDialog> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'O Nix não envia tráfego clearnet silenciosamente quando o Modo Tor Estrito está ligado. Copie a URL abaixo para baixar pelo seu navegador Tor ou desbloqueie clearnet explicitamente para esta ação.',
+                      'O Nix não permite bypass clearnet quando o Modo Tor Estrito está ativo. O download abaixo ocorre exclusivamente via circuito Tor SOCKS5 (127.0.0.1:9050) ou falha fechado.',
                       style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
                     ),
                   ],
@@ -1151,12 +1193,13 @@ class _RepoZipDownloadDialogState extends State<_RepoZipDownloadDialog> {
             child: const Text('Fechar'),
           ),
           ElevatedButton(
+            key: const Key('download_zip_action_button'),
             style: ElevatedButton.styleFrom(
               backgroundColor: context.accentColor,
               foregroundColor: context.onAccentColor,
             ),
-            onPressed: _startClearnetDownload,
-            child: Text(widget.strictTorMode ? 'Permitir Clearnet Agora' : 'Baixar ZIP'),
+            onPressed: _startPolicyCompliantDownload,
+            child: Text(widget.strictTorMode ? 'Baixar ZIP via Tor (SOCKS5)' : 'Baixar ZIP'),
           ),
         ],
       ],

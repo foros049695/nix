@@ -62,8 +62,9 @@ Governança de repositório:
 
 - [x] Interface Flutter implementada (Flutter 3.27+ / Dart 3.6+) com temas Dark Yellow, Light Yellow e AMOLED.
 - [x] Layout de três painéis redimensionáveis, Card ID e Acervo Cultural limpo (sem dados fictícios pré-populados).
-- [x] Cofre de chaves (`KeyVault`) com Argon2id + XChaCha20-Poly1305 e `AntiForensicShredder` confinado a `customBaseDir` com sobrescrita *in-place* (PR `#4`, `5d83e77`).
-- [x] Persistência real via **SQLCipher `4.10.0`** no bundle Linux (`sqlcipher_flutter_libs 0.6.8`), com detecção honesta de estado de cifragem (`PRAGMA cipher_version`) e verificação de checksums SHA-256 antes de migrações SQL (PR `#6`, `7677a0b`).
+- [x] Cofre de chaves (`KeyVault`) com Argon2id + XChaCha20-Poly1305 (sem frase-passe padrão fixa), backup/restauração cifrados (`exportEncryptedBackupBundle`/`importEncryptedBackupBundle`) e `AntiForensicShredder` confinado a `customBaseDir` com sobrescrita *in-place* (PR `#4`, `5d83e77`).
+- [x] Persistência real via **SQLCipher `4.10.0`** no bundle Linux (`sqlcipher_flutter_libs 0.6.8`), com detecção honesta de estado de cifragem (`PRAGMA cipher_version`), bloqueio *fail-closed* (`requireEncryption: true`) contra SQLite comum (validado contra `libsqlite3.so.0` em `plain_sqlite_rejection_probe_test.dart`) e verificação de checksums SHA-256 antes de migrações SQL (PR `#6`, `7677a0b`).
+- [x] Onboarding soberano em 9 etapas com verificação ativa de Tor/fail-closed (`verifyTorTransportAndFailClosed`), persistência atômica `tmp + rename` de snapshots, checagem de pré-requisitos em `completeOnboarding()` e responsividade validada em `800x600` e `1440x900`.
 - [x] Proteção de chave mestre integrada ao sistema operacional (`OsKeyStorage`: `libsecret-1.so.0` via FFI no Linux, `MethodChannel` `AndroidKeyStore` AES-256-GCM em `MainActivity.kt` e fallback explícito sem gravação insegura em disco).
 - [x] Recuperação determinística de identidade (`SeedRecoveryManager`: frase de 24 palavras com checksum SHA-256 e derivação HKDF de `NixIdentity`).
 - [x] Carregamento pós-reinicialização (`tryAutoUnlockAndRestore`, `unlockWithPassphrase`, `_VaultUnlockPrompt`, `reloadFromDatabase`) e liberação segura com zeroização em `NixState.dispose()` (PR `#15`, `ab308e7`).
@@ -122,7 +123,7 @@ Governança de repositório:
 - [x] Módulos `modules/core_crypto` e `modules/transport` livres de erros estritos (`dart analyze --fatal-infos`, PR `#2`, `8618b79`).
 - [x] Gerenciador `EmbeddedTorManager` isolado em testes e com encerramento garantido de processos filhos em timeout (PR `#5`, `c7dd88d`), testado com Tor `0.4.9.15` ao vivo (`Bootstrapped 100%`).
 - [x] Correção da **Issue `#11`** em `modules/transport/lib/nix_transport.dart`: túnel SOCKS5 em `RawSocket` (`Socks5Connector.connectRaw`) com upgrade nativo `RawSecureSocket.secure` em `RelayClient._socksHttp`, validação rigorosa de certificado TLS por padrão (*fail-closed*) e bloqueio antecipado de esquemas não-HTTP(S) via `UnsupportedTransportSchemeException` (`cc3fc4f`).
-- [x] Protocolo completo em `SovereignMessenger` (`gate3_two_client_e2ee_test.dart`): troca OOB de `CardIdPayload` assinado, alerta `keyChangedWarning` com histórico em `contact_key_history`, estabelecimento X3DH, sessões persistentes `DoubleRatchet` com decifragem fora de ordem, *commit-before-ACK* atômico em `inbox_dedup`, retentativas no Outbox preservando ciphertext idêntico, anexos fragmentados em chunks com remoção automática de metadados (PR `#9`), rotação de épocas de Sender Keys em grupos e expiração distribuída (`expires_at` + `sweepExpiredMessages`).
+- [x] Protocolo completo em `SovereignMessenger` (`gate3_two_client_e2ee_test.dart` e `transactional_messaging_fault_test.dart`): unificação da UI (`NixState.sendDirectMessage` + `syncWithRelay`), gravação transacional atômica (`sessions` + `messages` + `attachments` + `outbox`), injeção de falhas nos 6 estágios sem corrupção de ratchet, estados reais (`queued`, `accepted`, `delivered`, `failed`, `saved`), troca entre duas instâncias independentes via relay+SOCKS5 locais, recuperação pós-reinicialização, `FilePickerAdapter` portável, cancelamento de anexos com limpeza de chunks e rotação automática de épocas de Sender Keys em kick/ban.
 
 ### Pendências para alvos móveis/rede pública
 
@@ -177,7 +178,7 @@ Governança de repositório:
 **Objetivo:** oferecer recursos P2P não custodiais com isolamento rígido entre identidade de mensageria e identidade financeira.
 
 - [x] Política de isolamento implementada e testada (`MoneroIsolationPolicy`: separação estrita Seed A vs Seed B e bloqueio de endpoints clearnet fora de loopback/`.onion`).
-- [x] Assinatura e verificação Ed25519 de anúncios (`SignedMoneroAd` via `SignedRecord` + `ReplayGuard` contra adulteração e replay).
+- [x] Assinatura e verificação Ed25519 reais de anúncios (`SignedMoneroAd` via `SignedRecord` + `ReplayGuard`, validação de preços/limites, persistência em SQLCipher, badges honestos `LOCAL ASSINADO` vs `PUBLICADO NO RELAY` e remoção de saldos fictícios na UI).
 - [x] Documentação do modelo de isolamento em `docs/WALLET.md`, `docs/ARCHITECTURE.md` e `ADR-0003`.
 - [ ] PARCIAL Integrar liquidação ao vivo contra daemon `monero-wallet-rpc` real em rede testnet/stagenet.
 
@@ -189,8 +190,8 @@ Governança de repositório:
 
 **Objetivo:** estruturar publicação local e verificável de artigos, documentos e refutações.
 
-- [x] Serviço `NixArchiveService` implementado em `apps/nix_client/lib/core/archive/nix_archive_service.dart` conforme `docs/ARCHIVE.md`.
-- [x] Suporte validado em SQLCipher para objetos canônicos `nix.archive.article.v1` / `nix.archive.refutation.v1` com CID SHA-256, sanitização HTML anti-XSS, assinatura Ed25519, cadeias de revisão `supersedes` e verificação contra adulteração.
+- [x] Serviço `NixArchiveService` implementado em `apps/nix_client/lib/core/archive/nix_archive_service.dart` com sanitizador HTML por tokenizador determinístico e whitelist estrita (sem dependência apenas de regex) conforme `docs/ARCHIVE.md`.
+- [x] Fluxo completo integrado em `PublicationRoomView` e `NixState` sobre SQLCipher: criar, editar (`supersedes`), assinar Ed25519, salvar localmente, refutar, inspecionar histórico de revisões e verificar integridade SHA-256/Ed25519.
 - [ ] PARCIAL Implementar e validar replicação distribuída automática entre múltiplos nós S3/IPFS em cluster externo.
 
 **Gate 7: PARCIAL.**
@@ -201,9 +202,9 @@ Governança de repositório:
 
 **Objetivo:** disponibilizar organização e busca offline de acervo mantendo barreiras contra vazamento de rede.
 
-- [x] Repositório SQLCipher + FTS5 (`MediaRepository`) com citação segura de termos (PR `#14`) e catálogo estático offline Starwire (`4.188` entradas).
-- [x] Serviço `MediaCatalogService` validado com separação entre lookup offline, bloqueio *fail-closed* de DHT/UDP claro em `authorizeMagnetResolution` e registro de transferência isolado da Seed A.
-- [ ] PARCIAL Implementar conectores remotos opt-in (TMDB, AniList e Jellyfin) roteados exclusivamente via proxy Tor isolado.
+- [x] Repositório SQLCipher + FTS5 (`MediaRepository`) com citação segura de termos (PR `#14`), busca local integrada em `CulturalShowcase`, catálogo estático offline Starwire (`4.188` entradas) com persistência de favoritos e proibição estrita de bypass clearnet em downloads ZIP (`enforceStarwireDownloadTransport`).
+- [x] Serviço `MediaCatalogService` validado com separação entre busca local (`localCatalogSearch`), conectores remotos estritamente opt-in (`OptInMediaConnectorKind` sob política fail-closed Tor/SOCKS5) e gate `authorizeMagnetResolution` isolado da Seed A.
+- [ ] PARCIAL Implementar clientes HTTP reais via Tor SOCKS5 para conectores remotos opt-in externos (TMDB, AniList e Jellyfin).
 
 **Gate 8: PARCIAL.**
 

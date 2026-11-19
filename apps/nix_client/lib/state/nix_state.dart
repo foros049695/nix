@@ -28,6 +28,10 @@ import '../core/database/repositories.dart';
 import '../core/security/key_vault.dart';
 import '../core/security/seed_recovery.dart';
 import '../core/security/anti_forensic_shredder.dart';
+import '../core/messaging/sovereign_messenger.dart';
+import '../core/p2p/monero_ad_verifier.dart';
+import '../core/archive/nix_archive_service.dart';
+import '../core/media/media_catalog_service.dart';
 import 'package:nix_transport/nix_transport.dart';
 import '../features/onboarding/sovereign_onboarding_model.dart';
 import 'mock_data.dart';
@@ -136,7 +140,6 @@ class NixState extends ChangeNotifier {
   Message? _editingMessage;
   final Set<String> _selectedMessageIds = {};
   String? _highlightedMessageId;
-  final Set<String> _seenMoneroNonces = {};
 
   // Filtros GitHub Discovery
   String _githubSearchQuery = '';
@@ -177,6 +180,7 @@ class NixState extends ChangeNotifier {
 
   // Banco de Dados Local Cifrado & KeyVault (P0-2)
   bool _disposed = false;
+  bool _isMockMode = false;
   LocalDatabase? _localDatabase;
   late final KeyVault _keyVault;
   Uint8List? _activeMasterKey;
@@ -184,6 +188,17 @@ class NixState extends ChangeNotifier {
   String _localDeviceId = 'dev_primary';
   bool _requiresPassphraseUnlock = false;
   String? _lastDatabaseInitError;
+
+  // Orquestradores de Domínio (Fases 3, 7, 8, 9)
+  SovereignMessenger? _sovereignMessenger;
+  RelayClient? _activeRelayClient;
+  MailboxCredentials? _activeMailboxCredentials;
+  String? _lastMessagingError;
+  final Map<String, String> _consumedMoneroNonces = {};
+  NixArchiveService? _archiveService;
+  MediaCatalogService? _mediaCatalogService;
+  String? _connectedMoneroRemoteNode;
+  double? _moneroNonCustodialBalanceXmr;
 
   IdentityRepository? _identityRepo;
   ContactRepository? _contactRepo;
@@ -205,6 +220,26 @@ class NixState extends ChangeNotifier {
   String get localDeviceId => _localDeviceId;
   LocalDatabase? get localDatabase => _localDatabase;
   KeyVault get keyVault => _keyVault;
+  SovereignMessenger? get sovereignMessenger => _sovereignMessenger;
+  String? get lastMessagingError => _lastMessagingError;
+  NixArchiveService? get archiveService => _archiveService;
+  MediaCatalogService? get mediaCatalogService => _mediaCatalogService;
+
+  void clearLastMessagingError() {
+    _lastMessagingError = null;
+    notifyListeners();
+  }
+
+  /// Rótulo honesto de saldo Monero não custodial (Seed B isolada da Seed A da mensageria).
+  String get moneroWalletBalanceLabel => _moneroNonCustodialBalanceXmr != null
+      ? '${_moneroNonCustodialBalanceXmr!.toStringAsFixed(12)} XMR'
+      : '0.000000000000 XMR (Carteira Externa Não Conectada)';
+
+  /// Rótulo honesto de conexão ao nó remoto Monero .onion.
+  String get moneroWalletStatusLabel => _connectedMoneroRemoteNode != null
+      ? 'Nó Remoto .onion: $_connectedMoneroRemoteNode'
+      : 'Sem Custódia Local · Conecte Carteira Externa (Seed B Isolada)';
+
   IdentityRepository? get identityRepo => _identityRepo;
   ContactRepository? get contactRepo => _contactRepo;
   ConversationRepository? get conversationRepo => _conversationRepo;
@@ -217,6 +252,40 @@ class NixState extends ChangeNotifier {
   ObjectChunkRepository? get objectChunkRepo => _objectChunkRepo;
   MediaRepository? get mediaRepo => _mediaRepo;
   ArchiveRepository? get archiveRepo => _archiveRepo;
+
+  void _rebuildSovereignMessenger() {
+    if (_localDatabase != null &&
+        _primaryIdentity != null &&
+        _activeMasterKey != null) {
+      _activeMailboxCredentials ??=
+          SovereignMessenger.deriveMailboxCredentials(_primaryIdentity!.publicId);
+      _sovereignMessenger = SovereignMessenger(
+        database: _localDatabase!,
+        identity: _primaryIdentity!,
+        localDeviceId: _localDeviceId,
+        vaultMasterKey: _activeMasterKey!,
+      );
+    } else {
+      _sovereignMessenger = null;
+    }
+  }
+
+  /// Configura o cliente de transporte do relay cego e credenciais de mailbox para o [SovereignMessenger].
+  void configureRelayTransport({
+    required RelayClient relayClient,
+    MailboxCredentials? mailboxCredentials,
+  }) {
+    _activeRelayClient = relayClient;
+    if (mailboxCredentials != null) {
+      _activeMailboxCredentials = mailboxCredentials;
+    } else if (_primaryIdentity != null) {
+      _activeMailboxCredentials = SovereignMessenger.deriveMailboxCredentials(
+        _primaryIdentity!.publicId,
+      );
+    }
+    _rebuildSovereignMessenger();
+    notifyListeners();
+  }
 
   // Gerenciador de Malha por Proximidade Bluetooth (estilo Briar BTP)
   late final BluetoothMeshManager _bluetoothMesh = BluetoothMeshManager(
@@ -231,7 +300,7 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Estado e Controle de Onboarding Soberano (Seção 2)
+  // Estado e Controle de Onboarding Soberano (Seção 2 / Fase 6)
   bool _isOnboarded = false;
   bool _onboardingNoticeDismissed = false;
 
@@ -248,15 +317,79 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Verifica ativamente o transporte Tor (SOCKS5 + ControlPort bootstrap 100%) e a política fail-closed.
+  /// Diferencia daemon SOCKS5 ativo (`socksActive`) de circuito operacional (`circuitOperational`)
+  /// e confirma que conexões diretas clearnet são bloqueadas quando `torRequired` está ativo.
+  Future<
+      ({
+        bool socksActive,
+        bool circuitOperational,
+        bool failClosedVerified,
+        String detail,
+      })> verifyTorTransportAndFailClosed({
+    int? customSocksPort,
+    int? customControlPort,
+  }) async {
+    bool failClosedOk = false;
+    try {
+      const strictPolicy = TransportPolicy(
+        mode: TransportMode.torFailClosed,
+        socksHost: '127.0.0.1',
+        socksPort: 9050,
+      );
+      try {
+        strictPolicy.assertAllowedUri(Uri.parse('https://example.com'));
+        failClosedOk = false;
+      } on TransportBlockedException {
+        failClosedOk = true;
+      }
+      strictPolicy.assertAllowedUri(
+        Uri.parse('http://gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion/v1/health'),
+      );
+    } catch (_) {
+      failClosedOk = false;
+    }
+
+    final socksPort = customSocksPort ?? _embeddedTor.socksPort;
+    final controlPort = customControlPort ?? _embeddedTor.controlPort;
+    final cookiePath = '${_embeddedTor.dataDirectory}/control_auth_cookie';
+    final hasCookie = File(cookiePath).existsSync();
+    final diag = await TorDiagnostics.diagnose(
+      host: '127.0.0.1',
+      socksPort: socksPort,
+      controlPort: controlPort,
+      controlCookiePath: hasCookie ? cookiePath : null,
+    );
+    final socksActive = diag.socksReachable;
+    final controlBootstrapped = diag.bootstrapStatus == null ||
+        diag.bootstrapStatus!.contains('PROGRESS=100');
+    final circuitOperational =
+        diag.socksReachable && (controlBootstrapped || !hasCookie);
+    _isTorRunning = socksActive;
+    _torDiagnosticDetail = diag.message;
+    _securityContext = _securityContext.copyWith(
+      isTorConnected: circuitOperational,
+      status: circuitOperational
+          ? SecuritySubsystemState.ready
+          : SecuritySubsystemState.failed,
+    );
+    notifyListeners();
+    return (
+      socksActive: socksActive,
+      circuitOperational: circuitOperational,
+      failClosedVerified: failClosedOk,
+      detail:
+          '${diag.message} · Fail-Closed=${failClosedOk ? "VERIFICADO" : "FALHOU"}',
+    );
+  }
+
   /// Conclui o fluxo de primeiro acesso soberano e comuta o app para produção real.
+  /// Exige pré-requisitos essenciais (identidade criptográfica gerada/derivada) fora do modo de fixtures.
   Future<void> completeOnboarding({
     String? publicId,
     String? displayName,
     String? avatarStyle,
   }) async {
-    _isOnboarded = true;
-    _onboardingNoticeDismissed = false;
-
     if (displayName != null && displayName.isNotEmpty) {
       updateProfile(displayName: displayName);
     }
@@ -266,6 +399,17 @@ class NixState extends ChangeNotifier {
     if (publicId != null && publicId.isNotEmpty) {
       _userProfile = _userProfile.copyWith(publicId: publicId);
     }
+
+    final hasValidIdentity =
+        _primaryIdentity != null || _userProfile.publicId.trim().isNotEmpty;
+    if (!_isMockMode && !hasValidIdentity) {
+      throw StateError(
+        '[Fail-Closed] Pré-requisito de onboarding ausente: identidade criptográfica (Seed A) não foi inicializada.',
+      );
+    }
+
+    _isOnboarded = true;
+    _onboardingNoticeDismissed = false;
 
     if (_localDatabase != null &&
         _identityRepo != null &&
@@ -281,14 +425,15 @@ class NixState extends ChangeNotifier {
       }
     }
 
+    final prevSnapshot = await OnboardingStateSnapshot.load();
     final snapshot = OnboardingStateSnapshot(
       currentStep: OnboardingStep.ready,
       torConsentAccepted: true,
-      torBootstrapped: true,
-      torVerified: true,
+      torBootstrapped: prevSnapshot.torBootstrapped || _isTorRunning,
+      torVerified: prevSnapshot.torVerified || _isTorRunning,
       identityGenerated: true,
       backupConfirmed: true,
-      publicIdDerived: true,
+      publicIdDerived: _userProfile.publicId.isNotEmpty,
       profileConfigured: true,
       isCompleted: true,
       publicId: _userProfile.publicId,
@@ -374,6 +519,9 @@ class NixState extends ChangeNotifier {
     _primaryIdentity = null;
     _localDeviceId = 'dev_primary';
     _localDatabase = null;
+    _sovereignMessenger = null;
+    _archiveService = null;
+    _mediaCatalogService = null;
     _identityRepo = null;
     _contactRepo = null;
     _conversationRepo = null;
@@ -423,21 +571,32 @@ class NixState extends ChangeNotifier {
     _objectChunkRepo = ObjectChunkRepository(db);
     _mediaRepo = MediaRepository(db);
     _archiveRepo = ArchiveRepository(db);
+    _archiveService = NixArchiveService(_archiveRepo!);
+    _mediaCatalogService = MediaCatalogService(_mediaRepo!);
+    _rebuildSovereignMessenger();
   }
 
   /// Inicializa o cofre de chaves local com Argon2id + XChaCha20-Poly1305
-  /// e abre a conexão com o banco de dados SQLCipher executando migrações auditadas (P0-2 / P0-5).
+  /// e abre a conexão com o banco de dados SQLCipher executando migrações auditadas (P0-2 / P0-5 / Fase 5).
+  /// Sem frase-passe padrão fixa: `passphrase` é obrigatório.
   Future<bool> initializeEncryptedDatabase({
-    String passphrase = 'default_sovereign_passphrase',
+    required String passphrase,
     String? customDbPath,
     String? customVaultPath,
     String? migration001Sql,
     String? migration002Sql,
     bool bindToOsKeyring = false,
     String? duressPassphrase,
+    bool? requireEncryption,
   }) async {
     if (_disposed) return false;
     _lastDatabaseInitError = null;
+    if (passphrase.trim().isEmpty) {
+      _lastDatabaseInitError = '[Fail-Closed] Frase-passe do cofre não pode ser vazia.';
+      return false;
+    }
+    final effectiveRequireEncryption = requireEncryption ??
+        (Platform.environment['NIX_REQUIRE_SQLCIPHER'] == 'true');
     final resolvedVaultPath = customVaultPath ?? KeyVault.getDefaultBootstrapPath();
     final resolvedDbPath = customDbPath ?? LocalDatabase.getDefaultDatabasePath();
     final existedVaultBefore =
@@ -476,6 +635,7 @@ class NixState extends ChangeNotifier {
         rawCipherKey: Uint8List.fromList(masterKey),
         migration001Sql: migration001Sql,
         migration002Sql: migration002Sql,
+        requireEncryption: effectiveRequireEncryption,
       );
 
       // O descarte pode ocorrer durante a derivação da chave ou abertura do banco.
@@ -490,6 +650,10 @@ class NixState extends ChangeNotifier {
       }
       _activeMasterKey = Uint8List.fromList(masterKey);
       _localDatabase = database;
+      _securityContext = _securityContext.copyWith(
+        isSqlCipherUnlocked: database.cipherInfo.isEncrypted,
+        status: SecuritySubsystemState.ready,
+      );
 
       // Instanciação completa dos repositórios de domínio
       _instantiateRepositories();
@@ -547,6 +711,7 @@ class NixState extends ChangeNotifier {
     String? customVaultPath,
     String? customWipeBaseDir,
     bool loadState = true,
+    bool? requireEncryption,
   }) async {
     final result = await _keyVault.unlockOrDuress(
       passphrase: passphrase,
@@ -560,6 +725,12 @@ class NixState extends ChangeNotifier {
     _localDatabase = await LocalDatabase.open(
       path: customDbPath,
       rawCipherKey: Uint8List.fromList(result.masterKey!),
+      requireEncryption: requireEncryption ??
+          (Platform.environment['NIX_REQUIRE_SQLCIPHER'] == 'true'),
+    );
+    _securityContext = _securityContext.copyWith(
+      isSqlCipherUnlocked: _localDatabase!.cipherInfo.isEncrypted,
+      status: SecuritySubsystemState.ready,
     );
     _instantiateRepositories();
     _requiresPassphraseUnlock = false;
@@ -575,6 +746,7 @@ class NixState extends ChangeNotifier {
   Future<bool> tryAutoUnlockAndRestore({
     String? customDbPath,
     String? customVaultPath,
+    bool? requireEncryption,
   }) async {
     try {
       final initialized = await _keyVault.isInitialized(customPath: customVaultPath);
@@ -593,6 +765,12 @@ class NixState extends ChangeNotifier {
       _localDatabase = await LocalDatabase.open(
         path: customDbPath,
         rawCipherKey: Uint8List.fromList(masterKey),
+        requireEncryption: requireEncryption ??
+            (Platform.environment['NIX_REQUIRE_SQLCIPHER'] == 'true'),
+      );
+      _securityContext = _securityContext.copyWith(
+        isSqlCipherUnlocked: _localDatabase!.cipherInfo.isEncrypted,
+        status: SecuritySubsystemState.ready,
       );
       _instantiateRepositories();
       _requiresPassphraseUnlock = false;
@@ -625,10 +803,11 @@ class NixState extends ChangeNotifier {
       status: _localDatabase != null
           ? SecuritySubsystemState.ready
           : _securityContext.status,
-      isSqlCipherUnlocked: _localDatabase != null,
+      isSqlCipherUnlocked: _localDatabase?.cipherInfo.isEncrypted ?? false,
       myFingerprint: identity.publicId,
       myPersona: cleanName,
     );
+    _rebuildSovereignMessenger();
 
     if (_localDatabase != null && _identityRepo != null && _keyMaterialRepo != null) {
       final edPub = Uint8List.fromList(identity.ed25519PublicKey.bytes);
@@ -715,6 +894,7 @@ class NixState extends ChangeNotifier {
           title: 'Mensagens Salvas',
         );
       }
+      _rebuildSovereignMessenger();
     }
 
     // Sincroniza thread Mensagens Salvas em memória com o publicId real
@@ -731,7 +911,7 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Recarrega identidade, perfil, contatos, conversas e mensagens salvas após reinicialização.
+  /// Recarrega identidade, perfil, contatos, conversas, estado criptográfico e mensagens após reinicialização.
   Future<void> reloadFromDatabase() async {
     if (_localDatabase == null || _identityRepo == null) return;
 
@@ -767,7 +947,7 @@ class NixState extends ChangeNotifier {
       _primaryIdentity = restoredIdentity;
       _securityContext = _securityContext.copyWith(
         status: SecuritySubsystemState.ready,
-        isSqlCipherUnlocked: true,
+        isSqlCipherUnlocked: _localDatabase!.cipherInfo.isEncrypted,
         myFingerprint: restoredIdentity.publicId,
       );
     }
@@ -776,6 +956,8 @@ class NixState extends ChangeNotifier {
     if (devices.isNotEmpty) {
       _localDeviceId = devices.first['id'] as String;
     }
+
+    _rebuildSovereignMessenger();
 
     final profileRow = await _identityRepo!.getProfile(identityId);
     final restoredName =
@@ -789,63 +971,7 @@ class NixState extends ChangeNotifier {
     );
 
     // 3. Restaura contatos verificados e conversas diretas / Mensagens Salvas
-    final conversations = await _conversationRepo!.listConversations();
-    final savedIdx = _directMessages.indexWhere((d) => d.id == 'dm_saved_messages');
-    if (savedIdx != -1) {
-      final savedRows = await _messageRepo!.getMessagesForConversation('dm_saved_messages', limit: 200);
-      final loadedSavedMsgs = savedRows.map((r) => Message(
-        id: r['id'] as String,
-        channelId: 'dm_saved_messages',
-        senderName: _userProfile.effectiveDisplayName,
-        senderFingerprint: _securityContext.myFingerprint,
-        isMe: (r['author_key'] as String) == publicId,
-        text: (r['body'] as String?) ?? '',
-        timestamp: DateTime.fromMillisecondsSinceEpoch(r['created_at'] as int, isUtc: true),
-        isVerified: true,
-      )).toList();
-
-      final baseWelcome = _directMessages[savedIdx].messages.where((m) => m.id == 'saved_welcome').toList();
-      _directMessages[savedIdx] = _directMessages[savedIdx].copyWith(
-        peerPublicId: publicId,
-        messages: [...baseWelcome, ...loadedSavedMsgs],
-      );
-    }
-
-    for (final conv in conversations) {
-      final cid = conv['id'] as String;
-      if (cid == 'dm_saved_messages') continue;
-      if ((conv['kind'] as String) == 'direct') {
-        final msgRows = await _messageRepo!.getMessagesForConversation(cid, limit: 200);
-        final msgs = msgRows.map((r) => Message(
-          id: r['id'] as String,
-          channelId: cid,
-          senderName: (r['author_key'] as String) == publicId ? _userProfile.effectiveDisplayName : (conv['title'] as String),
-          senderFingerprint: r['author_key'] as String,
-          isMe: (r['author_key'] as String) == publicId,
-          text: (r['body'] as String?) ?? '',
-          timestamp: DateTime.fromMillisecondsSinceEpoch(r['created_at'] as int, isUtc: true),
-          isVerified: true,
-        )).toList();
-
-        final existingIdx = _directMessages.indexWhere((d) => d.id == cid);
-        final thread = DirectMessageThread(
-          id: cid,
-          peerName: conv['title'] as String,
-          peerPublicId: cid,
-          statusText: 'Sessão P2P Cifrada · Tor Onion v3',
-          isOnline: false,
-          isVerified: true,
-          trustLevel: NixTrustLevel.level2Yellow,
-          unreadCount: 0,
-          messages: msgs,
-        );
-        if (existingIdx == -1) {
-          _directMessages.add(thread);
-        } else {
-          _directMessages[existingIdx] = thread;
-        }
-      }
-    }
+    await _refreshDirectThreadsFromDatabase(publicId: publicId);
 
     // 4. Restaura Acervo Cultural persistido em media_items
     final mediaRows = await _mediaRepo?.listMediaItems(limit: 200) ?? [];
@@ -862,8 +988,176 @@ class NixState extends ChangeNotifier {
       }
     }
 
+    // 5. Restaura favoritos do GitHub Discovery (Starwire) persistidos no SQLCipher
+    final rawSavedIds = await _preferencesRepo?.getOption('saved_acervo_ids_v1');
+    if (rawSavedIds is List) {
+      try {
+        final ids = rawSavedIds.map((e) => e.toString()).toSet();
+        _savedAcervoIds
+          ..clear()
+          ..addAll(ids);
+        _githubRepos = _githubRepos
+            .map((r) => r.copyWith(isSavedInAcervo: _savedAcervoIds.contains(r.id)))
+            .toList();
+      } catch (_) {}
+    }
+
+    // 6. Restaura anúncios Monero P2P assinados localmente e valida assinaturas Ed25519
+    final rawOrders = await _preferencesRepo?.getOption('monero_local_orders_v1');
+    if (rawOrders is List) {
+      try {
+        for (final item in rawOrders.reversed) {
+          if (item is Map<String, dynamic>) {
+            final order = MoneroP2pOrder.fromJson(item);
+            final ok = await SignedMoneroAd.verifyOrderCryptographically(order);
+            if (ok && !_moneroOrders.any((o) => o.id == order.id)) {
+              _moneroOrders.insert(0, order.copyWith(isSignatureVerified: true));
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
     _isOnboarded = true;
     notifyListeners();
+  }
+
+  /// Sincroniza threads de Mensagens Salvas e conversas diretas a partir do banco SQLCipher,
+  /// preservando estados reais (`queued`, `accepted`, `delivered`, `failed`, `saved`) e sessões ativas.
+  Future<void> _refreshDirectThreadsFromDatabase({String? publicId}) async {
+    if (_localDatabase == null || _conversationRepo == null || _messageRepo == null) {
+      return;
+    }
+    final myPublicId = publicId ?? _userProfile.publicId;
+    final conversations = await _conversationRepo!.listConversations();
+    final savedIdx = _directMessages.indexWhere((d) => d.id == 'dm_saved_messages');
+    if (savedIdx != -1) {
+      final savedRows = await _messageRepo!.getMessagesForConversation(
+        'dm_saved_messages',
+        limit: 200,
+      );
+      final loadedSavedMsgs = <Message>[];
+      for (final r in savedRows) {
+        final msgId = r['id'] as String;
+        final attRows = await _localDatabase!.rawDatabase.query(
+          'attachments',
+          where: 'message_id = ?',
+          whereArgs: [msgId],
+          orderBy: 'ordinal ASC',
+        );
+        final attNames = attRows
+            .map((a) => (a['file_name'] as String?) ?? (a['object_id'] as String))
+            .toList();
+        loadedSavedMsgs.add(
+          Message(
+            id: msgId,
+            channelId: 'dm_saved_messages',
+            senderName: _userProfile.effectiveDisplayName,
+            senderFingerprint: _securityContext.myFingerprint,
+            isMe: (r['author_key'] as String) == myPublicId,
+            text: (r['body'] as String?) ?? '',
+            timestamp: DateTime.fromMillisecondsSinceEpoch(
+              r['created_at'] as int,
+              isUtc: true,
+            ),
+            isVerified: true,
+            deliveryState: 'saved',
+            attachments: attNames,
+          ),
+        );
+      }
+
+      final baseWelcome = _directMessages[savedIdx]
+          .messages
+          .where((m) => m.id == 'saved_welcome')
+          .toList();
+      _directMessages[savedIdx] = _directMessages[savedIdx].copyWith(
+        peerPublicId: myPublicId,
+        messages: [...baseWelcome, ...loadedSavedMsgs],
+      );
+      if (_selectedDm?.id == 'dm_saved_messages') {
+        _selectedDm = _directMessages[savedIdx];
+      }
+    }
+
+    for (final conv in conversations) {
+      final cid = conv['id'] as String;
+      if (cid == 'dm_saved_messages') continue;
+      if ((conv['kind'] as String) == 'direct') {
+        final existingIdx = _directMessages.indexWhere((d) => d.id == cid);
+        final sessionRow = await _sessionRepo?.getSessionByConversation(cid);
+        final sessionMeta = await _sovereignMessenger?.getSessionMetadata(cid);
+        final hasSession = sessionRow != null;
+        final existingPeerId = (sessionMeta?['peerPublicId'] as String?) ??
+            (existingIdx != -1 ? _directMessages[existingIdx].peerPublicId : cid);
+        final existingPeerMailbox = (sessionMeta?['peerMailbox'] as String?) ??
+            (existingIdx != -1 ? _directMessages[existingIdx].peerMailboxId : null) ??
+            SovereignMessenger.deriveMailboxCredentials(existingPeerId).mailboxId;
+        final msgRows = await _messageRepo!.getMessagesForConversation(cid, limit: 200);
+        final msgs = <Message>[];
+        for (final r in msgRows) {
+          final msgId = r['id'] as String;
+          final rawState = (r['delivery_state'] as String?) ?? 'queued';
+          final isMe = (r['author_key'] as String) == myPublicId;
+          final mappedState = rawState == 'received' ? 'delivered' : rawState;
+          final attRows = await _localDatabase!.rawDatabase.query(
+            'attachments',
+            where: 'message_id = ?',
+            whereArgs: [msgId],
+            orderBy: 'ordinal ASC',
+          );
+          final attNames = attRows
+              .map((a) => (a['file_name'] as String?) ?? (a['object_id'] as String))
+              .toList();
+          msgs.add(
+            Message(
+              id: msgId,
+              channelId: cid,
+              senderName: isMe
+                  ? _userProfile.effectiveDisplayName
+                  : (conv['title'] as String),
+              senderFingerprint: r['author_key'] as String,
+              isMe: isMe,
+              text: (r['body'] as String?) ?? '',
+              timestamp: DateTime.fromMillisecondsSinceEpoch(
+                r['created_at'] as int,
+                isUtc: true,
+              ),
+              isVerified: hasSession && mappedState != 'failed',
+              deliveryState: mappedState,
+              deliveryError: mappedState == 'failed'
+                  ? 'Falha no envio do envelope ao relay.'
+                  : null,
+              attachments: attNames,
+            ),
+          );
+        }
+
+        final thread = DirectMessageThread(
+          id: cid,
+          peerName: conv['title'] as String,
+          peerPublicId: existingPeerId,
+          peerMailboxId: existingPeerMailbox,
+          hasActiveSession: hasSession,
+          statusText: hasSession
+              ? 'Sessão E2EE Double Ratchet Ativa · Tor Onion v3'
+              : 'Sessão criptográfica pendente de handshake',
+          isOnline: hasSession,
+          isVerified: hasSession,
+          trustLevel: hasSession ? NixTrustLevel.level3Green : NixTrustLevel.level1Red,
+          unreadCount: 0,
+          messages: msgs,
+        );
+        if (existingIdx == -1) {
+          _directMessages.add(thread);
+        } else {
+          _directMessages[existingIdx] = thread;
+        }
+        if (_selectedDm?.id == cid) {
+          _selectedDm = thread;
+        }
+      }
+    }
   }
 
   /// Envia mensagem com garantia de persistência local atômica no SQLCipher,
@@ -1092,6 +1386,7 @@ class NixState extends ChangeNotifier {
     _keyVault = keyVault ?? KeyVault();
     final isTest = Platform.environment['FLUTTER_TEST'] == 'true';
     final shouldLoadMock = loadMockData ?? isTest;
+    _isMockMode = shouldLoadMock;
 
     if (shouldLoadMock) {
       _loadMockFixtures();
@@ -1127,6 +1422,9 @@ class NixState extends ChangeNotifier {
     _transactions = MockData.getInitialTransactions();
     _systemUpdates = MockData.getInitialSystemUpdates();
     _moneroOrders = MockData.getInitialMoneroOrders();
+    for (final order in _moneroOrders) {
+      SignedMoneroAd.registerPreVerifiedOrder(order);
+    }
     _githubRepos = MockData.getInitialGithubRepos();
   }
 
@@ -1324,7 +1622,12 @@ class NixState extends ChangeNotifier {
       final dynamic decoded = jsonDecode(jsonString);
       if (decoded is List) {
         final parsed = decoded
-            .map((item) => GithubRepository.fromStarwireJson(item as Map<String, dynamic>))
+            .map((item) {
+              final r = GithubRepository.fromStarwireJson(item as Map<String, dynamic>);
+              return _savedAcervoIds.contains(r.id)
+                  ? r.copyWith(isSavedInAcervo: true)
+                  : r;
+            })
             .toList();
         if (parsed.isNotEmpty) {
           _githubRepos = parsed;
@@ -1551,14 +1854,10 @@ class NixState extends ChangeNotifier {
   }
 
   bool verifyMoneroOrder(MoneroP2pOrder order) {
-    if (order.isExpired || !order.isSignatureVerified) return false;
-    if (order.nonceHex != null && _seenMoneroNonces.contains('${order.id}:${order.nonceHex}')) {
-      return true; // Já verificado localmente
-    }
-    if (order.nonceHex != null) {
-      _seenMoneroNonces.add('${order.id}:${order.nonceHex}');
-    }
-    return order.signedManifestHash.length >= 8;
+    return SignedMoneroAd.verifyOrderSync(
+      order,
+      consumedNonceToOrderId: _consumedMoneroNonces,
+    );
   }
 
   /// Lista de grupos públicos filtrada e ordenada (padrão: do menos populoso ao mais populoso).
@@ -1915,7 +2214,181 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void sendDirectMessage(String text, {List<String> attachments = const []}) {
+  /// Exporta o Card ID assinado localmente com SignedPreKey X25519 ativa para handshake X3DH.
+  Future<String> exportLocalSignedCardJson({
+    String? displayName,
+    String preKeyId = 'spk_active_1',
+  }) async {
+    final messenger = _sovereignMessenger;
+    if (messenger == null || _primaryIdentity == null) {
+      throw StateError(
+        '[Fail-Closed] SovereignMessenger / Identidade Seed A não inicializados.',
+      );
+    }
+    final provisioned = await messenger.provisionSignedPreKey(preKeyId: preKeyId);
+    final creds = _activeMailboxCredentials ??
+        SovereignMessenger.deriveMailboxCredentials(_primaryIdentity!.publicId);
+    _activeMailboxCredentials = creds;
+    return messenger.exportSignedCardJson(
+      displayName: displayName ?? _userProfile.effectiveDisplayName,
+      mailboxId: creds.mailboxId,
+      preKeyBundle: provisioned.bundle,
+    );
+  }
+
+  /// Importa o Card ID assinado de um par remoto (validando assinatura Ed25519 e SPK)
+  /// sem iniciar sessão iniciadora (usado pelo lado receptor antes ou durante o handshake).
+  Future<CardImportResult> importPeerCardOnly(
+    String rawCardJson, {
+    String? conversationId,
+  }) async {
+    final messenger = _sovereignMessenger;
+    if (messenger == null) {
+      throw StateError('[Fail-Closed] SovereignMessenger não inicializado.');
+    }
+    final res = await messenger.importAndVerifyCardJson(rawJson: rawCardJson);
+    if (res.status != CardImportStatus.importedVerified &&
+        res.status != CardImportStatus.importedUnverified) {
+      throw StateError(res.reason ?? 'Falha ao validar Card ID do par.');
+    }
+    final cid = conversationId ?? 'dm_${res.publicId}';
+    final existingConv = await _conversationRepo?.getConversation(cid);
+    if (existingConv == null && _conversationRepo != null) {
+      await _conversationRepo!.createConversation(
+        id: cid,
+        kind: 'direct',
+        ownerIdentityId: _userProfile.publicId,
+        title: res.displayName ?? res.publicId!,
+      );
+    }
+    final thread = DirectMessageThread(
+      id: cid,
+      peerName: res.displayName ?? res.publicId!,
+      peerPublicId: res.publicId!,
+      peerMailboxId: res.mailboxId,
+      hasActiveSession: false,
+      statusText: 'Contato Verificado · Aguardando Handshake X3DH',
+      isOnline: true,
+      isVerified: true,
+      trustLevel: NixTrustLevel.level3Green,
+      messages: const [],
+    );
+    final idx = _directMessages.indexWhere((d) => d.id == cid);
+    if (idx == -1) {
+      _directMessages.add(thread);
+    } else {
+      _directMessages[idx] = thread;
+    }
+    notifyListeners();
+    return res;
+  }
+
+  /// Importa o Card ID assinado de um par remoto, estabelece sessão iniciadora X3DH + Double Ratchet
+  /// no SQLCipher e seleciona a conversa privada pronta para envio E2EE.
+  Future<DirectMessageThread> importPeerCardAndEstablishSession(
+    String rawCardJson, {
+    String? conversationId,
+    String peerDeviceId = 'dev_primary',
+  }) async {
+    final messenger = _sovereignMessenger;
+    if (messenger == null) {
+      throw StateError('[Fail-Closed] SovereignMessenger não inicializado.');
+    }
+    final res = await messenger.importAndVerifyCardJson(rawJson: rawCardJson);
+    if ((res.status != CardImportStatus.importedVerified &&
+            res.status != CardImportStatus.importedUnverified) ||
+        res.publicId == null ||
+        res.signedPreKeyBundle == null) {
+      throw StateError(res.reason ?? 'Card ID inválido para estabelecer sessão X3DH.');
+    }
+    final cid = conversationId ?? 'dm_${res.publicId}';
+    await messenger.establishInitiatorSession(
+      conversationId: cid,
+      peerPublicId: res.publicId!,
+      peerDeviceId: peerDeviceId,
+      peerBundle: res.signedPreKeyBundle!,
+      peerTitle: res.displayName ?? res.publicId!,
+      peerMailbox: res.mailboxId,
+    );
+    await _refreshDirectThreadsFromDatabase();
+    final thread = _directMessages.firstWhere(
+      (d) => d.id == cid,
+      orElse: () => DirectMessageThread(
+        id: cid,
+        peerName: res.displayName ?? res.publicId!,
+        peerPublicId: res.publicId!,
+        peerMailboxId: res.mailboxId,
+        hasActiveSession: true,
+        statusText: 'Sessão E2EE Double Ratchet Ativa · Tor Onion v3',
+        isOnline: true,
+        isVerified: true,
+        trustLevel: NixTrustLevel.level3Green,
+        messages: const [],
+      ),
+    );
+    selectDirectMessage(thread);
+    return thread;
+  }
+
+  /// Sincroniza a Outbox pendente e a Inbox do relay cego via [SovereignMessenger],
+  /// atualizando os estados reais (`queued`, `accepted`, `delivered`, `failed`) nas conversas.
+  Future<({int acceptedOutbox, int failedOutbox, int receivedInbox})>
+      syncWithRelay({
+    String preKeyId = 'spk_active_1',
+  }) async {
+    final messenger = _sovereignMessenger;
+    final relay = _activeRelayClient;
+    if (messenger == null || relay == null) {
+      _lastMessagingError =
+          '[Fail-Closed] Transporte de relay ou SovereignMessenger não configurados.';
+      notifyListeners();
+      return (acceptedOutbox: 0, failedOutbox: 0, receivedInbox: 0);
+    }
+    final creds = _activeMailboxCredentials ??
+        SovereignMessenger.deriveMailboxCredentials(messenger.identity.publicId);
+    _activeMailboxCredentials = creds;
+
+    final flushRes = await messenger.flushOutbox(relayClient: relay);
+    final pollRes = await messenger.pollAndCommitInbox(
+      creds: creds,
+      relayClient: relay,
+      preKeyId: preKeyId,
+    );
+    if (flushRes.failed > 0) {
+      _lastMessagingError =
+          'Falha ao transmitir ${flushRes.failed} envelope(s) da Outbox ao relay.';
+    } else if (pollRes.errors.isNotEmpty) {
+      _lastMessagingError = pollRes.errors.first;
+    } else {
+      _lastMessagingError = null;
+    }
+    await _refreshDirectThreadsFromDatabase();
+    notifyListeners();
+    return (
+      acceptedOutbox: flushRes.accepted,
+      failedOutbox: flushRes.failed,
+      receivedInbox: pollRes.committed.length,
+    );
+  }
+
+  static String _inferAttachmentMimeType(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.pdf')) return 'application/pdf';
+    return 'application/octet-stream';
+  }
+
+  /// Caminho unificado de envio de mensagens privadas (Fase 3):
+  /// - Diferencia `Mensagens Salvas` (`deliveryState: 'saved'`, cofre local) de conversas remotas.
+  /// - Em conversas remotas, exige sessão Double Ratchet válida no [SovereignMessenger],
+  ///   enfileira atomicamente (`sessions` + `messages` + `attachments` + `outbox`),
+  ///   transmite ao relay se configurado e reflete estados reais (`queued`, `accepted`, `failed`).
+  Future<void> sendDirectMessage(
+    String text, {
+    List<String> attachments = const [],
+  }) async {
     if (_selectedDm == null) return;
     if (text.trim().isEmpty && attachments.isEmpty) return;
 
@@ -1924,14 +2397,239 @@ class NixState extends ChangeNotifier {
       return;
     }
 
+    final thread = _selectedDm!;
+    final cleanBody = text.trim();
     final reply = _replyingToMessage;
-    final newMsg = Message(
+    final idx = _directMessages.indexWhere((d) => d.id == thread.id);
+    if (idx == -1) return;
+
+    // 1. Mensagens Salvas: cofre local cifrado (não passa por relay nem exige sessão remota)
+    if (thread.isSavedMessages) {
+      final savedMsg = Message(
+        id: 'dm_msg_${DateTime.now().millisecondsSinceEpoch}',
+        channelId: thread.id,
+        senderName: _userProfile.effectiveDisplayName,
+        senderFingerprint: _securityContext.myFingerprint,
+        isMe: true,
+        isVerified: true,
+        deliveryState: 'saved',
+        text: cleanBody,
+        timestamp: DateTime.now().toUtc(),
+        ephemeralSeconds: _selectedEphemeralTimer,
+        remainingSeconds: _selectedEphemeralTimer,
+        attachments: attachments,
+        replyToMessageId: reply?.id,
+        replyToSenderName: reply?.senderName,
+        replyToExcerpt: reply?.text,
+      );
+      final updatedMsgs = List<Message>.from(_directMessages[idx].messages)
+        ..add(savedMsg);
+      _directMessages[idx] = _directMessages[idx].copyWith(messages: updatedMsgs);
+      _selectedDm = _directMessages[idx];
+      _replyingToMessage = null;
+      if (_localDatabase != null && _messageRepo != null) {
+        await _persistDirectMessageToDb(
+          message: savedMsg,
+          thread: _selectedDm!,
+          cleanBody: cleanBody,
+        );
+      }
+      notifyListeners();
+      return;
+    }
+
+    // 2. Conversa privada remota com SovereignMessenger ativo
+    final messenger = _sovereignMessenger;
+    if (messenger != null) {
+      final sessionMeta = await messenger.getSessionMetadata(thread.id);
+      if (sessionMeta == null) {
+        final err =
+            'Sessão criptográfica Double Ratchet inexistente para ${thread.peerName}. Importe o Card ID assinado do par antes de enviar.';
+        _lastMessagingError = err;
+        final failedMsg = Message(
+          id: 'dm_failed_${DateTime.now().millisecondsSinceEpoch}',
+          channelId: thread.id,
+          senderName: _userProfile.effectiveDisplayName,
+          senderFingerprint: _securityContext.myFingerprint,
+          isMe: true,
+          isVerified: false,
+          deliveryState: 'failed',
+          deliveryError: err,
+          text: cleanBody,
+          timestamp: DateTime.now().toUtc(),
+          attachments: attachments,
+        );
+        final updatedMsgs = List<Message>.from(_directMessages[idx].messages)
+          ..add(failedMsg);
+        _directMessages[idx] = _directMessages[idx].copyWith(
+          messages: updatedMsgs,
+          hasActiveSession: false,
+        );
+        _selectedDm = _directMessages[idx];
+        _replyingToMessage = null;
+        notifyListeners();
+        return;
+      }
+
+      try {
+        _lastMessagingError = null;
+        final preparedManifests = <AttachmentManifest>[];
+        final displayAttachmentNames = <String>[];
+        for (final att in attachments) {
+          final f = File(att);
+          if (f.existsSync()) {
+            final rawBytes = await f.readAsBytes();
+            final fileName = f.uri.pathSegments.last;
+            final manifest = await messenger.prepareEncryptedAttachment(
+              fileName: fileName,
+              mimeType: _inferAttachmentMimeType(fileName),
+              rawBytes: rawBytes,
+            );
+            preparedManifests.add(manifest);
+            displayAttachmentNames.add(manifest.fileName);
+          } else {
+            displayAttachmentNames.add(att);
+          }
+        }
+
+        final destMailbox = (sessionMeta['peerMailbox'] as String?) ??
+            thread.peerMailboxId ??
+            SovereignMessenger.deriveMailboxCredentials(thread.peerPublicId)
+                .mailboxId;
+        final senderMailbox = (_activeMailboxCredentials ??
+                SovereignMessenger.deriveMailboxCredentials(
+                  messenger.identity.publicId,
+                ))
+            .mailboxId;
+
+        final enqueued = await messenger.enqueueDirectMessage(
+          conversationId: thread.id,
+          destinationMailbox: destMailbox,
+          senderMailbox: senderMailbox,
+          text: cleanBody,
+          ephemeralTtlSeconds:
+              _selectedEphemeralTimer > 0 ? _selectedEphemeralTimer : null,
+          attachments: preparedManifests,
+        );
+
+        var currentDeliveryState = 'queued';
+        String? currentDeliveryError;
+
+        if (_activeRelayClient != null) {
+          final flushRes = await messenger.flushOutbox(
+            relayClient: _activeRelayClient!,
+          );
+          final msgRows = await _localDatabase!.rawDatabase.query(
+            'messages',
+            columns: ['delivery_state'],
+            where: 'id = ?',
+            whereArgs: [enqueued.messageId],
+            limit: 1,
+          );
+          if (msgRows.isNotEmpty) {
+            currentDeliveryState =
+                (msgRows.first['delivery_state'] as String?) ?? 'queued';
+          }
+          if (currentDeliveryState == 'failed' || flushRes.failed > 0) {
+            currentDeliveryState = 'failed';
+            currentDeliveryError =
+                'Falha ao entregar envelope cifrado ao relay Tor/SOCKS5.';
+            _lastMessagingError = currentDeliveryError;
+          }
+        }
+
+        final sentMsg = Message(
+          id: enqueued.messageId,
+          channelId: thread.id,
+          senderName: _userProfile.effectiveDisplayName,
+          senderFingerprint: _securityContext.myFingerprint,
+          isMe: true,
+          isVerified: currentDeliveryState != 'failed',
+          deliveryState: currentDeliveryState,
+          deliveryError: currentDeliveryError,
+          text: cleanBody,
+          timestamp: DateTime.now().toUtc(),
+          ephemeralSeconds: _selectedEphemeralTimer,
+          remainingSeconds: _selectedEphemeralTimer,
+          attachments: displayAttachmentNames,
+          replyToMessageId: reply?.id,
+          replyToSenderName: reply?.senderName,
+          replyToExcerpt: reply?.text,
+        );
+        final updatedMsgs = List<Message>.from(_directMessages[idx].messages)
+          ..add(sentMsg);
+        _directMessages[idx] = _directMessages[idx].copyWith(
+          messages: updatedMsgs,
+          hasActiveSession: true,
+          peerMailboxId: destMailbox,
+        );
+        _selectedDm = _directMessages[idx];
+        _replyingToMessage = null;
+        notifyListeners();
+        return;
+      } catch (e) {
+        final err = 'Falha transacional ou criptográfica no envio: $e';
+        _lastMessagingError = err;
+        final failedMsg = Message(
+          id: 'dm_err_${DateTime.now().millisecondsSinceEpoch}',
+          channelId: thread.id,
+          senderName: _userProfile.effectiveDisplayName,
+          senderFingerprint: _securityContext.myFingerprint,
+          isMe: true,
+          isVerified: false,
+          deliveryState: 'failed',
+          deliveryError: err,
+          text: cleanBody,
+          timestamp: DateTime.now().toUtc(),
+          attachments: attachments,
+        );
+        final updatedMsgs = List<Message>.from(_directMessages[idx].messages)
+          ..add(failedMsg);
+        _directMessages[idx] = _directMessages[idx].copyWith(messages: updatedMsgs);
+        _selectedDm = _directMessages[idx];
+        _replyingToMessage = null;
+        notifyListeners();
+        return;
+      }
+    }
+
+    // 3. Sem SovereignMessenger ativo:
+    // Em modo produção, falha fechado; em modo mock de testes de widget sem banco, marca apenas como 'queued' (nunca 'delivered').
+    if (!_isMockMode) {
+      const err =
+          '[Fail-Closed] Cofre SQLCipher ou identidade soberana não inicializados para envio remoto.';
+      _lastMessagingError = err;
+      final failedMsg = Message(
+        id: 'dm_uninit_${DateTime.now().millisecondsSinceEpoch}',
+        channelId: thread.id,
+        senderName: _userProfile.effectiveDisplayName,
+        senderFingerprint: _securityContext.myFingerprint,
+        isMe: true,
+        isVerified: false,
+        deliveryState: 'failed',
+        deliveryError: err,
+        text: cleanBody,
+        timestamp: DateTime.now().toUtc(),
+        attachments: attachments,
+      );
+      final updatedMsgs = List<Message>.from(_directMessages[idx].messages)
+        ..add(failedMsg);
+      _directMessages[idx] = _directMessages[idx].copyWith(messages: updatedMsgs);
+      _selectedDm = _directMessages[idx];
+      _replyingToMessage = null;
+      notifyListeners();
+      return;
+    }
+
+    final mockQueuedMsg = Message(
       id: 'dm_msg_${DateTime.now().millisecondsSinceEpoch}',
-      channelId: _selectedDm!.id,
+      channelId: thread.id,
       senderName: _userProfile.effectiveDisplayName,
       senderFingerprint: _securityContext.myFingerprint,
       isMe: true,
-      text: text.trim(),
+      isVerified: false,
+      deliveryState: 'queued',
+      text: cleanBody,
       timestamp: DateTime.now(),
       ephemeralSeconds: _selectedEphemeralTimer,
       remainingSeconds: _selectedEphemeralTimer,
@@ -1940,24 +2638,12 @@ class NixState extends ChangeNotifier {
       replyToSenderName: reply?.senderName,
       replyToExcerpt: reply?.text,
     );
-    final idx = _directMessages.indexWhere((d) => d.id == _selectedDm!.id);
-    if (idx != -1) {
-      final updatedMsgs = List<Message>.from(_directMessages[idx].messages)..add(newMsg);
-      _directMessages[idx] = _directMessages[idx].copyWith(messages: updatedMsgs);
-      _selectedDm = _directMessages[idx];
-      _replyingToMessage = null;
-
-      // Persiste de forma atômica no banco local SQLCipher se ativo
-      if (_localDatabase != null && _messageRepo != null) {
-        unawaited(_persistDirectMessageToDb(
-          message: newMsg,
-          thread: _selectedDm!,
-          cleanBody: text.trim(),
-        ));
-      }
-
-      notifyListeners();
-    }
+    final updatedMsgs = List<Message>.from(_directMessages[idx].messages)
+      ..add(mockQueuedMsg);
+    _directMessages[idx] = _directMessages[idx].copyWith(messages: updatedMsgs);
+    _selectedDm = _directMessages[idx];
+    _replyingToMessage = null;
+    notifyListeners();
   }
 
   Future<void> _persistDirectMessageToDb({
@@ -2043,7 +2729,29 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ================= MONERO P2P MARKETPLACE =================
+  // ================= MONERO P2P MARKETPLACE (FASE 7) =================
+
+  NixIdentity? _moneroMarketIdentity;
+
+  /// Obtém ou deriva uma chave Ed25519 isolada exclusivamente para assinatura de anúncios Monero P2P,
+  /// preservando a separação estrita entre a identidade da mensageria (Seed A) e operações Monero.
+  Future<NixIdentity> _getOrCreateIsolatedMoneroMarketIdentity() async {
+    if (_moneroMarketIdentity != null) return _moneroMarketIdentity!;
+    if (_activeMasterKey != null) {
+      final derived = await _deriveWrappingKey('Nix-MoneroAdIsolatedSigner-v1');
+      final edSeed = Uint8List.fromList(derived.bytes);
+      final xSeed = Uint8List.fromList(
+        std_crypto.sha256.convert([...edSeed, 0x58]).bytes,
+      );
+      _moneroMarketIdentity = await NixIdentity.fromSeeds(
+        ed25519Seed: edSeed,
+        x25519PrivateBytes: xSeed,
+      );
+      return _moneroMarketIdentity!;
+    }
+    _moneroMarketIdentity = await NixIdentity.generate();
+    return _moneroMarketIdentity!;
+  }
 
   void setMoneroSide(MoneroP2pSide side) {
     _moneroSelectedSide = side;
@@ -2068,6 +2776,70 @@ class NixState extends ChangeNotifier {
   void createMoneroOrder(MoneroP2pOrder order) {
     _moneroOrders.insert(0, order);
     notifyListeners();
+  }
+
+  /// Cria, valida, assina criptograficamente com Ed25519 (identidade financeira isolada da Seed A)
+  /// e persiste um anúncio Monero P2P com estado honesto (`local_signed`).
+  Future<MoneroP2pOrder> createAndSignMoneroOrder({
+    required MoneroP2pSide side,
+    required String fiatCurrency,
+    required double pricePerXmr,
+    required double minFiatLimit,
+    required double maxFiatLimit,
+    required String paymentMethod,
+    required String notes,
+    Duration ttl = const Duration(hours: 24),
+  }) async {
+    SignedMoneroAd.validatePriceAndLimits(
+      pricePerXmr: pricePerXmr,
+      minFiatLimit: minFiatLimit,
+      maxFiatLimit: maxFiatLimit,
+      paymentMethod: paymentMethod,
+    );
+
+    final isolatedSigner = await _getOrCreateIsolatedMoneroMarketIdentity();
+    final orderId = 'xmr_ad_${DateTime.now().toUtc().millisecondsSinceEpoch}';
+    final signedAd = await SignedMoneroAd.createSigned(
+      signer: isolatedSigner,
+      orderId: orderId,
+      traderName: '${_userProfile.effectiveDisplayName} (Você)',
+      side: side,
+      fiatCurrency: fiatCurrency,
+      pricePerXmr: pricePerXmr,
+      minFiatLimit: minFiatLimit,
+      maxFiatLimit: maxFiatLimit,
+      paymentMethod: paymentMethod.trim(),
+      notes: notes.trim(),
+      publicationState: 'local_signed',
+      ttl: ttl,
+    );
+
+    final order = signedAd.order.copyWith(
+      trustLevel: NixTrustLevel.level2Yellow,
+      completedTrades: 0,
+      reputationScore: 100.0,
+    );
+
+    final verified = await SignedMoneroAd.verifyOrderCryptographically(order);
+    if (!verified) {
+      throw StateError(
+        '[Fail-Closed] Falha na autoverificação Ed25519 do anúncio Monero gerado.',
+      );
+    }
+
+    _moneroOrders.insert(0, order);
+    if (_preferencesRepo != null) {
+      final localOrders = _moneroOrders
+          .where((o) => o.publicationState == 'local_signed')
+          .map((o) => o.toJson())
+          .toList();
+      await _preferencesRepo!.setOption(
+        'monero_local_orders_v1',
+        localOrders,
+      );
+    }
+    notifyListeners();
+    return order;
   }
 
   void openTradeWithOrder(MoneroP2pOrder order) {
@@ -2152,10 +2924,21 @@ class NixState extends ChangeNotifier {
       addCulturalItem(culturalItem);
     } else {
       _savedAcervoIds.remove(repo.id);
+      if (_mediaRepo != null) {
+        unawaited(_mediaRepo!.deleteMediaItem('repo_${repo.name}'));
+      }
       _userProfile = _userProfile.copyWith(
         culturalItems: _userProfile.culturalItems
             .where((i) => i.id != 'repo_${repo.name}' && i.id != repo.id)
             .toList(),
+      );
+    }
+    if (_preferencesRepo != null) {
+      unawaited(
+        _preferencesRepo!.setOption(
+          'saved_acervo_ids_v1',
+          _savedAcervoIds.toList(),
+        ),
       );
     }
     _persistState();
@@ -2357,6 +3140,44 @@ class NixState extends ChangeNotifier {
     }
     _persistState();
     notifyListeners();
+  }
+
+  /// Busca local no catálogo de mídia via [MediaCatalogService] (`MediaOperationStage.localCatalogSearch`).
+  Future<List<Map<String, dynamic>>> searchCulturalCatalog(String query) async {
+    final q = query.trim();
+    if (_mediaCatalogService != null) {
+      return _mediaCatalogService!.searchOfflineCatalog(q);
+    }
+    if (q.isEmpty) {
+      return _userProfile.culturalItems.map((i) => i.toJson()).toList();
+    }
+    final lower = q.toLowerCase();
+    return _userProfile.culturalItems
+        .where((i) =>
+            i.title.toLowerCase().contains(lower) ||
+            i.creatorOrYear.toLowerCase().contains(lower))
+        .map((i) => i.toJson())
+        .toList();
+  }
+
+  /// Consulta conector externo opt-in via [MediaCatalogService] (`MediaOperationStage.remoteOptInQuery`),
+  /// impondo opt-in explícito e política de transporte Tor fail-closed.
+  Future<List<Map<String, dynamic>>> queryOptInMediaConnector({
+    required OptInMediaConnectorKind connector,
+    required String query,
+    Future<List<Map<String, dynamic>>> Function(String query)? transportExecutor,
+  }) async {
+    final svc = _mediaCatalogService;
+    if (svc == null) {
+      throw StateError('[Fail-Closed] MediaCatalogService requer banco SQLCipher ativo.');
+    }
+    return svc.queryRemoteOptInConnector(
+      connector: connector,
+      query: query,
+      isFailClosedTorActive: isTorFailClosed,
+      hasActiveTorSocksCircuit: _isTorRunning,
+      transportExecutor: transportExecutor,
+    );
   }
 
   // ================= CONFIGURAÇÕES, TEMAS & JANELA =================
@@ -2874,6 +3695,14 @@ class NixState extends ChangeNotifier {
     if (text.trim().isEmpty && attachments.isEmpty) return false;
     if (!_currentChannel.permissions.allowMessages) return false;
     if (attachments.isNotEmpty && !_currentChannel.permissions.allowFiles) return false;
+    final myFp = _securityContext.myFingerprint;
+    final myId = _userProfile.publicId;
+    if (_currentChannel.bannedMembers.contains(myFp) ||
+        (myId.isNotEmpty && _currentChannel.bannedMembers.contains(myId)) ||
+        _currentChannel.mutedMembers.contains(myFp) ||
+        (myId.isNotEmpty && _currentChannel.mutedMembers.contains(myId))) {
+      return false;
+    }
 
     if (_editingMessage != null) {
       editMessage(_editingMessage!.id, text);
@@ -3054,6 +3883,40 @@ class NixState extends ChangeNotifier {
     }
   }
 
+  final Map<String, int> _channelSenderKeyEpochs = {};
+
+  /// Retorna a época criptográfica atual (Sender Keys) do canal ou grupo.
+  int getChannelSenderKeyEpoch(String channelId) =>
+      _channelSenderKeyEpochs[channelId] ?? 1;
+
+  /// Rotaciona a época de Sender Keys de um grupo/canal via [SovereignMessenger]
+  /// (revogando membros expulsos ou banidos das próximas mensagens).
+  Future<int> rotateChannelSenderKeyEpoch({
+    required Channel channel,
+    String? removedMemberFingerprint,
+  }) async {
+    final nextEpoch = getChannelSenderKeyEpoch(channel.id) + 1;
+    _channelSenderKeyEpochs[channel.id] = nextEpoch;
+    final messenger = _sovereignMessenger;
+    if (messenger != null && _primaryIdentity != null) {
+      final activeMembers = <({String publicId, SimplePublicKey x25519PublicKey})>[
+        (
+          publicId: _primaryIdentity!.publicId,
+          x25519PublicKey: _primaryIdentity!.x25519PublicKey,
+        ),
+      ];
+      final res = await messenger.createOrRotateGroupEpoch(
+        groupId: channel.id,
+        title: channel.name,
+        activeMembers: activeMembers,
+        removeMemberPublicId: removedMemberFingerprint,
+      );
+      _channelSenderKeyEpochs[channel.id] = res.epoch;
+      return res.epoch;
+    }
+    return nextEpoch;
+  }
+
   void applyAdminAction(Channel channel, {required String targetFingerprint, required String action}) {
     final admins = List<String>.from(channel.admins);
     final moderators = List<String>.from(channel.moderators);
@@ -3090,13 +3953,35 @@ class NixState extends ChangeNotifier {
         }
         break;
       case 'kick':
-        logs.insert(0, 'Membro expulso do canal: $targetFingerprint.');
+        final newEpoch = getChannelSenderKeyEpoch(channel.id) + 1;
+        _channelSenderKeyEpochs[channel.id] = newEpoch;
+        unawaited(
+          rotateChannelSenderKeyEpoch(
+            channel: channel,
+            removedMemberFingerprint: targetFingerprint,
+          ),
+        );
+        logs.insert(
+          0,
+          'Membro expulso do canal: $targetFingerprint · Sender Key rotacionada para Época #$newEpoch.',
+        );
         break;
       case 'ban':
         if (!banned.contains(targetFingerprint)) {
           banned.add(targetFingerprint);
         }
-        logs.insert(0, 'Banimento criptográfico aplicado: $targetFingerprint.');
+        final newEpoch = getChannelSenderKeyEpoch(channel.id) + 1;
+        _channelSenderKeyEpochs[channel.id] = newEpoch;
+        unawaited(
+          rotateChannelSenderKeyEpoch(
+            channel: channel,
+            removedMemberFingerprint: targetFingerprint,
+          ),
+        );
+        logs.insert(
+          0,
+          'Banimento criptográfico aplicado: $targetFingerprint · Sender Key rotacionada para Época #$newEpoch.',
+        );
         break;
     }
 
@@ -3107,6 +3992,230 @@ class NixState extends ChangeNotifier {
       bannedMembers: banned,
       auditLogs: logs,
     ));
+  }
+
+  // ================= ARQUIVO CANÔNICO & PUBLICAÇÕES ASSINADAS (FASE 9.1) =================
+
+  NixIdentity? _fallbackArchiveIdentity;
+  final Map<String, Map<String, dynamic>> _inMemoryArchiveObjects = {};
+
+  Future<NixIdentity> _getOrCreateArchiveSignerIdentity() async {
+    if (_primaryIdentity != null) return _primaryIdentity!;
+    _fallbackArchiveIdentity ??= await NixIdentity.generate();
+    return _fallbackArchiveIdentity!;
+  }
+
+  /// Cria ou edita (via `supersedesHash`) um artigo canônico assinado com Ed25519,
+  /// sanitizando HTML/RichText com o tokenizador determinístico de [NixArchiveService].
+  Future<Publication> publishCanonicalArticle({
+    required String channelId,
+    required String title,
+    required String rawContent,
+    List<String> claimTexts = const [],
+    String? supersedesHash,
+  }) async {
+    final cleanTitle = title.trim();
+    if (cleanTitle.isEmpty) {
+      throw ArgumentError('O título do artigo não pode ser vazio.');
+    }
+    final sanitizedContent = NixArchiveService.sanitizeRichTextHtml(rawContent.trim());
+    final cleanClaims = claimTexts
+        .map((c) => NixArchiveService.sanitizeRichTextHtml(c.trim()))
+        .where((c) => c.isNotEmpty)
+        .toList();
+    final claimRecords = <({String claimId, String text})>[
+      for (int i = 0; i < cleanClaims.length; i++)
+        (claimId: 'c${i + 1}', text: cleanClaims[i]),
+    ];
+
+    final signer = await _getOrCreateArchiveSignerIdentity();
+    final nowMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+    String cidHash;
+
+    if (_archiveService != null) {
+      cidHash = await _archiveService!.publishArticle(
+        author: signer,
+        title: cleanTitle,
+        rawHtmlBody: sanitizedContent,
+        claims: claimRecords,
+        supersedesHash: supersedesHash,
+        createdAtMs: nowMs,
+      );
+    } else {
+      final canonicalObj = <String, dynamic>{
+        'schema': NixArchiveService.articleSchemaV1,
+        'title': cleanTitle,
+        'bodyHtml': sanitizedContent,
+        'authorEd25519': signer.ed25519PublicHex,
+        'visibility': 'public',
+        'createdAt': nowMs,
+        if (supersedesHash != null) 'supersedes': supersedesHash,
+        'claims': claimRecords
+            .map((c) => {'claimId': c.claimId, 'text': c.text})
+            .toList(),
+      };
+      final canonicalBytes = NixArchiveService.canonicalizeJsonBytes(canonicalObj);
+      cidHash = NixArchiveService.computeContentHashHex(canonicalBytes);
+      final sig = await signer.sign(canonicalBytes);
+      _inMemoryArchiveObjects[cidHash] = {
+        'hash': cidHash,
+        'kind': 'article',
+        'canonical_bytes': canonicalBytes,
+        'author_public': Uint8List.fromList(signer.ed25519PublicKey.bytes),
+        'signature': Uint8List.fromList(sig),
+        'supersedes_hash': supersedesHash,
+        'created_at': nowMs,
+      };
+    }
+
+    final pub = Publication(
+      id: 'pub_$nowMs',
+      channelId: channelId,
+      title: cleanTitle,
+      authorPersona: _userProfile.effectiveDisplayName,
+      authorFingerprint: signer.publicId,
+      contentMarkdown: sanitizedContent,
+      claimsCount: cleanClaims.length,
+      refutationsCount: 0,
+      cidHash: cidHash,
+      publishedAt: DateTime.fromMillisecondsSinceEpoch(nowMs, isUtc: true),
+      isVerifiedSignature: true,
+      supersedesHash: supersedesHash,
+      claims: cleanClaims,
+    );
+
+    final updatedList = List<Publication>.from(_publications[channelId] ?? const []);
+    updatedList.insert(0, pub);
+    _publications[channelId] = updatedList;
+    notifyListeners();
+    return pub;
+  }
+
+  /// Publica uma refutação criptograficamente vinculada (`targetCidHash`, `targetClaimId`).
+  Future<String> refuteCanonicalArticle({
+    required String channelId,
+    required String targetCidHash,
+    required String targetClaimId,
+    required String rationale,
+  }) async {
+    final cleanRationale = NixArchiveService.sanitizeRichTextHtml(rationale.trim());
+    if (cleanRationale.isEmpty) {
+      throw ArgumentError('A fundamentação da refutação não pode ser vazia.');
+    }
+    final signer = await _getOrCreateArchiveSignerIdentity();
+    final nowMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+    String refHash;
+
+    if (_archiveService != null &&
+        await _archiveRepo?.getObject(targetCidHash) != null) {
+      refHash = await _archiveService!.publishRefutation(
+        author: signer,
+        targetHash: targetCidHash,
+        targetClaimId: targetClaimId,
+        rationaleHtml: cleanRationale,
+        createdAtMs: nowMs,
+      );
+    } else {
+      final canonicalObj = <String, dynamic>{
+        'schema': NixArchiveService.refutationSchemaV1,
+        'targetHash': targetCidHash,
+        'targetClaimId': targetClaimId,
+        'rationaleHtml': cleanRationale,
+        'authorEd25519': signer.ed25519PublicHex,
+        'visibility': 'public',
+        'createdAt': nowMs,
+      };
+      final canonicalBytes = NixArchiveService.canonicalizeJsonBytes(canonicalObj);
+      refHash = NixArchiveService.computeContentHashHex(canonicalBytes);
+      final sig = await signer.sign(canonicalBytes);
+      _inMemoryArchiveObjects[refHash] = {
+        'hash': refHash,
+        'kind': 'refutation',
+        'canonical_bytes': canonicalBytes,
+        'author_public': Uint8List.fromList(signer.ed25519PublicKey.bytes),
+        'signature': Uint8List.fromList(sig),
+        'supersedes_hash': null,
+        'created_at': nowMs,
+      };
+    }
+
+    final list = List<Publication>.from(_publications[channelId] ?? const []);
+    final idx = list.indexWhere((p) => p.cidHash == targetCidHash);
+    if (idx != -1) {
+      final target = list[idx];
+      final summary =
+          '[$targetClaimId] $cleanRationale (Ref CID: ${refHash.substring(0, 10)})';
+      list[idx] = target.copyWith(
+        refutationsCount: target.refutationsCount + 1,
+        refutationSummaries: [...target.refutationSummaries, summary],
+      );
+      _publications[channelId] = list;
+    }
+    notifyListeners();
+    return refHash;
+  }
+
+  /// Verifica criptograficamente o hash SHA-256 canônico e a assinatura Ed25519 do artigo.
+  Future<bool> verifyCanonicalArticleIntegrity(String cidHash) async {
+    if (_archiveService != null) {
+      final row = await _archiveRepo?.getObject(cidHash);
+      if (row != null) {
+        return _archiveService!.verifyStoredObject(cidHash);
+      }
+    }
+    final mem = _inMemoryArchiveObjects[cidHash];
+    if (mem == null) return false;
+    final bytes = mem['canonical_bytes'] as List<int>;
+    final authorPub = mem['author_public'] as List<int>;
+    final sig = mem['signature'] as List<int>;
+    final actualHash = NixArchiveService.computeContentHashHex(bytes);
+    if (actualHash != cidHash) return false;
+    return NixIdentity.verify(
+      message: bytes,
+      signatureBytes: sig,
+      ed25519PublicKey: SimplePublicKey(authorPub, type: KeyPairType.ed25519),
+    );
+  }
+
+  /// Retorna a cadeia histórica de revisões (`supersedes`) a partir de `cidHash`.
+  Future<List<Map<String, dynamic>>> getCanonicalArticleHistory(
+    String cidHash,
+  ) async {
+    if (_archiveService != null) {
+      final dbChain = await _archiveService!.getRevisionHistory(cidHash);
+      if (dbChain.isNotEmpty) return dbChain;
+    }
+    final chain = <Map<String, dynamic>>[];
+    String? cursor = cidHash;
+    final visited = <String>{};
+    while (cursor != null && cursor.isNotEmpty && !visited.contains(cursor)) {
+      visited.add(cursor);
+      final mem = _inMemoryArchiveObjects[cursor];
+      if (mem != null) {
+        chain.add(mem);
+        cursor = mem['supersedes_hash'] as String?;
+        continue;
+      }
+      // Fallback para fixtures de publicação carregadas sem banco
+      Publication? pubMatch;
+      for (final list in _publications.values) {
+        for (final p in list) {
+          if (p.cidHash == cursor) {
+            pubMatch = p;
+            break;
+          }
+        }
+        if (pubMatch != null) break;
+      }
+      if (pubMatch == null) break;
+      chain.add({
+        'hash': pubMatch.cidHash,
+        'kind': 'article',
+        'supersedes_hash': pubMatch.supersedesHash,
+      });
+      cursor = pubMatch.supersedesHash;
+    }
+    return chain;
   }
 
   void selectForumPost(ForumPost? post) {

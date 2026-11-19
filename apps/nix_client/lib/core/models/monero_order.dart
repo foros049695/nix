@@ -23,8 +23,11 @@ class MoneroP2pOrder {
   final String signedManifestHash;
   final String? signatureHex;
   final String? nonceHex;
+  final int? issuedAtEpochMs;
   final DateTime? expiresAt;
   final bool isSignatureVerified;
+  final String publicationState; // 'local_signed', 'relay_published', 'unverified'
+  final String? wireJson;
   final String notes;
 
   const MoneroP2pOrder({
@@ -45,12 +48,127 @@ class MoneroP2pOrder {
     required this.signedManifestHash,
     this.signatureHex,
     this.nonceHex,
+    this.issuedAtEpochMs,
     this.expiresAt,
-    this.isSignatureVerified = true,
+    this.isSignatureVerified = false,
+    this.publicationState = 'local_signed',
+    this.wireJson,
     this.notes = 'Liberação P2P imediata após confirmação na blockchain Monero.',
   });
 
   bool get isExpired => expiresAt != null && DateTime.now().isAfter(expiresAt!);
+
+  MoneroP2pOrder copyWith({
+    String? id,
+    String? traderName,
+    String? traderPublicId,
+    NixTrustLevel? trustLevel,
+    double? reputationScore,
+    int? completedTrades,
+    MoneroP2pSide? side,
+    String? fiatCurrency,
+    double? pricePerXmr,
+    double? minFiatLimit,
+    double? maxFiatLimit,
+    String? paymentMethod,
+    bool? isOnline,
+    int? avgResponseMinutes,
+    String? signedManifestHash,
+    String? signatureHex,
+    String? nonceHex,
+    int? issuedAtEpochMs,
+    DateTime? expiresAt,
+    bool? isSignatureVerified,
+    String? publicationState,
+    String? wireJson,
+    String? notes,
+  }) {
+    return MoneroP2pOrder(
+      id: id ?? this.id,
+      traderName: traderName ?? this.traderName,
+      traderPublicId: traderPublicId ?? this.traderPublicId,
+      trustLevel: trustLevel ?? this.trustLevel,
+      reputationScore: reputationScore ?? this.reputationScore,
+      completedTrades: completedTrades ?? this.completedTrades,
+      side: side ?? this.side,
+      fiatCurrency: fiatCurrency ?? this.fiatCurrency,
+      pricePerXmr: pricePerXmr ?? this.pricePerXmr,
+      minFiatLimit: minFiatLimit ?? this.minFiatLimit,
+      maxFiatLimit: maxFiatLimit ?? this.maxFiatLimit,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      isOnline: isOnline ?? this.isOnline,
+      avgResponseMinutes: avgResponseMinutes ?? this.avgResponseMinutes,
+      signedManifestHash: signedManifestHash ?? this.signedManifestHash,
+      signatureHex: signatureHex ?? this.signatureHex,
+      nonceHex: nonceHex ?? this.nonceHex,
+      issuedAtEpochMs: issuedAtEpochMs ?? this.issuedAtEpochMs,
+      expiresAt: expiresAt ?? this.expiresAt,
+      isSignatureVerified: isSignatureVerified ?? this.isSignatureVerified,
+      publicationState: publicationState ?? this.publicationState,
+      wireJson: wireJson ?? this.wireJson,
+      notes: notes ?? this.notes,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'traderName': traderName,
+        'traderPublicId': traderPublicId,
+        'trustLevel': trustLevel.name,
+        'reputationScore': reputationScore,
+        'completedTrades': completedTrades,
+        'side': side.name,
+        'fiatCurrency': fiatCurrency,
+        'pricePerXmr': pricePerXmr,
+        'minFiatLimit': minFiatLimit,
+        'maxFiatLimit': maxFiatLimit,
+        'paymentMethod': paymentMethod,
+        'isOnline': isOnline,
+        'avgResponseMinutes': avgResponseMinutes,
+        'signedManifestHash': signedManifestHash,
+        'signatureHex': signatureHex,
+        'nonceHex': nonceHex,
+        'issuedAtEpochMs': issuedAtEpochMs,
+        'expiresAtMs': expiresAt?.toUtc().millisecondsSinceEpoch,
+        'isSignatureVerified': isSignatureVerified,
+        'publicationState': publicationState,
+        'wireJson': wireJson,
+        'notes': notes,
+      };
+
+  factory MoneroP2pOrder.fromJson(Map<String, dynamic> json) {
+    final expMs = (json['expiresAtMs'] as num?)?.toInt();
+    return MoneroP2pOrder(
+      id: json['id'] as String,
+      traderName: json['traderName'] as String,
+      traderPublicId: json['traderPublicId'] as String,
+      trustLevel: NixTrustLevel.values.firstWhere(
+        (t) => t.name == json['trustLevel'],
+        orElse: () => NixTrustLevel.level2Yellow,
+      ),
+      reputationScore: (json['reputationScore'] as num?)?.toDouble() ?? 99.0,
+      completedTrades: (json['completedTrades'] as num?)?.toInt() ?? 0,
+      side: json['side'] == 'buy' ? MoneroP2pSide.buy : MoneroP2pSide.sell,
+      fiatCurrency: json['fiatCurrency'] as String? ?? 'BRL',
+      pricePerXmr: (json['pricePerXmr'] as num).toDouble(),
+      minFiatLimit: (json['minFiatLimit'] as num).toDouble(),
+      maxFiatLimit: (json['maxFiatLimit'] as num).toDouble(),
+      paymentMethod: json['paymentMethod'] as String,
+      isOnline: json['isOnline'] as bool? ?? true,
+      avgResponseMinutes: (json['avgResponseMinutes'] as num?)?.toInt() ?? 4,
+      signedManifestHash: json['signedManifestHash'] as String,
+      signatureHex: json['signatureHex'] as String?,
+      nonceHex: json['nonceHex'] as String?,
+      issuedAtEpochMs: (json['issuedAtEpochMs'] as num?)?.toInt(),
+      expiresAt: expMs != null
+          ? DateTime.fromMillisecondsSinceEpoch(expMs, isUtc: true)
+          : null,
+      isSignatureVerified: json['isSignatureVerified'] as bool? ?? false,
+      publicationState: json['publicationState'] as String? ?? 'local_signed',
+      wireJson: json['wireJson'] as String?,
+      notes: json['notes'] as String? ?? '',
+    );
+  }
 
   String get fiatSymbol {
     switch (fiatCurrency) {

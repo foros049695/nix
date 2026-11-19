@@ -69,8 +69,19 @@ void main() {
       await tester.tap(checkboxFinder);
       await tester.pump(const Duration(milliseconds: 100));
 
-      // 3. Conclui Onboarding e comuta para estado READY / PRODUÇÃO REAL
+      // 3. Sem identidade Seed A, completeOnboarding deve falhar fechado (Fase 6)
+      await expectLater(
+        () => nixState.completeOnboarding(
+          displayName: 'Cypherpunk 2026',
+          avatarStyle: 'sentinel',
+        ),
+        throwsStateError,
+      );
+      expect(nixState.isOnboarded, isFalse);
+
+      // Conclui Onboarding com publicId derivado e comuta para estado READY / PRODUÇÃO REAL
       await nixState.completeOnboarding(
+        publicId: 'NIX-2026-CYPH-ERPK-0001',
         displayName: 'Cypherpunk 2026',
         avatarStyle: 'sentinel',
       );

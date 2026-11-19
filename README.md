@@ -134,12 +134,12 @@ sequenceDiagram
   DB_A-->>Alice: Commit Confirmado
   
   Note over Alice,Relay: 2. Transmissão Cifrada via Tor
-  Alice->>Relay: POST /api/v1/envelopes (Payload Cifrado + Capability Token)
+  Alice->>Relay: POST /v1/mailboxes/{id}/envelopes (Payload Cifrado + Quota Token)
   Relay->>Relay: Validar Cota Atômica e Gravar com TTL 7 Dias
   Relay-->>Alice: HTTP 202 Accepted (Envelope Armazenado)
   
   Note over Bob,Relay: 3. Recepção & Validação
-  Bob->>Relay: GET /api/v1/envelopes (Autenticado por Capability)
+  Bob->>Relay: GET /v1/mailboxes/{id}/envelopes (Autenticado por Capability)
   Relay-->>Bob: Retornar Envelopes Cifrados
   
   Note over Bob,DB_B: 4. Autenticação AEAD & Commit Pré-ACK
@@ -147,8 +147,8 @@ sequenceDiagram
   alt Mensagem Autêntica
     Bob->>DB_B: Gravar Mensagem + Avançar Ratchet + Salvar Dedup
     DB_B-->>Bob: Commit Confirmado
-    Bob->>Relay: POST /api/v1/envelopes/ack (Confirmar Recebimento)
-    Relay->>Relay: Marcar Envelope como Tombstone / Limpeza Imediata
+    Bob->>Relay: POST /v1/mailboxes/{id}/ack (Confirmar Recebimento)
+    Relay->>Relay: Remover Envelopes Confirmados (Commit-before-ACK)
   else Mensagem Adulterada / Forjada
     Bob->>Bob: Rejeitar Mensagem e Descartar Estado Candidato (Sem Corrupção)
   end
@@ -190,30 +190,31 @@ flowchart LR
 
 ---
 
-## 📊 Matriz de Maturidade dos Componentes (Auditoria 2026)
+## 📊 Estado Real dos Módulos (Auditoria Técnica Local — Nov/2026)
 
-A auditoria técnica formal classificou os 62 requisitos do ecossistema de acordo com evidências demonstráveis em laboratório:
+Após a integração dos PRs `#1`–`#18`, fechamento das Issues `#11` e `#12` e conclusão das correções P0/P1 de laboratório local:
 
-| Estado | Quantidade | Descrição Operacional |
-|---|---:|---|
-| `PARTIAL` | **29** | Capacidade parcialmente implementada; possui partes funcionais locais mas requer fechamento de contrato ou persistência. |
-| `MISSING` | **16** | Especificação ou interface proposta sem implementação operacional de retaguarda. |
-| `UI_ONLY` | **9** | Interface gráfica construída no Flutter operando sobre `MockData` sem conexão aos módulos de produção. |
-| `BROKEN` | **6** | Código funcionalmente falho reproduzido por testes e probes (ex: corrupção de ratchet, SOCKS stream listen). |
-| `UNVERIFIED`| **2** | Testes de integração distribuída e capacidade de carga que dependem de infraestrutura operacional ativa. |
-| `IMPLEMENTED`| **0** | Nenhuma capacidade distribuída de ponta a ponta é dada como pronta antes dos gates formais. |
+| Componente | Estado Verificado | Evidência Principal |
+|---|---|---|
+| **Core Criptográfico (`modules/core_crypto`)** | `VERIFIED` | Ed25519/X25519, AEAD XChaCha20-Poly1305, Argon2id, X3DH, Double Ratchet atômico, `SignedRecord`, `ReplayGuard`, `PqxdhCombiner`, `SignedReleaseManifest` (`dart test` 10/10). |
+| **Transporte Tor / SOCKS5 / TLS (`modules/transport`)** | `FIXED & VERIFIED` | SOCKS5 `ATYP 0x03`, TLS real via `RawSecureSocket` (Issue `#11`), `EmbeddedTorManager` com verificação ControlPort, Mesh `NIXB` e Radio `<=240B` (`dart test` 22/22). |
+| **Relay Cego Go (`services/nix_relay`)** | `VERIFIED` | `BlindMailboxStore` + `PostgresMailboxStore` (PG 17), capabilities SHA-256 com escopos/revogação, `AutoPruner`, admin isolado em loopback (`go test -race ./...`). |
+| **Mensageria UI + Transacionalidade (`apps/nix_client`)** | `FIXED & VERIFIED` | `NixState.sendDirectMessage` → `SovereignMessenger` unificado, transação SQLite atômica, injeção de falhas nos 6 estágios, troca real entre 2 instâncias via relay+SOCKS5 e recuperação pós-reinício (`flutter test` 89/89). |
+| **SQLCipher, KeyVault, Onboarding, Monero P2P, Archive, Media, Starwire, APK Offline** | `FIXED & VERIFIED` (local) | `requireEncryption` bloqueando SQLite comum, backup/restore cifrado, verificação fail-closed ativa no onboarding, anúncios Monero assinados Ed25519 isolados da Seed A, tokenizador HTML anti-XSS, conectores opt-in, proibição de bypass clearnet e APK autenticado Ed25519. |
+| **Infraestrutura Externa & Hardware Físico** | `UNVERIFIED` / `PARTIAL` | VPS Debian 13 (soak 60 min Onion v3), APK Android físico (NDK/TEE), Bluetooth BLE / LoRa RF físicos, `monero-wallet-rpc` stagenet/mainnet e replicação Archive externa (ver [`docs/IMPLEMENTATION_NEXT_STEPS.md`](docs/IMPLEMENTATION_NEXT_STEPS.md)). |
 
-### Prioridades em Andamento no Roadmap
-1. **Marcos P0 (Fundação Crítica):**
-   * **P0-0:** Base reproduzível, CI integrada no GitHub Actions, estado de segurança honesto e correção do manifesto Android.
-   * **P0-1:** Fechamento de ADR criptográfico, canonicalização e eliminação de mutação indevida de ratchet em falhas de decifração.
-   * **P0-2:** Persistência em banco local SQLCipher com cofre nativo do SO e chaves raw.
-   * **P0-3:** Transporte Tor real com leitor SOCKS único e TLS nativo para endpoints HTTPS.
-   * **P0-4:** Relay Go com adapter PostgreSQL, autenticação via capabilities, quotas persistentes e métricas isoladas.
-   * **P0-5:** Demonstração integrada de dois clientes operando com mensagens privadas via Tor.
-   * **P0-6:** Operação recuperável com backup criptografado de metadados e scripts de restauração.
-2. **Marcos P1:** Anexos reais em chunks E2EE, QR Code interoperável padronizado, grupos distribuídos com *Sender Keys*, Archive imutável e Media & Index com busca FTS5.
-3. **Marcos P2:** Descoberta Starwire com downloads conscientes, mercado Monero P2P não custodial e distribuição offline autenticada de APK.
+> ⚠️ **Aviso de Engenharia:** Embora todos os núcleos P0/P1 estejam validados em laboratório local com suítes reproduzíveis, o Nix permanece em **fase pre-alpha** até a conclusão da validação em VPS externa, dispositivos móveis físicos e auditoria criptográfica independente.
+
+---
+
+## 📚 Documentação Técnica & Relatórios da Auditoria
+
+* [`docs/REPOSITORY_DIAGNOSTIC.md`](docs/REPOSITORY_DIAGNOSTIC.md) — Diagnóstico real por módulo e divergências corrigidas.
+* [`docs/IMPLEMENTATION_GAPS.md`](docs/IMPLEMENTATION_GAPS.md) — Lacunas P0/P1/P2 auditadas com arquivo, símbolo e teste.
+* [`docs/PR_ISSUE_VERIFICATION.md`](docs/PR_ISSUE_VERIFICATION.md) — Verificação individual das Issues `#11`–`#12` e PRs `#1`–`#18`.
+* [`docs/LOCAL_INTEGRATION_TEST_REPORT.md`](docs/LOCAL_INTEGRATION_TEST_REPORT.md) — Relatório completo das execuções locais.
+* [`docs/IMPLEMENTATION_NEXT_STEPS.md`](docs/IMPLEMENTATION_NEXT_STEPS.md) — Plano para etapas de VPS, Android físico, BLE/LoRa e RPC externo.
+* [`docs/PRIVACY.md`](docs/PRIVACY.md) · [`docs/PRIVACY_MATRIX.md`](docs/PRIVACY_MATRIX.md) · [`SECURITY.md`](SECURITY.md) · [`ROADMAP.md`](ROADMAP.md) · [`docs/adr/`](docs/adr/) · [`database/`](database/)
 
 ---
 

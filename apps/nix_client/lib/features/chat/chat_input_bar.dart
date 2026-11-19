@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../../core/security/file_picker_adapter.dart';
 import '../../core/security/local_image_helper.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
@@ -93,13 +94,24 @@ class _ChatInputBarState extends State<ChatInputBar> {
       setState(() {
         _pendingAttachments.addAll(picked);
       });
-    } else {
-      // Em testes de widget ou fallback seguro
-      if (Platform.environment['FLUTTER_TEST'] == 'true') {
-        setState(() {
-          _pendingAttachments.add('documento_seguro.pdf');
-        });
-      }
+      return;
+    }
+    if (Platform.environment['FLUTTER_TEST'] == 'true') {
+      setState(() {
+        _pendingAttachments.add('documento_seguro.pdf');
+      });
+      return;
+    }
+    if (!mounted) return;
+    final fallbackPicked =
+        await CrossPlatformFilePickerAdapter.showPortableFileChooserDialog(
+      context,
+      allowedExtensions: LocalImageHelper.supportedMediaExtensions,
+    );
+    if (fallbackPicked.isNotEmpty && mounted) {
+      setState(() {
+        _pendingAttachments.addAll(fallbackPicked);
+      });
     }
   }
 

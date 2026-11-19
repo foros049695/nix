@@ -1,9 +1,13 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'file_picker_adapter.dart';
 
 /// Utilitário local para seleção, validação e remoção de metadados (EXIF/chunks) de imagens
 /// (PNG, JPEG, WebP, GIF) para Avatar e Capas Culturais do Card ID.
 class LocalImageHelper {
+  static FilePickerAdapter filePickerAdapter =
+      const CrossPlatformFilePickerAdapter();
+
   static const List<String> supportedExtensions = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
   static const List<String> supportedMediaExtensions = [
     'png', 'jpg', 'jpeg', 'webp', 'gif',
@@ -30,90 +34,19 @@ class LocalImageHelper {
     return path.split(Platform.pathSeparator).last;
   }
 
-  /// Invoca seletor nativo para qualquer anexo (imagens, áudio, vídeos, documentos).
+  /// Invoca seletor portável multiplataforma para qualquer anexo (imagens, áudio, vídeos, documentos).
   static Future<List<String>> pickAttachmentsNativeDesktop() async {
-    if (Platform.environment['FLUTTER_TEST'] == 'true') {
-      return ['documento_seguro.pdf'];
-    }
-    if (!Platform.isLinux) return [];
-    try {
-      final res = await Process.run(
-        'zenity',
-        [
-          '--file-selection',
-          '--multiple',
-          '--separator=|',
-          '--title=Selecionar Arquivos / Anexos (Criptografia E2EE Nix)',
-          '--file-filter=Todos os Arquivos Suportados | *.png *.jpg *.jpeg *.webp *.gif *.mp4 *.mp3 *.ogg *.wav *.pdf *.txt *.docx *.zip',
-        ],
-      );
-      if (res.exitCode == 0) {
-        final out = res.stdout.toString().trim();
-        if (out.isNotEmpty) {
-          return out.split('|').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
-        }
-      }
-    } catch (_) {}
-
-    try {
-      final res = await Process.run(
-        'kdialog',
-        [
-          '--getopenfilename',
-          '--multiple',
-          '--separate-output',
-          Platform.environment['HOME'] ?? '.',
-          '*.png *.jpg *.jpeg *.webp *.gif *.mp4 *.mp3 *.ogg *.wav *.pdf *.txt *.docx|Arquivos Suportados',
-        ],
-      );
-      if (res.exitCode == 0) {
-        final out = res.stdout.toString().trim();
-        if (out.isNotEmpty) {
-          return out.split('\n').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
-        }
-      }
-    } catch (_) {}
-
-    return [];
+    return filePickerAdapter.pickAttachments(
+      allowedExtensions: supportedMediaExtensions,
+      allowMultiple: true,
+    );
   }
 
-  /// Invoca seletor de arquivos nativo no Desktop (Linux `zenity`/`kdialog`) quando disponível.
+  /// Invoca seletor de imagens multiplataforma (PNG, JPEG, WebP, GIF).
   static Future<String?> pickImageNativeDesktop() async {
-    if (Platform.environment['FLUTTER_TEST'] == 'true') {
-      return '/tmp/nix_test_avatar.png';
-    }
-    if (!Platform.isLinux) return null;
-    try {
-      final res = await Process.run(
-        'zenity',
-        [
-          '--file-selection',
-          '--title=Selecionar Imagem Local (PNG, JPEG, WebP)',
-          '--file-filter=Imagens | *.png *.jpg *.jpeg *.webp',
-        ],
-      );
-      if (res.exitCode == 0) {
-        final out = res.stdout.toString().trim();
-        if (out.isNotEmpty) return out;
-      }
-    } catch (_) {}
-
-    try {
-      final res = await Process.run(
-        'kdialog',
-        [
-          '--getopenfilename',
-          Platform.environment['HOME'] ?? '.',
-          '*.png *.jpg *.jpeg *.webp|Imagens',
-        ],
-      );
-      if (res.exitCode == 0) {
-        final out = res.stdout.toString().trim();
-        if (out.isNotEmpty) return out;
-      }
-    } catch (_) {}
-
-    return null;
+    return filePickerAdapter.pickImage(
+      allowedExtensions: supportedExtensions,
+    );
   }
 
   /// Copia a imagem para área isolada após sanitização; recusa contêiner malformado.

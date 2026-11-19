@@ -416,6 +416,8 @@ class MoneroP2pView extends StatelessWidget {
     final notesCtrl = TextEditingController(text: 'Liberação imediata em subendereço único.');
     MoneroP2pSide side = state.moneroSelectedSide;
     final fiat = state.moneroSelectedFiat;
+    String? formError;
+    bool isSigning = false;
 
     showDialog(
       context: context,
@@ -425,7 +427,7 @@ class MoneroP2pView extends StatelessWidget {
           return AlertDialog(
             backgroundColor: NixColors.surfaceElevatedHigh,
             title: Text(
-              'Publicar Oferta P2P Descentralizada',
+              'Assinar Oferta P2P Local (Ed25519)',
               style: TextStyle(color: NixColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
             ),
             content: SizedBox(
@@ -436,7 +438,7 @@ class MoneroP2pView extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Sua oferta receberá assinatura Ed25519, nonce anti-replay e expiração de 7 dias.',
+                      'Sua oferta será assinada criptograficamente com Ed25519, receberá nonce anti-replay e ficará armazenada localmente.',
                       style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
                     ),
                     const SizedBox(height: 14),
@@ -471,6 +473,7 @@ class MoneroP2pView extends StatelessWidget {
                     Text('PREÇO POR XMR', style: NixTokens.labelUppercase()),
                     const SizedBox(height: 6),
                     TextField(
+                      key: const Key('monero_order_price_input'),
                       controller: priceCtrl,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       decoration: InputDecoration(
@@ -486,7 +489,10 @@ class MoneroP2pView extends StatelessWidget {
                             children: [
                               Text('LIMITE MÍNIMO', style: NixTokens.labelUppercase()),
                               const SizedBox(height: 6),
-                              TextField(controller: minLimitCtrl),
+                              TextField(
+                                key: const Key('monero_order_min_input'),
+                                controller: minLimitCtrl,
+                              ),
                             ],
                           ),
                         ),
@@ -497,7 +503,10 @@ class MoneroP2pView extends StatelessWidget {
                             children: [
                               Text('LIMITE MÁXIMO', style: NixTokens.labelUppercase()),
                               const SizedBox(height: 6),
-                              TextField(controller: maxLimitCtrl),
+                              TextField(
+                                key: const Key('monero_order_max_input'),
+                                controller: maxLimitCtrl,
+                              ),
                             ],
                           ),
                         ),
@@ -506,55 +515,96 @@ class MoneroP2pView extends StatelessWidget {
                     const SizedBox(height: 12),
                     Text('MÉTODO DE PAGAMENTO', style: NixTokens.labelUppercase()),
                     const SizedBox(height: 6),
-                    TextField(controller: methodCtrl),
+                    TextField(
+                      key: const Key('monero_order_method_input'),
+                      controller: methodCtrl,
+                    ),
                     const SizedBox(height: 12),
                     Text('INSTRUÇÕES / TERMOS P2P', style: NixTokens.labelUppercase()),
                     const SizedBox(height: 6),
-                    TextField(controller: notesCtrl, maxLines: 2),
+                    TextField(
+                      key: const Key('monero_order_notes_input'),
+                      controller: notesCtrl,
+                      maxLines: 2,
+                    ),
+                    if (formError != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        formError!,
+                        key: const Key('monero_order_form_error'),
+                        style: const TextStyle(color: Colors.redAccent, fontSize: 11.5),
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: isSigning ? null : () => Navigator.pop(ctx),
                 child: Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
               ),
               ElevatedButton(
+                key: const Key('submit_monero_order_button'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: accent,
                   foregroundColor: context.onAccentColor,
                 ),
-                onPressed: () {
-                  final nowMs = DateTime.now().millisecondsSinceEpoch;
-                  final price = double.tryParse(priceCtrl.text) ?? 850.0;
-                  final minL = double.tryParse(minLimitCtrl.text) ?? 100.0;
-                  final maxL = double.tryParse(maxLimitCtrl.text) ?? 5000.0;
-                  final newOrder = MoneroP2pOrder(
-                    id: 'ord_$nowMs',
-                    traderName: state.userProfile.effectiveDisplayName,
-                    traderPublicId: state.userProfile.publicId,
-                    trustLevel: NixTrustLevel.level3Green,
-                    side: side,
-                    fiatCurrency: fiat,
-                    pricePerXmr: price,
-                    minFiatLimit: minL,
-                    maxFiatLimit: maxL,
-                    paymentMethod: methodCtrl.text.trim().isNotEmpty ? methodCtrl.text.trim() : 'PIX',
-                    signedManifestHash: 'ed25519_$nowMs',
-                    signatureHex: 'sig_${nowMs.toRadixString(16)}',
-                    nonceHex: 'n_${nowMs.toRadixString(36)}',
-                    expiresAt: DateTime.now().add(const Duration(days: 7)),
-                    isSignatureVerified: true,
-                    notes: notesCtrl.text.trim(),
-                  );
-                  state.createMoneroOrder(newOrder);
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Oferta P2P assinada e publicada com sucesso.')),
-                  );
-                },
-                child: const Text('Publicar Oferta', style: TextStyle(fontWeight: FontWeight.bold)),
+                onPressed: isSigning
+                    ? null
+                    : () async {
+                        final price = double.tryParse(priceCtrl.text.trim());
+                        final minL = double.tryParse(minLimitCtrl.text.trim());
+                        final maxL = double.tryParse(maxLimitCtrl.text.trim());
+                        final method = methodCtrl.text.trim();
+                        if (price == null || price <= 0) {
+                          setModalState(() => formError = 'Informe um preço por XMR válido (> 0).');
+                          return;
+                        }
+                        if (minL == null || minL <= 0) {
+                          setModalState(() => formError = 'Informe um limite mínimo válido (> 0).');
+                          return;
+                        }
+                        if (maxL == null || maxL < minL) {
+                          setModalState(() => formError = 'O limite máximo deve ser >= limite mínimo.');
+                          return;
+                        }
+                        if (method.isEmpty) {
+                          setModalState(() => formError = 'Informe o método de pagamento.');
+                          return;
+                        }
+                        setModalState(() {
+                          isSigning = true;
+                          formError = null;
+                        });
+                        try {
+                          await state.createAndSignMoneroOrder(
+                            side: side,
+                            fiatCurrency: fiat,
+                            pricePerXmr: price,
+                            minFiatLimit: minL,
+                            maxFiatLimit: maxL,
+                            paymentMethod: method,
+                            notes: notesCtrl.text.trim(),
+                          );
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Oferta P2P assinada localmente com Ed25519 (não transmitida a rede externa).',
+                                ),
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          setModalState(() {
+                            isSigning = false;
+                            formError = e.toString();
+                          });
+                        }
+                      },
+                child: const Text('Assinar Oferta Local', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           );
@@ -583,6 +633,9 @@ class _MoneroOrderCard extends StatelessWidget {
         : (order.isExpired
             ? 'Expirada'
             : 'Expira em ${order.expiresAt!.difference(DateTime.now()).inHours.clamp(1, 999)}h');
+    final pubScopeLabel = order.publicationState == 'relay_published'
+        ? 'PUBLICADO NO RELAY'
+        : 'LOCAL ASSINADO';
 
     return LayoutBuilder(
       builder: (context, cardConstraints) {
@@ -639,7 +692,7 @@ class _MoneroOrderCard extends StatelessWidget {
                           ),
                           child: Text(
                             isCryptographicallyValid
-                                ? 'Ed25519 OK · $expLabel'
+                                ? 'Ed25519 OK · $pubScopeLabel · $expLabel'
                                 : 'ALERTA: ASSINATURA / EXPIRAÇÃO',
                             style: TextStyle(
                               color: isCryptographicallyValid ? NixColors.accentGreen : NixColors.accentDanger,

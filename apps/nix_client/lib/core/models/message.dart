@@ -18,6 +18,8 @@ class Message {
   final List<String> attachments;
   final Map<String, int> reactions;
   final Set<String> myReactions;
+  final String deliveryState;
+  final String? deliveryError;
 
   const Message({
     required this.id,
@@ -39,6 +41,8 @@ class Message {
     this.attachments = const [],
     this.reactions = const {},
     this.myReactions = const {},
+    this.deliveryState = 'queued',
+    this.deliveryError,
   });
 
   bool get isEphemeral => ephemeralSeconds > 0;
@@ -47,6 +51,7 @@ class Message {
   Message copyWith({
     String? text,
     DateTime? editedAt,
+    bool? isVerified,
     bool? isPinned,
     String? replyToMessageId,
     String? replyToSenderName,
@@ -55,6 +60,9 @@ class Message {
     List<String>? attachments,
     Map<String, int>? reactions,
     Set<String>? myReactions,
+    String? deliveryState,
+    String? deliveryError,
+    bool clearDeliveryError = false,
   }) {
     return Message(
       id: id,
@@ -67,7 +75,7 @@ class Message {
       editedAt: editedAt ?? this.editedAt,
       ephemeralSeconds: ephemeralSeconds,
       remainingSeconds: remainingSeconds,
-      isVerified: isVerified,
+      isVerified: isVerified ?? this.isVerified,
       isPinned: isPinned ?? this.isPinned,
       replyToMessageId: replyToMessageId ?? this.replyToMessageId,
       replyToSenderName: replyToSenderName ?? this.replyToSenderName,
@@ -76,6 +84,8 @@ class Message {
       attachments: attachments ?? this.attachments,
       reactions: reactions ?? this.reactions,
       myReactions: myReactions ?? this.myReactions,
+      deliveryState: deliveryState ?? this.deliveryState,
+      deliveryError: clearDeliveryError ? null : (deliveryError ?? this.deliveryError),
     );
   }
 }

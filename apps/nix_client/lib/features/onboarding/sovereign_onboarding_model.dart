@@ -128,14 +128,16 @@ class OnboardingStateSnapshot {
     return '$home/.local/share/nix/onboarding_state.json';
   }
 
-  /// Salva o estado de forma atômica no arquivo de estado transacional.
+  /// Salva o estado de forma atômica (tmp + rename) no arquivo de estado transacional.
   static Future<void> save(OnboardingStateSnapshot snapshot, {String? customPath}) async {
     final path = getPersistencePath(customPath: customPath);
     final file = File(path);
     if (!file.parent.existsSync()) {
       file.parent.createSync(recursive: true);
     }
-    file.writeAsStringSync(jsonEncode(snapshot.toJson()), flush: true);
+    final tempFile = File('$path.tmp_${DateTime.now().microsecondsSinceEpoch}');
+    tempFile.writeAsStringSync(jsonEncode(snapshot.toJson()), flush: true);
+    tempFile.renameSync(path);
   }
 
   /// Carrega o estado salvo ou retorna estado inicial se não existir.

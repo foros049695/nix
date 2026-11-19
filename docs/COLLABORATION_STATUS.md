@@ -17,7 +17,7 @@
 | **Pull Requests Integrados** | 16 (do #1 ao #10 + #13 ao #18; sem #11/#12 pois eram Issues) | PRs `#1`–`#10` + implementação Fases 0–9 (`1dea5f3`) + PRs `#13`–`#18` (`807e93b`–`f2effa4`) |
 | **Issues Rastreáveis** | 2 resolvidas e encerradas | **Issue #11** (TLS real sobre SOCKS5, fechada em `completed`) · **Issue #12** (PVR ativo, fechada) |
 | **GitHub Actions Remoto** | ✅ GREEN em `1b21f65` (Run `44464220218`) | Todos os 5 jobs verdes (`Privacy`, `Flutter Client`, `Relay Go`, `Transport`, `Core Crypto`) |
-| **Suites Locais Combinadas** | ✅ 100% GREEN | Privacy gate (com #13 I-A/I-S), Relay Go (`vet` + `test -race` com PG 17 Docker & Onion v3 Tor `0.4.9.15`), Crypto (`10/10`), Transport (`22/22`), Client (`68/68` com SQLCipher `4.10.0` e `$HOME` isolado) |
+| **Suites Locais Combinadas** | ✅ 100% GREEN (Pós-Auditoria Local) | Privacy gate (3/3), Relay Go (`vet` + `test -race`), Crypto (`10/10`), Transport (`22/22` incl. Issue `#11`), Client (`89/89` com SQLCipher `4.10.0`, rejeição de SQLite comum `libsqlite3.so.0`, injeção de falhas em 6 estágios e `$HOME` isolado). Ver `docs/LOCAL_INTEGRATION_TEST_REPORT.md` e `docs/PR_ISSUE_VERIFICATION.md`. |
 
 ---
 

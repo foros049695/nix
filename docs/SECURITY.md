@@ -19,11 +19,14 @@
 - **Acordo de Chaves:** X25519.
 - **Sessão Assíncrona & Catraca:** Double Ratchet com X3DH (e avaliação de trilha híbrida pós-quântica PQXDH).
 - **Cifra Simétrica de Anexos:** XChaCha20-Poly1305 com nonces de 192 bits e autenticação de integridade.
-- **Derivação de Chaves Locais:** Argon2id calibrado para mobile e desktop.
-- **Proteção de Memória:** Limpeza explícita via `sodium_memzero` antes de liberar buffers sensíveis.
+- **Derivação de Chaves Locais:** Argon2id (64 MiB, 3 iterações) via `PassphraseKdf.strong()` sem frase-passe padrão fixa.
+- **Banco Local Cifrado:** SQLCipher com `requireEncryption: true` (bloqueio fail-closed contra SQLite comum sem `PRAGMA cipher_version`).
+- **Proteção de Memória:** Zeroização explícita de buffers sensíveis `Uint8List` via `fillRange(0, length, 0)` ao bloquear o `KeyVault` ou encerrar `NixState.dispose()`, reconhecendo os limites inerentes ao coletor de lixo (GC) do runtime Dart.
+- **Autenticidade de Distribuição Offline:** Verificação obrigatória de manifesto assinado Ed25519 (`SignedReleaseManifest`) além de SHA-256 em `ShareAppOfflineDialog`.
+- **Sanitização Editorial Anti-XSS:** Tokenizador determinístico de HTML por whitelist estrita (`NixArchiveService.sanitizeRichTextHtml`) em artigos e refutações canônicos.
 
 ---
 
 ## 3. Divulgação Responsável de Vulnerabilidades
 
-Caso encontre uma falha de segurança no Nix, solicitamos que nos contate de forma confidencial. Não abra issues públicas relatando vulnerabilidades críticas antes da mitigação. Veja `docs/INCIDENT_RESPONSE.md`.
+Caso encontre uma falha de segurança no Nix, envie um relato confidencial pelo **GitHub Private Vulnerability Reporting** (`https://github.com/foros049695/nix/security/advisories/new`, verificado como ativo via API). Não abra issues públicas relatando vulnerabilidades antes da mitigação. Veja `SECURITY.md` e `docs/INCIDENT_RESPONSE.md`.

@@ -361,9 +361,13 @@ class MessageBubble extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 6),
                                   Icon(
-                                    Icons.verified_outlined,
+                                    message.isVerified
+                                        ? Icons.verified_outlined
+                                        : Icons.gpp_maybe_outlined,
                                     size: 11,
-                                    color: NixColors.textSecondary,
+                                    color: message.isVerified
+                                        ? NixColors.textSecondary
+                                        : Colors.amber,
                                   ),
                                   const SizedBox(width: 3),
                                   Text(
@@ -420,6 +424,19 @@ class MessageBubble extends StatelessWidget {
                                 .toList(),
                           ),
                         ],
+                        if (message.deliveryError != null &&
+                            message.deliveryError!.isNotEmpty) ...[
+                          const SizedBox(height: 5),
+                          Text(
+                            message.deliveryError!,
+                            key: Key('msg_delivery_error_${message.id}'),
+                            style: const TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 5),
                         Row(
                           mainAxisSize: MainAxisSize.min,
@@ -458,7 +475,7 @@ class MessageBubble extends StatelessWidget {
                             ),
                             if (isMe) ...[
                               const SizedBox(width: 4),
-                              Icon(Icons.done_all_rounded, size: 13, color: accentText),
+                              _buildDeliveryStateIcon(accentText),
                             ],
                             const SizedBox(width: 6),
                             PopupMenuButton<String>(
@@ -550,5 +567,44 @@ class MessageBubble extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildDeliveryStateIcon(Color accentText) {
+    switch (message.deliveryState) {
+      case 'failed':
+        return Icon(
+          Icons.error_outline_rounded,
+          key: Key('msg_state_failed_${message.id}'),
+          size: 13,
+          color: Colors.redAccent,
+        );
+      case 'queued':
+      case 'draft':
+      case 'sending':
+        return Icon(
+          Icons.schedule_rounded,
+          key: Key('msg_state_queued_${message.id}'),
+          size: 13,
+          color: NixColors.textMuted,
+        );
+      case 'accepted':
+        return Icon(
+          Icons.done_rounded,
+          key: Key('msg_state_accepted_${message.id}'),
+          size: 13,
+          color: accentText,
+        );
+      case 'delivered':
+      case 'received':
+      case 'read':
+      case 'saved':
+      default:
+        return Icon(
+          Icons.done_all_rounded,
+          key: Key('msg_state_delivered_${message.id}'),
+          size: 13,
+          color: accentText,
+        );
+    }
   }
 }

@@ -12,13 +12,41 @@ class TorrentClearnetLeakBlockedException implements Exception {
   String toString() => 'TorrentClearnetLeakBlockedException: $message';
 }
 
-/// Fases formalmente desacopladas do catálogo Nix Media (Fase 8):
-/// 1) Descoberta offline/catálogo (`OfflineCatalogLookup`)
-/// 2) Gate de resolução magnet com isolamento explícito (`MagnetResolutionPolicy`)
-/// 3) Registro isolado de progresso/transferência em sandbox (`MediaTransferSandbox`)
+/// Estágios formalmente diferenciados do catálogo de mídia:
+/// - `localCatalogSearch`: busca estritamente local no SQLite/FTS5 (zero rede).
+/// - `remoteOptInQuery`: consulta remota a conector externo opt-in (sujeita à política de transporte Tor/SOCKS5).
+/// - `sandboxFileTransfer`: transferência/resolução de arquivos em sandbox isolado da identidade Seed A.
+enum MediaOperationStage {
+  localCatalogSearch,
+  remoteOptInQuery,
+  sandboxFileTransfer,
+}
+
+/// Conectores externos estritamente opt-in (desabilitados por padrão).
+enum OptInMediaConnectorKind {
+  tmdb,
+  anilist,
+  jellyfin,
+}
+
+/// Fases formalmente desacopladas do catálogo Nix Media (Fase 8 / Fase 9.2):
+/// 1) Descoberta offline/catálogo (`OfflineCatalogLookup` / `MediaOperationStage.localCatalogSearch`)
+/// 2) Consulta remota opt-in (`OptInMediaConnectorKind` / `MediaOperationStage.remoteOptInQuery`)
+/// 3) Gate de resolução magnet e transferência em sandbox (`MediaOperationStage.sandboxFileTransfer`)
 class MediaCatalogService {
   final MediaRepository mediaRepo;
+  final Map<OptInMediaConnectorKind, bool> _enabledConnectors = {
+    for (final k in OptInMediaConnectorKind.values) k: false,
+  };
+
   MediaCatalogService(this.mediaRepo);
+
+  bool isConnectorEnabled(OptInMediaConnectorKind kind) =>
+      _enabledConnectors[kind] ?? false;
+
+  void setConnectorEnabled(OptInMediaConnectorKind kind, bool enabled) {
+    _enabledConnectors[kind] = enabled;
+  }
 
   /// Fase 1 (Offline / Catálogo): Indexa metadados e instantâneo em `media_items` + FTS5 sem rede P2P.
   Future<String> computeCatalogSnapshotHash(List<Map<String, dynamic>> items) async {
@@ -31,22 +59,74 @@ class MediaCatalogService {
     required String kind,
     required String title,
     Map<String, dynamic> metadata = const {},
+    String source = 'starwire_offline',
   }) async {
     await mediaRepo.upsertMediaItem(
       id: id,
       kind: kind,
       title: title,
-      metadata: metadata,
-      source: 'starwire_offline',
+      metadata: {
+        ...metadata,
+        'stage': MediaOperationStage.localCatalogSearch.name,
+      },
+      source: source,
       sourceId: id,
     );
   }
 
+  /// Busca estritamente local no catálogo SQLite/FTS5 (`MediaOperationStage.localCatalogSearch`).
   Future<List<Map<String, dynamic>>> searchOfflineCatalog(String query) {
     return mediaRepo.searchMedia(query);
   }
 
-  /// Fase 2 (Resolução Magnet): Bloqueia DHT UDP e trackers clearnet por padrão sob Tor fail-closed.
+  /// Consulta conector externo opt-in (`MediaOperationStage.remoteOptInQuery`).
+  /// - Exige que o conector esteja explicitamente habilitado pelo usuário.
+  /// - Respeita política fail-closed: quando `isFailClosedTorActive` é verdadeiro,
+  ///   rejeita a consulta se `hasActiveTorSocksCircuit` for falso.
+  Future<List<Map<String, dynamic>>> queryRemoteOptInConnector({
+    required OptInMediaConnectorKind connector,
+    required String query,
+    required bool isFailClosedTorActive,
+    required bool hasActiveTorSocksCircuit,
+    Future<List<Map<String, dynamic>>> Function(String query)? transportExecutor,
+  }) async {
+    if (!isConnectorEnabled(connector)) {
+      throw StateError(
+        '[Opt-In] Conector externo ${connector.name} está desabilitado por padrão.',
+      );
+    }
+    if (isFailClosedTorActive && !hasActiveTorSocksCircuit) {
+      throw const TorrentClearnetLeakBlockedException(
+        '[Fail-Closed] Consulta remota a conector externo bloqueada sem circuito Tor SOCKS5 ativo.',
+      );
+    }
+    final q = query.trim();
+    if (q.isEmpty) return const [];
+    final results = transportExecutor != null
+        ? await transportExecutor(q)
+        : <Map<String, dynamic>>[];
+    for (final item in results) {
+      final id = (item['id'] as String?) ??
+          '${connector.name}_${std_crypto.sha256.convert(utf8.encode(q)).toString().substring(0, 10)}';
+      final kind = (item['kind'] as String?) ?? 'movie';
+      final title = (item['title'] as String?) ?? q;
+      await mediaRepo.upsertMediaItem(
+        id: id,
+        kind: kind,
+        title: title,
+        metadata: {
+          ...item,
+          'stage': MediaOperationStage.remoteOptInQuery.name,
+          'connector': connector.name,
+        },
+        source: 'optin_${connector.name}',
+        sourceId: id,
+      );
+    }
+    return results;
+  }
+
+  /// Fase 3 (Resolução Magnet / Transferência): Bloqueia DHT UDP e trackers clearnet por padrão sob Tor fail-closed.
   /// Exige opt-in explícito de transporte isolado (I2P SAM ou VPN/BitTorrent dedicado sem vazar Tor Exit/real IP).
   static String authorizeMagnetResolution({
     required String magnetUri,

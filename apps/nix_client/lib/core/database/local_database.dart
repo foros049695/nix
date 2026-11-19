@@ -75,6 +75,9 @@ class LocalDatabase {
 
   static bool _sqliteInitialized = false;
 
+  /// Hook exclusivo para testes automatizados validarem rejeição fail-closed contra SQLite comum.
+  static DynamicLibrary Function()? testNativeLibraryOverride;
+
   /// Garante que o motor SQLCipher/SQLite FFI seja inicializado com resolução dinâmica real.
   /// Prioriza sempre binários SQLCipher reais antes do fallback SQLite de desenvolvimento.
   static void ensureSqliteInitialized() {
@@ -87,6 +90,9 @@ class LocalDatabase {
     } else if (Platform.isLinux) {
       try {
         sqlite_open.open.overrideFor(sqlite_open.OperatingSystem.linux, () {
+          if (testNativeLibraryOverride != null) {
+            return testNativeLibraryOverride!();
+          }
           final exeDir = File(Platform.resolvedExecutable).parent.path;
           final home = Platform.environment['HOME'] ?? '';
           final candidates = [
@@ -132,6 +138,7 @@ class LocalDatabase {
   }
 
   /// Inicializa e abre a conexão com o banco de dados local, aplicando migrações pendentes.
+  /// Quando [requireEncryption] é verdadeiro, falha fechado caso o motor ativo não seja SQLCipher real.
   static Future<LocalDatabase> open({
     String? path,
     Uint8List? rawCipherKey,
@@ -139,10 +146,13 @@ class LocalDatabase {
     // Overrides explícitos são SQL confiável de testes, fora dos arquivos oficiais.
     String? migration001Sql,
     String? migration002Sql,
+    bool requireEncryption = false,
   }) async {
     ensureSqliteInitialized();
     final dbPath = path ?? getDefaultDatabasePath();
     final factory = customFactory ?? databaseFactoryFfiNoIsolate;
+    final existedBefore =
+        dbPath != inMemoryDatabasePath && await File(dbPath).exists();
 
     // Garante que o diretório pai existe
     if (dbPath != inMemoryDatabasePath) {
@@ -197,6 +207,19 @@ class LocalDatabase {
         isEncrypted: false,
         cipherEngine: 'SQLite-Development-Clearnet',
         cipherVersion: null,
+      );
+    }
+
+    if (requireEncryption && !cipherInfo.isEncrypted) {
+      await db.close();
+      if (!existedBefore && dbPath != inMemoryDatabasePath) {
+        try {
+          final f = File(dbPath);
+          if (await f.exists()) await f.delete();
+        } catch (_) {}
+      }
+      throw StateError(
+        '[Fail-Closed] SQLCipher obrigatório: banco não cifrado (${cipherInfo.cipherEngine}) rejeitado pela política de segurança.',
       );
     }
 

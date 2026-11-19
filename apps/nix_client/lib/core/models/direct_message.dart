@@ -24,6 +24,8 @@ class DirectMessageThread {
   final bool isSavedMessages;
   final bool isPinned;
   final bool isMuted;
+  final String? peerMailboxId;
+  final bool hasActiveSession;
   final List<Message> messages;
 
   const DirectMessageThread({
@@ -38,6 +40,8 @@ class DirectMessageThread {
     this.isSavedMessages = false,
     this.isPinned = false,
     this.isMuted = false,
+    this.peerMailboxId,
+    this.hasActiveSession = false,
     required this.messages,
   });
 
@@ -60,6 +64,8 @@ class DirectMessageThread {
     bool? isSavedMessages,
     bool? isPinned,
     bool? isMuted,
+    String? peerMailboxId,
+    bool? hasActiveSession,
     List<Message>? messages,
     NixTrustLevel? trustLevel,
     bool? isOnline,
@@ -77,6 +83,8 @@ class DirectMessageThread {
       isSavedMessages: isSavedMessages ?? this.isSavedMessages,
       isPinned: isPinned ?? this.isPinned,
       isMuted: isMuted ?? this.isMuted,
+      peerMailboxId: peerMailboxId ?? this.peerMailboxId,
+      hasActiveSession: hasActiveSession ?? this.hasActiveSession,
       messages: messages ?? this.messages,
     );
   }
