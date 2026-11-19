@@ -111,7 +111,7 @@ void main() {
         title: 'Canal Inbound Alice',
       );
 
-      final sessionKey = await SecretKeyData.random(length: 32);
+      final sessionKey = SecretKeyData.random(length: 32);
       final rawPlaintext = utf8.encode(jsonEncode({
         'id': 'm_001',
         'sender': 'NIX-BOB-CARD-99',

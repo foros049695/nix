@@ -327,6 +327,13 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       });
       return;
     }
+    if (userPassphrase.isEmpty && !_bindToOsKeyring) {
+      setState(() {
+        _identityErrorMessage =
+            'Como o desbloqueio rápido pelo chaveiro do SO foi desmarcado, é obrigatório definir uma frase-passe manual para proteger o cofre.';
+      });
+      return;
+    }
     if (!Platform.environment.containsKey('FLUTTER_TEST') &&
         userPassphrase.isEmpty &&
         !widget.nixState.keyVault.osKeyStorage.isHardwareOrOsBacked) {
@@ -354,12 +361,16 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       final effectivePassphrase = userPassphrase.isNotEmpty
           ? userPassphrase
           : _generateRandomHexPassphrase();
-      final effectiveBindKeyring = userPassphrase.isEmpty ? true : _bindToOsKeyring;
+      final effectiveBindKeyring = userPassphrase.isEmpty
+          ? true
+          : _bindToOsKeyring &&
+              widget.nixState.keyVault.osKeyStorage.isHardwareOrOsBacked;
 
       final dbOk = await widget.nixState.initializeEncryptedDatabase(
         passphrase: effectivePassphrase,
         bindToOsKeyring: effectiveBindKeyring,
         duressPassphrase: duressPin.isNotEmpty ? duressPin : null,
+        overwriteExistingVault: true,
       );
       if (!dbOk) {
         if (!mounted) return;
@@ -495,6 +506,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
                         final dbOk = await widget.nixState.initializeEncryptedDatabase(
                           passphrase: pass,
                           bindToOsKeyring: customPass.isEmpty,
+                          overwriteExistingVault: true,
                         );
                         if (!dbOk) {
                           setDlgState(() {

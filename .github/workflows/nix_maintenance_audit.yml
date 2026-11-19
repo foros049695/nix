@@ -1,0 +1,71 @@
+name: Scheduled 4-Hour Maintenance & Security Audit
+
+on:
+  schedule:
+    # Executa a cada 4 horas (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: read
+  pull-requests: read
+
+jobs:
+  maintenance-audit:
+    name: 4-Hour Monorepo Maintenance & Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          check-latest: true
+
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Resolve Dependencies Across Monorepo
+        run: |
+          cd modules/core_crypto && dart pub get
+          cd ../transport && dart pub get
+          cd ../../apps/nix_client && flutter pub get
+          cd ../../services/nix_relay && go mod download
+
+      - name: Execute Automated Audit Suite & Generate Report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          chmod +x scripts/run_maintenance_audit.py
+          python3 scripts/run_maintenance_audit.py
+
+      - name: Persist Maintenance Report and History
+        run: |
+          git config user.name "nix-security-bot"
+          git config user.email "security-bot@nix.local"
+          git add docs/automation/
+          if git diff --cached --quiet; then
+            echo "Nenhuma alteração nos relatórios de auditoria."
+          else
+            git commit -m "chore(audit): update 4-hour automated maintenance report [skip ci]"
+            git push origin HEAD:${{ github.ref_name }} || echo "Não foi possível enviar commit de auditoria automaticamente."
+          fi
+
+      - name: Upload Audit Report Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: maintenance-audit-report
+          path: docs/automation/
+          retention-days: 30

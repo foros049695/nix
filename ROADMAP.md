@@ -37,7 +37,9 @@ Governança de repositório:
 
 ### Estado atual
 
-- [x] ADRs estruturais formalizados (`ADR-0001` a `ADR-0004`).
+- [x] ADRs estruturais formalizados (`ADR-0001` a `ADR-0006`, incluindo PR `#27`).
+- [x] Documentação de placeholders dos módulos estruturais (`archive`, `index`, `media`, `offgrid`, `wallet`) e setup do cliente em `apps/nix_client/README.md` (PR `#25` e `#26`).
+- [x] Rotina automatizada persistente de auditoria e integridade a cada 4 horas (`.github/workflows/nix_maintenance_audit.yml` e `scripts/run_maintenance_audit.py`).
 - [x] Documentação de arquitetura e resposta a incidentes (`docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/INCIDENT_RESPONSE.md`).
 - [x] Canal confidencial para divulgação de vulnerabilidades habilitado via **GitHub Private Vulnerability Reporting** (`docs/SECURITY.md` §3 / Issue `#12`).
 - [x] Matriz de privacidade de 21 células vinculada a verificações estáticas e testes (`docs/PRIVACY_MATRIX.md` e `scripts/verify_privacy_matrix.sh`).
@@ -70,7 +72,10 @@ Governança de repositório:
 - [x] Carregamento pós-reinicialização (`tryAutoUnlockAndRestore`, `unlockWithPassphrase`, `_VaultUnlockPrompt`, `reloadFromDatabase`) e liberação segura com zeroização em `NixState.dispose()` (PR `#15`, `ab308e7`).
 - [x] Sanitização *fail-closed* de imagens JPEG/PNG/WebP/GIF (PR `#9`, `6199fc7`), proteção contra *path traversal* em ZIP (PR `#18`, `54b6f2a`), busca FTS5 literal (PR `#14`, `134c159`) e desativação de backup automático Android (PR `#16`, `98c2228`).
 - [x] PIN de coação avaliado e implementado (`duressVerifier` Argon2id + limpeza de cofre/keyring), com limitações físicas de *wear-leveling* flash e GC documentadas em `docs/KEY_MANAGEMENT.md`.
-- [x] Análise estática Flutter sem erros ou avisos bloqueantes (`flutter analyze --no-fatal-infos`) e compatibilidade de CI restaurada (PR `#3`, `f54b857`).
+- [x] Rollback atômico do cofre e detecção de falhas no keyring nativo (Issue `#19`, PR `#30`).
+- [x] Expurgo anti-forense estendido a todos os diretórios com encerramento prévio do Tor e relatório honesto de falhas parciais (PR `#20` e `#21`).
+- [x] Separação modular dos 12 repositórios SQLite sob `apps/nix_client/lib/core/database/repositories/` (PR `#29`).
+- [x] Análise estática Flutter sem erros ou avisos bloqueantes (`flutter analyze --no-fatal-infos`) e eliminação de gaps de BuildContext (PR `#3`, `f54b857` e PR `#22`).
 
 ### Pendências para fechamento do Gate 1
 
@@ -95,6 +100,7 @@ Governança de repositório:
 - [x] Serviço Go (`services/nix_relay`) com API de mailboxes (`/v1/mailboxes/{id}/envelopes`, `/v1/mailboxes/{id}/ack`), TTL padrão de 7 dias, `AutoPruner` com histerese (75%, 85%, 92%) e cotas in-flight de 500 MB.
 - [x] Propagação estrita de erros de persistência com rollback atômico (PR `#7`, `4a13daa`) e dimensionamento dinâmico de corpo HTTP por anexo (PR `#8`, `f1dffd1`).
 - [x] Abstração `RelayStore` implementada em disco (`BlindMailboxStore`) e **PostgreSQL 17+** (`PostgresMailboxStore`, schema `database/schema/relay.sql`), validada sob `-race` e carga concorrente contra container `postgres:17-alpine`, incluindo teste de `pg_dump`/`pg_restore` de metadados.
+- [x] Rejeição fail-closed na inicialização do Relay caso `-config` explícito aponte para arquivo ausente, vazio ou corrompido (PR `#23`).
 - [x] Capabilities duráveis por hash SHA-256 com escopos explícitos (`write`, `read_ack`, `admin`), expiração e revogação via endpoint administrativo.
 - [x] Isolamento *fail-closed* do listener administrativo (`ValidateAdminListenAddr` restrito a loopback, retornando HTTP 404 para `/metrics` e `/admin/capabilities` na superfície pública/Onion).
 - [x] Expansão portátil de `~` em `base_dir` sem caminhos locais fixos (PR `#17`, `f2effa4`) e scripts de provisionamento para Debian 13 + Tor Onion Service v3 (`services/nix_relay/deploy/provision_vps.sh`, `torrc.onion.snippet`, `nix-relay.service`).
@@ -120,7 +126,7 @@ Governança de repositório:
 
 ### Estado atual
 
-- [x] Módulos `modules/core_crypto` e `modules/transport` livres de erros estritos (`dart analyze --fatal-infos`, PR `#2`, `8618b79`).
+- [x] Módulos `modules/core_crypto` e `modules/transport` livres de erros estritos (`dart analyze --fatal-infos`, PR `#2`, `8618b79`), com reorganização do pacote `core_crypto` encapsulando implementações internas em `lib/src` sob barrel público (PR `#28`).
 - [x] Gerenciador `EmbeddedTorManager` isolado em testes e com encerramento garantido de processos filhos em timeout (PR `#5`, `c7dd88d`), testado com Tor `0.4.9.15` ao vivo (`Bootstrapped 100%`).
 - [x] Correção da **Issue `#11`** em `modules/transport/lib/nix_transport.dart`: túnel SOCKS5 em `RawSocket` (`Socks5Connector.connectRaw`) com upgrade nativo `RawSecureSocket.secure` em `RelayClient._socksHttp`, validação rigorosa de certificado TLS por padrão (*fail-closed*) e bloqueio antecipado de esquemas não-HTTP(S) via `UnsupportedTransportSchemeException` (`cc3fc4f`).
 - [x] Protocolo completo em `SovereignMessenger` (`gate3_two_client_e2ee_test.dart` e `transactional_messaging_fault_test.dart`): unificação da UI (`NixState.sendDirectMessage` + `syncWithRelay`), gravação transacional atômica (`sessions` + `messages` + `attachments` + `outbox`), injeção de falhas nos 6 estágios sem corrupção de ratchet, estados reais (`queued`, `accepted`, `delivered`, `failed`, `saved`), troca entre duas instâncias independentes via relay+SOCKS5 locais, recuperação pós-reinicialização, `FilePickerAdapter` portável, cancelamento de anexos com limpeza de chunks e rotação automática de épocas de Sender Keys em kick/ban.

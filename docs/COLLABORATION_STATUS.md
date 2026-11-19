@@ -307,5 +307,33 @@ graph TD
 ## 7. PRÓXIMAS TAREFAS OPERACIONAIS / HARDWARE REMANESCENTES
 
 1. **Soak Contínuo de 60 Minutos em VPS Externa:** Provisionar Debian 13 via `services/nix_relay/deploy/provision_vps.sh` e rodar `./bench -clients 50 -duration 60m`.
-2. **Hardware Físico Android / LoRa:** Compilar APK Android em dispositivo real validando `AndroidKeyStore` TEE, Bluetooth físico e adaptadores LoRa/RNode seriais.
-3. **Auditoria Externa Independente:** Submeter relatório SBOM + matriz de privacidade + suites E2EE antes de release beta pública.
+2. **Hardware Físico Android / LoRa:** Validar APK Android em dispositivo real com hardware StrongBox/TEE, pareamento Bluetooth físico BLE mesh e adaptadores LoRa/RNode seriais.
+3. **Auditoria Externa Independente:** Submeter relatório SBOM + matriz de privacidade + suítes E2EE antes de release beta pública.
+
+---
+
+## 8. AUDITORIA DOS PULL REQUESTS #20 A #30 E ISSUE #19 (19/11/2026)
+
+| Item | Tipo | Autor | Escopo / Mudanças | Status da Auditoria |
+|---|---|---|---|---|
+| **#19** | Issue | @foros049695 | Prevenção de criação de cofre com frase-passe randômica descartada quando chaveiro do SO falha | **RESOLVIDO** (Validado via PR #30 + guarda de UI + 7 testes) |
+| **#20** | PR | @gabrielmaialva33 | Relato honesto de falhas parciais de destruição no botão de pânico das configurações | **VALIDADO E TESTADO** (100% verde) |
+| **#21** | PR | @gabrielmaialva33 | Extensão da destruição anti-forense a todos os diretórios locais sem seguir symlinks | **VALIDADO E TESTADO** (+ paralisia síncrona do Tor) |
+| **#22** | PR | @gabrielmaialva33 | Proteção contra gaps assíncronos de `BuildContext` e remoção de await redundante | **VALIDADO E TESTADO** |
+| **#23** | PR | @gabrielmaialva33 | Rejeição *fail-closed* no Relay Go caso arquivo `-config` explícito falhe | **VALIDADO E TESTADO** (`go test -race` 100% verde) |
+| **#24** | PR | @gabrielmaialva33 | Roteamento de relatos de vulnerabilidades para Private Advisories no GitHub | **VALIDADO E DOCUMENTADO** |
+| **#25** | PR | @gabrielmaialva33 | Documentação de diretórios placeholder e correção de comentário no `.gitattributes` | **VALIDADO E DOCUMENTADO** |
+| **#26** | PR | @gabrielmaialva33 | README detalhado do `nix_client` com setup Linux e segurança de testes em `HOME` isolado | **VALIDADO E DOCUMENTADO** |
+| **#27** | PR | @gabrielmaialva33 | ADR 0005 (driver PostgreSQL `lib/pq`) e ADR 0006 (FFI SQLCipher e renderizador QR offline) | **VALIDADO E DOCUMENTADO** |
+| **#28** | PR | @gabrielmaialva33 | Reorganização de `modules/core_crypto` com implementações em `lib/src` preservando barrel | **VALIDADO E TESTADO** (13/13 testes aprovados) |
+| **#29** | PR | @gabrielmaialva33 | Separação dos 12 repositórios SQLite em arquivos modulares sob barrel `repositories.dart` | **VALIDADO E TESTADO** (barrel probe aprovado) |
+| **#30** | PR | @gabrielmaialva33 | Rollback atômico do cofre caso o vínculo com o chaveiro nativo do SO retorne falso | **VALIDADO E TESTADO** (7/7 testes de probe aprovados) |
+
+---
+
+## 9. ROTINA AUTOMATIZADA PERSISTENTE A CADA 4 HORAS (FASE 16)
+
+- **Workflow GitHub Actions:** `.github/workflows/nix_maintenance_audit.yml` (agendamento `0 */4 * * *` e manual via `workflow_dispatch`).
+- **Auditor Autônomo:** `scripts/run_maintenance_audit.py` com relatórios em `docs/automation/MAINTENANCE_REPORT.md` e snapshots em `docs/automation/history/`.
+- **Relatório Completo de Resolução:** [`docs/ISSUES_PRS_RESOLUTION_REPORT.md`](ISSUES_PRS_RESOLUTION_REPORT.md).
+

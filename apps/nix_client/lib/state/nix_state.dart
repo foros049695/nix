@@ -881,6 +881,11 @@ class NixState extends ChangeNotifier {
   /// Procedimento Anti-Forense / Botão de Pânico (estilo BleachBit):
   /// Destrói a memória RAM, fecha banco e sobrescreve arquivos em múltiplas passagens destrutivas.
   Future<ShredReport> panicWipeAllData({String? customBaseDir}) async {
+    try {
+      _torBootstrapSub?.cancel();
+      _torBootstrapSub = null;
+      await _embeddedTor.stop();
+    } catch (_) {}
     final report = await AntiForensicShredder.panicWipeAccount(
       activeDatabase: _localDatabase,
       activeVault: _keyVault,
@@ -962,6 +967,7 @@ class NixState extends ChangeNotifier {
     bool bindToOsKeyring = false,
     String? duressPassphrase,
     bool? requireEncryption,
+    bool overwriteExistingVault = false,
   }) async {
     if (_disposed) return false;
     _lastDatabaseInitError = null;
@@ -974,11 +980,11 @@ class NixState extends ChangeNotifier {
             Platform.environment['NIX_REQUIRE_SQLCIPHER'] == 'true');
     final resolvedVaultPath = customVaultPath ?? KeyVault.getDefaultBootstrapPath();
     final resolvedDbPath = customDbPath ?? LocalDatabase.getDefaultDatabasePath();
-    final existedVaultBefore =
-        await _keyVault.isInitialized(customPath: customVaultPath) ||
-            await File(resolvedVaultPath).exists();
-    final existedDbBefore =
-        resolvedDbPath != ':memory:' && await File(resolvedDbPath).exists();
+    final existedVaultBefore = !overwriteExistingVault &&
+        (await _keyVault.isInitialized(customPath: customVaultPath) ||
+            await File(resolvedVaultPath).exists());
+    final existedDbBefore = !overwriteExistingVault &&
+        (resolvedDbPath != ':memory:' && await File(resolvedDbPath).exists());
     try {
       Uint8List masterKey;
       if (existedVaultBefore) {
@@ -997,7 +1003,13 @@ class NixState extends ChangeNotifier {
           customPath: customVaultPath,
           duressPassphrase: duressPassphrase,
           bindToOsKeyring: bindToOsKeyring,
+          overwrite: overwriteExistingVault,
         );
+        if (bindToOsKeyring && !_keyVault.lastKeyringBindSucceeded) {
+          throw StateError(
+            '[Fail-Closed] Não foi possível vincular o cofre ao keyring do SO.',
+          );
+        }
       }
 
       if (_disposed) {
