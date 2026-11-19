@@ -120,11 +120,11 @@ class Socks5Connector {
           controller.add(chunk);
         }
       },
-      onError: (err) {
+      onError: (Object err, StackTrace st) {
         socketError = err;
-        waiter?.completeError(err);
+        waiter?.completeError(err, st);
         waiter = null;
-        if (!inHandshake) controller.addError(err);
+        if (!inHandshake) controller.addError(err, st);
       },
       onDone: () {
         closed = true;
@@ -264,7 +264,7 @@ class SocksSocket extends Stream<Uint8List> implements Socket {
   @override
   void write(Object? object) => _rawSocket.write(object);
   @override
-  void writeAll(Iterable objects, [String separator = '']) => _rawSocket.writeAll(objects, separator);
+  void writeAll(Iterable<dynamic> objects, [String separator = '']) => _rawSocket.writeAll(objects, separator);
   @override
   void writeln([Object? object = '']) => _rawSocket.writeln(object);
   @override
@@ -272,13 +272,13 @@ class SocksSocket extends Stream<Uint8List> implements Socket {
   @override
   void addError(Object error, [StackTrace? stackTrace]) => _rawSocket.addError(error, stackTrace);
   @override
-  Future addStream(Stream<List<int>> stream) => _rawSocket.addStream(stream);
+  Future<dynamic> addStream(Stream<List<int>> stream) => _rawSocket.addStream(stream);
   @override
-  Future flush() => _rawSocket.flush();
+  Future<dynamic> flush() => _rawSocket.flush();
   @override
-  Future close() => _rawSocket.close();
+  Future<dynamic> close() => _rawSocket.close();
   @override
-  Future get done => _rawSocket.done;
+  Future<dynamic> get done => _rawSocket.done;
   @override
   void destroy() => _rawSocket.destroy();
   @override
@@ -325,9 +325,9 @@ class TorControlClient {
         _lineWaiter?.complete();
         _lineWaiter = null;
       },
-      onError: (Object err) {
+      onError: (Object err, StackTrace st) {
         _closed = true;
-        _lineWaiter?.completeError(err);
+        _lineWaiter?.completeError(err, st);
         _lineWaiter = null;
       },
     );
