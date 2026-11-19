@@ -354,7 +354,10 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       final effectivePassphrase = userPassphrase.isNotEmpty
           ? userPassphrase
           : _generateRandomHexPassphrase();
-      final effectiveBindKeyring = userPassphrase.isEmpty ? true : _bindToOsKeyring;
+      final effectiveBindKeyring = userPassphrase.isEmpty
+          ? true
+          : _bindToOsKeyring &&
+              widget.nixState.keyVault.osKeyStorage.isHardwareOrOsBacked;
 
       final dbOk = await widget.nixState.initializeEncryptedDatabase(
         passphrase: effectivePassphrase,

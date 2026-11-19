@@ -998,6 +998,11 @@ class NixState extends ChangeNotifier {
           duressPassphrase: duressPassphrase,
           bindToOsKeyring: bindToOsKeyring,
         );
+        if (bindToOsKeyring && !_keyVault.lastKeyringBindSucceeded) {
+          throw StateError(
+            '[Fail-Closed] Não foi possível vincular o cofre ao keyring do SO.',
+          );
+        }
       }
 
       if (_disposed) {
