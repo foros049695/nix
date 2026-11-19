@@ -210,7 +210,51 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
             ),
           ],
 
-          if (filteredItems.isEmpty) ...[
+          if (allItems.isEmpty) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
+              decoration: BoxDecoration(
+                color: NixColors.surfaceCard,
+                borderRadius: NixTokens.borderMd,
+                border: Border.all(color: NixColors.surfaceBorder),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.album_outlined, size: 44, color: NixColors.accentYellow.withOpacity(0.8)),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Seu Acervo Cultural está Vazio',
+                    style: TextStyle(
+                      color: NixColors.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Adicione suas prensagens em vinil, filmes, animes, séries, livros e mangás favoritos.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () => _showAddCulturalItemDialog(context),
+                    icon: const Icon(Icons.add_rounded, size: 16, color: Colors.black),
+                    label: const Text(
+                      'Adicionar ao Acervo',
+                      style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: NixColors.accentYellow,
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (filteredItems.isEmpty) ...[
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 24),

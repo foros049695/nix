@@ -597,6 +597,7 @@ class NixState extends ChangeNotifier {
     );
     loadStarwireRepos();
     if (!shouldLoadMock) {
+      loadPersistedState();
       _checkPersistedOnboardingStatus();
     }
   }
@@ -622,7 +623,15 @@ class NixState extends ChangeNotifier {
   }
 
   void _initializeProductionCleanState() {
-    _userProfile = MockData.getInitialUserProfile();
+    _userProfile = const UserProfile(
+      publicId: '',
+      displayName: '',
+      bio: '',
+      currentActivity: '',
+      memberSinceYear: '26',
+      avatarStyle: 'nyx_emblem',
+      culturalItems: [],
+    );
     const defaultChannel = Channel(
       id: 'general_saved',
       spaceId: 'local_space',
@@ -743,6 +752,7 @@ class NixState extends ChangeNotifier {
       final data = {
         'settings': _settings.toJson(),
         'savedAcervoIds': _savedAcervoIds.toList(),
+        'culturalItems': _userProfile.culturalItems.map((c) => c.toJson()).toList(),
         'folders': _folders
             .map((f) => {
                   'id': f.id,
@@ -779,6 +789,13 @@ class NixState extends ChangeNotifier {
           _savedAcervoIds
             ..clear()
             ..addAll((raw['savedAcervoIds'] as List).map((e) => e.toString()));
+        }
+        if (raw['culturalItems'] is List) {
+          final loadedItems = (raw['culturalItems'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map((e) => CulturalItem.fromJson(e))
+              .toList();
+          _userProfile = _userProfile.copyWith(culturalItems: loadedItems);
         }
         notifyListeners();
       }
@@ -1653,6 +1670,7 @@ class NixState extends ChangeNotifier {
   void addCulturalItem(CulturalItem item) {
     final updated = List<CulturalItem>.from(_userProfile.culturalItems)..insert(0, item);
     _userProfile = _userProfile.copyWith(culturalItems: updated);
+    _persistState();
     notifyListeners();
   }
 
@@ -1661,12 +1679,14 @@ class NixState extends ChangeNotifier {
       return item.id == updatedItem.id ? updatedItem : item;
     }).toList();
     _userProfile = _userProfile.copyWith(culturalItems: updated);
+    _persistState();
     notifyListeners();
   }
 
   void removeCulturalItem(String itemId) {
     final updated = _userProfile.culturalItems.where((i) => i.id != itemId).toList();
     _userProfile = _userProfile.copyWith(culturalItems: updated);
+    _persistState();
     notifyListeners();
   }
 
@@ -1678,6 +1698,7 @@ class NixState extends ChangeNotifier {
       return item;
     }).toList();
     _userProfile = _userProfile.copyWith(culturalItems: updated);
+    _persistState();
     notifyListeners();
   }
 

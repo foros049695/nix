@@ -107,4 +107,53 @@ class CulturalItem {
       updatedDate: updatedDate ?? this.updatedDate,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'creatorOrYear': creatorOrYear,
+      'category': category.name,
+      'rating': rating,
+      'monogram': monogram,
+      'toneShade': toneShade,
+      'isFeatured': isFeatured,
+      'localImagePath': localImagePath,
+      'cropScale': cropScale,
+      'isPublicInCardId': isPublicInCardId,
+      'repositoryUrl': repositoryUrl,
+      'starsCount': starsCount,
+      'language': language,
+      'license': license,
+      'updatedDate': updatedDate?.toIso8601String(),
+    };
+  }
+
+  factory CulturalItem.fromJson(Map<String, dynamic> json) {
+    CulturalCategory cat = CulturalCategory.movies;
+    if (json['category'] != null) {
+      cat = CulturalCategory.values.firstWhere(
+        (c) => c.name == json['category'],
+        orElse: () => CulturalCategory.movies,
+      );
+    }
+    return CulturalItem(
+      id: json['id'] as String? ?? 'cult_${DateTime.now().millisecondsSinceEpoch}',
+      title: json['title'] as String? ?? '',
+      creatorOrYear: json['creatorOrYear'] as String? ?? '',
+      category: cat,
+      rating: json['rating'] as String? ?? '9.5',
+      monogram: json['monogram'] as String? ?? 'NX',
+      toneShade: json['toneShade'] as int? ?? 42,
+      isFeatured: json['isFeatured'] as bool? ?? false,
+      localImagePath: json['localImagePath'] as String?,
+      cropScale: (json['cropScale'] as num?)?.toDouble() ?? 1.0,
+      isPublicInCardId: json['isPublicInCardId'] as bool? ?? true,
+      repositoryUrl: json['repositoryUrl'] as String?,
+      starsCount: json['starsCount'] as int?,
+      language: json['language'] as String?,
+      license: json['license'] as String?,
+      updatedDate: json['updatedDate'] != null ? DateTime.tryParse(json['updatedDate'] as String) : null,
+    );
+  }
 }
