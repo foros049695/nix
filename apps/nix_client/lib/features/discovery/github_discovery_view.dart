@@ -976,6 +976,13 @@ class _RepoZipDownloadDialogState extends State<_RepoZipDownloadDialog> {
     final client = HttpClient();
     _httpClient = client;
     try {
+      final home = Platform.environment['HOME'] ?? Directory.systemTemp.path;
+      final outDir = Directory('$home/.local/share/nix/downloads');
+      final outFile = resolveStarwireZipFile(
+        outDir,
+        widget.repo.owner,
+        widget.repo.name,
+      );
       final zipUrl = Uri.parse('${widget.repo.htmlUrl}/archive/HEAD.zip');
       final req = await client.getUrl(zipUrl);
       req.headers.set(HttpHeaders.userAgentHeader, 'NixClient/0.4.0');
@@ -990,10 +997,7 @@ class _RepoZipDownloadDialogState extends State<_RepoZipDownloadDialog> {
         return;
       }
 
-      final home = Platform.environment['HOME'] ?? Directory.systemTemp.path;
-      final outDir = Directory('$home/.local/share/nix/downloads');
       outDir.createSync(recursive: true);
-      final outFile = File('${outDir.path}/${widget.repo.owner}_${widget.repo.name}.zip');
       final sink = outFile.openWrite();
       final total = res.contentLength;
       var received = 0;
@@ -1158,4 +1162,56 @@ class _RepoZipDownloadDialogState extends State<_RepoZipDownloadDialog> {
       ],
     );
   }
+}
+
+/// Gera um nome de arquivo seguro para o ZIP de código-fonte do Starwire,
+/// mantendo apenas `[A-Za-z0-9._-]` e recusando entradas vazias ou apenas pontos.
+/// Um ponto inicial só é substituído quando ficaria no começo do arquivo final,
+/// evitando arquivo oculto no Unix sem descaracterizar nomes como `.github`.
+String buildStarwireZipFilename(String owner, String name) {
+  var safeOwner = _sanitizeStarwireSegment(owner);
+  var safeName = _sanitizeStarwireSegment(name);
+  if (safeOwner.startsWith('.')) {
+    safeOwner = '_${safeOwner.substring(1)}';
+  }
+  if (safeName.endsWith('.')) {
+    safeName = '${safeName.substring(0, safeName.length - 1)}_';
+  }
+  return '${safeOwner}_$safeName.zip';
+}
+
+/// Resolve o arquivo de destino do ZIP e confirma que permanece em `outDir`.
+File resolveStarwireZipFile(Directory outDir, String owner, String name) {
+  final fileName = buildStarwireZipFilename(owner, name);
+  final sep = Platform.pathSeparator;
+  final normalizedDir = outDir.absolute.uri.normalizePath().toFilePath(
+        windows: Platform.isWindows,
+      );
+  final dirPrefix =
+      normalizedDir.endsWith(sep) ? normalizedDir : '$normalizedDir$sep';
+  final normalizedFile = File('$dirPrefix$fileName')
+      .absolute
+      .uri
+      .normalizePath()
+      .toFilePath(windows: Platform.isWindows);
+
+  if (!normalizedFile.startsWith(dirPrefix) ||
+      normalizedFile.substring(dirPrefix.length).contains(sep)) {
+    throw ArgumentError.value(
+      normalizedFile,
+      'outFile',
+      'Caminho resolvido escapa do diretório de downloads.',
+    );
+  }
+  return File(normalizedFile);
+}
+
+String _sanitizeStarwireSegment(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty || RegExp(r'^\.+$').hasMatch(trimmed)) {
+    throw const FormatException('Identificador de repositório inválido.');
+  }
+  return trimmed
+      .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_')
+      .replaceAll(RegExp(r'\.{2,}'), '_');
 }
