@@ -222,3 +222,92 @@ class AtakCotBridge {
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&apos;');
 }
+
+/// Codec KISS padrão compatível com transceptores LoRa Reticulum RNode (USB-OTG / BLE UART).
+/// Referência: especificação KISS (FEND=0xC0, FESC=0xDB, TFEND=0xDC, TFESC=0xDD).
+class KissFrameCodec {
+  static const int fend = 0xC0;
+  static const int fesc = 0xDB;
+  static const int tfend = 0xDC;
+  static const int tfesc = 0xDD;
+
+  static const int cmdData = 0x00;
+  static const int cmdDetect = 0x08;
+  static const int detectReq = 0x73;
+  static const int detectResp = 0x46;
+
+  /// Comando de sondagem RNode KISS (`CMD_DETECT` + `DETECT_REQ`).
+  static Uint8List buildDetectProbe() =>
+      Uint8List.fromList(const [fend, cmdDetect, detectReq, fend]);
+
+  /// Verifica se um buffer bruto contém resposta válida de hardware RNode (`CMD_DETECT` + `DETECT_RESP`).
+  static bool isDetectResponse(Uint8List rawBytes) {
+    final frames = decodeAll(rawBytes);
+    return frames.any((f) =>
+        f.command == cmdDetect &&
+        f.payload.isNotEmpty &&
+        f.payload.first == detectResp);
+  }
+
+  /// Encapsula um quadro [RadioPacketCodec] (`<= 240B`) em envelope KISS com escaping rigoroso.
+  static Uint8List encodeFrame(Uint8List payload, {int command = cmdData}) {
+    final out = BytesBuilder();
+    out.addByte(fend);
+    out.addByte(command & 0xFF);
+    for (final b in payload) {
+      if (b == fend) {
+        out.addByte(fesc);
+        out.addByte(tfend);
+      } else if (b == fesc) {
+        out.addByte(fesc);
+        out.addByte(tfesc);
+      } else {
+        out.addByte(b);
+      }
+    }
+    out.addByte(fend);
+    return out.toBytes();
+  }
+
+  /// Decodifica todos os quadros KISS válidos presentes em um fluxo/buffer serial.
+  static List<({int command, Uint8List payload})> decodeAll(Uint8List streamBytes) {
+    final frames = <({int command, Uint8List payload})>[];
+    bool inFrame = false;
+    bool escaped = false;
+    int? currentCmd;
+    final buf = <int>[];
+
+    for (final b in streamBytes) {
+      if (b == fend) {
+        if (inFrame && currentCmd != null) {
+          frames.add((command: currentCmd, payload: Uint8List.fromList(buf)));
+        }
+        inFrame = true;
+        escaped = false;
+        currentCmd = null;
+        buf.clear();
+        continue;
+      }
+      if (!inFrame) continue;
+      if (currentCmd == null) {
+        currentCmd = b;
+        continue;
+      }
+      if (escaped) {
+        escaped = false;
+        if (b == tfend) {
+          buf.add(fend);
+        } else if (b == tfesc) {
+          buf.add(fesc);
+        }
+        continue;
+      }
+      if (b == fesc) {
+        escaped = true;
+        continue;
+      }
+      buf.add(b);
+    }
+    return frames;
+  }
+}

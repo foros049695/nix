@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'nix_transport.dart' show TorDiagnostics;
+import 'nix_transport.dart'
+    show TorControlClient, TorDiagnostics, TransportPolicy;
 
 /// Estado de inicialização e ciclo de vida do daemon Tor embutido.
 enum EmbeddedTorStatus {
@@ -35,10 +36,12 @@ class TorBootstrapEvent {
 /// Permite que os aplicativos Desktop (Linux/Windows/macOS) e Mobile (Android) executem
 /// a infraestrutura Tor nativamente em segundo plano sem exigir Orbot ou configurações manuais do usuário.
 class EmbeddedTorManager {
-  final int socksPort;
-  final int controlPort;
+  int _activeSocksPort;
+  int _activeControlPort;
   final String? customDataDir;
+  final String? Function()? dataDirResolver;
   final String? customTorBinary;
+  final List<String> Function()? extraBinaryCandidatesResolver;
 
   // Injetáveis para testar sem sondar portas ou executar o Tor do sistema.
   final Future<bool> Function(String, int) _portProbe;
@@ -49,31 +52,49 @@ class EmbeddedTorManager {
   EmbeddedTorStatus _status = EmbeddedTorStatus.stopped;
   int _currentProgress = 0;
   String _lastSummary = 'Não iniciado';
+  String? _activeOnionV3Address;
+  String? _torVersion;
+  String? _resolvedBinaryPath;
 
   final _bootstrapController = StreamController<TorBootstrapEvent>.broadcast();
 
   EmbeddedTorManager({
-    this.socksPort = 9050,
-    this.controlPort = 9051,
+    int socksPort = 9050,
+    int controlPort = 9051,
     this.customDataDir,
+    this.dataDirResolver,
     this.customTorBinary,
+    this.extraBinaryCandidatesResolver,
     Future<bool> Function(String, int)? portProbe,
     Future<Process> Function(String, List<String>,
             {Map<String, String>? environment})?
         processStarter,
-  })  : _portProbe = portProbe ?? _isPortListening,
+  })  : _activeSocksPort = socksPort,
+        _activeControlPort = controlPort,
+        _portProbe = portProbe ?? _isPortListening,
         _processStarter = processStarter ?? Process.start;
 
+  int get socksPort => _activeSocksPort;
+  int get controlPort => _activeControlPort;
   EmbeddedTorStatus get status => _status;
   int get currentProgress => _currentProgress;
   String get lastSummary => _lastSummary;
+  String? get activeOnionV3Address => _activeOnionV3Address;
+  String? get torVersion => _torVersion;
+  String? get resolvedBinaryPath => _resolvedBinaryPath;
   bool get isReady => _status == EmbeddedTorStatus.ready;
   Stream<TorBootstrapEvent> get onBootstrapProgress =>
       _bootstrapController.stream;
 
   /// Retorna o diretório isolado de dados (DataDirectory) do Tor.
   String get dataDirectory {
-    if (customDataDir != null) return customDataDir!;
+    if (customDataDir != null && customDataDir!.isNotEmpty) {
+      return customDataDir!;
+    }
+    final resolved = dataDirResolver?.call();
+    if (resolved != null && resolved.isNotEmpty) {
+      return resolved;
+    }
     final home = Platform.environment['HOME'] ?? '';
     if (home.isEmpty) return '.nix_tor_data';
     return '$home/.local/share/nix/tor_data';
@@ -83,6 +104,7 @@ class EmbeddedTorManager {
   Future<String?> locateTorBinary() async {
     if (customTorBinary != null) {
       if (await File(customTorBinary!).exists()) {
+        _resolvedBinaryPath = customTorBinary;
         return customTorBinary;
       }
       return null;
@@ -98,43 +120,50 @@ class EmbeddedTorManager {
     } catch (_) {}
 
     final home = Platform.environment['HOME'] ?? '';
+    final extra = extraBinaryCandidatesResolver?.call() ?? const <String>[];
 
-    // Candidatos ordenados: pacote local do app > ~/.local > sistema
+    // Candidatos ordenados: extras (Android nativeLibraryDir/libtor.so) > pacote local > ~/.local > sistema
     final candidates = [
+      ...extra,
       if (exeDir.isNotEmpty) '$exeDir/tor',
       if (exeDir.isNotEmpty) '$exeDir/data/tor',
       if (home.isNotEmpty) '$home/.local/share/nix/bundle/tor',
       if (home.isNotEmpty) '$home/.local/bin/tor',
       '/usr/bin/tor',
       '/usr/local/bin/tor',
-      // Android / Termux / JNI paths
+      // Android / JNI fallback paths
       '/data/data/com.projetonix.nix_client/app_bin/tor',
       '/data/data/com.projetonix.nix_client/lib/libtor.so',
     ];
 
     for (final path in candidates) {
+      if (path.trim().isEmpty) continue;
       final file = File(path);
       if (await file.exists()) {
         try {
-          // Garante permissão de execução em ambientes POSIX
-          if (!Platform.isWindows) {
+          // Em Android nativeLibraryDir é somente leitura e já executável pelo SO.
+          if (!Platform.isWindows && !Platform.isAndroid) {
             await Process.run('chmod', ['+x', path]);
           }
         } catch (_) {}
+        _resolvedBinaryPath = path;
         return path;
       }
     }
 
-    // Procura no PATH
-    try {
-      final res = await Process.run('which', ['tor']);
-      if (res.exitCode == 0) {
-        final path = res.stdout.toString().trim();
-        if (path.isNotEmpty && await File(path).exists()) {
-          return path;
+    // Procura no PATH (desktop POSIX)
+    if (!Platform.isAndroid) {
+      try {
+        final res = await Process.run('which', ['tor']);
+        if (res.exitCode == 0) {
+          final path = res.stdout.toString().trim();
+          if (path.isNotEmpty && await File(path).exists()) {
+            _resolvedBinaryPath = path;
+            return path;
+          }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
 
     return null;
   }
@@ -155,15 +184,19 @@ class EmbeddedTorManager {
     final torrcFile = File('${dir.path}/torrc');
     final configContent = StringBuffer()
       ..writeln('# Torrc gerado automaticamente pelo Projeto Nix')
-      ..writeln('SocksPort 127.0.0.1:$socksPort')
-      ..writeln('ControlPort 127.0.0.1:$controlPort')
+      ..writeln(
+        'SocksPort 127.0.0.1:$_activeSocksPort IsolateClientAddr IsolateClientProtocol IsolateDestPort IsolateDestAddr',
+      )
+      ..writeln('ControlPort 127.0.0.1:$_activeControlPort')
       ..writeln('DataDirectory ${dir.path}')
       ..writeln('CookieAuthentication 1')
       ..writeln('ClientOnly 1')
       ..writeln('SafeSocks 1')
       ..writeln('TestSocks 1')
       ..writeln('WarnUnsafeSocks 1')
-      ..writeln('AvoidDiskWrites 1');
+      ..writeln('AvoidDiskWrites 1')
+      ..writeln('HiddenServiceSingleHopMode 0')
+      ..writeln('HiddenServiceNonAnonymousMode 0');
 
     await torrcFile.writeAsString(configContent.toString());
     return torrcFile;
@@ -171,36 +204,51 @@ class EmbeddedTorManager {
 
   /// Inicia o processo Tor em segundo plano e monitora o bootstrap dos circuitos Onion.
   Future<bool> startEmbeddedTor({
-    Duration timeout = const Duration(seconds: 45),
+    Duration timeout = const Duration(seconds: 60),
   }) async {
-    if (_status == EmbeddedTorStatus.ready) return true;
+    if (_status == EmbeddedTorStatus.ready) {
+      final op = await verifyOperationalState();
+      if (op.daemonSocksActive && op.circuitOperational) {
+        return true;
+      }
+      _status = EmbeddedTorStatus.stopped;
+    }
 
-    // Se já houver um listener respondendo na porta SOCKS, valida se é SOCKS5 Tor
-    // e se o ControlPort (quando cookie presente) reporta circuito 100% operacional.
-    if (await _portProbe('127.0.0.1', socksPort)) {
+    // Se já houver um listener respondendo na porta SOCKS, somente reutiliza
+    // se pertencer ao nosso DataDirectory (control_auth_cookie autenticado e PROGRESS=100).
+    // Caso outra instância não auditável ocupe a porta 9050, inicia daemon isolado em portas próprias.
+    if (await _portProbe('127.0.0.1', _activeSocksPort)) {
       final cookieFile = File('$dataDirectory/control_auth_cookie');
       if (await cookieFile.exists()) {
         final diag = await TorDiagnostics.diagnose(
           host: '127.0.0.1',
-          socksPort: socksPort,
-          controlPort: controlPort,
+          socksPort: _activeSocksPort,
+          controlPort: _activeControlPort,
           controlCookiePath: cookieFile.path,
         );
-        if (!diag.socksReachable) {
-          _status = EmbeddedTorStatus.error;
-          _lastSummary = diag.message;
-          return false;
+        final bootstrapped100 = diag.socksReachable &&
+            diag.controlPortReachable &&
+            (diag.bootstrapStatus?.contains('PROGRESS=100') ?? false);
+        if (bootstrapped100) {
+          _status = EmbeddedTorStatus.ready;
+          _currentProgress = 100;
+          _lastSummary = 'Conectado ao túnel Tor Onion v3 auditado (100%)';
+          _bootstrapController.add(TorBootstrapEvent(
+            progressPercent: 100,
+            stepSummary: _lastSummary,
+            status: EmbeddedTorStatus.ready,
+          ));
+          return true;
         }
       }
-      _status = EmbeddedTorStatus.ready;
-      _currentProgress = 100;
-      _lastSummary = 'Conectado a túnel SOCKS5 Tor ativo';
-      _bootstrapController.add(TorBootstrapEvent(
-        progressPercent: 100,
-        stepSummary: _lastSummary,
-        status: EmbeddedTorStatus.ready,
-      ));
-      return true;
+      // Porta ocupada por outro daemon sem cookie auditável do Nix -> isola em portas dedicadas.
+      if (_activeSocksPort == 9050) {
+        _activeSocksPort = 19050;
+        _activeControlPort = 19051;
+      } else {
+        _activeSocksPort += 2;
+        _activeControlPort += 2;
+      }
     }
 
     final binary = await locateTorBinary();
@@ -213,7 +261,12 @@ class EmbeddedTorManager {
     final torrc = await generateHardenedTorrc();
     _status = EmbeddedTorStatus.starting;
     _currentProgress = 5;
-    _lastSummary = 'Iniciando processo Tor isolado...';
+    _lastSummary = 'Iniciando processo Tor isolado (Onion v3)...';
+    _bootstrapController.add(TorBootstrapEvent(
+      progressPercent: _currentProgress,
+      stepSummary: _lastSummary,
+      status: _status,
+    ));
 
     final completer = Completer<bool>();
 
@@ -317,28 +370,150 @@ class EmbeddedTorManager {
     }
   }
 
+  /// Verifica ControlPort autenticado, circuito BUILT em 100% e provisiona serviço efêmero Onion v3.
+  Future<
+      ({
+        bool socksActive,
+        bool circuitOperational,
+        bool onionV3Ready,
+        String? onionV3Address,
+        String? torVersion,
+        String detail,
+      })> verifyAndProvisionOnionV3({
+    int virtualPort = 80,
+    int targetPort = 18080,
+  }) async {
+    final socksOk = await _portProbe('127.0.0.1', _activeSocksPort);
+    if (!socksOk) {
+      return (
+        socksActive: false,
+        circuitOperational: false,
+        onionV3Ready: false,
+        onionV3Address: null,
+        torVersion: _torVersion,
+        detail:
+            'Porta SOCKS5 127.0.0.1:$_activeSocksPort inativa ou protocolo inválido.',
+      );
+    }
+
+    final cookieFile = File('$dataDirectory/control_auth_cookie');
+    if (!await cookieFile.exists()) {
+      return (
+        socksActive: true,
+        circuitOperational: false,
+        onionV3Ready: false,
+        onionV3Address: null,
+        torVersion: _torVersion,
+        detail:
+            'Cookie ControlPort ausente em $dataDirectory — não é possível auditar bootstrap Onion v3.',
+      );
+    }
+
+    TorControlClient? ctrl;
+    try {
+      ctrl = await TorControlClient.connect(
+        host: '127.0.0.1',
+        port: _activeControlPort,
+        timeout: const Duration(seconds: 4),
+      );
+      await ctrl.authenticateCookieFile(cookieFile.path);
+
+      final bootstrap = await ctrl.getInfo('status/bootstrap-phase');
+      final bootstrapped100 = bootstrap.contains('PROGRESS=100');
+
+      try {
+        _torVersion = (await ctrl.getInfo('version')).trim();
+      } catch (_) {}
+
+      bool hasBuiltCircuit = false;
+      try {
+        final liveness = (await ctrl.getInfo('network-liveness')).trim().toLowerCase();
+        hasBuiltCircuit = liveness == 'up';
+      } catch (_) {}
+      if (!hasBuiltCircuit) {
+        try {
+          final circuits = await ctrl.getInfo('circuit-status');
+          hasBuiltCircuit = circuits.contains('BUILT');
+        } catch (_) {}
+      }
+
+      final circuitOk = bootstrapped100 && hasBuiltCircuit;
+      if (!circuitOk) {
+        return (
+          socksActive: true,
+          circuitOperational: false,
+          onionV3Ready: false,
+          onionV3Address: _activeOnionV3Address,
+          torVersion: _torVersion,
+          detail: 'Tor ainda sem circuito 100% operacional ($bootstrap).',
+        );
+      }
+
+      if (_activeOnionV3Address == null ||
+          !TransportPolicy.isValidOnionV3Host(_activeOnionV3Address!)) {
+        final created = await ctrl.addOnionV3(
+          virtualPort: virtualPort,
+          targetPort: targetPort,
+          detach: true,
+        );
+        final candidate = '${created.serviceId}.onion';
+        if (TransportPolicy.isValidOnionV3Host(candidate)) {
+          _activeOnionV3Address = candidate;
+        }
+      }
+
+      final onionReady = _activeOnionV3Address != null &&
+          TransportPolicy.isValidOnionV3Host(_activeOnionV3Address!);
+
+      return (
+        socksActive: true,
+        circuitOperational: true,
+        onionV3Ready: onionReady,
+        onionV3Address: _activeOnionV3Address,
+        torVersion: _torVersion,
+        detail: onionReady
+            ? 'Tor ${_torVersion ?? ""} 100% · Circuito BUILT · Onion v3: $_activeOnionV3Address'
+            : 'Circuito Tor 100%, porém serviço Onion v3 não pôde ser confirmado.',
+      );
+    } catch (e) {
+      return (
+        socksActive: true,
+        circuitOperational: false,
+        onionV3Ready: false,
+        onionV3Address: _activeOnionV3Address,
+        torVersion: _torVersion,
+        detail: 'Falha ao auditar Tor ControlPort em 127.0.0.1:$_activeControlPort: $e',
+      );
+    } finally {
+      try {
+        await ctrl?.close();
+      } catch (_) {}
+    }
+  }
+
   /// Diferencia daemon SOCKS5 ativo de circuito Tor 100% operacional.
   Future<({bool daemonSocksActive, bool circuitOperational, String detail})>
       verifyOperationalState() async {
-    final socksOk = await _portProbe('127.0.0.1', socksPort);
+    final socksOk = await _portProbe('127.0.0.1', _activeSocksPort);
     if (!socksOk) {
       return (
         daemonSocksActive: false,
         circuitOperational: false,
-        detail: 'Porta SOCKS5 127.0.0.1:$socksPort inativa ou protocolo inválido.',
+        detail:
+            'Porta SOCKS5 127.0.0.1:$_activeSocksPort inativa ou protocolo inválido.',
       );
     }
     final cookieFile = File('$dataDirectory/control_auth_cookie');
     if (await cookieFile.exists()) {
       final diag = await TorDiagnostics.diagnose(
         host: '127.0.0.1',
-        socksPort: socksPort,
-        controlPort: controlPort,
+        socksPort: _activeSocksPort,
+        controlPort: _activeControlPort,
         controlCookiePath: cookieFile.path,
       );
       final circuitOk = diag.socksReachable &&
-          (diag.bootstrapStatus == null ||
-              diag.bootstrapStatus!.contains('PROGRESS=100'));
+          diag.controlPortReachable &&
+          (diag.bootstrapStatus?.contains('PROGRESS=100') ?? false);
       return (
         daemonSocksActive: true,
         circuitOperational: circuitOk,
@@ -383,6 +558,7 @@ class EmbeddedTorManager {
     if (process != null) await _terminateProcess(process);
     _status = EmbeddedTorStatus.stopped;
     _currentProgress = 0;
+    _activeOnionV3Address = null;
     _lastSummary = 'Parado';
   }
 

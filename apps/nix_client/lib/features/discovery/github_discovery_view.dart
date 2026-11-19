@@ -467,6 +467,7 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
         repo: repo,
         strictTorMode: state.settings.transportProfile.toLowerCase().contains('tor') ||
             state.settings.transportProfile.toLowerCase().contains('fail-closed'),
+        isStrictOffGridMode: state.isStrictOffGridMode,
       ),
     );
   }
@@ -941,8 +942,14 @@ class _RepoListItem extends StatelessWidget {
 TransportPolicy enforceStarwireDownloadTransport({
   required bool strictTorMode,
   bool allowClearnetBypass = false,
+  bool isStrictOffGridMode = false,
   int socksPort = 9050,
 }) {
+  if (isStrictOffGridMode) {
+    throw const TransportBlockedException(
+      '[Modo Off-Grid Estrito] Downloads de rede/Wi-Fi estão bloqueados. Utilize apenas Bluetooth BLE ou Rádio LoRa.',
+    );
+  }
   if (strictTorMode && allowClearnetBypass) {
     throw const TransportBlockedException(
       '[Fail-Closed] Bypass clearnet proibido no Modo Tor Estrito (Starwire GitHub Discovery).',
@@ -965,10 +972,12 @@ TransportPolicy enforceStarwireDownloadTransport({
 class _RepoZipDownloadDialog extends StatefulWidget {
   final GithubRepository repo;
   final bool strictTorMode;
+  final bool isStrictOffGridMode;
 
   const _RepoZipDownloadDialog({
     required this.repo,
     required this.strictTorMode,
+    this.isStrictOffGridMode = false,
   });
 
   @override
@@ -1006,6 +1015,7 @@ class _RepoZipDownloadDialogState extends State<_RepoZipDownloadDialog> {
       final policy = enforceStarwireDownloadTransport(
         strictTorMode: widget.strictTorMode,
         allowClearnetBypass: false,
+        isStrictOffGridMode: widget.isStrictOffGridMode,
       );
       final home = Platform.environment['HOME'] ?? Directory.systemTemp.path;
       final outDir = Directory('$home/.local/share/nix/downloads');

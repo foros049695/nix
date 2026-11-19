@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'core/security/fail_closed_http_overrides.dart';
+import 'core/security/platform_runtime.dart';
 import 'core/theme.dart';
 import 'core/theme/nix_colors.dart';
 import 'core/theme/nix_palette.dart';
@@ -7,8 +9,12 @@ import 'features/navigation/app_shell.dart';
 import 'features/splash/splash_screen.dart';
 import 'state/nix_state.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Instala firewall HTTP fail-closed ANTES de qualquer componente de rede ou UI
+  // para impedir qualquer contato direto com a rede doméstica do usuário.
+  NixFailClosedHttpOverrides.install();
+  await NixPlatformPaths.initialize();
   runApp(
     ChangeNotifierProvider(
       create: (_) => NixState(),

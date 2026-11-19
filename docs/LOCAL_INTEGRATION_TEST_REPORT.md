@@ -15,7 +15,9 @@
 | **Core Criptográfico (`modules/core_crypto`)** | `dart analyze --fatal-infos && dart test` | ✅ PASS | 10/10 | 0 issues no analyzer; Ed25519/X25519, AEAD, Argon2id, X3DH, Double Ratchet atômico pré-commit, `ReplayGuard`, `PqxdhCombiner`, `SignedReleaseManifest`. |
 | **Transporte (`modules/transport`)** | `dart analyze --fatal-infos && dart test` | ✅ PASS | 22/22 | 0 issues no analyzer; **Issue `#11`** (TLS nativo `RawSecureSocket` sobre SOCKS5, rejeição de cert inválido, DNS remoto, `UnsupportedTransportSchemeException`), `EmbeddedTorManager` isolado, Bluetooth Mesh `NIXB`, Radio Off-Grid `<=240B`. |
 | **Cliente Flutter (`apps/nix_client`) — Analyzer** | `flutter analyze --no-fatal-infos` | ✅ PASS | 0 erros, 0 warnings | Apenas diagnósticos informativos (`prefer_const_constructors` / `deprecated_member_use`) pré-existentes. |
-| **Cliente Flutter (`apps/nix_client`) — Suíte Completa** | `HOME="$TMP_HOME" FLUTTER_TEST=true flutter test` | ✅ PASS | 89/89 | Inclui todas as suítes legadas + `transactional_messaging_fault_test.dart` (6), `audit_integration_verification_test.dart` (12) e `plain_sqlite_rejection_probe_test.dart` (1). |
+| **Cliente Flutter (`apps/nix_client`) — Suíte Completa** | `HOME="$TMP_HOME" FLUTTER_TEST=true flutter test` | ✅ PASS | 97/97 | Inclui todas as suítes legadas + `transactional_messaging_fault_test.dart` (6), `audit_integration_verification_test.dart` (12), `plain_sqlite_rejection_probe_test.dart` (1) e `security_startup_gate_and_radio_test.dart` (8). |
+| **Build Desktop Linux + Tor Embutido** | `flutter build linux --release && ./scripts/bundle_tor_linux.sh` | ✅ PASS | Bundle completo | `nix_client`, `libapp.so`, `libsqlcipher_flutter_libs_plugin.so` e `tor` 0.4.9.15 (`--verify-config` válido). |
+| **Build Android APK Universal (NDK)** | `flutter build apk --release` (`minSdk 24`, `targetSdk 35`) | ✅ PASS | 52 MB (4 ABIs) | Verificados no APK: `lib/*/libtor.so` (0.4.8.17.2), `lib/*/libsqlcipher.so`, `MainActivity.kt` (TEE/StrongBox), `NixBleMeshController.kt` (GATT), `NixRNodeRadioController.kt` (USB-OTG/BLE KISS), `allowBackup=false`, `network_security_config.xml`. |
 
 ---
 
@@ -79,10 +81,22 @@
 
 ---
 
-## 3. Limitações de Laboratório Local
+## 3. Escudo Fail-Closed de Inicialização, Modo Off-Grid Estrito e Drivers Nativos Android
 
-Os itens abaixo **não podem ser substituídos por simulação local** e permanecem classificados como `UNVERIFIED` ou `PARTIAL` até execução na infraestrutura/hardware correspondente:
+- **Teste:** `apps/nix_client/test/security_startup_gate_and_radio_test.dart` (8/8).
+- **Cenários verificados localmente:**
+  1. `NixFailClosedHttpOverrides` bloqueia conexões HTTP/HTTPS diretas pela rede doméstica (`TransportBlockedException`) e permite apenas loopback `127.0.0.1`.
+  2. `AppShell` em modo produção (`enforceStartupGate: true`) bloqueia a entrada sem Tor Onion v3 100% operacional + todas as camadas criptográficas (SQLCipher + KeyVault + Seed A).
+  3. **Modo Off-Grid Estrito (BLE / LoRa · Zero Internet):** `NixState.enterStrictOffGridMode()` mantém o firewall HTTP anti-clearnet ativo, desativa `syncWithRelay()`, Starwire e conectores remotos (`TransportBlockedException`), continua exigindo SQLCipher + KeyVault + Seed A e libera o onboarding offline e a comunicação local via Bluetooth BLE (`NIXB`) e Rádio LoRa (`NX` KISS).
+  4. `KissFrameCodec` + `RadioPacketCodec` (`<= 240B`, CRC16-CCITT) + `BluetoothMeshManager.onTransmitPacket` verificados localmente em memória/enquadramento (sem simular transmissão de rádio físico).
+
+---
+
+## 4. Limitações de Laboratório Local e Itens Ainda Não Testados em Hardware Físico
+
+Os itens abaixo **permanecem classificados como `UNVERIFIED` / pendentes de validação em hardware real**:
 1. Operação contínua e soak test de 60 minutos em **VPS externa Debian 13** com Onion Service v3 real.
-2. Execução de APK compilado com NDK em **dispositivo Android físico** (validação de `libsqlcipher` ARM64, `AndroidKeyStore` TEE e Tor móvel).
-3. Transmissão real entre dois dispositivos via **Bluetooth BLE físico** e **rádio LoRa / Meshtastic / Reticulum RNode**.
-4. Liquidação financeira real contra **`monero-wallet-rpc`** em `stagenet`/`mainnet`.
+2. **Onboarding + SQLCipher + AndroidKeyStore TEE/StrongBox** em execução nos dois celulares Android físicos (criação de Seed A com frase-passe vazia e verificação de vínculo automático no TEE após reinicialização).
+3. **Bluetooth BLE Físico (`NIXB`)** entre os dois celulares Android reais (descoberta via GATT/Advertising e entrega bidirecional pelo ar).
+4. **Rádio LoRa / Reticulum RNode físico:** validado apenas o enquadramento local `NX` (CRC16-CCITT válido e framing KISS) sem transceptor LoRa físico conectado.
+5. Liquidação financeira real contra **`monero-wallet-rpc`** em `stagenet`/`mainnet`.

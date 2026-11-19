@@ -23,6 +23,10 @@ import '../core/models/github_repo.dart';
 import '../core/theme/nix_colors.dart';
 import '../core/theme/nix_palette.dart';
 import '../core/security/security_context.dart';
+import '../core/security/fail_closed_http_overrides.dart';
+import '../core/security/platform_runtime.dart';
+import '../core/security/sovereign_security_gate.dart';
+import '../core/transport/hardware_radio_bridge.dart';
 import '../core/database/local_database.dart';
 import '../core/database/repositories.dart';
 import '../core/security/key_vault.dart';
@@ -156,14 +160,244 @@ class NixState extends ChangeNotifier {
 
   Timer? _callTimer;
 
-  // Estado Tor Onion
-  final String _onionAddress = 'gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion';
+  // Estado Tor Onion v3 & Gate Fail-Closed de Inicialização
+  String _onionAddress = 'aguardando-circuito-onion-v3';
   bool _isTorRunning = false;
+  bool _torBootstrapped100 = false;
+  bool _torOnionV3Ready = false;
+  bool _failClosedPolicyVerified = false;
+  bool _isStrictOffGridMode = false;
+  bool _isBootstrappingSecurityGate = false;
+  String? _securityGateError;
   String _torDiagnosticDetail = 'Tor aguardando conexão SOCKS5 em 127.0.0.1:9050';
+  final List<String> _torBootstrapLogs = [];
+  StreamSubscription<TorBootstrapEvent>? _torBootstrapSub;
+  Timer? _torWatchdogTimer;
 
-  // Gerenciador de Tor Embutido (Zero-Configuration / Sem Orbot)
-  final EmbeddedTorManager _embeddedTor = EmbeddedTorManager();
+  // Gerenciador de Tor Embutido (Zero-Configuration / Desktop Linux & Android NDK libtor.so)
+  final EmbeddedTorManager _embeddedTor = EmbeddedTorManager(
+    dataDirResolver: () => NixPlatformPaths.resolveDataFile('tor_data'),
+    extraBinaryCandidatesResolver: NixPlatformPaths.extraTorBinaryCandidates,
+  );
   EmbeddedTorManager get embeddedTor => _embeddedTor;
+  bool get isMockMode => _isMockMode;
+  bool get isStrictOffGridMode => _isStrictOffGridMode;
+  List<String> get torBootstrapLogs => List.unmodifiable(_torBootstrapLogs);
+
+  void _appendTorLog(String line) {
+    final ts = DateTime.now().toUtc().toIso8601String().substring(11, 19);
+    _torBootstrapLogs.add('[$ts] $line');
+    if (_torBootstrapLogs.length > 60) {
+      _torBootstrapLogs.removeAt(0);
+    }
+  }
+
+  /// Relatório consolidado do Gate Fail-Closed (Tor Onion v3 + Criptografia).
+  /// Bloqueia a entrada no aplicativo enquanto qualquer requisito estiver ausente.
+  SovereignSecurityGateStatus get securityGate {
+    final clearnetBlocked = NixFailClosedHttpOverrides.isInstalled;
+    final sqlCipherOk = _localDatabase?.cipherInfo.isEncrypted ?? false;
+    final vaultOk = _keyVault.isUnlocked;
+    final identityOk = _primaryIdentity != null && _sovereignMessenger != null;
+
+    return SovereignSecurityGateStatus(
+      clearnetFirewallActive: clearnetBlocked,
+      torSocksActive: _isTorRunning,
+      torBootstrapped100: _torBootstrapped100,
+      torOnionV3Ready: _torOnionV3Ready,
+      failClosedPolicyVerified: _failClosedPolicyVerified,
+      isStrictOffGridMode: _isStrictOffGridMode,
+      sqlCipherEncrypted: sqlCipherOk,
+      keyVaultUnlocked: vaultOk,
+      identityKeysLoaded: identityOk,
+      torBootstrapPercent: _torBootstrapped100 ? 100 : _embeddedTor.currentProgress,
+      torStatusMessage: _torDiagnosticDetail,
+      liveOnionV3Address: _torOnionV3Ready ? _onionAddress : null,
+      torVersion: _embeddedTor.torVersion,
+      torBinaryPath: _embeddedTor.resolvedBinaryPath,
+      sqlCipherVersion: _localDatabase?.cipherInfo.cipherVersion,
+      osKeyringBackend: _keyVault.osKeyStorage.backendName,
+      blockingReason: _securityGateError,
+      isBootstrapping: _isBootstrappingSecurityGate,
+    );
+  }
+
+  /// Entra em Modo Off-Grid Estrito (Bluetooth BLE / Rádio LoRa · Zero Wi-Fi/Internet).
+  ///
+  /// Mantém o firewall HTTP anti-clearnet 100% ativo, desliga qualquer acesso à rede IP/relay,
+  /// exige toda a criptografia local (SQLCipher + KeyVault + Seed A) e libera apenas comunicação
+  /// física de proximidade via Bluetooth BLE Mesh (`NIXB`) e Rádio LoRa / RNode (`NX` KISS).
+  Future<SovereignSecurityGateStatus> enterStrictOffGridMode() async {
+    if (_disposed) return securityGate;
+    _torWatchdogTimer?.cancel();
+    await _torBootstrapSub?.cancel();
+    _isBootstrappingSecurityGate = false;
+
+    // 1. Garante firewall HTTP Fail-Closed contra rede doméstica/Wi-Fi
+    NixFailClosedHttpOverrides.install();
+
+    // 2. Audita política Fail-Closed de bloqueio clearnet
+    bool failClosedOk = false;
+    try {
+      const strictPolicy = TransportPolicy(
+        mode: TransportMode.torFailClosed,
+        socksHost: '127.0.0.1',
+        socksPort: 9050,
+      );
+      try {
+        strictPolicy.assertAllowedUri(Uri.parse('https://example.com'));
+        failClosedOk = false;
+      } on TransportBlockedException {
+        failClosedOk = true;
+      }
+    } catch (_) {
+      failClosedOk = false;
+    }
+
+    // 3. Encerra qualquer daemon Tor ativo — zero tráfego IP em Modo Off-Grid
+    try {
+      await _embeddedTor.stop();
+    } catch (_) {}
+
+    _isTorRunning = false;
+    _torBootstrapped100 = false;
+    _torOnionV3Ready = false;
+    _failClosedPolicyVerified = failClosedOk;
+    _isStrictOffGridMode = true;
+    _securityGateError = null;
+    _torDiagnosticDetail =
+        'Modo Off-Grid Estrito ativo · Rede Wi-Fi/Internet bloqueada · Rádios BLE e LoRa disponíveis.';
+    _settings = _settings.copyWith(
+      transportProfile: 'Off-Grid BLE/LoRa (Zero Rede IP)',
+    );
+    _appendTorLog(
+      'MODO OFF-GRID ESTRITO ATIVADO: rede Wi-Fi/Internet bloqueada; apenas BLE Mesh & LoRa/RNode.',
+    );
+    if (!_disposed) notifyListeners();
+
+    if (!_disposed && _localDatabase == null) {
+      await _checkPersistedOnboardingStatus();
+    }
+    unawaited(refreshBleHardwareStatus());
+    if (!_disposed) notifyListeners();
+    return securityGate;
+  }
+
+  /// Sai do Modo Off-Grid Estrito e retorna ao Escudo Fail-Closed Tor Onion v3.
+  Future<void> exitOffGridModeAndConnectTor() async {
+    if (_disposed) return;
+    _isStrictOffGridMode = false;
+    _settings = _settings.copyWith(
+      transportProfile: 'Tor Onion v3 (Fail-Closed)',
+    );
+    _torDiagnosticDetail = 'Retornando ao modo Tor Onion v3 Fail-Closed...';
+    notifyListeners();
+    await bootstrapSovereignEnvironment();
+  }
+
+  /// Abre diretamente o painel de Controle de Rádio BLE Mesh & LoRa / RNode.
+  void openHardwareRadioSettings() {
+    _isProfileOverlayOpen = true;
+    _isSettingsOpenInOverlay = true;
+    _activeSettingsCategory = SettingsCategory.connections;
+    notifyListeners();
+  }
+
+  /// Automação completa de inicialização segura (Fail-Closed):
+  /// 1. Garante firewall HTTP contra vazamentos na rede doméstica.
+  /// 2. Inicia daemon Tor embutido (0..100%) e provisiona/valida Onion v3.
+  /// 3. Valida bloqueio ativo de clearnet e ativa watchdog contínuo.
+  /// 4. Tenta desbloqueio automático do KeyVault/SQLCipher pelo chaveiro do SO (libsecret / AndroidKeyStore TEE).
+  Future<SovereignSecurityGateStatus> bootstrapSovereignEnvironment() async {
+    if (_disposed) return securityGate;
+    if (_isBootstrappingSecurityGate) return securityGate;
+
+    _isBootstrappingSecurityGate = true;
+    _securityGateError = null;
+    NixFailClosedHttpOverrides.install();
+    _appendTorLog('Firewall HTTP Fail-Closed instalado (bloqueio de rede doméstica ativo).');
+    _torDiagnosticDetail = 'Iniciando daemon Tor Onion v3 embutido...';
+    notifyListeners();
+
+    try {
+      await _torBootstrapSub?.cancel();
+      _torBootstrapSub = _embeddedTor.onBootstrapProgress.listen((ev) {
+        if (_disposed) return;
+        _torDiagnosticDetail = '[${ev.progressPercent}%] ${ev.stepSummary}';
+        _appendTorLog('Tor ${ev.progressPercent}%: ${ev.stepSummary}');
+        notifyListeners();
+      });
+
+      final started = await _embeddedTor.startEmbeddedTor(
+        timeout: const Duration(seconds: 75),
+      );
+      if (_disposed) return securityGate;
+
+      if (!started) {
+        _isTorRunning = false;
+        _torBootstrapped100 = false;
+        _torOnionV3Ready = false;
+        _securityGateError =
+            'Falha ao estabelecer circuito Tor Onion v3: ${_embeddedTor.lastSummary}';
+        _torDiagnosticDetail = _securityGateError!;
+        _appendTorLog('BLOQUEADO: $_securityGateError');
+      } else {
+        final report = await verifyTorTransportAndFailClosed();
+        if (!report.socksActive ||
+            !report.circuitOperational ||
+            !report.failClosedVerified ||
+            !_torOnionV3Ready) {
+          _securityGateError =
+              'Auditoria Tor Onion v3 incompleta: ${report.detail}';
+          _appendTorLog('BLOQUEADO: $_securityGateError');
+        } else {
+          _securityGateError = null;
+          _appendTorLog(
+            'Tor Onion v3 100% operacional ($_onionAddress · SOCKS5 127.0.0.1:${_embeddedTor.socksPort}).',
+          );
+          _startTorWatchdog();
+        }
+      }
+
+      // Após validar transporte Tor, tenta montar o cofre SQLCipher (se ainda não aberto)
+      if (!_disposed && _localDatabase == null) {
+        await _checkPersistedOnboardingStatus();
+      }
+    } catch (e) {
+      _securityGateError = 'Erro na inicialização soberana fail-closed: $e';
+      _torDiagnosticDetail = _securityGateError!;
+      _appendTorLog('ERRO: $_securityGateError');
+    } finally {
+      _isBootstrappingSecurityGate = false;
+      if (!_disposed) notifyListeners();
+    }
+    return securityGate;
+  }
+
+  void _startTorWatchdog() {
+    if (_isMockMode || Platform.environment.containsKey('FLUTTER_TEST')) return;
+    _torWatchdogTimer?.cancel();
+    _torWatchdogTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
+      if (_disposed || _isBootstrappingSecurityGate) return;
+      final op = await _embeddedTor.verifyOperationalState();
+      if (_disposed) return;
+      if (!op.daemonSocksActive || !op.circuitOperational) {
+        _isTorRunning = false;
+        _torBootstrapped100 = false;
+        _torOnionV3Ready = false;
+        _securityGateError =
+            'Conexão Tor Onion v3 interrompida (${op.detail}). Acesso bloqueado para evitar vazamento na rede doméstica.';
+        _torDiagnosticDetail = _securityGateError!;
+        _securityContext = _securityContext.copyWith(
+          isTorConnected: false,
+          status: SecuritySubsystemState.failed,
+        );
+        _appendTorLog('WATCHDOG FAIL-CLOSED: Tor caiu — reconectando automaticamente...');
+        notifyListeners();
+        unawaited(bootstrapSovereignEnvironment());
+      }
+    });
+  }
 
   /// Inicia o daemon Tor embutido nativo de forma automática e transparente.
   Future<bool> startEmbeddedTor() async {
@@ -171,7 +405,8 @@ class NixState extends ChangeNotifier {
     notifyListeners();
     final ok = await _embeddedTor.startEmbeddedTor();
     if (ok) {
-      return checkTorDaemonStatus();
+      final report = await verifyTorTransportAndFailClosed();
+      return report.socksActive && report.circuitOperational && _torOnionV3Ready;
     }
     _torDiagnosticDetail = _embeddedTor.lastSummary;
     notifyListeners();
@@ -181,6 +416,8 @@ class NixState extends ChangeNotifier {
   // Banco de Dados Local Cifrado & KeyVault (P0-2)
   bool _disposed = false;
   bool _isMockMode = false;
+  bool _enforceStartupGate = false;
+  bool get enforceStartupGate => _enforceStartupGate;
   LocalDatabase? _localDatabase;
   late final KeyVault _keyVault;
   Uint8List? _activeMasterKey;
@@ -287,17 +524,130 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Gerenciador de Malha por Proximidade Bluetooth (estilo Briar BTP)
+  // Gerenciador de Malha por Proximidade Bluetooth (estilo Briar BTP) & Rádio LoRa / RNode
   late final BluetoothMeshManager _bluetoothMesh = BluetoothMeshManager(
     localCardId: _userProfile.publicId,
   );
+  late final NixHardwareRadioBridge _hardwareRadioBridge =
+      NixHardwareRadioBridge(
+    bluetoothMesh: _bluetoothMesh,
+    onLog: _appendHardwareRadioLog,
+    onLoraFrameRx: (src, payload, seq) {
+      final decodedText = utf8.decode(payload, allowMalformed: true);
+      _appendHardwareRadioLog(HardwareRadioLogEntry(
+        timestamp: DateTime.now().toUtc(),
+        medium: 'LORA',
+        direction: 'RX',
+        summary: 'Payload #$seq ($src): "$decodedText"',
+      ));
+    },
+  );
+  final List<HardwareRadioLogEntry> _hardwareRadioLogs = [];
+  BleHardwareStatus? _bleHardwareStatus;
+  List<RNodeHardwareDevice> _detectedRNodeDevices = const [];
+  StreamSubscription<BluetoothProximityPeer>? _blePeerSub;
+  StreamSubscription<Map<String, dynamic>>? _bleRxSub;
+
+  void _appendHardwareRadioLog(HardwareRadioLogEntry entry) {
+    _hardwareRadioLogs.insert(0, entry);
+    if (_hardwareRadioLogs.length > 80) {
+      _hardwareRadioLogs.removeLast();
+    }
+    if (!_disposed) notifyListeners();
+  }
 
   BluetoothMeshManager get bluetoothMesh => _bluetoothMesh;
+  NixHardwareRadioBridge get hardwareRadioBridge => _hardwareRadioBridge;
   bool get isBluetoothMeshEnabled => _bluetoothMesh.isMeshEnabled;
+  BleHardwareStatus? get bleHardwareStatus => _bleHardwareStatus;
+  List<RNodeHardwareDevice> get detectedRNodeDevices =>
+      List.unmodifiable(_detectedRNodeDevices);
+  List<HardwareRadioLogEntry> get hardwareRadioLogs =>
+      List.unmodifiable(_hardwareRadioLogs);
 
-  void setBluetoothMeshEnabled(bool enabled) {
+  Future<BleHardwareStatus> refreshBleHardwareStatus() async {
+    _hardwareRadioBridge.attach();
+    _bleHardwareStatus = await _hardwareRadioBridge.getBleStatus();
+    if (!_disposed) notifyListeners();
+    return _bleHardwareStatus!;
+  }
+
+  Future<bool> requestBleHardwarePermissions() async {
+    final ok = await _hardwareRadioBridge.requestBlePermissions();
+    await refreshBleHardwareStatus();
+    return ok;
+  }
+
+  Future<void> setBluetoothMeshEnabled(bool enabled) async {
+    _hardwareRadioBridge.attach();
     _bluetoothMesh.setMeshEnabled(enabled);
-    notifyListeners();
+    if (enabled) {
+      final localId = _primaryIdentity?.publicId ??
+          (_userProfile.publicId.isNotEmpty ? _userProfile.publicId : 'NIX-LOCAL');
+      await _hardwareRadioBridge.startNativeBleMesh(localId);
+    } else {
+      await _hardwareRadioBridge.stopNativeBleMesh();
+    }
+    await refreshBleHardwareStatus();
+  }
+
+  /// Envia um pacote NIXB assinado (Ed25519) via Bluetooth BLE físico para pares Nix próximos.
+  Future<int> sendBleTestPacket(String message, {String? targetAddress}) async {
+    final text = message.trim();
+    if (text.isEmpty) return 0;
+    final bodyBytes = utf8.encode(text);
+    Uint8List payload;
+    if (_primaryIdentity != null) {
+      final sig = await _primaryIdentity!.sign(bodyBytes);
+      payload = Uint8List.fromList(utf8.encode(jsonEncode({
+        'from': _primaryIdentity!.publicId,
+        'edPub': _primaryIdentity!.ed25519PublicHex,
+        'msg': text,
+        'sig': base64Encode(sig),
+        'ts': DateTime.now().toUtc().millisecondsSinceEpoch,
+      })));
+    } else {
+      payload = Uint8List.fromList(bodyBytes);
+    }
+    final sent = await _bluetoothMesh.broadcastEnvelope(
+      recipientCardId: targetAddress ?? 'NIX-BLE-BROADCAST',
+      payload: payload,
+      targetDeviceAddress: targetAddress,
+    );
+    _appendHardwareRadioLog(HardwareRadioLogEntry(
+      timestamp: DateTime.now().toUtc(),
+      medium: 'BLE',
+      direction: 'TX',
+      summary: sent > 0
+          ? 'Teste NIXB assinado enviado para $sent par(es): "$text"'
+          : 'Nenhum par BLE em alcance ou falha de escrita GATT.',
+    ));
+    return sent;
+  }
+
+  Future<List<RNodeHardwareDevice>> scanRNodeHardwareDevices() async {
+    _detectedRNodeDevices = await _hardwareRadioBridge.scanRNodeDevices();
+    if (!_disposed) notifyListeners();
+    return _detectedRNodeDevices;
+  }
+
+  Future<bool> connectRNodeHardwareDevice(RNodeHardwareDevice device) async {
+    final ok = await _hardwareRadioBridge.connectRNodeDevice(device);
+    if (!_disposed) notifyListeners();
+    return ok;
+  }
+
+  Future<void> disconnectRNodeHardwareDevice() async {
+    await _hardwareRadioBridge.disconnectRNode();
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<({bool sent, String detail})> sendLoraTestMessage(String text) async {
+    final res = await _hardwareRadioBridge.sendLoraShortPacket(
+      Uint8List.fromList(utf8.encode(text.trim())),
+    );
+    if (!_disposed) notifyListeners();
+    return res;
   }
 
   // Estado e Controle de Onboarding Soberano (Seção 2 / Fase 6)
@@ -354,22 +704,46 @@ class NixState extends ChangeNotifier {
     final controlPort = customControlPort ?? _embeddedTor.controlPort;
     final cookiePath = '${_embeddedTor.dataDirectory}/control_auth_cookie';
     final hasCookie = File(cookiePath).existsSync();
-    final diag = await TorDiagnostics.diagnose(
-      host: '127.0.0.1',
-      socksPort: socksPort,
-      controlPort: controlPort,
-      controlCookiePath: hasCookie ? cookiePath : null,
-    );
-    final socksActive = diag.socksReachable;
-    final controlBootstrapped = diag.bootstrapStatus == null ||
-        diag.bootstrapStatus!.contains('PROGRESS=100');
-    final circuitOperational =
-        diag.socksReachable && (controlBootstrapped || !hasCookie);
+
+    bool socksActive = false;
+    bool circuitOperational = false;
+    bool onionV3Ready = false;
+    String detailMsg;
+
+    if (customSocksPort == null && customControlPort == null && hasCookie) {
+      final prov = await _embeddedTor.verifyAndProvisionOnionV3();
+      socksActive = prov.socksActive;
+      circuitOperational = prov.circuitOperational;
+      onionV3Ready = prov.onionV3Ready;
+      if (prov.onionV3Address != null && prov.onionV3Address!.isNotEmpty) {
+        _onionAddress = prov.onionV3Address!;
+      }
+      detailMsg = prov.detail;
+    } else {
+      final diag = await TorDiagnostics.diagnose(
+        host: '127.0.0.1',
+        socksPort: socksPort,
+        controlPort: controlPort,
+        controlCookiePath: hasCookie ? cookiePath : null,
+      );
+      socksActive = diag.socksReachable;
+      final controlBootstrapped = diag.bootstrapStatus == null ||
+          diag.bootstrapStatus!.contains('PROGRESS=100');
+      circuitOperational =
+          diag.socksReachable && (controlBootstrapped || !hasCookie);
+      onionV3Ready = circuitOperational &&
+          TransportPolicy.isValidOnionV3Host(_onionAddress);
+      detailMsg = diag.message;
+    }
+
     _isTorRunning = socksActive;
-    _torDiagnosticDetail = diag.message;
+    _torBootstrapped100 = circuitOperational;
+    _torOnionV3Ready = onionV3Ready;
+    _failClosedPolicyVerified = failClosedOk;
+    _torDiagnosticDetail = detailMsg;
     _securityContext = _securityContext.copyWith(
-      isTorConnected: circuitOperational,
-      status: circuitOperational
+      isTorConnected: circuitOperational && onionV3Ready,
+      status: (circuitOperational && onionV3Ready && failClosedOk)
           ? SecuritySubsystemState.ready
           : SecuritySubsystemState.failed,
     );
@@ -379,7 +753,7 @@ class NixState extends ChangeNotifier {
       circuitOperational: circuitOperational,
       failClosedVerified: failClosedOk,
       detail:
-          '${diag.message} · Fail-Closed=${failClosedOk ? "VERIFICADO" : "FALHOU"}',
+          '$detailMsg · OnionV3=${onionV3Ready ? "ATIVO" : "PENDENTE"} · Fail-Closed=${failClosedOk ? "VERIFICADO" : "FALHOU"}',
     );
   }
 
@@ -596,7 +970,8 @@ class NixState extends ChangeNotifier {
       return false;
     }
     final effectiveRequireEncryption = requireEncryption ??
-        (Platform.environment['NIX_REQUIRE_SQLCIPHER'] == 'true');
+        (!Platform.environment.containsKey('FLUTTER_TEST') ||
+            Platform.environment['NIX_REQUIRE_SQLCIPHER'] == 'true');
     final resolvedVaultPath = customVaultPath ?? KeyVault.getDefaultBootstrapPath();
     final resolvedDbPath = customDbPath ?? LocalDatabase.getDefaultDatabasePath();
     final existedVaultBefore =
@@ -726,7 +1101,8 @@ class NixState extends ChangeNotifier {
       path: customDbPath,
       rawCipherKey: Uint8List.fromList(result.masterKey!),
       requireEncryption: requireEncryption ??
-          (Platform.environment['NIX_REQUIRE_SQLCIPHER'] == 'true'),
+          (!Platform.environment.containsKey('FLUTTER_TEST') ||
+              Platform.environment['NIX_REQUIRE_SQLCIPHER'] == 'true'),
     );
     _securityContext = _securityContext.copyWith(
       isSqlCipherUnlocked: _localDatabase!.cipherInfo.isEncrypted,
@@ -766,7 +1142,8 @@ class NixState extends ChangeNotifier {
         path: customDbPath,
         rawCipherKey: Uint8List.fromList(masterKey),
         requireEncryption: requireEncryption ??
-            (Platform.environment['NIX_REQUIRE_SQLCIPHER'] == 'true'),
+            (!Platform.environment.containsKey('FLUTTER_TEST') ||
+                Platform.environment['NIX_REQUIRE_SQLCIPHER'] == 'true'),
       );
       _securityContext = _securityContext.copyWith(
         isSqlCipherUnlocked: _localDatabase!.cipherInfo.isEncrypted,
@@ -1382,11 +1759,12 @@ class NixState extends ChangeNotifier {
     return true;
   }
 
-  NixState({bool? loadMockData, KeyVault? keyVault}) {
+  NixState({bool? loadMockData, KeyVault? keyVault, bool? enforceStartupGate}) {
     _keyVault = keyVault ?? KeyVault();
     final isTest = Platform.environment['FLUTTER_TEST'] == 'true';
     final shouldLoadMock = loadMockData ?? isTest;
     _isMockMode = shouldLoadMock;
+    _enforceStartupGate = enforceStartupGate ?? (!shouldLoadMock && !isTest);
 
     if (shouldLoadMock) {
       _loadMockFixtures();
@@ -1401,8 +1779,67 @@ class NixState extends ChangeNotifier {
     loadStarwireRepos();
     if (!shouldLoadMock) {
       loadPersistedState();
-      _checkPersistedOnboardingStatus();
+      _attachHardwareRadioListeners();
+      if (!isTest) {
+        unawaited(bootstrapSovereignEnvironment());
+      } else {
+        _checkPersistedOnboardingStatus();
+      }
     }
+  }
+
+  void _attachHardwareRadioListeners() {
+    _hardwareRadioBridge.attach();
+    _blePeerSub?.cancel();
+    _blePeerSub = _bluetoothMesh.onPeerDiscovered.listen((_) {
+      if (!_disposed) notifyListeners();
+    });
+    _bleRxSub?.cancel();
+    _bleRxSub = _bluetoothMesh.onEnvelopeReceived.listen((env) async {
+      if (_disposed) return;
+      final fromAddr = (env['fromAddress'] as String?) ?? 'ble_peer';
+      final rawCt = env['ciphertext'] as Uint8List?;
+      if (rawCt == null) return;
+      String summary = 'Envelope NIXB (${rawCt.length}B) recebido de $fromAddr';
+      try {
+        final decoded = jsonDecode(utf8.decode(rawCt));
+        if (decoded is Map<String, dynamic> &&
+            decoded['msg'] is String &&
+            decoded['edPub'] is String &&
+            decoded['sig'] is String) {
+          final msgText = decoded['msg'] as String;
+          final edHex = decoded['edPub'] as String;
+          final sigBytes = base64Decode(decoded['sig'] as String);
+          final pubBytes = _hexToBytes(edHex);
+          final ok = await Ed25519().verify(
+            utf8.encode(msgText),
+            signature: Signature(
+              sigBytes,
+              publicKey: SimplePublicKey(pubBytes, type: KeyPairType.ed25519),
+            ),
+          );
+          final sender = (decoded['from'] as String?) ?? fromAddr;
+          summary = ok
+              ? '[Ed25519 VERIFICADO] de $sender ($fromAddr): "$msgText"'
+              : '[ASSINATURA INVÁLIDA] de $sender ($fromAddr)';
+        }
+      } catch (_) {}
+      _appendHardwareRadioLog(HardwareRadioLogEntry(
+        timestamp: DateTime.now().toUtc(),
+        medium: 'BLE',
+        direction: 'RX',
+        summary: summary,
+      ));
+    });
+  }
+
+  static List<int> _hexToBytes(String hex) {
+    final clean = hex.trim();
+    final out = <int>[];
+    for (int i = 0; i + 1 < clean.length; i += 2) {
+      out.add(int.parse(clean.substring(i, i + 2), radix: 16));
+    }
+    return out;
   }
 
   void _loadMockFixtures() {
@@ -1524,26 +1961,37 @@ class NixState extends ChangeNotifier {
 
   Future<void> _checkPersistedOnboardingStatus() async {
     try {
-      // 1. Tenta desbloqueio automático via chaveiro nativo do SO (libsecret / AndroidKeyStore)
+      // 1. Tenta desbloqueio automático via chaveiro nativo do SO (libsecret / AndroidKeyStore TEE)
       final unlocked = await tryAutoUnlockAndRestore();
       if (unlocked) {
         return;
       }
 
-      // 2. Fallback para metadados não-sensíveis caso o vault exija senha manual ou ainda não exista
-      final snapshot = await OnboardingStateSnapshot.load();
-      if (snapshot.isCompleted) {
-        _isOnboarded = true;
-        if (snapshot.displayName != null && snapshot.displayName!.isNotEmpty) {
-          _userProfile = _userProfile.copyWith(displayName: snapshot.displayName);
-        }
-        if (snapshot.avatarStyle != null && snapshot.avatarStyle!.isNotEmpty) {
-          _userProfile = _userProfile.copyWith(avatarStyle: snapshot.avatarStyle);
-        }
-        if (snapshot.publicId != null && snapshot.publicId!.isNotEmpty) {
-          _userProfile = _userProfile.copyWith(publicId: snapshot.publicId);
-        }
+      // 2. Política Fail-Closed: nunca marca a conta como pronta sem cofre SQLCipher real desbloqueado.
+      // Se existe cofre no disco mas o chaveiro do SO não o abriu, exige frase-passe explícita.
+      final vaultExists = await _keyVault.isInitialized();
+      if (vaultExists) {
+        _requiresPassphraseUnlock = true;
         notifyListeners();
+        return;
+      }
+
+      // 3. Apenas em ambiente de testes isolados permite pré-preencher metadados de snapshot.
+      if (Platform.environment['FLUTTER_TEST'] == 'true') {
+        final snapshot = await OnboardingStateSnapshot.load();
+        if (snapshot.isCompleted) {
+          _isOnboarded = true;
+          if (snapshot.displayName != null && snapshot.displayName!.isNotEmpty) {
+            _userProfile = _userProfile.copyWith(displayName: snapshot.displayName);
+          }
+          if (snapshot.avatarStyle != null && snapshot.avatarStyle!.isNotEmpty) {
+            _userProfile = _userProfile.copyWith(avatarStyle: snapshot.avatarStyle);
+          }
+          if (snapshot.publicId != null && snapshot.publicId!.isNotEmpty) {
+            _userProfile = _userProfile.copyWith(publicId: snapshot.publicId);
+          }
+          notifyListeners();
+        }
       }
     } catch (_) {}
   }
@@ -1551,9 +1999,7 @@ class NixState extends ChangeNotifier {
   /// Caminho local de persistência de preferências do cliente (apenas desktop/mobile reais).
   String get _prefsFilePath {
     if (Platform.environment['FLUTTER_TEST'] == 'true') return '';
-    final home = Platform.environment['HOME'] ?? '';
-    if (home.isEmpty) return '';
-    return '$home/.local/share/nix/client_prefs_v4.json';
+    return NixPlatformPaths.resolveDataFile('client_prefs_v4.json');
   }
 
   Future<void> _persistState() async {
@@ -2336,6 +2782,12 @@ class NixState extends ChangeNotifier {
       syncWithRelay({
     String preKeyId = 'spk_active_1',
   }) async {
+    if (_isStrictOffGridMode) {
+      _lastMessagingError =
+          '[Modo Off-Grid Estrito] Funções de rede/Wi-Fi/Relay desativadas. Utilize Bluetooth BLE Mesh ou Rádio LoRa.';
+      notifyListeners();
+      return (acceptedOutbox: 0, failedOutbox: 0, receivedInbox: 0);
+    }
     final messenger = _sovereignMessenger;
     final relay = _activeRelayClient;
     if (messenger == null || relay == null) {
@@ -2515,7 +2967,21 @@ class NixState extends ChangeNotifier {
         var currentDeliveryState = 'queued';
         String? currentDeliveryError;
 
-        if (_activeRelayClient != null) {
+        if (_isStrictOffGridMode) {
+          currentDeliveryState = 'queued';
+          if (_bluetoothMesh.isMeshEnabled) {
+            final sentBle = await _bluetoothMesh.broadcastEnvelope(
+              recipientCardId: thread.peerPublicId,
+              payload: Uint8List.fromList(utf8.encode(cleanBody)),
+            );
+            currentDeliveryError = sentBle > 0
+                ? null
+                : 'Modo Off-Grid: salvo na Outbox cifrada (nenhum par BLE em alcance; Wi-Fi bloqueado).';
+          } else {
+            currentDeliveryError =
+                'Modo Off-Grid: rede Wi-Fi bloqueada. Ative BLE Mesh ou conecte Rádio LoRa para entregar.';
+          }
+        } else if (_activeRelayClient != null) {
           final flushRes = await messenger.flushOutbox(
             relayClient: _activeRelayClient!,
           );
@@ -3167,6 +3633,11 @@ class NixState extends ChangeNotifier {
     required String query,
     Future<List<Map<String, dynamic>>> Function(String query)? transportExecutor,
   }) async {
+    if (_isStrictOffGridMode) {
+      throw const TransportBlockedException(
+        '[Modo Off-Grid Estrito] Conectores externos de rede/Wi-Fi estão bloqueados.',
+      );
+    }
     final svc = _mediaCatalogService;
     if (svc == null) {
       throw StateError('[Fail-Closed] MediaCatalogService requer banco SQLCipher ativo.');
@@ -4406,6 +4877,10 @@ class NixState extends ChangeNotifier {
       // Continua a liberação dos recursos locais mesmo se o Tor falhar.
     }
     try {
+      await _hardwareRadioBridge.stopNativeBleMesh();
+      await _hardwareRadioBridge.disconnectRNode();
+    } catch (_) {}
+    try {
       _bluetoothMesh.setMeshEnabled(false);
       _bluetoothMesh.dispose();
     } catch (_) {
@@ -4429,6 +4904,10 @@ class NixState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _torWatchdogTimer?.cancel();
+    _torBootstrapSub?.cancel();
+    _blePeerSub?.cancel();
+    _bleRxSub?.cancel();
     _hoverDebounceTimer?.cancel();
     _callTimer?.cancel();
     unawaited(_disposeServices());

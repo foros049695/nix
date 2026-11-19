@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
 import 'package:nix_core_crypto/nix_core_crypto.dart';
 import 'os_key_storage.dart';
+import 'platform_runtime.dart';
 
 /// Exceção disparada quando o cofre ainda não foi provisionado.
 class VaultNotInitializedException implements Exception {
@@ -87,13 +88,9 @@ class KeyVault {
     return Uint8List.fromList(_cachedMasterKey!);
   }
 
-  /// Caminho padrão para o arquivo de bootstrap do cofre em plataformas desktop/linux.
+  /// Caminho padrão para o arquivo de bootstrap do cofre em plataformas desktop/mobile.
   static String getDefaultBootstrapPath() {
-    final home = Platform.environment['HOME'] ?? '';
-    if (home.isEmpty) {
-      return '.nix_vault_bootstrap.json';
-    }
-    return '$home/.local/share/nix/vault_bootstrap.json';
+    return NixPlatformPaths.resolveDataFile('vault_bootstrap.json');
   }
 
   /// Verifica se o arquivo de bootstrap do cofre existe e possui estrutura válida.

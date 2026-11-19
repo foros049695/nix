@@ -1,12 +1,16 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/channel.dart';
 import '../../core/models/direct_message.dart';
 import '../../core/security/key_vault.dart';
+import '../../core/security/platform_runtime.dart';
+import '../../core/security/sovereign_security_gate.dart';
 import '../../core/security/window_privacy_guard.dart';
 import '../../core/theme/nix_colors.dart';
+import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
-import '../dialogs/sovereign_onboarding_dialog.dart';
 import '../onboarding/sovereign_onboarding_flow.dart';
 import '../calls/call_room_view.dart';
 import '../chat/chat_view.dart';
@@ -49,28 +53,73 @@ class AppShell extends StatelessWidget {
                 nixState.homeSubTab == HomeSubTab.directChat &&
                 nixState.selectedDm != null));
 
-    if (nixState.requiresPassphraseUnlock) {
+    final gate = nixState.securityGate;
+
+    // GATE 1 (FAIL-CLOSED ESTRITO): Em modo real, NUNCA permite entrar pela rede
+    // doméstica. Exige Tor Onion v3 100% operacional OU Modo Off-Grid Estrito (BLE/LoRa · Zero Internet).
+    if (nixState.enforceStartupGate && !gate.isTransportGateSatisfied) {
       return MediaQuery(
         data: sanitizedMq,
         child: Scaffold(
           backgroundColor: NixColors.background,
-          body: Center(
-            child: _VaultUnlockPrompt(nixState: nixState),
+          body: SafeArea(
+            child: Center(
+              child: _SovereignSecurityGateView(nixState: nixState, gate: gate),
+            ),
           ),
         ),
       );
     }
 
-    if (!nixState.isOnboarded && !nixState.onboardingNoticeDismissed) {
+    // GATE 2: Desbloqueio do KeyVault (Argon2id + SQLCipher) quando requer frase-passe.
+    if (nixState.requiresPassphraseUnlock) {
       return MediaQuery(
         data: sanitizedMq,
         child: Scaffold(
           backgroundColor: NixColors.background,
-          body: Center(
-            child: SovereignOnboardingFlow(
-              nixState: nixState,
-              onComplete: () {},
-              onDismiss: () => nixState.dismissOnboardingToIncompleteNotice(),
+          body: SafeArea(
+            child: Center(
+              child: _VaultUnlockPrompt(nixState: nixState),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // GATE 3: Onboarding Soberano obrigatório (sem botão para pular e entrar sem criptografia).
+    if (!nixState.isOnboarded) {
+      return MediaQuery(
+        data: sanitizedMq,
+        child: Scaffold(
+          backgroundColor: NixColors.background,
+          body: SafeArea(
+            child: Center(
+              child: SovereignOnboardingFlow(
+                nixState: nixState,
+                onComplete: () {},
+                onDismiss: () {
+                  if (Platform.isAndroid) {
+                    SystemNavigator.pop();
+                  } else if (!Platform.environment.containsKey('FLUTTER_TEST')) {
+                    exit(0);
+                  }
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // GATE 4: Auditoria completa dos parâmetros criptográficos antes de montar o shell principal.
+    if (nixState.enforceStartupGate && !gate.canEnterApplication) {
+      return MediaQuery(
+        data: sanitizedMq,
+        child: Scaffold(
+          backgroundColor: NixColors.background,
+          body: SafeArea(
+            child: Center(
+              child: _SovereignSecurityGateView(nixState: nixState, gate: gate),
             ),
           ),
         ),
@@ -91,32 +140,8 @@ class AppShell extends StatelessWidget {
                     child: Column(
                       children: [
                         const WindowTitleBar(),
-                        if (!nixState.isOnboarded)
-                          Container(
-                            color: Colors.amber.shade900,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.warning_amber_rounded, size: 16, color: Colors.white),
-                                const SizedBox(width: 8),
-                                const Expanded(
-                                  child: Text(
-                                    'CONFIGURAÇÃO SOBERANA INCOMPLETA · Roteamento Tor e Identidade Privada pendentes.',
-                                    style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: NixColors.accentYellow,
-                                    foregroundColor: Colors.black,
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  ),
-                                  onPressed: () => SovereignOnboardingDialog.show(context, nixState),
-                                  child: const Text('Retomar Configuração', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                ),
-                              ],
-                            ),
-                          ),
+                        if (nixState.isStrictOffGridMode)
+                          _buildStrictOffGridBanner(nixState),
                         Expanded(
                           child: Row(
                             children: [
@@ -246,20 +271,28 @@ class AppShell extends StatelessWidget {
                       ),
                     ),
                   ),
-                  body: Stack(
+                  body: Column(
                     children: [
-                      _buildActiveStage(activeArea, currentChannel),
-                      if (showInfoPanel)
-                        Positioned(
-                          right: 0,
-                          top: 0,
-                          bottom: 0,
-                          child: ConversationInfoPanel(
-                            directMessage:
-                                activeArea == NixActiveArea.homePrivate ? nixState.selectedDm : null,
-                            channel: activeArea == NixActiveArea.spaces ? currentChannel : null,
-                          ),
+                      if (nixState.isStrictOffGridMode)
+                        _buildStrictOffGridBanner(nixState),
+                      Expanded(
+                        child: Stack(
+                          children: [
+                            _buildActiveStage(activeArea, currentChannel),
+                            if (showInfoPanel)
+                              Positioned(
+                                right: 0,
+                                top: 0,
+                                bottom: 0,
+                                child: ConversationInfoPanel(
+                                  directMessage:
+                                      activeArea == NixActiveArea.homePrivate ? nixState.selectedDm : null,
+                                  channel: activeArea == NixActiveArea.spaces ? currentChannel : null,
+                                ),
+                              ),
+                          ],
                         ),
+                      ),
                     ],
                   ),
                 );
@@ -271,6 +304,77 @@ class AppShell extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildStrictOffGridBanner(NixState nixState) {
+    return Container(
+      key: const Key('strict_offgrid_active_banner'),
+      width: double.infinity,
+      color: Colors.teal.shade900,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        alignment: WrapAlignment.spaceBetween,
+        children: [
+          const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.bluetooth_searching_rounded,
+                  size: 16, color: Colors.tealAccent),
+              SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  'MODO OFF-GRID ESTRITO · ZERO WI-FI/INTERNET · APENAS BLE & RÁDIO LORA',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.tealAccent,
+                  side: const BorderSide(color: Colors.tealAccent),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => nixState.openHardwareRadioSettings(),
+                child: const Text(
+                  'BLE / LoRa',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 6),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: NixColors.accentYellow,
+                  foregroundColor: Colors.black,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => nixState.exitOffGridModeAndConnectTor(),
+                child: const Text(
+                  'Conectar Tor',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -474,6 +578,407 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
               'Esqueceu a frase-passe? Resetar perfil ou recuperar via Seed A',
               style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
               textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tela de Bloqueio Fail-Closed de Inicialização (Tor Onion v3 + Parâmetros Criptográficos).
+/// Impede qualquer entrada no aplicativo ou contato direto com a rede doméstica
+/// enquanto o circuito Tor Onion v3 e as camadas de criptografia não estiverem 100% operacionais.
+class _SovereignSecurityGateView extends StatefulWidget {
+  final NixState nixState;
+  final SovereignSecurityGateStatus gate;
+
+  const _SovereignSecurityGateView({
+    required this.nixState,
+    required this.gate,
+  });
+
+  @override
+  State<_SovereignSecurityGateView> createState() =>
+      _SovereignSecurityGateViewState();
+}
+
+class _SovereignSecurityGateViewState
+    extends State<_SovereignSecurityGateView> {
+  bool _showLogs = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final gate = widget.gate;
+    final rt = NixPlatformPaths.runtimeInfo;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Container(
+          key: const Key('sovereign_security_gate_view'),
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: NixColors.surfaceCard,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: gate.isBootstrapping
+                  ? NixColors.accentYellow
+                  : Colors.redAccent.withValues(alpha: 0.7),
+              width: 1.3,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    gate.isBootstrapping
+                        ? Icons.shield_outlined
+                        : Icons.gpp_maybe_outlined,
+                    color: gate.isBootstrapping
+                        ? NixColors.accentYellow
+                        : Colors.redAccent,
+                    size: 26,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'ESCUDO FAIL-CLOSED · TOR ONION V3 OBRIGATÓRIO',
+                          style: TextStyle(
+                            color: NixColors.textPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          gate.isBootstrapping
+                              ? 'Estabelecendo circuitos Onion v3 e auditando criptografia...'
+                              : 'Acesso bloqueado para proteger seu anonimato.',
+                          style: TextStyle(
+                            color: NixColors.textSecondary,
+                            fontSize: 11.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: NixColors.background,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: NixColors.surfaceBorder),
+                ),
+                child: Text(
+                  'Política Zero-Rastro ativa: nenhuma conexão é permitida pela sua rede doméstica. '
+                  'O Projeto Nix só libera a entrada após 100% de bootstrap do Tor Onion v3 e validação de todos os parâmetros criptográficos.',
+                  style: TextStyle(
+                    color: NixColors.textSecondary,
+                    fontSize: 11.5,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      gate.torStatusMessage,
+                      style: TextStyle(
+                        color: NixColors.textPrimary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${gate.torBootstrapPercent}%',
+                    style: NixTokens.monoCode(
+                      size: 12,
+                      color: NixColors.accentYellow,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              LinearProgressIndicator(
+                value: gate.isBootstrapping && gate.torBootstrapPercent == 0
+                    ? null
+                    : (gate.torBootstrapPercent / 100.0).clamp(0.0, 1.0),
+                backgroundColor: NixColors.background,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  gate.isTorAnonymityReady
+                      ? Colors.greenAccent
+                      : NixColors.accentYellow,
+                ),
+                minHeight: 6,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'AUDITORIA DE ANONIMATO E CRIPTOGRAFIA',
+                style: TextStyle(
+                  color: NixColors.textMuted,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildCheckRow(
+                'Firewall HTTP Fail-Closed (Zero Rede Doméstica)',
+                gate.clearnetFirewallActive,
+              ),
+              _buildCheckRow(
+                'Proxy Tor SOCKS5 (127.0.0.1:${widget.nixState.embeddedTor.socksPort})',
+                gate.torSocksActive,
+              ),
+              _buildCheckRow(
+                'Circuito Tor 100% Operacional (ControlPort)',
+                gate.torBootstrapped100,
+              ),
+              _buildCheckRow(
+                gate.liveOnionV3Address != null
+                    ? 'Tor Onion v3 Ativo (${gate.liveOnionV3Address!.substring(0, 14)}...onion)'
+                    : 'Serviço / Circuito Tor Onion v3 (56 chars)',
+                gate.torOnionV3Ready,
+              ),
+              _buildCheckRow(
+                'Política Fail-Closed Clearnet Bloqueada',
+                gate.failClosedPolicyVerified,
+              ),
+              _buildCheckRow(
+                'KeyVault (Argon2id + XChaCha20-Poly1305 · ${gate.osKeyringBackend})',
+                gate.keyVaultUnlocked,
+                pendingAllowed: !widget.nixState.isOnboarded,
+              ),
+              _buildCheckRow(
+                gate.sqlCipherVersion != null
+                    ? 'SQLCipher Cifrado em Repouso (v${gate.sqlCipherVersion})'
+                    : 'Banco Local SQLCipher Cifrado em Repouso',
+                gate.sqlCipherEncrypted,
+                pendingAllowed: !widget.nixState.isOnboarded,
+              ),
+              _buildCheckRow(
+                'Identidade Seed A (Ed25519 + X25519 + Double Ratchet)',
+                gate.identityKeysLoaded,
+                pendingAllowed: !widget.nixState.isOnboarded,
+              ),
+              if (rt != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Ambiente: ${rt.deviceAbi} · Keystore: ${rt.keystoreSecurityLevel}'
+                  '${rt.androidSdkInt != null ? " · Android API ${rt.androidSdkInt}" : ""}',
+                  style: NixTokens.monoCode(size: 10, color: NixColors.textMuted),
+                ),
+              ],
+              if (gate.blockingReason != null &&
+                  gate.blockingReason!.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: Colors.redAccent.withValues(alpha: 0.5)),
+                  ),
+                  child: Text(
+                    gate.blockingReason!,
+                    style: const TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                ),
+              ],
+              if (_showLogs) ...[
+                const SizedBox(height: 10),
+                Container(
+                  height: 120,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: NixColors.surfaceBorder),
+                  ),
+                  child: SingleChildScrollView(
+                    reverse: true,
+                    child: Text(
+                      widget.nixState.torBootstrapLogs.isEmpty
+                          ? 'Aguardando telemetria local do daemon Tor...'
+                          : widget.nixState.torBootstrapLogs.join('\n'),
+                      style: NixTokens.monoCode(
+                        size: 10,
+                        color: Colors.greenAccent,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: Colors.tealAccent.withValues(alpha: 0.45)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    OutlinedButton.icon(
+                      key: const Key('enter_strict_offgrid_button'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.tealAccent,
+                        side: const BorderSide(color: Colors.tealAccent),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                      ),
+                      onPressed: () =>
+                          widget.nixState.enterStrictOffGridMode(),
+                      icon: const Icon(Icons.bluetooth_searching_rounded,
+                          size: 17),
+                      label: const Text(
+                        'Entrar via Bluetooth / LoRa (Modo Off-Grid · Zero Internet)',
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Sem Wi-Fi ou rede móvel? Este modo bloqueia 100% das funções de internet/Wi-Fi, '
+                      'mantém o cofre SQLCipher + Seed A obrigatórios e libera apenas comunicação física via Bluetooth BLE e Rádio LoRa.',
+                      style: TextStyle(
+                        color: NixColors.textSecondary,
+                        fontSize: 10.8,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.spaceBetween,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => setState(() => _showLogs = !_showLogs),
+                    icon: Icon(
+                      _showLogs
+                          ? Icons.terminal
+                          : Icons.terminal_outlined,
+                      size: 16,
+                    ),
+                    label: Text(
+                      _showLogs ? 'Ocultar Logs' : 'Ver Logs Tor',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () {
+                          if (Platform.isAndroid) {
+                            SystemNavigator.pop();
+                          } else if (!Platform.environment
+                              .containsKey('FLUTTER_TEST')) {
+                            exit(0);
+                          }
+                        },
+                        child: const Text(
+                          'Encerrar',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: NixColors.accentYellow,
+                          foregroundColor: Colors.black,
+                        ),
+                        onPressed: gate.isBootstrapping
+                            ? null
+                            : () => widget.nixState
+                                .bootstrapSovereignEnvironment(),
+                        icon: gate.isBootstrapping
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.black,
+                                ),
+                              )
+                            : const Icon(Icons.refresh_rounded, size: 16),
+                        label: Text(
+                          gate.isBootstrapping
+                              ? 'Conectando...'
+                              : 'Reconectar Tor',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCheckRow(String label, bool ok, {bool pendingAllowed = false}) {
+    final IconData icon;
+    final Color color;
+    if (ok) {
+      icon = Icons.check_circle_rounded;
+      color = Colors.greenAccent;
+    } else if (pendingAllowed) {
+      icon = Icons.schedule_rounded;
+      color = NixColors.accentYellow;
+    } else {
+      icon = Icons.cancel_outlined;
+      color = Colors.redAccent;
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: ok ? NixColors.textPrimary : NixColors.textSecondary,
+                fontSize: 11.5,
+              ),
             ),
           ),
         ],

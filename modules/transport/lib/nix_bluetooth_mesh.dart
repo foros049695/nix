@@ -233,16 +233,28 @@ class BluetoothMeshManager {
   final String localCardId;
   final Map<String, BluetoothProximityPeer> _peers = {};
   bool _isMeshEnabled = false;
+  int _txPacketsSent = 0;
+  int _rxPacketsReceived = 0;
 
-  final _peerDiscoveredController = StreamController<BluetoothProximityPeer>.broadcast();
-  final _envelopeReceivedController = StreamController<Map<String, dynamic>>.broadcast();
+  /// Hook injetado pelo driver nativo (ex: Android BluetoothGatt / Linux BlueZ) para enviar bytes reais pelo ar.
+  Future<bool> Function(String deviceAddress, Uint8List encodedPacket)?
+      onTransmitPacket;
 
-  BluetoothMeshManager({required this.localCardId});
+  final _peerDiscoveredController =
+      StreamController<BluetoothProximityPeer>.broadcast();
+  final _envelopeReceivedController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  BluetoothMeshManager({required this.localCardId, this.onTransmitPacket});
 
   bool get isMeshEnabled => _isMeshEnabled;
+  int get txPacketsSent => _txPacketsSent;
+  int get rxPacketsReceived => _rxPacketsReceived;
   List<BluetoothProximityPeer> get activePeers => _peers.values.toList();
-  Stream<BluetoothProximityPeer> get onPeerDiscovered => _peerDiscoveredController.stream;
-  Stream<Map<String, dynamic>> get onEnvelopeReceived => _envelopeReceivedController.stream;
+  Stream<BluetoothProximityPeer> get onPeerDiscovered =>
+      _peerDiscoveredController.stream;
+  Stream<Map<String, dynamic>> get onEnvelopeReceived =>
+      _envelopeReceivedController.stream;
 
   /// Habilita ou desabilita o modo de malha por proximidade Bluetooth.
   void setMeshEnabled(bool enabled) {
@@ -263,6 +275,15 @@ class BluetoothMeshManager {
     final existing = _peers[deviceAddress];
     if (existing != null) {
       existing.lastSeen = DateTime.now().toUtc();
+      _peers[deviceAddress] = BluetoothProximityPeer(
+        deviceAddress: deviceAddress,
+        peerPublicCardId:
+            peerCardId.isNotEmpty ? peerCardId : existing.peerPublicCardId,
+        rssiSignalStrength: rssi,
+        status: existing.status,
+        lastSeen: existing.lastSeen,
+      );
+      _peerDiscoveredController.add(_peers[deviceAddress]!);
     } else {
       final newPeer = BluetoothProximityPeer(
         deviceAddress: deviceAddress,
@@ -291,29 +312,52 @@ class BluetoothMeshManager {
         remotePeer: peer,
       );
       final parsed = session.parseReceivedEnvelope(packet);
+      parsed['fromAddress'] = fromAddress;
+      parsed['receivedAtMs'] = DateTime.now().toUtc().millisecondsSinceEpoch;
+      _rxPacketsReceived++;
       _envelopeReceivedController.add(parsed);
     }
   }
 
   /// Transmite ou difunde um envelope cifrado para os pares da malha por proximidade.
-  Future<void> broadcastEnvelope({
+  /// Retorna a quantidade de pares que confirmaram transmissão pelo driver BLE nativo.
+  Future<int> broadcastEnvelope({
     required String recipientCardId,
     required Uint8List payload,
+    String? targetDeviceAddress,
   }) async {
-    if (!_isMeshEnabled) return;
-    // Quando em malha ativa, empacota e distribui o envelope aos nós conectados
-    for (final peer in _peers.values) {
+    if (!_isMeshEnabled) return 0;
+    final targets = targetDeviceAddress != null
+        ? _peers.values
+            .where((p) => p.deviceAddress == targetDeviceAddress)
+            .toList()
+        : _peers.values.toList();
+
+    int sentCount = 0;
+    for (final peer in targets) {
       final session = BluetoothMeshSession(
         localIdentityCardId: localCardId,
         remotePeer: peer,
       );
-      session.createEnvelopeTransfer(
+      final packet = session.createEnvelopeTransfer(
         deliveryId: 'btp_${DateTime.now().millisecondsSinceEpoch}',
         destinationMailbox: recipientCardId,
         ciphertext: payload,
-        expiresAt: DateTime.now().toUtc().add(const Duration(days: 7)).millisecondsSinceEpoch,
+        expiresAt: DateTime.now()
+            .toUtc()
+            .add(const Duration(days: 7))
+            .millisecondsSinceEpoch,
       );
+      final encoded = packet.encode();
+      if (onTransmitPacket != null) {
+        final ok = await onTransmitPacket!(peer.deviceAddress, encoded);
+        if (ok) {
+          _txPacketsSent++;
+          sentCount++;
+        }
+      }
     }
+    return sentCount;
   }
 
   void dispose() {

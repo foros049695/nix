@@ -22,21 +22,19 @@ Este plano cobre exclusivamente as etapas que dependem de **infraestrutura exter
 
 ## 2. Dispositivos Móveis Físicos (Android APK + NDK)
 
-1. **Build de Release Android Assinada:**
-   - Compilar APK ARM64/ARMv7 com `sqlcipher_flutter_libs` e empacotamento do binário Tor ARM para Android.
-   - Gerar manifesto assinado Ed25519 via `scripts/sign_release.dart` (`nix-client.apk.sig.json`) e validar instalação offline via `ShareAppOfflineDialog` entre dois aparelhos na mesma rede Wi-Fi/hotspot.
-2. **Validação em Hardware Android Real:**
-   - Confirmar `PRAGMA cipher_version` não nulo com `requireEncryption: true` (`NIX_REQUIRE_SQLCIPHER=true`).
-   - Validar proteção de chave em `AndroidKeyStore` TEE/StrongBox (`MainActivity.kt`), comportamento sob reinicialização do aparelho e desativação efetiva de backup na nuvem (PR `#16`).
+1. **Validação em Hardware Android Real (APK já compilado com `libtor.so` + `libsqlcipher.so` + TEE + BLE + RNode):**
+   - Concluir o **Onboarding + SQLCipher + AndroidKeyStore TEE/StrongBox** nos 2 celulares físicos (criando Seed A com frase-passe vazia para validar vínculo automático no TEE e reabertura após reinicialização).
+   - Confirmar `PRAGMA cipher_version` não nulo com `requireEncryption: true` (ativo por padrão fora de `FLUTTER_TEST`) e `allowBackup=false` + `data_extraction_rules.xml`.
+   - Assinar release de produção com keystore dedicada (substituindo a assinatura de desenvolvimento atual) e manifesto Ed25519 antes de distribuição pública.
 
 ---
 
 ## 3. Hardware Off-Grid (Bluetooth BLE e Rádio LoRa)
 
-1. **Bluetooth Mesh (`NIXB`):**
-   - Integrar driver BLE nativo (Linux BlueZ / Android BluetoothGatt) à camada `modules/transport/lib/nix_bluetooth_mesh.dart` e validar descoberta + troca de envelopes cifrados entre dois celulares/laptops fora da rede.
-2. **Rádio LoRa / Meshtastic / Reticulum RNode:**
-   - Acoplar transporte serial/USB/BLE ao `RadioPacketCodec` (`<=240B`, CRC16-CCITT) e `DutyCycleGovernor`, validando envio real entre dois transceptores LoRa físicos.
+1. **Bluetooth BLE Físico (`NIXB`):**
+   - Driver nativo `NixBleMeshController.kt` (GATT Server/Client + Advertiser + Scanner) já empacotado no APK e integrado ao **Modo Off-Grid Estrito (BLE / LoRa · Zero Internet)**; **pendente de validação física entre os 2 celulares Android reais** (descoberta RSSI e troca bidirecional de envelopes `NIXB` assinados).
+2. **Rádio LoRa / Reticulum RNode:**
+   - Driver nativo `NixRNodeRadioController.kt` (USB-OTG Serial + BLE Nordic UART KISS) já empacotado no APK; **validado até o momento apenas o enquadramento local `NX` (`<=240B`, CRC16-CCITT) + `KissFrameCodec`**, pendente de teste TX/RX real com dois transceptores LoRa físicos.
 
 ---
 

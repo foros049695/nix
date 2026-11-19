@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/user_settings.dart';
 import '../../core/theme.dart';
+import '../../core/security/platform_runtime.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../core/theme/nix_palette.dart';
@@ -30,15 +31,19 @@ class _SettingsCenterState extends State<SettingsCenter> {
   double _micLevel = 0.0;
   Timer? _micTimer;
   bool _isRunningNetDiag = false;
-  String _netDiagResult = 'Circuito Onion v3 estável · 3 saltos verificados · 0 vazamentos DNS/UDP.';
+  String _netDiagResult = 'Clique em diagnosticar para auditar SOCKS5, ControlPort e Onion v3.';
   final TextEditingController _blockIdController = TextEditingController();
   final TextEditingController _newDeviceNameController = TextEditingController();
+  final TextEditingController _bleTestMessageController = TextEditingController(text: 'Ping NIXB BLE físico');
+  final TextEditingController _loraTestMessageController = TextEditingController(text: 'Ping LoRa NX <=240B');
 
   @override
   void dispose() {
     _micTimer?.cancel();
     _blockIdController.dispose();
     _newDeviceNameController.dispose();
+    _bleTestMessageController.dispose();
+    _loraTestMessageController.dispose();
     super.dispose();
   }
 
@@ -64,15 +69,14 @@ class _SettingsCenterState extends State<SettingsCenter> {
     final nixState = context.read<NixState>();
     setState(() {
       _isRunningNetDiag = true;
-      _netDiagResult = 'Verificando porta SOCKS5 127.0.0.1:9050 e política Fail-Closed...';
+      _netDiagResult =
+          'Auditando SOCKS5 127.0.0.1:${nixState.embeddedTor.socksPort}, ControlPort e Onion v3...';
     });
-    final ok = await nixState.checkTorDaemonStatus();
+    final report = await nixState.verifyTorTransportAndFailClosed();
     if (mounted) {
       setState(() {
         _isRunningNetDiag = false;
-        _netDiagResult = ok
-            ? '${nixState.torDiagnosticDetail} · Fallback IP Direto: BLOQUEADO.'
-            : nixState.torDiagnosticDetail;
+        _netDiagResult = report.detail;
       });
     }
   }
@@ -1433,17 +1437,14 @@ class _SettingsCenterState extends State<SettingsCenter> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Icon(Icons.bluetooth_searching_rounded, color: NixColors.textPrimary, size: 18),
-                      const SizedBox(width: 8),
-                      Text(
-                        'MALHA BLUETOOTH OFFLINE (MODO BRIAR BTP)',
-                        style: TextStyle(color: NixColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700),
-                      ),
-                    ],
+                  Icon(Icons.bluetooth_searching_rounded, color: NixColors.textPrimary, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'MALHA BLUETOOTH OFFLINE (MODO BRIAR BTP)',
+                      style: TextStyle(color: NixColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
                   ),
                   Switch(
                     key: const Key('bluetooth_mesh_switch'),
@@ -1467,9 +1468,292 @@ class _SettingsCenterState extends State<SettingsCenter> {
                     borderRadius: BorderRadius.circular(4),
                     border: Border.all(color: NixColors.surfaceBorder),
                   ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Pares em alcance: ${state.bluetoothMesh.activePeers.length} nó(s) ativos · '
+                        'TX: ${state.bluetoothMesh.txPacketsSent} · RX: ${state.bluetoothMesh.rxPacketsReceived} · '
+                        'UUID: 0000ff01-0000-1000-8000-00805f9b34fb',
+                        style: NixTokens.monoCode(size: 10.5, color: NixColors.accentYellow),
+                      ),
+                      if (state.bleHardwareStatus != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Hardware BLE: ${state.bleHardwareStatus!.detail} '
+                          '(Adv=${state.bleHardwareStatus!.isAdvertising}, Scan=${state.bleHardwareStatus!.isScanning}, GATT=${state.bleHardwareStatus!.isGattServerRunning})',
+                          style: NixTokens.monoCode(size: 10, color: NixColors.textSecondary),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => state.requestBleHardwarePermissions(),
+                      icon: const Icon(Icons.security_rounded, size: 15),
+                      label: const Text('Permissões BLE', style: TextStyle(fontSize: 11.5)),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => state.refreshBleHardwareStatus(),
+                      icon: const Icon(Icons.refresh_rounded, size: 15),
+                      label: const Text('Atualizar Status BLE', style: TextStyle(fontSize: 11.5)),
+                    ),
+                  ],
+                ),
+                if (state.bluetoothMesh.activePeers.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ...state.bluetoothMesh.activePeers.map((peer) => Container(
+                        margin: const EdgeInsets.only(bottom: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: NixColors.surfaceElevated,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: NixColors.surfaceBorder),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.bluetooth_connected_rounded,
+                                size: 15, color: Colors.greenAccent),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${peer.peerPublicCardId} (${peer.deviceAddress}) · ${peer.rssiSignalStrength} dBm',
+                                style: NixTokens.monoCode(size: 10.5, color: NixColors.textPrimary),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => state.sendBleTestPacket(
+                                _bleTestMessageController.text,
+                                targetAddress: peer.deviceAddress,
+                              ),
+                              child: const Text('Enviar NIXB', style: TextStyle(fontSize: 11)),
+                            ),
+                          ],
+                        ),
+                      )),
+                ],
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _bleTestMessageController,
+                        style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          labelText: 'Mensagem assinada Ed25519 para envio BLE NIXB',
+                          border: const OutlineInputBorder(),
+                          filled: true,
+                          fillColor: NixColors.background,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: NixColors.accentYellow,
+                        foregroundColor: Colors.black,
+                      ),
+                      onPressed: () => state.sendBleTestPacket(
+                        _bleTestMessageController.text,
+                      ),
+                      icon: const Icon(Icons.send_rounded, size: 15),
+                      label: const Text('Difundir BLE', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        // PAINEL DE AUDITORIA DE HARDWARE: ANDROID TEE / SQLCIPHER / TOR MÓVEL & RÁDIO LORA / RNODE
+        Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: NixColors.surfaceCard,
+            borderRadius: NixTokens.borderSm,
+            border: Border.all(color: NixColors.surfaceBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.verified_user_outlined, color: NixColors.accentYellow, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'AUDITORIA DE HARDWARE · NDK / TEE / SQLCIPHER / TOR',
+                      style: TextStyle(color: NixColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Builder(builder: (_) {
+                final gate = state.securityGate;
+                final rt = NixPlatformPaths.runtimeInfo;
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: NixColors.background,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: NixColors.surfaceBorder),
+                  ),
                   child: Text(
-                    'Pares em alcance: ${state.bluetoothMesh.activePeers.length} nó(s) ativos · UUID: 0000ff01-0000-1000-8000-00805f9b34fb',
-                    style: NixTokens.monoCode(size: 11, color: NixColors.accentYellow),
+                    '• Firewall Clearnet: ${gate.clearnetFirewallActive ? "ATIVO (Zero Rede Doméstica)" : "INATIVO"}\n'
+                    '• Tor Onion v3: ${gate.torOnionV3Ready ? "OPERACIONAL (${gate.liveOnionV3Address})" : "PENDENTE"} · v${gate.torVersion ?? "?"} · SOCKS5 :${state.embeddedTor.socksPort}\n'
+                    '• SQLCipher: ${gate.sqlCipherEncrypted ? "ATIVO (PRAGMA cipher_version=${gate.sqlCipherVersion})" : "INATIVO"}\n'
+                    '• KeyVault / TEE: ${gate.osKeyringBackend} · Nível Hardware=${rt?.keystoreSecurityLevel ?? "N/A"} (SecureHW=${rt?.keystoreInsideSecureHardware ?? false})\n'
+                    '• Android Cloud Backup: ${(rt?.allowBackupDisabled ?? true) ? "DESATIVADO (allowBackup=false)" : "ATIVO"} · ABI=${rt?.deviceAbi ?? "desktop"}',
+                    style: NixTokens.monoCode(size: 10.5, color: NixColors.textSecondary),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+
+        Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: NixColors.surfaceCard,
+            borderRadius: NixTokens.borderSm,
+            border: Border.all(color: NixColors.surfaceBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                alignment: WrapAlignment.spaceBetween,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.cell_tower_rounded, color: NixColors.textPrimary, size: 18),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'RÁDIO LORA / RNODE (USB-OTG & BLE UART · KISS <= 240B)',
+                          style: TextStyle(color: NixColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => state.scanRNodeHardwareDevices(),
+                    icon: const Icon(Icons.usb_rounded, size: 15),
+                    label: const Text('Detectar RNode', style: TextStyle(fontSize: 11.5)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Transceptor conectado: ${state.hardwareRadioBridge.connectedLoraDeviceName ?? "Nenhum (aguardando USB-OTG ou BLE NUS)"} · '
+                'Cota Duty Cycle restante: ${state.hardwareRadioBridge.dutyCycleGovernor.remainingBudgetMs()} ms/h · '
+                'TX=${state.hardwareRadioBridge.loraTxCount} RX=${state.hardwareRadioBridge.loraRxCount}',
+                style: NixTokens.monoCode(size: 10.5, color: NixColors.textMuted),
+              ),
+              if (state.detectedRNodeDevices.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                ...state.detectedRNodeDevices.map((dev) => Container(
+                      margin: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: NixColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: NixColors.surfaceBorder),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            dev.transport == 'usb_otg'
+                                ? Icons.usb_rounded
+                                : Icons.bluetooth_rounded,
+                            size: 15,
+                            color: NixColors.accentYellow,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${dev.name} [${dev.transport}] · ${dev.detail}',
+                              style: NixTokens.monoCode(size: 10.5, color: NixColors.textPrimary),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => state.connectRNodeHardwareDevice(dev),
+                            child: const Text('Conectar', style: TextStyle(fontSize: 11)),
+                          ),
+                        ],
+                      ),
+                    )),
+              ],
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _loraTestMessageController,
+                      style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        labelText: 'Quadro curto LoRa NX (CRC16-CCITT, <= 240B)',
+                        border: const OutlineInputBorder(),
+                        filled: true,
+                        fillColor: NixColors.background,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () => state.sendLoraTestMessage(
+                      _loraTestMessageController.text,
+                    ),
+                    icon: const Icon(Icons.podcasts_rounded, size: 15),
+                    label: const Text('Enviar LoRa', style: TextStyle(fontSize: 11.5)),
+                  ),
+                ],
+              ),
+              if (state.hardwareRadioLogs.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  height: 120,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: NixColors.surfaceBorder),
+                  ),
+                  child: ListView.builder(
+                    itemCount: state.hardwareRadioLogs.length,
+                    itemBuilder: (_, idx) {
+                      final entry = state.hardwareRadioLogs[idx];
+                      final ts = entry.timestamp.toIso8601String().substring(11, 19);
+                      return Text(
+                        '[$ts] [${entry.medium}/${entry.direction}] ${entry.summary}',
+                        style: NixTokens.monoCode(
+                          size: 10,
+                          color: entry.direction == 'RX'
+                              ? Colors.greenAccent
+                              : (entry.direction == 'TX'
+                                  ? NixColors.accentYellow
+                                  : Colors.white70),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],

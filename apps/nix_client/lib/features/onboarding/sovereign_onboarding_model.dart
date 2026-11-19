@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import '../../core/security/platform_runtime.dart';
 
 /// Estados explícitos da máquina de estados do Onboarding Soberano (Seção 2).
 enum OnboardingStep {
@@ -123,9 +124,7 @@ class OnboardingStateSnapshot {
       // em /tmp fazia testes distintos disputarem o mesmo estado (flaky).
       return '${Directory.systemTemp.path}/nix_test_onboarding_state_$pid.json';
     }
-    final home = Platform.environment['HOME'] ?? '';
-    if (home.isEmpty) return '.nix_onboarding_state.json';
-    return '$home/.local/share/nix/onboarding_state.json';
+    return NixPlatformPaths.resolveDataFile('onboarding_state.json');
   }
 
   /// Salva o estado de forma atômica (tmp + rename) no arquivo de estado transacional.

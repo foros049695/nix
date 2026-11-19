@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqlite3/open.dart' as sqlite_open;
+import '../security/platform_runtime.dart';
 import 'android_sqlcipher_stub.dart'
     if (dart.library.ui) 'android_sqlcipher_flutter.dart';
 import 'migration_asset_stub.dart'
@@ -64,13 +65,9 @@ class LocalDatabase {
   Database get rawDatabase => _db;
   DatabaseCipherInfo get cipherInfo => _cipherInfo;
 
-  /// Caminho padrão para o arquivo do banco SQLite local.
+  /// Caminho padrão para o arquivo do banco SQLite/SQLCipher local.
   static String getDefaultDatabasePath() {
-    final home = Platform.environment['HOME'] ?? '';
-    if (home.isEmpty) {
-      return '.nix_local_v4.db';
-    }
-    return '$home/.local/share/nix/nix_local_v4.db';
+    return NixPlatformPaths.resolveDataFile('nix_local_v4.db');
   }
 
   static bool _sqliteInitialized = false;

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../database/local_database.dart';
 import 'key_vault.dart';
 import 'os_key_storage.dart';
+import 'platform_runtime.dart';
 
 /// Relatório de execução do procedimento anti-forense.
 class ShredReport {
@@ -179,8 +180,10 @@ class AntiForensicShredder {
     }
 
     final home = Platform.environment['HOME'] ?? '';
-    final baseDir =
-        customBaseDir ?? (home.isNotEmpty ? '$home/.local/share/nix' : '.');
+    final effectiveBaseDir = customBaseDir ??
+        NixPlatformPaths.runtimeInfo?.dataDir ??
+        (home.isNotEmpty ? '$home/.local/share/nix' : '.');
+    final baseDir = effectiveBaseDir;
 
     Future<void> wipeTarget(String path) async {
       try {
@@ -199,9 +202,17 @@ class AntiForensicShredder {
       }
     }
 
-    for (final target
-        in wipeTargets(home: home, customBaseDir: customBaseDir)) {
+    for (final target in wipeTargets(
+        home: home,
+        customBaseDir: customBaseDir ?? NixPlatformPaths.runtimeInfo?.dataDir)) {
       await wipeTarget(target);
+    }
+    if (customBaseDir == null && NixPlatformPaths.runtimeInfo?.dataDir != null) {
+      await wipeTarget('${NixPlatformPaths.runtimeInfo!.dataDir}/onboarding_state.json');
+    } else if (customBaseDir != null) {
+      await wipeTarget('$customBaseDir/onboarding_state.json');
+    } else if (home.isNotEmpty) {
+      await wipeTarget('$home/.local/share/nix/onboarding_state.json');
     }
 
     // Não segue links do cache para arquivos fora do diretório da conta.

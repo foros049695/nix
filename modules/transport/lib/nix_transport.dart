@@ -628,9 +628,13 @@ class TorControlClient {
     required int virtualPort,
     required int targetPort,
     String? keyBlob,
+    bool detach = false,
   }) async {
     final keySpec = keyBlob ?? 'NEW:ED25519-V3';
-    final lines = await _sendCommand('ADD_ONION $keySpec Port=$virtualPort,127.0.0.1:$targetPort');
+    final flagsPart = detach ? ' Flags=Detach' : '';
+    final lines = await _sendCommand(
+      'ADD_ONION $keySpec$flagsPart Port=$virtualPort,127.0.0.1:$targetPort',
+    );
     String? serviceId;
     String? privKey;
     for (final line in lines) {

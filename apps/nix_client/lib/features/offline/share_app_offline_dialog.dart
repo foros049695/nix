@@ -6,6 +6,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:nix_core_crypto/nix_core_crypto.dart';
+import '../../core/security/fail_closed_http_overrides.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
@@ -47,39 +48,44 @@ class ShareAppOfflineDialog extends StatefulWidget {
     required Uri apkUrl,
     required SimplePublicKey trustedReleaseKey,
   }) async {
-    final client = HttpClient();
-    try {
-      final apkReq = await client.getUrl(apkUrl);
-      final apkRes = await apkReq.close();
-      if (apkRes.statusCode != HttpStatus.ok) {
-        throw HttpException('Falha HTTP ${apkRes.statusCode} ao baixar APK.');
-      }
-      final builder = BytesBuilder(copy: false);
-      await for (final chunk in apkRes) {
-        builder.add(chunk);
-      }
-      final apkBytes = builder.toBytes();
+    return NixFailClosedHttpOverrides.runWithExplicitOfflineLanPeer(
+      allowedLanHost: apkUrl.host,
+      action: () async {
+        final client = HttpClient();
+        try {
+          final apkReq = await client.getUrl(apkUrl);
+          final apkRes = await apkReq.close();
+          if (apkRes.statusCode != HttpStatus.ok) {
+            throw HttpException('Falha HTTP ${apkRes.statusCode} ao baixar APK.');
+          }
+          final builder = BytesBuilder(copy: false);
+          await for (final chunk in apkRes) {
+            builder.add(chunk);
+          }
+          final apkBytes = builder.toBytes();
 
-      final manifestUrl = apkUrl.replace(path: '/nix.apk.sig.json');
-      final manReq = await client.getUrl(manifestUrl);
-      final manRes = await manReq.close();
-      if (manRes.statusCode != HttpStatus.ok) {
-        throw HttpException('Falha HTTP ${manRes.statusCode} ao baixar manifesto Ed25519.');
-      }
-      final manBody = await utf8.decoder.bind(manRes).join();
-      final manifest = SignedReleaseManifest.fromJson(
-        jsonDecode(manBody) as Map<String, dynamic>,
-      );
+          final manifestUrl = apkUrl.replace(path: '/nix.apk.sig.json');
+          final manReq = await client.getUrl(manifestUrl);
+          final manRes = await manReq.close();
+          if (manRes.statusCode != HttpStatus.ok) {
+            throw HttpException('Falha HTTP ${manRes.statusCode} ao baixar manifesto Ed25519.');
+          }
+          final manBody = await utf8.decoder.bind(manRes).join();
+          final manifest = SignedReleaseManifest.fromJson(
+            jsonDecode(manBody) as Map<String, dynamic>,
+          );
 
-      final verified = await verifyOfflineApkAuthenticity(
-        apkBytes: apkBytes,
-        manifest: manifest,
-        trustedReleaseKey: trustedReleaseKey,
-      );
-      return (apkBytes: apkBytes, manifest: manifest, verified: verified);
-    } finally {
-      client.close(force: true);
-    }
+          final verified = await verifyOfflineApkAuthenticity(
+            apkBytes: apkBytes,
+            manifest: manifest,
+            trustedReleaseKey: trustedReleaseKey,
+          );
+          return (apkBytes: apkBytes, manifest: manifest, verified: verified);
+        } finally {
+          client.close(force: true);
+        }
+      },
+    );
   }
 
   @override

@@ -122,13 +122,26 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
     final snapshot = await OnboardingStateSnapshot.load(customPath: widget.customPersistencePath);
     if (!mounted) return;
 
+    final gateAlreadyReady = widget.nixState.securityGate.isTorAnonymityReady;
+    final offGridActive = widget.nixState.isStrictOffGridMode;
     setState(() {
       _currentStep = snapshot.currentStep;
-      _torConsentChecked = snapshot.torConsentAccepted;
-      _bootstrapPercent = snapshot.torBootstrapped ? 100 : 0;
-      _torSocksAlive = snapshot.torVerified;
-      _torFailClosedVerified = snapshot.torVerified;
-      _torCircuitsReady = snapshot.torBootstrapped && snapshot.torVerified;
+      _torConsentChecked =
+          snapshot.torConsentAccepted || gateAlreadyReady || offGridActive;
+      _bootstrapPercent =
+          (snapshot.torBootstrapped || gateAlreadyReady) ? 100 : 0;
+      _torSocksAlive = snapshot.torVerified || gateAlreadyReady;
+      _torFailClosedVerified =
+          snapshot.torVerified || gateAlreadyReady || offGridActive;
+      _torCircuitsReady =
+          (snapshot.torBootstrapped && snapshot.torVerified) || gateAlreadyReady;
+      if (gateAlreadyReady) {
+        _bootstrapSummary =
+            'Tor Onion v3 já conectado e auditado pelo Escudo Fail-Closed (${widget.nixState.onionAddress}).';
+      } else if (offGridActive) {
+        _bootstrapSummary =
+            'Modo Off-Grid Estrito ativo (Zero Wi-Fi/Internet · apenas Bluetooth BLE e Rádio LoRa).';
+      }
       _paperBackupConfirmed = snapshot.backupConfirmed;
       _challengePassed = snapshot.backupConfirmed;
       if (snapshot.displayName != null && snapshot.displayName!.isNotEmpty) {
@@ -764,6 +777,31 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
         _buildFeatureItem(Icons.vpn_key_rounded, 'Soberania Criptográfica', 'Suas chaves pertencem unicamente a você, geradas no seu dispositivo e cifradas com SQLCipher.'),
         _buildFeatureItem(Icons.wifi_off_rounded, 'Resiliência Offline', 'Suporte a malha Bluetooth peer-to-peer (BTP) mesmo sem internet ou dados móveis.'),
         const SizedBox(height: 18),
+        if (widget.nixState.isStrictOffGridMode) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.teal.withValues(alpha: 0.16),
+              borderRadius: NixTokens.borderSm,
+              border: Border.all(color: Colors.tealAccent.withValues(alpha: 0.6)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.bluetooth_searching_rounded,
+                    color: Colors.tealAccent, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'MODO OFF-GRID ESTRITO (BLE / LORA): sem Wi-Fi ou Internet. '
+                    'Suas chaves Seed A e o cofre SQLCipher serão criados 100% offline para comunicação por proximidade.',
+                    style: TextStyle(color: NixColors.textPrimary, fontSize: 11.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -1686,7 +1724,15 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
   void _handleNextStepAction() {
     switch (_currentStep) {
       case OnboardingStep.welcome:
-        _goToStep(OnboardingStep.torConsent);
+        if (widget.nixState.isStrictOffGridMode) {
+          _torConsentChecked = true;
+          _diagnosticsLogs.add(
+            '[Off-Grid] Pulando bootstrap de rede IP — gerando Seed A e SQLCipher 100% offline.',
+          );
+          _goToStep(OnboardingStep.identityGeneration);
+        } else {
+          _goToStep(OnboardingStep.torConsent);
+        }
         break;
       case OnboardingStep.torConsent:
         _goToStep(OnboardingStep.torBootstrap);
