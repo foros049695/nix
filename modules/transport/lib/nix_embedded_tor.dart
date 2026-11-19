@@ -24,7 +24,8 @@ class TorBootstrapEvent {
   });
 
   @override
-  String toString() => 'TorBootstrapEvent($progressPercent%: $stepSummary [$status])';
+  String toString() =>
+      'TorBootstrapEvent($progressPercent%: $stepSummary [$status])';
 }
 
 /// Gerenciador de Daemon Tor Embutido (Embedded Tor / Zero-Configuration) para Projeto Nix.
@@ -36,6 +37,11 @@ class EmbeddedTorManager {
   final int controlPort;
   final String? customDataDir;
   final String? customTorBinary;
+
+  // Injetáveis para testar sem sondar portas ou executar o Tor do sistema.
+  final Future<bool> Function(String, int) _portProbe;
+  final Future<Process> Function(String, List<String>,
+      {Map<String, String>? environment}) _processStarter;
 
   Process? _torProcess;
   EmbeddedTorStatus _status = EmbeddedTorStatus.stopped;
@@ -49,13 +55,19 @@ class EmbeddedTorManager {
     this.controlPort = 9051,
     this.customDataDir,
     this.customTorBinary,
-  });
+    Future<bool> Function(String, int)? portProbe,
+    Future<Process> Function(String, List<String>,
+            {Map<String, String>? environment})?
+        processStarter,
+  })  : _portProbe = portProbe ?? _isPortListening,
+        _processStarter = processStarter ?? Process.start;
 
   EmbeddedTorStatus get status => _status;
   int get currentProgress => _currentProgress;
   String get lastSummary => _lastSummary;
   bool get isReady => _status == EmbeddedTorStatus.ready;
-  Stream<TorBootstrapEvent> get onBootstrapProgress => _bootstrapController.stream;
+  Stream<TorBootstrapEvent> get onBootstrapProgress =>
+      _bootstrapController.stream;
 
   /// Retorna o diretório isolado de dados (DataDirectory) do Tor.
   String get dataDirectory {
@@ -162,7 +174,7 @@ class EmbeddedTorManager {
     if (_status == EmbeddedTorStatus.ready) return true;
 
     // Se já houver um Tor rodando na porta SOCKS 9050, reutiliza o túnel ativo
-    if (await _isPortListening('127.0.0.1', socksPort)) {
+    if (await _portProbe('127.0.0.1', socksPort)) {
       _status = EmbeddedTorStatus.ready;
       _currentProgress = 100;
       _lastSummary = 'Conectado a túnel SOCKS5 Tor ativo';
@@ -191,29 +203,37 @@ class EmbeddedTorManager {
     try {
       final binDir = File(binary).parent.path;
       final home = Platform.environment['HOME'] ?? '';
-      final ldPath = '$binDir/lib:$binDir:$home/.local/lib:${Platform.environment['LD_LIBRARY_PATH'] ?? ''}';
+      final ldPath =
+          '$binDir/lib:$binDir:$home/.local/lib:${Platform.environment['LD_LIBRARY_PATH'] ?? ''}';
 
-      _torProcess = await Process.start(
+      final process = await _processStarter(
         binary,
         ['-f', torrc.path],
         environment: {'LD_LIBRARY_PATH': ldPath},
       );
+      _torProcess = process;
 
-      _torProcess!.stdout
+      process.stdout
           .transform(utf8.decoder)
           .transform(const LineSplitter())
           .listen((line) {
-        _parseTorLogLine(line, completer);
+        if (identical(_torProcess, process)) {
+          _parseTorLogLine(line, completer);
+        }
       });
 
-      _torProcess!.stderr
+      process.stderr
           .transform(utf8.decoder)
           .transform(const LineSplitter())
           .listen((line) {
-        _parseTorLogLine(line, completer);
+        if (identical(_torProcess, process)) {
+          _parseTorLogLine(line, completer);
+        }
       });
 
-      _torProcess!.exitCode.then((code) {
+      process.exitCode.then((code) {
+        if (!identical(_torProcess, process)) return;
+        _torProcess = null;
         if (!completer.isCompleted) {
           _status = EmbeddedTorStatus.error;
           _lastSummary = 'Processo Tor encerrou com código $code.';
@@ -226,16 +246,22 @@ class EmbeddedTorManager {
       // Timeout de segurança para o bootstrap
       return await completer.future.timeout(
         timeout,
-        onTimeout: () {
-          if (!completer.isCompleted) {
-            _status = EmbeddedTorStatus.error;
-            _lastSummary = 'Tempo limite de bootstrap excedido (45s).';
-            return false;
-          }
-          return completer.future;
+        onTimeout: () async {
+          if (completer.isCompleted) return completer.future;
+          // Retira o processo antes de matar: logs/exit tardios não mudam o erro.
+          _torProcess = null;
+          completer.complete(false);
+          await _terminateProcess(process);
+          _status = EmbeddedTorStatus.error;
+          _lastSummary =
+              'Tempo limite de bootstrap excedido (${timeout.inMilliseconds}ms).';
+          return false;
         },
       );
     } catch (e) {
+      final process = _torProcess;
+      _torProcess = null;
+      if (process != null) await _terminateProcess(process);
       _status = EmbeddedTorStatus.error;
       _lastSummary = 'Erro ao lançar processo Tor: $e';
       return false;
@@ -247,7 +273,8 @@ class EmbeddedTorManager {
     if (line.contains('Bootstrapped ')) {
       final percentMatch = RegExp(r'Bootstrapped (\d+)%').firstMatch(line);
       if (percentMatch != null) {
-        final percent = int.tryParse(percentMatch.group(1) ?? '0') ?? _currentProgress;
+        final percent =
+            int.tryParse(percentMatch.group(1) ?? '0') ?? _currentProgress;
         String summary = 'Conectando à rede Onion...';
         final colonIdx = line.lastIndexOf(': ');
         if (colonIdx != -1 && colonIdx + 2 < line.length) {
@@ -256,7 +283,9 @@ class EmbeddedTorManager {
 
         _currentProgress = percent;
         _lastSummary = summary;
-        _status = percent == 100 ? EmbeddedTorStatus.ready : EmbeddedTorStatus.bootstrapping;
+        _status = percent == 100
+            ? EmbeddedTorStatus.ready
+            : EmbeddedTorStatus.bootstrapping;
 
         _bootstrapController.add(TorBootstrapEvent(
           progressPercent: percent,
@@ -272,12 +301,13 @@ class EmbeddedTorManager {
   }
 
   /// Testa se a porta de escuta local está aceitando sockets.
-  Future<bool> _isPortListening(String host, int port) async {
+  static Future<bool> _isPortListening(String host, int port) async {
     if (Platform.environment.containsKey('FLUTTER_TEST')) {
       return false;
     }
     try {
-      final socket = await Socket.connect(host, port, timeout: const Duration(milliseconds: 500));
+      final socket = await Socket.connect(host, port,
+          timeout: const Duration(milliseconds: 500));
       await socket.close();
       return true;
     } catch (_) {
@@ -285,12 +315,20 @@ class EmbeddedTorManager {
     }
   }
 
-  /// Encerra o processo Tor embutido.
+  static Future<void> _terminateProcess(Process process) async {
+    process.kill(ProcessSignal.sigterm);
+    await process.exitCode.timeout(const Duration(seconds: 1),
+        onTimeout: () async {
+      process.kill(ProcessSignal.sigkill);
+      return process.exitCode;
+    });
+  }
+
+  /// Encerra o processo Tor embutido e aguarda sua saída.
   Future<void> stop() async {
-    if (_torProcess != null) {
-      _torProcess!.kill(ProcessSignal.sigterm);
-      _torProcess = null;
-    }
+    final process = _torProcess;
+    _torProcess = null;
+    if (process != null) await _terminateProcess(process);
     _status = EmbeddedTorStatus.stopped;
     _currentProgress = 0;
     _lastSummary = 'Parado';

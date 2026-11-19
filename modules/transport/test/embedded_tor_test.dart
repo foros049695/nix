@@ -16,12 +16,16 @@ void main() {
       }
     });
 
-    test('gera arquivo torrc endurecido com diretório isolado e portas configuradas', () async {
+    test(
+        'gera arquivo torrc endurecido com diretório isolado e portas configuradas',
+        () async {
       final manager = EmbeddedTorManager(
         socksPort: 9150,
         controlPort: 9151,
         customDataDir: tempDir.path,
       );
+
+      addTearDown(manager.dispose);
 
       final torrc = await manager.generateHardenedTorrc();
       expect(await torrc.exists(), isTrue);
@@ -34,11 +38,17 @@ void main() {
       expect(content.contains('AvoidDiskWrites 1'), isTrue);
     });
 
-    test('reage com falha explícita se binário tor não for encontrado', () async {
+    test('reage com falha explícita se binário tor não for encontrado',
+        () async {
       final manager = EmbeddedTorManager(
         customDataDir: tempDir.path,
         customTorBinary: '/caminho/completamente/inexistente/tor',
+        portProbe: (_, __) async => false,
+        processStarter: (_, __, {environment}) async =>
+            throw StateError('Não deve iniciar processo'),
       );
+
+      addTearDown(manager.dispose);
 
       final ok = await manager.startEmbeddedTor();
       expect(ok, isFalse);
