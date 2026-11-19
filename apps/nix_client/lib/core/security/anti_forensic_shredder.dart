@@ -11,6 +11,7 @@ class ShredReport {
   final int passesPerFile;
   final bool memoryWiped;
   final List<String> shreddedPaths;
+  final Map<String, String> errors;
 
   const ShredReport({
     required this.filesOverwritten,
@@ -18,6 +19,7 @@ class ShredReport {
     required this.passesPerFile,
     required this.memoryWiped,
     required this.shreddedPaths,
+    this.errors = const {},
   });
 
   @override
@@ -49,7 +51,8 @@ class AntiForensicShredder {
       return 0;
     }
 
-    final raf = await file.open(mode: FileMode.writeOnly);
+    // Abre sem truncar; setPosition(0) reposiciona cada passagem.
+    final raf = await file.open(mode: FileMode.writeOnlyAppend);
     try {
       final random = Random.secure();
       final randomBuffer = Uint8List(chunkSize);
@@ -101,8 +104,10 @@ class AntiForensicShredder {
   static Future<void> _obfuscateAndRemove(File file) async {
     try {
       final parentDir = file.parent.path;
-      final randomSuffix = List.generate(16, (_) => Random.secure().nextInt(16).toRadixString(16)).join();
-      final obfuscatedFile = await file.rename('$parentDir/.nix_wipe_$randomSuffix');
+      final randomSuffix = List.generate(
+          16, (_) => Random.secure().nextInt(16).toRadixString(16)).join();
+      final obfuscatedFile =
+          await file.rename('$parentDir/.nix_wipe_$randomSuffix');
       await obfuscatedFile.delete();
     } catch (_) {
       // Fallback para delete direto se o rename falhar por permissões
@@ -110,6 +115,24 @@ class AntiForensicShredder {
         await file.delete();
       }
     }
+  }
+
+  /// Calcula os alvos sem acessar o ambiente ou o sistema de arquivos.
+  /// Um diretório explícito nunca inclui os caminhos padrão do usuário.
+  static List<String> wipeTargets(
+      {required String home, String? customBaseDir}) {
+    final baseDir =
+        customBaseDir ?? (home.isNotEmpty ? '$home/.local/share/nix' : '.');
+    return [
+      // O bootstrap da chave vem antes dos arquivos do banco.
+      if (customBaseDir == null && home.isEmpty) '.nix_vault_bootstrap.json',
+      '$baseDir/vault_bootstrap.json',
+      if (customBaseDir == null && home.isEmpty) '.nix_local_v4.db',
+      '$baseDir/nix_local_v4.db',
+      '$baseDir/nix_local_v4.db-wal',
+      '$baseDir/nix_local_v4.db-shm',
+      '$baseDir/client_prefs_v4.json',
+    ];
   }
 
   /// Procedimento de PÂNICO / APAGAMENTO TOTAL DA CONTA:
@@ -124,70 +147,93 @@ class AntiForensicShredder {
   }) async {
     var filesOverwritten = 0;
     var totalBytesWiped = 0;
+    var memoryWiped = false;
     final shreddedPaths = <String>[];
+    final errors = <String, String>{};
 
-    // 1. Fecha conexão com o banco se estiver ativa
     if (activeDatabase != null) {
       try {
         await activeDatabase.close();
-      } catch (_) {}
-    }
-
-    // 2. Destrói chave mestre e segredos na memória RAM imediatamente
-    if (activeVault != null) {
-      activeVault.lock();
-    }
-
-    // 3. Localiza os caminhos sensíveis do Nix no disco
-    final home = Platform.environment['HOME'] ?? '';
-    final baseDir = customBaseDir ??
-        (home.isNotEmpty ? '$home/.local/share/nix' : '.');
-
-    final targets = <String>[
-      '$baseDir/nix_local_v4.db',
-      '$baseDir/nix_local_v4.db-wal',
-      '$baseDir/nix_local_v4.db-shm',
-      '$baseDir/vault_bootstrap.json',
-      '$baseDir/client_prefs_v4.json',
-      KeyVault.getDefaultBootstrapPath(),
-      LocalDatabase.getDefaultDatabasePath(),
-      '$home/.local/share/nix/client_prefs_v4.json',
-    ];
-
-    final uniqueTargets = targets.toSet();
-
-    for (final targetPath in uniqueTargets) {
-      final file = File(targetPath);
-      if (await file.exists()) {
-        final bytes = await shredFile(file, passes: passes);
-        totalBytesWiped += bytes;
-        filesOverwritten += 1;
-        shreddedPaths.add(targetPath);
+      } catch (error) {
+        errors['database.close'] = error.toString();
       }
     }
 
-    // 4. Se houver diretórios de cache ou anexos temporários, destrói arquivos internos
-    final storageDir = Directory('$baseDir/storage');
-    if (await storageDir.exists()) {
+    if (activeVault != null) {
+      final wasUnlocked = activeVault.isUnlocked;
       try {
-        await for (final entity in storageDir.list(recursive: true)) {
-          if (entity is File) {
-            final bytes = await shredFile(entity, passes: passes);
-            totalBytesWiped += bytes;
-            filesOverwritten += 1;
-            shreddedPaths.add(entity.path);
+        activeVault.lock();
+        memoryWiped = wasUnlocked && !activeVault.isUnlocked;
+      } catch (error) {
+        errors['vault.lock'] = error.toString();
+      }
+    }
+
+    final home = Platform.environment['HOME'] ?? '';
+    final baseDir =
+        customBaseDir ?? (home.isNotEmpty ? '$home/.local/share/nix' : '.');
+
+    Future<void> wipeTarget(String path) async {
+      try {
+        final type = await FileSystemEntity.type(path, followLinks: false);
+        if (type == FileSystemEntityType.notFound) return;
+        if (type != FileSystemEntityType.file) {
+          throw FileSystemException('Alvo não é arquivo regular', path);
+        }
+        final bytes = await shredFile(File(path), passes: passes);
+        totalBytesWiped += bytes;
+        filesOverwritten += 1;
+        shreddedPaths.add(path);
+      } catch (error) {
+        // Uma falha não impede a destruição dos demais alvos.
+        errors[path] = error.toString();
+      }
+    }
+
+    for (final target
+        in wipeTargets(home: home, customBaseDir: customBaseDir)) {
+      await wipeTarget(target);
+    }
+
+    // Não segue links do cache para arquivos fora do diretório da conta.
+    final storageDir = Directory('$baseDir/storage');
+    try {
+      final type =
+          await FileSystemEntity.type(storageDir.path, followLinks: false);
+      if (type == FileSystemEntityType.link) {
+        throw FileSystemException(
+            'Cache não pode ser link simbólico', storageDir.path);
+      }
+      if (type == FileSystemEntityType.directory) {
+        final errorsBefore = errors.length;
+        await for (final entity
+            in storageDir.list(recursive: true, followLinks: false)) {
+          if (entity is Link) {
+            // Remove somente o link, sem abrir ou apagar o alvo externo.
+            try {
+              await entity.delete();
+            } catch (error) {
+              errors[entity.path] = error.toString();
+            }
+          } else if (entity is File) {
+            await wipeTarget(entity.path);
           }
         }
-        await storageDir.delete(recursive: true);
-      } catch (_) {}
+        if (errors.length == errorsBefore) {
+          await storageDir.delete(recursive: true);
+        }
+      }
+    } catch (error) {
+      errors[storageDir.path] = error.toString();
     }
 
     return ShredReport(
       filesOverwritten: filesOverwritten,
       totalBytesWiped: totalBytesWiped,
       passesPerFile: passes,
-      memoryWiped: true,
+      memoryWiped: memoryWiped,
       shreddedPaths: shreddedPaths,
+      errors: errors,
     );
   }
 }
