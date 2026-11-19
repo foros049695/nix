@@ -119,7 +119,9 @@ class OnboardingStateSnapshot {
   static String getPersistencePath({String? customPath}) {
     if (customPath != null) return customPath;
     if (Platform.environment['FLUTTER_TEST'] == 'true') {
-      return '${Directory.systemTemp.path}/nix_test_onboarding_state.json';
+      // `flutter test` roda arquivos em processos paralelos: um caminho fixo
+      // em /tmp fazia testes distintos disputarem o mesmo estado (flaky).
+      return '${Directory.systemTemp.path}/nix_test_onboarding_state_$pid.json';
     }
     final home = Platform.environment['HOME'] ?? '';
     if (home.isEmpty) return '.nix_onboarding_state.json';
