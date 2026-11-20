@@ -5,6 +5,7 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import 'monero_p2p_view.dart';
+import '../bitcoin/bitcoin_payment_view.dart';
 
 class MoneroFinanceView extends StatelessWidget {
   final bool showWallet;
@@ -14,18 +15,19 @@ class MoneroFinanceView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => DefaultTabController(
         key: ValueKey(showWallet),
-        length: 2,
+        length: 3,
         initialIndex: showWallet ? 1 : 0,
         child: const Column(
           children: [
-            TabBar(tabs: [
+            TabBar(isScrollable: true, tabs: [
               Tab(text: 'Mercado'),
               Tab(text: 'Carteira e histórico'),
+              Tab(text: 'Bitcoin / Lightning'),
             ]),
             Expanded(
               child: TabBarView(
                 physics: NeverScrollableScrollPhysics(),
-                children: [MoneroP2pView(), MoneroWalletView()],
+                children: [MoneroP2pView(), MoneroWalletView(), BitcoinPaymentView()],
               ),
             ),
           ],

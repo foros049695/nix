@@ -1,0 +1,122 @@
+import 'dart:convert';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:nix_client/core/bitcoin/bitcoin_payment_request.dart';
+import 'package:nix_client/core/bitcoin/bitcoin_testnet_node.dart';
+
+const _testInvoice =
+    'lntb20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfpp3x9et2e20v6pu37c5d9vax37wxq72un989qrsgqdj545axuxtnfemtpwkc45hx9d2ft7x04mt8q7y6t0k2dge9e7h8kpy9p34ytyslj3yu569aalz2xdk8xkd7ltxqld94u8h2esmsmacgpghe9k8';
+
+void main() {
+  test('reconhece Base58Check, valores BIP21 e formatos inválidos', () {
+    const address = '1BoatSLRHtKNngkdXEeobR76b53LETtpyT';
+    final parsed =
+        BitcoinPaymentRequest.parse('bitcoin:$address?amount=0.00001234');
+    expect(parsed.milliSatoshis, BigInt.from(1234000));
+    expect(parsed.network, BitcoinNetwork.mainnet);
+    expect(() => BitcoinPaymentRequest.parse('${address}a'),
+        throwsFormatException);
+    expect(
+        () => BitcoinPaymentRequest.parse('bitcoin:$address?amount=1&amount=2'),
+        throwsFormatException);
+    expect(() => BitcoinPaymentRequest.parse('bitcoin:$address?req-unknown=1'),
+        throwsFormatException);
+  });
+
+  test('BOLT11 oficial preserva rede e valor, e rejeita checksum adulterado',
+      () {
+    final invoice = BitcoinPaymentRequest.parse(_testInvoice);
+    expect(invoice.network, BitcoinNetwork.testnet);
+    expect(invoice.lightning, isTrue);
+    expect(invoice.milliSatoshis, BigInt.from(2000000000));
+    expect(
+        () => BitcoinPaymentRequest.parse(
+              '${_testInvoice.substring(0, _testInvoice.length - 1)}q',
+            ),
+        throwsFormatException);
+  });
+
+  test('Bitcoin Core consulta somente altura e rede e rejeita mainnet',
+      () async {
+    var chain = 'regtest';
+    final node = BitcoinTestnetNode.withQuery(({
+      required path,
+      required circuitIsolation,
+      body,
+      basicAuthorization,
+      macaroon,
+    }) async {
+      expect(path, '/');
+      expect(circuitIsolation, hasLength(22));
+      expect(basicAuthorization, base64Encode(utf8.encode('tester:test-only')));
+      expect(macaroon, isNull);
+      expect(jsonDecode(body!)['method'], 'getblockchaininfo');
+      return (
+        statusCode: 200,
+        body: jsonEncode({
+          'result': {'chain': chain, 'blocks': 5}
+        })
+      );
+    });
+    expect(await node.checkBitcoinCore(user: 'tester', password: 'test-only'),
+        (chain: 'regtest', blocks: 5));
+    chain = 'main';
+    await expectLater(
+        node.checkBitcoinCore(user: 'tester', password: 'test-only'),
+        throwsFormatException);
+    expect(() => BitcoinTestnetNode.onion('https://example.com', socksPort: 1),
+        throwsFormatException);
+  });
+
+  test('LND valida rede, circuitos distintos e expiração', () async {
+    final paths = <String>[];
+    final circuits = <String>{};
+    var chain = 'testnet';
+    var expired = false;
+    final node = BitcoinTestnetNode.withQuery(({
+      required path,
+      required circuitIsolation,
+      body,
+      basicAuthorization,
+      macaroon,
+    }) async {
+      paths.add(path);
+      circuits.add(circuitIsolation);
+      expect(macaroon, 'abcd');
+      expect(body, isNull);
+      expect(basicAuthorization, isNull);
+      final reply = path == '/v1/getinfo'
+          ? {
+              'chains': [
+                {'chain': 'bitcoin', 'network': chain}
+              ]
+            }
+          : {
+              'num_msat': '2000000000',
+              'expiry': '3600',
+              'timestamp': expired
+                  ? '1'
+                  : '${DateTime.now().millisecondsSinceEpoch ~/ 1000}',
+              'payment_hash': ''.padLeft(64, 'a'),
+            };
+      return (statusCode: 200, body: jsonEncode(reply));
+    });
+    final invoice = BitcoinPaymentRequest.parse(_testInvoice);
+    expect(
+        await node.verifyLightningInvoice(
+            request: invoice, readOnlyMacaroon: 'abcd'),
+        BigInt.from(2000000000));
+    expect(paths, ['/v1/getinfo', '/v1/payreq/$_testInvoice']);
+    expect(circuits, hasLength(2));
+    expired = true;
+    await expectLater(
+        node.verifyLightningInvoice(request: invoice, readOnlyMacaroon: 'abcd'),
+        throwsFormatException);
+    chain = 'mainnet';
+    paths.clear();
+    await expectLater(
+        node.verifyLightningInvoice(request: invoice, readOnlyMacaroon: 'abcd'),
+        throwsFormatException);
+    expect(paths, ['/v1/getinfo']);
+  });
+}

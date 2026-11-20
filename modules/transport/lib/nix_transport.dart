@@ -958,6 +958,40 @@ class RelayClient {
     );
   }
 
+  /// Consulta um nó financeiro Onion usando um circuito dedicado.
+  Future<({int statusCode, String body})> requestOnionJson({
+    required String path,
+    required String circuitIsolation,
+    String? body,
+    String? basicAuthorization,
+    String? macaroon,
+  }) {
+    _checkPolicy();
+    if (policy.mode != TransportMode.torFailClosed ||
+        !TransportPolicy.isValidOnionV3Host(baseUri.host) ||
+        !RegExp(r'^/(?:[A-Za-z0-9][A-Za-z0-9/_-]{0,2047})?$').hasMatch(path) ||
+        !RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(circuitIsolation) ||
+        (body != null && body.length > 4096) ||
+        (basicAuthorization != null &&
+            !RegExp(r'^[A-Za-z0-9+/]{1,2048}={0,2}$').hasMatch(basicAuthorization)) ||
+        (macaroon != null &&
+            !RegExp(r'^(?:[0-9a-fA-F]{2}){1,1024}$').hasMatch(macaroon))) {
+      throw const TransportBlockedException('Consulta financeira Onion inválida.');
+    }
+    return _socksHttp(
+      body == null ? 'GET' : 'POST', baseUri.resolve(path),
+      headers: {
+        'Accept': 'application/json',
+        if (body != null) 'Content-Type': 'application/json',
+        if (basicAuthorization != null) 'Authorization': 'Basic $basicAuthorization',
+        if (macaroon != null) 'Grpc-Metadata-macaroon': macaroon,
+      },
+      body: body,
+      maxResponseBytes: 64 * 1024,
+      circuitIsolation: circuitIsolation,
+    );
+  }
+
   Future<({int statusCode, String body})> _request(
     String method,
     String path, {
