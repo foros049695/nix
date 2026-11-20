@@ -176,3 +176,65 @@ func containsString(haystack, needle string) bool {
 		return false
 	})()
 }
+
+func TestWritePolicySurvivesRevocationAndRestart(t *testing.T) {
+	dir := t.TempDir()
+	open := func() (*BlindMailboxStore, error) {
+		return NewBlindMailboxStore(dir, time.Hour, 1024, 1024)
+	}
+	store, err := open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProvisionCapability("restricted", "test-writer", ScopeWrite, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProvisionCapability("restricted", "test-writer", ScopeReadAck, time.Hour); err == nil {
+		t.Fatal("o mesmo token não pode sobrescrever a política com outro escopo")
+	}
+	if err := store.RevokeCapability("restricted", "test-writer"); err != nil {
+		t.Fatal(err)
+	}
+	for _, reopen := range []bool{false, true} {
+		if reopen {
+			store, err = open()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !store.HasExplicitScope("restricted", ScopeWrite) ||
+			store.ValidateCapability("restricted", "test-writer", ScopeWrite) {
+			t.Fatal("a escrita continua protegida, com a credencial revogada")
+		}
+	}
+	if err := os.WriteFile(store.capabilitiesPath(), []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := open(); err == nil {
+		t.Fatal("registro de capabilities inválido deve impedir a abertura")
+	}
+}
+
+func TestCapabilityPersistenceRollsBack(t *testing.T) {
+	store, err := NewBlindMailboxStore(t.TempDir(), time.Hour, 1024, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProvisionCapability("restricted", "test-original", ScopeWrite, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	// Bloqueia a gravação no arquivo temporário com um diretório.
+	if err := os.Mkdir(store.capabilitiesPath()+".tmp", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProvisionCapability("restricted", "test-novo", ScopeWrite, time.Hour); err == nil {
+		t.Fatal("esperava erro de persistência")
+	}
+	if err := store.RevokeCapability("restricted", "test-original"); err == nil {
+		t.Fatal("esperava erro de persistência")
+	}
+	if store.ValidateCapability("restricted", "test-novo", ScopeWrite) ||
+		!store.ValidateCapability("restricted", "test-original", ScopeWrite) {
+		t.Fatal("uma alteração com falha mudou a autorização em memória")
+	}
+}

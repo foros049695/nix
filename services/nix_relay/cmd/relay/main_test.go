@@ -45,7 +45,13 @@ func TestRelayHTTPStoreFetchAckAndHealthz(t *testing.T) {
 		"payload_b64": base64.StdEncoding.EncodeToString([]byte("secret-blob-v4")),
 		"ttl_seconds": 3600,
 	})
-	postRes, err := http.Post(srv.URL+"/v1/mailboxes/mbox_test_1/envelopes", "application/json", bytes.NewReader(bodyBytes))
+	postReq, err := http.NewRequest(http.MethodPost, srv.URL+"/v1/mailboxes/mbox_test_1/envelopes", bytes.NewReader(bodyBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	postReq.Header.Set("Content-Type", "application/json")
+	postReq.Header.Set("X-Nix-Quota-Token", "quota-fixture")
+	postRes, err := http.DefaultClient.Do(postReq)
 	if err != nil {
 		t.Fatalf("store POST failed: %v", err)
 	}
@@ -105,6 +111,9 @@ func TestRelayHTTPStoreFetchAckAndHealthz(t *testing.T) {
 	}
 	if len(fetchOut.Envelopes) != 1 || fetchOut.Envelopes[0].ID != storeOut.ID {
 		t.Fatalf("unexpected envelopes: %+v", fetchOut.Envelopes)
+	}
+	if fetchOut.Envelopes[0].QuotaToken != "" {
+		t.Fatal("o destinatário recebeu metadados de cota do emissor")
 	}
 
 	// 5. Ack POST sem autenticação DEVE retornar 401 Unauthorized (Marco P0-4 / SEC01)

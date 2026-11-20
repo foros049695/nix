@@ -355,15 +355,23 @@ func (s *PostgresMailboxStore) ProvisionCapability(mailboxID, token string, scop
 	if err := s.ensureMailbox(ctx, boxHex); err != nil {
 		return fmt.Errorf("%w: %v", ErrPersistence, err)
 	}
-	_, err := s.db.ExecContext(
+	result, err := s.db.ExecContext(
 		ctx,
 		`INSERT INTO nix.capabilities(mailbox_id, scope, token_hash, expires_at)
 		 VALUES($1, $2, $3, clock_timestamp() + ($4 || ' seconds')::interval)
-		 ON CONFLICT (token_hash) DO UPDATE SET scope = EXCLUDED.scope, expires_at = EXCLUDED.expires_at, revoked_at = NULL`,
+		 ON CONFLICT (token_hash) DO UPDATE SET expires_at = EXCLUDED.expires_at, revoked_at = NULL
+         WHERE capabilities.mailbox_id = EXCLUDED.mailbox_id AND capabilities.scope = EXCLUDED.scope`,
 		boxHex, string(scope), hashTokenBytes(token), int64(ttl.Seconds()),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrPersistence, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrPersistence, err)
+	}
+	if affected != 1 {
+		return errors.New("token já associado a outra mailbox ou escopo")
 	}
 	return nil
 }
@@ -390,12 +398,12 @@ func (s *PostgresMailboxStore) HasExplicitScope(mailboxID string, scope Capabili
 	defer cancel()
 
 	var exists bool
-	_ = s.db.QueryRowContext(
+	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT EXISTS(SELECT 1 FROM nix.capabilities WHERE mailbox_id = $1 AND scope = $2 AND revoked_at IS NULL AND expires_at > clock_timestamp())`,
+		`SELECT EXISTS(SELECT 1 FROM nix.capabilities WHERE mailbox_id = $1 AND scope = $2 AND ($2 = 'write' OR (revoked_at IS NULL AND expires_at > clock_timestamp())))`,
 		boxHex, string(scope),
 	).Scan(&exists)
-	return exists
+	return err != nil || exists
 }
 
 func (s *PostgresMailboxStore) ValidateCapability(mailboxID, token string, scope CapabilityScope) bool {

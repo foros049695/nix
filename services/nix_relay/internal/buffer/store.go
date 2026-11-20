@@ -405,8 +405,7 @@ func (s *BlindMailboxStore) loadFromDisk() error {
 			_ = os.Remove(filepath.Join(s.dataDir, entry.Name()))
 		}
 	}
-	_ = s.loadCapabilitiesLocked()
-	return nil
+	return s.loadCapabilitiesLocked()
 }
 
 func hashTokenHex(token string) string {
@@ -455,7 +454,7 @@ func (s *BlindMailboxStore) loadCapabilitiesLocked() error {
 	}
 	nowUnix := time.Now().UTC().Unix()
 	for _, rec := range all {
-		if rec.ExpiresAtUnix > nowUnix && rec.RevokedAtUnix == 0 {
+		if rec.Scope == ScopeWrite || (rec.ExpiresAtUnix > nowUnix && rec.RevokedAtUnix == 0) {
 			s.capabilities[rec.MailboxID] = append(s.capabilities[rec.MailboxID], rec)
 		}
 	}
@@ -480,10 +479,14 @@ func (s *BlindMailboxStore) ProvisionCapability(mailboxID, token string, scope C
 		ExpiresAtUnix: time.Now().UTC().Add(ttl).Unix(),
 	}
 	// Atualiza ou insere mantendo imutabilidade de outros tokens
-	list := s.capabilities[mailboxID]
+	original, existed := s.capabilities[mailboxID]
+	list := append([]capabilityRecord(nil), original...)
 	replaced := false
 	for i := range list {
 		if list[i].TokenHashHex == rec.TokenHashHex {
+			if list[i].Scope != scope {
+				return errors.New("token já associado a outro escopo")
+			}
 			list[i] = rec
 			replaced = true
 			break
@@ -494,6 +497,11 @@ func (s *BlindMailboxStore) ProvisionCapability(mailboxID, token string, scope C
 	}
 	s.capabilities[mailboxID] = list
 	if err := s.persistCapabilitiesLocked(); err != nil {
+		if existed {
+			s.capabilities[mailboxID] = original
+		} else {
+			delete(s.capabilities, mailboxID)
+		}
 		return fmt.Errorf("%w: %v", ErrPersistence, err)
 	}
 	return nil
@@ -509,7 +517,8 @@ func (s *BlindMailboxStore) RevokeCapability(mailboxID, token string) error {
 
 	targetHash := hashTokenHex(token)
 	nowUnix := time.Now().UTC().Unix()
-	list := s.capabilities[mailboxID]
+	original, existed := s.capabilities[mailboxID]
+	list := append([]capabilityRecord(nil), original...)
 	changed := false
 	for i := range list {
 		if subtleConstantTimeCompare(list[i].TokenHashHex, targetHash) {
@@ -520,19 +529,24 @@ func (s *BlindMailboxStore) RevokeCapability(mailboxID, token string) error {
 	if changed {
 		s.capabilities[mailboxID] = list
 		if err := s.persistCapabilitiesLocked(); err != nil {
+			if existed {
+				s.capabilities[mailboxID] = original
+			} else {
+				delete(s.capabilities, mailboxID)
+			}
 			return fmt.Errorf("%w: %v", ErrPersistence, err)
 		}
 	}
 	return nil
 }
 
-// HasExplicitScope indica se há ao menos uma capability ativa explícita para o escopo informado.
+// HasExplicitScope conserva a exigência de escrita após a expiração ou revogação dos tokens.
 func (s *BlindMailboxStore) HasExplicitScope(mailboxID string, scope CapabilityScope) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	nowUnix := time.Now().UTC().Unix()
 	for _, rec := range s.capabilities[mailboxID] {
-		if rec.RevokedAtUnix == 0 && rec.ExpiresAtUnix > nowUnix && rec.Scope == scope {
+		if rec.Scope == scope && (scope == ScopeWrite || (rec.RevokedAtUnix == 0 && rec.ExpiresAtUnix > nowUnix)) {
 			return true
 		}
 	}
