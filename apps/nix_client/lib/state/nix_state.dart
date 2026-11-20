@@ -16,6 +16,8 @@ import '../core/models/call_state.dart';
 import '../core/models/publication.dart';
 import '../core/models/forum_post.dart';
 import '../core/models/cultural_item.dart';
+import '../core/models/cultural_tracking.dart';
+import '../core/media/catalog_cultural_item.dart';
 import '../core/models/user_profile.dart';
 import '../core/models/direct_message.dart';
 import '../core/models/user_settings.dart';
@@ -1668,19 +1670,52 @@ class NixState extends ChangeNotifier {
     // 3. Restaura contatos verificados e conversas diretas / Mensagens Salvas
     await _refreshDirectThreadsFromDatabase(publicId: publicId);
 
-    // 4. Restaura Acervo Cultural persistido em media_items
-    final mediaRows = await _mediaRepo?.listMediaItems(limit: 200) ?? [];
-    if (mediaRows.isNotEmpty) {
-      final items = <CulturalItem>[];
-      for (final row in mediaRows) {
+    final media = _mediaRepo;
+    if (media != null) {
+      final items = <String, CulturalItem>{};
+      for (final row in await media.listMediaItems(limit: 10000, source: 'local_acervo')) {
         try {
-          final meta = jsonDecode(row['metadata_json'] as String) as Map<String, dynamic>;
-          items.add(CulturalItem.fromJson(meta));
-        } catch (_) {}
+          final item = CulturalItem.fromJson(jsonDecode(row['metadata_json'] as String) as Map<String, dynamic>);
+          items[item.id] = item;
+        } on FormatException {
+          continue;
+        } on TypeError {
+          continue;
+        }
       }
-      if (items.isNotEmpty) {
-        _userProfile = _userProfile.copyWith(culturalItems: items);
+      for (final row in await media.listLibraryEntries(identityId)) {
+        if (row['source'] != 'nix_catalog') continue;
+        final id = row['media_id'] as String;
+        if (items.containsKey('catalog:$id')) continue;
+        try {
+          final metadata = jsonDecode(row['metadata_json'] as String) as Map<String, dynamic>;
+          final progress = jsonDecode(row['progress_json'] as String) as Map<String, dynamic>;
+          final old = culturalItemFromCatalog(CatalogWork(
+            id: id, kind: row['kind'] as String, title: row['title'] as String,
+            creators: metadata['creators'] as String?,
+            originalTitle: metadata['original_title'] as String?,
+            releaseYear: metadata['release_year'] as int?,
+            coverThumb: metadata['cover_thumb'] as String?,
+            updatedAt: row['saved_at'] as int,
+          )).copyWith(
+            rating: row['rating'] == null ? null : ((row['rating'] as int) / 10).toStringAsFixed(1),
+            tracking: CulturalTracking(
+              stage: _libraryStage(row['status'] as String),
+              favorite: row['status'] == 'favorite',
+              privateNotes: (progress['notes'] ?? metadata['private_notes']) as String? ?? '',
+              current: progress['current'] as int?, total: progress['total'] as int?,
+              seasonOrVolume: progress['seasonOrVolume'] as int?,
+              review: (progress['review'] ?? metadata['review']) as String? ?? '',
+            ),
+          );
+          items[old.id] = old;
+        } on FormatException {
+          continue;
+        } on TypeError {
+          continue;
+        }
       }
+      _userProfile = _userProfile.copyWith(culturalItems: items.values.toList());
     }
 
     // 5. Restaura favoritos do GitHub Discovery (Starwire) persistidos no SQLCipher
@@ -4499,6 +4534,28 @@ class NixState extends ChangeNotifier {
     return identity;
   }
 
+  static CulturalStage? _libraryStage(String status) => switch (status) {
+    'want_to_watch' || 'want_to_read' => CulturalStage.planned,
+    'watching' || 'reading' => CulturalStage.active,
+    'completed' => CulturalStage.finished,
+    _ => null,
+  };
+
+  Future<void> saveCatalogWork(CatalogWork work, {
+    required String status, required int rating, required String notes,
+  }) async {
+    final draft = culturalItemFromCatalog(work);
+    final existing = _userProfile.culturalItems.where((item) => item.id == draft.id).firstOrNull;
+    final tracking = (existing ?? draft).tracking.toJson();
+    if (_libraryStage(status) case final stage?) tracking['stage'] = stage.name;
+    if (status == 'favorite') tracking['favorite'] = true;
+    if (notes.isNotEmpty) tracking['privateNotes'] = notes;
+    await saveCulturalItem((existing ?? draft).copyWith(
+      rating: (rating / 10).toStringAsFixed(1),
+      tracking: CulturalTracking.fromJson(tracking),
+    ));
+  }
+
   String _mapMediaKind(CulturalCategory category) {
     switch (category) {
       case CulturalCategory.movies:
@@ -4584,7 +4641,14 @@ class NixState extends ChangeNotifier {
     final updated = _userProfile.culturalItems.where((i) => i.id != itemId).toList();
     _userProfile = _userProfile.copyWith(culturalItems: updated);
     if (_mediaRepo != null) {
-      unawaited(_mediaRepo!.deleteMediaItem(itemId));
+      final repo = _mediaRepo!;
+      final identity = _primaryIdentity?.publicId;
+      unawaited(() async {
+        if (identity != null && itemId.startsWith('catalog:')) {
+          await repo.deleteLibraryEntry(identityId: identity, mediaId: itemId.substring('catalog:'.length));
+        }
+        await repo.deleteMediaItem(itemId);
+      }());
     }
     _persistState();
     notifyListeners();

@@ -13,6 +13,7 @@ import '../../core/theme/nix_palette.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
+import '../profile/cultural_showcase.dart';
 
 /// Visão principal do Nix Media Index — Offline-First e Acervo Cultural.
 class NixMediaIndexView extends StatefulWidget {
@@ -30,7 +31,6 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
   String? _selectedKind; // null = todas, 'movie', 'series', 'anime', 'manga', 'book'
   String? _selectedGenre;
   List<CatalogWork> _searchResults = [];
-  List<Map<String, dynamic>> _userAcervo = [];
   bool _isLoading = false;
   String? _catalogError;
   int _searchGeneration = 0;
@@ -50,14 +50,8 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() {
-      if (_tabController.index == 1) {
-        _loadUserAcervo();
-      }
-    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _executeSearch();
-      _loadUserAcervo();
     });
   }
 
@@ -101,19 +95,6 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
         _isLoading = false;
       });
     }
-  }
-
-  Future<void> _loadUserAcervo() async {
-    try {
-      final identity = _nixState.primaryIdentity;
-      if (identity == null) return;
-      final entries = await _nixState.mediaRepository.listLibraryEntries(identity.publicId);
-      if (mounted) {
-        setState(() {
-          _userAcervo = entries;
-        });
-      }
-    } catch (_) {}
   }
 
   Future<void> _openAddToAcervoDialog(CatalogWork work) async {
@@ -302,14 +283,15 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
     );
 
     if (confirmed == true) {
-      await _nixState.mediaCatalogService?.saveToAcervo(
-        identityId: identity.publicId,
-        work: work,
-        status: status,
-        rating: rating.toInt(),
-        privateNotes: notesCtrl.text.trim().isNotEmpty ? notesCtrl.text.trim() : null,
-      );
-      await _loadUserAcervo();
+      if (!mounted) return;
+      try {
+        await _nixState.saveCatalogWork(work, status: status,
+          rating: rating.toInt(), notes: notesCtrl.text.trim());
+      } catch (_) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível salvar no Acervo.')));
+        return;
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -743,7 +725,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
             ),
             Tab(
               icon: const Icon(Icons.bookmarks_rounded, size: 18),
-              text: 'Meu Acervo Pessoal (${_userAcervo.length})',
+              text: 'Meu Acervo Pessoal (${context.watch<NixState>().userProfile.culturalItems.length})',
             ),
           ],
         ),
@@ -1035,121 +1017,6 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
   }
 
   Widget _buildAcervoTab(bool isCompact) {
-    if (_userAcervo.isEmpty) {
-      return Center(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.bookmarks_outlined, size: 48, color: NixColors.textSecondary),
-                const SizedBox(height: 12),
-                Text(
-                  'Seu Acervo Cultural Pessoal está vazio',
-                  style: TextStyle(
-                    color: NixColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Adicione filmes, séries, animes, mangás e livros pelo Catálogo Offline. Todas as suas avaliações e anotações são cifradas localmente com SQLCipher.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(12),
-      itemCount: _userAcervo.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final item = _userAcervo[index];
-        final title = (item['title'] as String?) ?? 'Sem título';
-        final status = (item['status'] as String?) ?? 'saved';
-        final rating = item['rating'] as int?;
-
-        final statusLabel = switch (status) {
-          'want_to_watch' => 'Quero Ver',
-          'want_to_read' => 'Quero Ler',
-          'watching' => 'Assistindo',
-          'reading' => 'Lendo',
-          'completed' => 'Concluído',
-          'favorite' => 'Favorito',
-          _ => status,
-        };
-
-        return Card(
-          color: NixColors.surfaceCard,
-          shape: RoundedRectangleBorder(
-            borderRadius: NixTokens.borderMd,
-            side: BorderSide(color: NixColors.surfaceBorder.withOpacity(0.5)),
-          ),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Colors.amber.withOpacity(0.15),
-              child: const Icon(Icons.bookmark_rounded, color: Colors.amber, size: 18),
-            ),
-            title: Text(
-              title,
-              style: TextStyle(
-                color: NixColors.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            subtitle: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: const TextStyle(
-                      color: Colors.amber,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                if (rating != null) ...[
-                  const SizedBox(width: 8),
-                  Icon(Icons.star_rounded, size: 13, color: Colors.amber.shade300),
-                  const SizedBox(width: 2),
-                  Text(
-                    '$rating/100',
-                    style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
-                  ),
-                ],
-              ],
-            ),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
-              tooltip: 'Remover do Acervo',
-              onPressed: () async {
-                final identity = _nixState.primaryIdentity;
-                if (identity != null) {
-                  await _nixState.mediaCatalogService?.removeFromAcervo(
-                    identityId: identity.publicId,
-                    workId: item['media_id'] as String,
-                  );
-                  await _loadUserAcervo();
-                }
-              },
-            ),
-          ),
-        );
-      },
-    );
+    return const SingleChildScrollView(child: CulturalShowcase());
   }
 }

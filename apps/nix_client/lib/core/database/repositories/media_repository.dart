@@ -34,8 +34,9 @@ class MediaRepository {
     ''', [id, kind, title, parentId, jsonEncode(metadata), source, sourceId, now]);
   }
 
-  Future<List<Map<String, dynamic>>> listMediaItems({int limit = 50}) async {
-    return _db.query('media_items', orderBy: 'updated_at DESC', limit: limit);
+  Future<List<Map<String, dynamic>>> listMediaItems({int limit = 50, String? source}) async {
+    return _db.query('media_items', where: source == null ? null : 'source = ?',
+      whereArgs: source == null ? null : [source], orderBy: 'updated_at DESC', limit: limit);
   }
 
   Future<List<Map<String, dynamic>>> searchMedia(String queryTerm) async {
