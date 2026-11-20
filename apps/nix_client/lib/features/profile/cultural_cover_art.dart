@@ -24,7 +24,14 @@ class CulturalCoverArt extends StatelessWidget {
               : 'Pôster',
       child: SizedBox(
         width: width,
-        height: width * (item.isVinyl ? 1 : 1.39),
+        height: width *
+            (item.isVinyl
+                ? 1
+                : item.category == CulturalCategory.manga
+                    ? 1.52
+                    : book
+                        ? 1.57
+                        : 1.39),
         child: item.isVinyl
             ? _vinyl()
             : book
@@ -77,30 +84,43 @@ class CulturalCoverArt extends StatelessWidget {
         )),
       ]);
 
-  Widget _book() => CustomPaint(
-        painter: const _BookEdgesPainter(),
-        child: ClipPath(
-            clipper: const _BookFrontClipper(),
-            child: Stack(fit: StackFit.expand, children: [
-              Padding(
-                  padding: EdgeInsets.only(right: width * .12), child: _art()),
-              Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    width: width * .115,
-                    decoration: const BoxDecoration(
-                        gradient: LinearGradient(colors: [
-                      Color(0x9A12121A),
-                      Color(0x33FFFFFF),
-                      Colors.transparent
-                    ], stops: [
-                      0,
-                      .22,
-                      1
-                    ])),
-                  )),
-            ])),
-      );
+  Widget _book() {
+    final manga = item.category == CulturalCategory.manga;
+    return CustomPaint(
+      painter: _BookEdgesPainter(manga),
+      child: ClipPath(
+        clipper: _BookFrontClipper(manga),
+        child: Stack(fit: StackFit.expand, children: [
+          Padding(
+            padding: EdgeInsets.only(
+              left: width * (manga ? .04 : .09),
+              right: width * .045,
+              bottom: width * .045,
+            ),
+            child: _art(),
+          ),
+          Positioned(
+            left: width * (manga ? .06 : .10),
+            top: 0,
+            bottom: 0,
+            width: width * (manga ? .045 : .09),
+            child: const DecoratedBox(
+                decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [
+                Color(0x70171315),
+                Color(0x36FFFFFF),
+                Colors.transparent,
+              ], stops: [
+                0,
+                .38,
+                1
+              ]),
+            )),
+          ),
+        ]),
+      ),
+    );
+  }
 
   Widget _poster() => DecoratedBox(
         decoration: BoxDecoration(
@@ -131,63 +151,65 @@ class CulturalCoverArt extends StatelessWidget {
       );
 }
 
-Path _front(Size s) => Path()
-  ..moveTo(0, s.height * .055)
-  ..lineTo(s.width * .87, 0)
-  ..lineTo(s.width * .87, s.height * .93)
-  ..lineTo(0, s.height * .99)
-  ..close();
+List<Offset> _bookCorners(Size size, bool manga) => [
+      Offset(
+          size.width * (manga ? .04 : .10), size.height * (manga ? .105 : .02)),
+      Offset(
+          size.width * (manga ? .90 : .92), size.height * (manga ? .016 : .10)),
+      Offset(size.width * .94, size.height * .945),
+      Offset(size.width * (manga ? .065 : .055), size.height * .967),
+    ];
 
 class _BookFrontClipper extends CustomClipper<Path> {
-  const _BookFrontClipper();
+  const _BookFrontClipper(this.manga);
+  final bool manga;
+
   @override
-  Path getClip(Size size) => _front(size);
+  Path getClip(Size size) =>
+      Path()..addPolygon(_bookCorners(size, manga), true);
   @override
-  bool shouldReclip(_BookFrontClipper oldClipper) => false;
+  bool shouldReclip(_BookFrontClipper oldClipper) => manga != oldClipper.manga;
 }
 
 class _BookEdgesPainter extends CustomPainter {
-  const _BookEdgesPainter();
+  const _BookEdgesPainter(this.manga);
+  final bool manga;
 
   @override
-  void paint(Canvas canvas, Size s) {
-    final spine = s.width * .87;
-    final edge = s.width * .98;
-    final pages = Path()
-      ..moveTo(spine, 0)
-      ..lineTo(edge, s.height * .065)
-      ..lineTo(edge, s.height * .987)
-      ..lineTo(spine, s.height)
-      ..lineTo(0, s.height * .99)
-      ..lineTo(spine, s.height * .93)
-      ..close();
-    canvas.drawShadow(pages, const Color(0x8C100B17), 5, false);
-    canvas.drawPath(
-        pages,
-        Paint()
-          ..shader = const LinearGradient(colors: [
-            Color(0xFF81756B),
-            Color(0xFFF3EDE4),
-            Color(0xFFB6ABA0)
-          ]).createShader(Rect.fromLTRB(spine, 0, edge, s.height)));
-    final leaf = Paint()
-      ..color = const Color(0x70877A6E)
-      ..strokeWidth = .55;
-    for (final factor in [.19, .38, .57, .76]) {
-      final x = spine + (edge - spine) * factor;
-      canvas.drawLine(Offset(x, s.height * .065 * factor),
-          Offset(x, s.height * .944 + s.height * .036 * factor), leaf);
+  void paint(Canvas canvas, Size size) {
+    final corners = _bookCorners(size, manga);
+    final depth =
+        Offset(-size.width * (manga ? .026 : .053), size.height * .024);
+    final outline = Path()
+      ..addPolygon([
+        corners[0] + depth,
+        corners[0],
+        corners[1],
+        corners[2],
+        corners[2] + depth,
+        corners[3] + depth,
+      ], true);
+    canvas.drawShadow(
+        outline, const Color(0xC31F1A18), size.width * .068, false);
+    final edgePaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF3D3935), Color(0xFFB6A897), Color(0xFFF1E9DB)],
+      ).createShader(Offset.zero & size);
+    canvas.drawPath(outline, edgePaint);
+    final paper = Paint()
+      ..strokeWidth = .55
+      ..color = const Color(0x80928877);
+    for (final factor in [.28, .58, .84]) {
+      canvas.drawLine(
+          corners[3] + depth * factor, corners[2] + depth * factor, paper);
     }
-    canvas.drawLine(
-        Offset(edge, s.height * .987),
-        Offset(0, s.height * .99),
-        Paint()
-          ..color = const Color(0xFF352736)
-          ..strokeWidth = 1.8);
   }
 
   @override
-  bool shouldRepaint(_BookEdgesPainter oldDelegate) => false;
+  bool shouldRepaint(_BookEdgesPainter oldDelegate) =>
+      manga != oldDelegate.manga;
 }
 
 class _VinylPainter extends CustomPainter {
