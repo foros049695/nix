@@ -132,15 +132,16 @@ class WorkspaceBannerView extends StatelessWidget {
 }
 
 class WorkspaceBannerField extends StatelessWidget {
-  const WorkspaceBannerField({super.key, required this.banner, required this.onChanged});
+  const WorkspaceBannerField({super.key, required this.banner, required this.onChanged, this.label = 'Banner'});
   final WorkspaceBanner? banner;
   final ValueChanged<WorkspaceBanner?> onChanged;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     final value = banner;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Banner'),
+      Text(label),
       WorkspaceBannerView(banner: value, height: 90),
       WorkspaceImageField(path: value?.path, onChanged: (path) =>
         onChanged(path == null ? null : WorkspaceBanner(path))),

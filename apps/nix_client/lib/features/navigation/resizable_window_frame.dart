@@ -1,3 +1,4 @@
+import 'interface_wallpaper_layer.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/nix_colors.dart';
@@ -88,7 +89,8 @@ class _ResizableWindowFrameState extends State<ResizableWindowFrame> {
           width: currentWidth,
           height: currentHeight,
           decoration: BoxDecoration(
-            color: NixColors.background,
+            color: InterfaceWallpaperLayer.visibleOf(context)
+                ? Colors.transparent : NixColors.background,
             borderRadius: isMaximized ? BorderRadius.zero : NixTokens.borderMd,
             border: isMaximized
                 ? null

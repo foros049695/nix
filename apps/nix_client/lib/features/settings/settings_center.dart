@@ -1,3 +1,5 @@
+import '../../core/models/interface_wallpaper.dart';
+import '../navigation/workspace_image.dart';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -415,6 +417,8 @@ class _SettingsCenterState extends State<SettingsCenter> {
         children: [
           if (category == SettingsCategory.appearance)
             _buildAppearanceSection(nixState, settings),
+          if (category == SettingsCategory.appearance)
+            _buildInterfaceWallpaper(nixState, settings),
           if (category == SettingsCategory.notifications)
             _buildNotificationsSection(nixState, settings),
           if (category == SettingsCategory.privacy)
@@ -432,6 +436,39 @@ class _SettingsCenterState extends State<SettingsCenter> {
         ],
       ),
     );
+  }
+
+  Widget _buildInterfaceWallpaper(NixState state, UserSettings settings) {
+    final value = settings.interfaceWallpaper;
+    void save(InterfaceWallpaper wallpaper) =>
+        state.updateSettings(state.settings.copyWith(interfaceWallpaper: wallpaper));
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _sectionHeader('Fundo da interface', 'Escolha uma imagem local e ajuste a leitura dos painéis.'),
+      WorkspaceBannerField(
+        label: 'Imagem de fundo',
+        banner: value.image,
+        onChanged: (image) => save(image == null
+            ? const InterfaceWallpaper()
+            : value.copyWith(image: image)),
+      ),
+      if (value.image != null) ...[
+        _sliderCard(title: 'Opacidade', value: value.opacity, max: .42,
+            onChanged: (v) => save(state.settings.interfaceWallpaper.copyWith(opacity: v))),
+        _sliderCard(title: 'Escurecimento', value: value.shade, max: .75,
+            onChanged: (v) => save(state.settings.interfaceWallpaper.copyWith(shade: v))),
+        _sliderCard(title: 'Desfoque', value: value.blur, max: 12,
+            onChanged: (v) => save(state.settings.interfaceWallpaper.copyWith(blur: v))),
+        SwitchListTile(
+          title: const Text('Animar fundo compatível'),
+          value: value.animated,
+          onChanged: (v) => save(value.copyWith(animated: v)),
+        ),
+        TextButton(
+          onPressed: () => save(const InterfaceWallpaper()),
+          child: const Text('Restaurar fundo padrão'),
+        ),
+      ],
+    ]);
   }
 
   // ================= 5.0 APARÊNCIA — DARK YELLOW, LIGHT YELLOW & AMOLED =================

@@ -1,5 +1,6 @@
 import '../theme/nix_palette.dart';
 import 'pager_appearance.dart';
+import 'interface_wallpaper.dart';
 
 enum SettingsCategory {
   appearance,    // 5.0 Aparência: Paleta de Cores Living AMOLED
@@ -71,6 +72,7 @@ class UserSettings {
   final double? windowOffsetY;
   final double dockWidth;
   final double sidebarWidth;
+  final InterfaceWallpaper interfaceWallpaper;
 
   // 5.1 Notificações e sons
   final bool messageNotifications;
@@ -149,6 +151,7 @@ class UserSettings {
     this.windowOffsetY,
     this.dockWidth = 78.0,
     this.sidebarWidth = 288.0,
+    this.interfaceWallpaper = const InterfaceWallpaper(),
     this.messageNotifications = true,
     this.callNotifications = true,
     this.systemAlerts = true,
@@ -256,6 +259,7 @@ class UserSettings {
     double? windowOffsetY,
     double? dockWidth,
     double? sidebarWidth,
+    InterfaceWallpaper? interfaceWallpaper,
     bool? messageNotifications,
     bool? callNotifications,
     bool? systemAlerts,
@@ -320,6 +324,7 @@ class UserSettings {
       windowOffsetY: windowOffsetY ?? this.windowOffsetY,
       dockWidth: dockWidth ?? this.dockWidth,
       sidebarWidth: sidebarWidth ?? this.sidebarWidth,
+      interfaceWallpaper: interfaceWallpaper ?? this.interfaceWallpaper,
       messageNotifications: messageNotifications ?? this.messageNotifications,
       callNotifications: callNotifications ?? this.callNotifications,
       systemAlerts: systemAlerts ?? this.systemAlerts,
@@ -397,6 +402,7 @@ class UserSettings {
         'hidePagerAvatar': hidePagerAvatar,
         'roundedSquareAvatar': roundedSquareAvatar,
         'pagerWallpaperShade': pagerWallpaperShade,
+        'interfaceWallpaper': interfaceWallpaper.toJson(),
         'pagerWallpaperBlur': pagerWallpaperBlur,
         'pagerWallpaperAcrossPages': pagerWallpaperAcrossPages,
         'pagerAvatarX': pagerAvatarX,
@@ -551,6 +557,7 @@ class UserSettings {
       reducedMotion: (json['reducedMotion'] as bool?) ?? false,
       hidePagerAvatar: (json['hidePagerAvatar'] as bool?) ?? false,
       roundedSquareAvatar: json['roundedSquareAvatar'] == true,
+      interfaceWallpaper: InterfaceWallpaper.fromJson(json['interfaceWallpaper']),
       pagerWallpaperShade: readAvatarValue(json['pagerWallpaperShade'], 0, 0, .75),
       pagerWallpaperBlur: readAvatarValue(json['pagerWallpaperBlur'], 0, 0, 18),
       pagerWallpaperAcrossPages: json['pagerWallpaperAcrossPages'] == true,

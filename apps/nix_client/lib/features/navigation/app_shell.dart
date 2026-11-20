@@ -1,3 +1,4 @@
+import 'interface_wallpaper_layer.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -182,7 +183,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   offGridBanner: nixState.isStrictOffGridMode ? _buildStrictOffGridBanner(nixState) : null,
                 )
               : Scaffold(
-                  backgroundColor: NixColors.background,
+                  backgroundColor: nixState.settings.interfaceWallpaper.image == null
+                      ? NixColors.background : Colors.transparent,
                   extendBody: rawMq.viewInsets.bottom == 0,
                   drawerScrimColor: Colors.transparent,
                   appBar: AppBar(
@@ -270,7 +272,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
           return Stack(
             children: [
-              shellScaffold,
+              Positioned.fill(
+                child: InterfaceWallpaperLayer(
+                  wallpaper: nixState.settings.interfaceWallpaper,
+                  reducedMotion: nixState.settings.reducedMotion,
+                  child: shellScaffold,
+                ),
+              ),
               if (nixState.isProfileOverlayOpen) const ProfileOverlay(),
             ],
           );

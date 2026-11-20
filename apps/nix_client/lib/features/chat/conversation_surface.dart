@@ -1,3 +1,4 @@
+import '../navigation/interface_wallpaper_layer.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
@@ -11,7 +12,8 @@ class ConversationSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: context.bgColor,
+      color: InterfaceWallpaperLayer.visibleOf(context)
+          ? Colors.transparent : context.bgColor,
       child: Stack(
         fit: StackFit.expand,
         children: [
