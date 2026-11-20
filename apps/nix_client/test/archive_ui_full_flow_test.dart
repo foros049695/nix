@@ -11,6 +11,8 @@ import 'package:nix_client/core/database/local_database.dart';
 import 'package:nix_client/core/database/repositories/archive_repository.dart';
 import 'package:nix_client/core/database/repositories/key_material_repository.dart';
 import 'package:nix_client/features/archive/archive_environment_view.dart';
+import 'package:nix_client/core/security/file_picker_adapter.dart';
+import 'package:nix_client/core/security/local_image_helper.dart';
 import 'package:nix_client/features/archive/article_detail_view.dart';
 import 'package:nix_client/state/nix_state.dart';
 import 'package:nix_core_crypto/nix_core_crypto.dart';
@@ -106,6 +108,9 @@ void main() {
         ...png.skip(33),
       ]);
       final image = ArchiveImage.fromPng(withMetadata, caption: 'Diagrama local');
+      final exportedBytes = image.bytes;
+      exportedBytes[0] = 0;
+      expect(image.bytes[0], 137);
       expect(latin1.decode(image.bytes), isNot(contains('segredo-exif-mark')));
       expect(() => ArchiveImage.readList([
         {'png': base64Encode(withMetadata), 'caption': 'Remota'},
@@ -211,6 +216,84 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Discussões Encadeadas (1)'), findsOneWidget);
       expect(await archiveService.verifyStoredObject(hash), isTrue);
+    });
+
+    testWidgets('editor exige confirmação antes de publicar a imagem selecionada',
+        (tester) async {
+      final original = LocalImageHelper.filePickerAdapter;
+      addTearDown(() => LocalImageHelper.filePickerAdapter = original);
+      LocalImageHelper.filePickerAdapter = ProgrammableFilePickerAdapter(
+        nextAttachments: [File('assets/images/nix_logo_128.png').absolute.path],
+      );
+      await tester.pumpWidget(
+        ChangeNotifierProvider<NixState>.value(
+          value: nixState,
+          child: const MaterialApp(home: NixArchiveEnvironmentView()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Novo Artigo'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Título do Artigo'), 'Prova de autorização',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Conteúdo em Markdown / Rich Text'), 'Texto local.',
+      );
+      final addImage = find.text('Adicionar imagem');
+      await tester.ensureVisible(addImage);
+      await tester.runAsync(() async {
+        await tester.tap(addImage);
+        for (var turn = 0; turn < 150; turn++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          await tester.pump();
+          if (find.text('Adicionar imagem ao rascunho').evaluate().isNotEmpty) break;
+        }
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('Adicionar imagem ao rascunho'), findsOneWidget);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Legenda ou descrição opcional'), 'Imagem autorizada',
+      );
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Adicionar'));
+        for (var turn = 0; turn < 150; turn++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          await tester.pump();
+          if (find.byTooltip('Remover imagem 1').evaluate().isNotEmpty) break;
+        }
+      });
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Remover imagem 1'), findsOneWidget);
+      expect(find.text('Imagem autorizada'), findsOneWidget);
+
+      final publish = find.text('Publicar com Assinatura Ed25519');
+      await tester.ensureVisible(publish);
+      await tester.tap(publish);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Publicar as imagens?'), findsOneWidget);
+      await tester.tap(find.text('Cancelar'));
+      await tester.pumpAndSettle();
+      expect(await archiveRepo.listObjects(kind: 'article'), isEmpty);
+      expect(find.text('Imagem autorizada'), findsOneWidget);
+
+      await tester.ensureVisible(publish);
+      await tester.tap(publish);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Publicar imagens'));
+        for (var turn = 0; turn < 150; turn++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          await tester.pump(const Duration(milliseconds: 20));
+          if (find.text('Assinando e Publicando...').evaluate().isEmpty) break;
+        }
+      });
+      await tester.pumpAndSettle();
+      final slot = (await archiveRepo.listObjects(kind: 'article')).single;
+      final images = await archiveService.readVerifiedArticleImages(slot['hash'] as String);
+      expect(images.single.caption, 'Imagem autorizada');
     });
 
     testWidgets('NixArchiveEnvironmentView renderiza as 4 abas e aba de discussões funcional', (tester) async {
