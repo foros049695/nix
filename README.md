@@ -323,8 +323,10 @@ tokens de leitura derivados do identificador público.
 
 - **Mensagens sem VPS:** texto BLE entre contatos com Card ID importado.
   Recibo autenticado, Wi-Fi direto e Tor direto são entregas seguintes.
-- **Mercado:** abra **Simular negociação** para experimentar IDs descartáveis,
-  chat, confirmação fictícia e disputa no próprio aparelho. Use dados de exemplo.
+- **Mercado:** use **Criar sala** e **Usar convite** para uma negociação com
+  pseudônimos efêmeros. O teste entre dois clientes usou um ambiente Tor
+  controlado. Use **Simular negociação** para ensaiar pagamento e disputa com
+  dados fictícios no próprio aparelho. [Salas privadas](docs/WALLET.md#4-salas-privadas-de-negociação)
 - **Mídia:** o catálogo pode abrir áudio ou vídeo escolhido no player do
   sistema em Android e Linux. O Nix não opera servidor de streaming.
 - **Relay opcional:** o benchmark pode usar um Onion v3 de laboratório pelo
