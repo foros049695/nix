@@ -17,22 +17,21 @@ class MediaRepository {
     Map<String, dynamic> metadata = const {},
     String? source,
     String? sourceId,
+    bool preserveExisting = false,
   }) async {
     final now = DateTime.now().toUtc().millisecondsSinceEpoch;
-    await _db.insert(
-      'media_items',
-      {
-        'id': id,
-        'kind': kind,
-        'title': title,
-        'parent_id': parentId,
-        'metadata_json': jsonEncode(metadata),
-        'source': source,
-        'source_id': sourceId,
-        'updated_at': now,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    final onConflict = preserveExisting ? 'DO NOTHING' : '''
+      DO UPDATE SET kind = excluded.kind, title = excluded.title,
+        parent_id = excluded.parent_id, metadata_json = excluded.metadata_json,
+        source = excluded.source, source_id = excluded.source_id,
+        updated_at = excluded.updated_at
+    ''';
+    await _db.rawInsert('''
+      INSERT INTO media_items (id, kind, title, parent_id, metadata_json, source,
+          source_id, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) $onConflict
+    ''', [id, kind, title, parentId, jsonEncode(metadata), source, sourceId, now]);
   }
 
   Future<List<Map<String, dynamic>>> listMediaItems({int limit = 50}) async {

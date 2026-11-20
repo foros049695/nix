@@ -208,6 +208,37 @@ void main() {
       expect(publicWork!.title, equals('Matrix'));
     });
 
+    test('editar mídia preserva vínculos e progresso da biblioteca', () async {
+      const identityId = 'progresso-local';
+      await localDb.rawDatabase.insert('key_material', {
+        'id': 'progresso-ref',
+        'purpose': 'identity_seed',
+        'wrapped_bytes': Uint8List(32),
+        'wrapping_key_ref': 'master_kdf',
+        'format_version': 1,
+        'created_at': 1000,
+      });
+      await localDb.rawDatabase.insert('identities', {
+        'id': identityId,
+        'public_id': 'NIX-0001-0002-0003-0004',
+        'ed_public': Uint8List(32),
+        'x_public': Uint8List(32),
+        'key_ref': 'progresso-ref',
+        'created_at': 1000,
+      });
+      final media = MediaRepository(localDb);
+      await media.upsertMediaItem(id: 'obra-progresso', kind: 'book', title: 'Livro');
+      await media.upsertLibraryEntry(
+        identityId: identityId,
+        mediaId: 'obra-progresso',
+        progress: {'page': 12},
+      );
+      await media.upsertMediaItem(id: 'obra-progresso', kind: 'book', title: 'Livro revisto');
+      final entry = (await media.listLibraryEntries(identityId)).single;
+      expect(entry['title'], 'Livro revisto');
+      expect(entry['progress_json'], '{"page":12}');
+    });
+
     test('Manifesto assinado Ed25519 valida pacote legítimo e rejeita dados adulterados', () async {
       final ed = Ed25519();
       final publisherKey = await ed.newKeyPair();

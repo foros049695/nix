@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_client/core/media/catalog_database.dart';
 import 'package:nix_client/core/models/cultural_item.dart';
+import 'package:nix_client/core/models/cultural_tracking.dart';
 import 'package:nix_client/core/models/user_settings.dart';
 import 'package:nix_client/core/security/local_image_helper.dart';
 import 'package:nix_client/core/theme.dart';
@@ -75,6 +76,15 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final state = NixState(loadMockData: false);
     addTearDown(state.dispose);
+    final privateDir = (await tester.runAsync(() =>
+        Directory.systemTemp.createTemp('nix-passport-test-')))!;
+    addTearDown(() => privateDir.delete(recursive: true));
+    await tester.runAsync(() => state.initializeEncryptedDatabase(
+      passphrase: 'cofre-isolado-do-teste-passaporte',
+      customDbPath: '${privateDir.path}/acervo.db',
+      customVaultPath: '${privateDir.path}/vault.json',
+      requireEncryption: false,
+    ));
     final db = _LocalCatalog();
     state.setCatalogDatabase(db);
     for (final category in [CulturalCategory.music, CulturalCategory.anime]) {
@@ -101,13 +111,38 @@ void main() {
     await tester.tap(find.widgetWithText(ListTile, 'Duna'));
     await tester.pumpAndSettle();
     expect(find.text('Frank Herbert · 1965'), findsOneWidget);
-    await tester.tap(find.text('Salvar no Acervo'));
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Salvar no Acervo'));
+      await state.mediaRepository.listMediaItems();
+    });
     await tester.pumpAndSettle();
     final book = state.userProfile.culturalItems
         .firstWhere((item) => item.title == 'Duna');
     expect(book.category, CulturalCategory.books);
     expect(book.coverMotif, 'placeholder:sandworm_dune');
     expect(book.isPublicInCardId, isFalse);
+    const review = 'Nota particular do leitor';
+    await tester.runAsync(() async {
+      await state.saveCulturalItem(book.copyWith(
+        isPublicInCardId: true,
+        tracking: const CulturalTracking(
+          stage: CulturalStage.active,
+          current: 30,
+          total: 300,
+          privateNotes: review,
+          collection: 'Ficção',
+        ),
+      ));
+      final rows = await state.mediaRepository.listMediaItems();
+      final saved = rows.singleWhere((entry) => entry['id'] == book.id);
+      final restored = CulturalItem.fromJson(jsonDecode(saved['metadata_json'] as String));
+      expect(restored.tracking.fraction, .1);
+      expect(restored.tracking.privateNotes, review);
+      final publiclyVisible = state.userProfile.publicCulturalItems
+          .singleWhere((entry) => entry.id == book.id);
+      expect(publiclyVisible.tracking.privateNotes, isEmpty);
+    });
+    await tester.pumpAndSettle();
     final covers =
         tester.widgetList<CulturalCoverArt>(find.byType(CulturalCoverArt));
     expect(

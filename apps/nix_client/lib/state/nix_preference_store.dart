@@ -10,6 +10,12 @@ import '../core/security/platform_runtime.dart';
 /// Serializa gravações e mantém o formato de preferências de instalações existentes.
 class NixPreferenceStore {
   static const _personalKey = 'personal_preferences_v1';
+  static const _legacyPrivateFields = {
+    'savedAcervoIds',
+    'pagerMusic',
+    'culturalItems'
+  };
+  static const savedAcervoKey = 'saved_acervo_ids_v1';
   static const _workspaceKey = 'workspace_layout_v1';
 
   Future<void> _writes = Future<void>.value();
@@ -24,9 +30,15 @@ class NixPreferenceStore {
     return reportErrors ? pending : _writes;
   }
 
-  String get _path => Platform.environment['FLUTTER_TEST'] == 'true'
-      ? ''
-      : NixPlatformPaths.resolveDataFile('client_prefs_v4.json');
+  final String? bootstrapPath;
+
+  NixPreferenceStore({this.bootstrapPath});
+
+  String get _path =>
+      bootstrapPath ??
+      (Platform.environment['FLUTTER_TEST'] == 'true'
+          ? ''
+          : NixPlatformPaths.resolveDataFile('client_prefs_v4.json'));
 
   Future<Map<String, dynamic>?> readBootstrap() async {
     final path = _path;
@@ -41,7 +53,6 @@ class NixPreferenceStore {
     required PreferencesRepository? repository,
     required UserSettings settings,
     required UserProfile profile,
-    required Set<String> savedAcervoIds,
     required List<Space> spaces,
     required List<SpaceFolder> folders,
     required bool workspaceChanged,
@@ -72,25 +83,69 @@ class NixPreferenceStore {
     try {
       final path = _path;
       if (path.isEmpty) return;
-      final file = File(path);
-      await file.parent.create(recursive: true);
+      final existing = await readBootstrap() ?? {};
       final data = {
         'settings': settings.toBootstrapJson(),
-        'savedAcervoIds': savedAcervoIds.toList(),
-        'pagerMusic': profile.currentActivity,
-        'culturalItems':
-            profile.culturalItems.map((item) => item.toJson()).toList(),
+        for (final field in _legacyPrivateFields)
+          if (existing.containsKey(field)) field: existing[field],
+        if (existing.containsKey('folders')) 'folders': existing['folders'],
       };
-      final pending = File('$path.pending');
-      await pending.writeAsString(jsonEncode(data), flush: true);
-      await pending.rename(file.path);
+      if (mayWrite()) await _writeBootstrap(data);
     } catch (_) {
       // Preferências de inicialização são auxiliares ao cofre.
     }
   }
 
-  Future<({UserSettings? settings, UserProfile profile, String? avatarStyle})?> readPersonal(
-      PreferencesRepository? repository, UserProfile profile) async {
+  Future<void> _writeBootstrap(Map<String, dynamic> data) async {
+    final file = File(_path);
+    await file.parent.create(recursive: true);
+    final pending = File('${file.path}.pending');
+    await pending.writeAsString(jsonEncode(data), flush: true);
+    await pending.rename(file.path);
+  }
+
+  /// Migra dados de instalações antigas somente depois de abrir o cofre cifrado.
+  /// O JSON só é limpo após todos os registros legados terem destino durável.
+  Future<void> migrateLegacyAcervo({
+    required PreferencesRepository repository,
+    required Future<void> Function(Map<String, dynamic>) importMissingItem,
+    required bool Function() mayWrite,
+  }) =>
+      enqueue(() async {
+        final legacy = await readBootstrap();
+        if (legacy == null ||
+            !_legacyPrivateFields.any(legacy.containsKey) ||
+            !mayWrite()) return;
+        if (legacy['savedAcervoIds'] case final List ids) {
+          if (await repository.getOption(savedAcervoKey) == null) {
+            await repository.setOption(savedAcervoKey, ids);
+          }
+        }
+        if (legacy['pagerMusic'] case final String track) {
+          final options = await repository.getOption(_personalKey);
+          final personal =
+              options is Map<String, dynamic> ? options : <String, dynamic>{};
+          if (personal['pagerMusic'] == null) {
+            await repository
+                .setOption(_personalKey, {...personal, 'pagerMusic': track});
+          }
+        }
+        if (legacy['culturalItems'] case final List items) {
+          for (final item in items.whereType<Map<String, dynamic>>()) {
+            if (!mayWrite()) return;
+            await importMissingItem(item);
+          }
+        }
+        if (!mayWrite()) return;
+        for (final field in _legacyPrivateFields) {
+          legacy.remove(field);
+        }
+        await _writeBootstrap(legacy);
+      }, reportErrors: true);
+
+  Future<({UserSettings? settings, UserProfile profile, String? avatarStyle})?>
+      readPersonal(
+          PreferencesRepository? repository, UserProfile profile) async {
     final raw = await repository?.getOption(_personalKey);
     if (raw is! Map<String, dynamic>) return null;
     final options = raw['settings'];

@@ -1568,6 +1568,7 @@ class NixState extends ChangeNotifier {
     await _startupPreferences;
     await flushPreferences();
     await _restoreWorkspaceLayout();
+    await _migrateLegacyAcervo();
     final restoredAvatarStyle = await _restorePersonalPreferences();
     if (_localDatabase == null || _identityRepo == null) return;
 
@@ -1648,7 +1649,7 @@ class NixState extends ChangeNotifier {
     }
 
     // 5. Restaura favoritos do GitHub Discovery (Starwire) persistidos no SQLCipher
-    final rawSavedIds = await _preferencesRepo?.getOption('saved_acervo_ids_v1');
+    final rawSavedIds = await _preferencesRepo?.getOption(NixPreferenceStore.savedAcervoKey);
     if (rawSavedIds is List) {
       try {
         final ids = rawSavedIds.map((e) => e.toString()).toSet();
@@ -2357,7 +2358,6 @@ class NixState extends ChangeNotifier {
           repository: _preferencesRepo,
           settings: _settings,
           profile: _userProfile,
-          savedAcervoIds: _savedAcervoIds,
           spaces: _spaces,
           folders: _folders,
           workspaceChanged: workspaceChanged,
@@ -2379,21 +2379,6 @@ class NixState extends ChangeNotifier {
             currentPalette,
           );
         }
-        if (raw['pagerMusic'] case final String track) {
-          _userProfile = _userProfile.copyWith(currentActivity: track);
-        }
-        if (raw['savedAcervoIds'] is List) {
-          _savedAcervoIds
-            ..clear()
-            ..addAll((raw['savedAcervoIds'] as List).map((e) => e.toString()));
-        }
-        if (raw['culturalItems'] is List) {
-          final loadedItems = (raw['culturalItems'] as List)
-              .whereType<Map<String, dynamic>>()
-              .map((e) => CulturalItem.fromJson(e))
-              .toList();
-          _userProfile = _userProfile.copyWith(culturalItems: loadedItems);
-        }
         notifyListeners();
       }
     } catch (_) {}
@@ -2406,6 +2391,32 @@ class NixState extends ChangeNotifier {
       await enterStrictOffGridMode();
     } else {
       await bootstrapSovereignEnvironment();
+    }
+  }
+
+  Future<void> _migrateLegacyAcervo() async {
+    final repository = _preferencesRepo;
+    final media = _mediaRepo;
+    if (_localDatabase?.cipherInfo.isEncrypted != true || repository == null || media == null) return;
+    try {
+      await _preferenceStore.migrateLegacyAcervo(
+        repository: repository,
+        mayWrite: () => !_disposed && _panicWipe == null,
+        importMissingItem: (entry) async {
+          final item = CulturalItem.fromJson(entry);
+          await media.upsertMediaItem(
+            id: item.id,
+            kind: _mapMediaKind(item.category),
+            title: item.title,
+            metadata: item.toJson(),
+            source: 'local_acervo',
+            sourceId: item.id,
+            preserveExisting: true,
+          );
+        },
+      );
+    } catch (_) {
+      // Os dados legados permanecem disponíveis para nova tentativa.
     }
   }
 
@@ -3830,7 +3841,7 @@ class NixState extends ChangeNotifier {
     if (_preferencesRepo != null) {
       unawaited(
         _preferencesRepo!.setOption(
-          'saved_acervo_ids_v1',
+          NixPreferenceStore.savedAcervoKey,
           _savedAcervoIds.toList(),
         ),
       );
@@ -3983,6 +3994,32 @@ class NixState extends ChangeNotifier {
       case CulturalCategory.github:
         return 'repository';
     }
+  }
+
+  /// Grava o formulário antes de fechar o editor e publicar a mudança local.
+  Future<void> saveCulturalItem(CulturalItem item) async {
+    final media = _mediaRepo;
+    if (media == null || _panicWipe != null) {
+      throw StateError('Desbloqueie o cofre antes de salvar o item.');
+    }
+    await media.upsertMediaItem(
+      id: item.id,
+      kind: _mapMediaKind(item.category),
+      title: item.title,
+      metadata: item.toJson(),
+      source: 'local_acervo',
+      sourceId: item.id,
+    );
+    if (_disposed || _panicWipe != null) return;
+    final items = List<CulturalItem>.of(_userProfile.culturalItems);
+    final index = items.indexWhere((saved) => saved.id == item.id);
+    if (index < 0) {
+      items.insert(0, item);
+    } else {
+      items[index] = item;
+    }
+    _userProfile = _userProfile.copyWith(culturalItems: items);
+    notifyListeners();
   }
 
   void addCulturalItem(CulturalItem item) {

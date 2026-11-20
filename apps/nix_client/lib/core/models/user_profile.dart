@@ -1,4 +1,5 @@
 import 'cultural_item.dart';
+import 'cultural_tracking.dart';
 
 class UserProfile {
   final String publicId;
@@ -40,7 +41,9 @@ class UserProfile {
 
   /// Retorna apenas os itens marcados para exibição pública no Card ID.
   List<CulturalItem> get publicCulturalItems =>
-      culturalItems.where((item) => item.isPublicInCardId).toList();
+      culturalItems.where((item) => item.isPublicInCardId)
+          .map((item) => item.copyWith(tracking: const CulturalTracking(), clearLocalImage: true))
+          .toList();
 
   /// Payload público seguro para QR Code (NUNCA inclui chaves privadas, seeds ou tokens).
   String get qrPublicPayload =>

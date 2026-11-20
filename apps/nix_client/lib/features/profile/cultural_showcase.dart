@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/media/catalog_database.dart';
 import '../../core/models/cultural_item.dart';
+import '../../core/models/cultural_tracking.dart';
 import '../../core/security/file_picker_adapter.dart';
 import '../../core/security/local_image_helper.dart';
 import '../../core/theme.dart';
@@ -34,7 +35,8 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
     final filtered = items
         .where((item) =>
             (_category == null || item.category == _category) &&
-            [item.title, item.creatorOrYear, item.language ?? '']
+            [item.title, item.creatorOrYear, item.language ?? '',
+              item.tracking.collection, ...item.tracking.tags]
                 .any((text) => text.toLowerCase().contains(_query)))
         .toList();
     final vinyls = filtered.where((item) => item.isVinyl).toList();
@@ -173,6 +175,15 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                   fontSize: 12, fontWeight: FontWeight.w700)),
+                          if (item.tracking.stage case final stage?)
+                            Text(item.category.trackingLabel(stage),
+                              style: Theme.of(context).textTheme.labelSmall),
+                          if (item.tracking.fraction case final fraction?)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: LinearProgressIndicator(value: fraction,
+                                semanticsLabel: 'Progresso de ${item.title}'),
+                            ),
                           Row(children: [
                             Expanded(
                                 child: Text(item.creatorOrYear,
@@ -272,6 +283,15 @@ class _CulturalItemEditorState extends State<_CulturalItemEditor> {
   late final _creator = TextEditingController(text: _base?.creatorOrYear);
   late final _rating = TextEditingController(text: _base?.rating ?? '9.5');
   late final _path = TextEditingController(text: _base?.localImagePath);
+  late final _current = TextEditingController(text: _base?.tracking.current?.toString());
+  late final _total = TextEditingController(text: _base?.tracking.total?.toString());
+  late final _sequence = TextEditingController(text: _base?.tracking.seasonOrVolume?.toString());
+  late final _review = TextEditingController(text: _base?.tracking.review);
+  late final _notes = TextEditingController(text: _base?.tracking.privateNotes);
+  late final _tags = TextEditingController(text: _base?.tracking.tags.join(', '));
+  late final _collection = TextEditingController(text: _base?.tracking.collection);
+  late CulturalStage? _stage = _base?.tracking.stage;
+  late bool _favorite = _base?.tracking.favorite ?? false;
   late var _category = _base?.category ?? CulturalCategory.movies;
   late var _crop = _base?.cropScale.clamp(1.0, 2.2) ?? 1.0;
   late final _thumbnail =
@@ -286,6 +306,13 @@ class _CulturalItemEditorState extends State<_CulturalItemEditor> {
     _creator.dispose();
     _rating.dispose();
     _path.dispose();
+    _current.dispose();
+    _total.dispose();
+    _sequence.dispose();
+    _review.dispose();
+    _notes.dispose();
+    _tags.dispose();
+    _collection.dispose();
     super.dispose();
   }
 
@@ -310,6 +337,85 @@ class _CulturalItemEditorState extends State<_CulturalItemEditor> {
     });
   }
 
+  CulturalTracking _readTracking() {
+    int? parse(TextEditingController field, {int minimum = 0}) {
+      final text = field.text.trim();
+      if (text.isEmpty) return null;
+      final value = int.tryParse(text);
+      if (value == null || value < minimum || value > 1000000) {
+        throw const FormatException('Informe números válidos nos campos de progresso.');
+      }
+      return value;
+    }
+    final current = _category.progressUnit == null ? null : parse(_current);
+    final total = _category.progressUnit == null ? null : parse(_total, minimum: 1);
+    if (current != null && total != null && current > total) {
+      throw const FormatException('O progresso não pode ultrapassar o total.');
+    }
+    return CulturalTracking(
+      stage: _stage,
+      current: current,
+      total: total,
+      seasonOrVolume: _category.sequenceLabel == null ? null : parse(_sequence, minimum: 1),
+      favorite: _favorite,
+      tags: _tags.text.split(',').map((tag) => tag.trim())
+          .where((tag) => tag.isNotEmpty).toSet().toList(),
+      collection: _collection.text.trim(),
+      review: _review.text.trim(),
+      privateNotes: _notes.text.trim(),
+    );
+  }
+
+  Widget _trackingFields() {
+    Widget number(String label, TextEditingController controller) => TextField(
+      controller: controller,
+      enabled: !_saving,
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(labelText: label),
+    );
+    final unit = _category.progressUnit;
+    return ExpansionTile(
+      title: const Text('Progresso e avaliação'),
+      tilePadding: EdgeInsets.zero,
+      children: [
+        DropdownButtonFormField<CulturalStage>(
+          isExpanded: true,
+          value: _stage,
+          decoration: const InputDecoration(labelText: 'Status'),
+          items: [
+            const DropdownMenuItem(child: Text('Sem status')),
+            for (final stage in CulturalStage.values)
+              DropdownMenuItem(value: stage, child: Text(_category.trackingLabel(stage))),
+          ],
+          onChanged: _saving ? null : (stage) => setState(() => _stage = stage),
+        ),
+        if (unit != null) ...[
+          if (_category.sequenceLabel case final sequence?)
+            number(sequence, _sequence),
+          Row(children: [
+            Expanded(child: number('Concluído ($unit)', _current)),
+            const SizedBox(width: 12),
+            Expanded(child: number('Total', _total)),
+          ]),
+        ],
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Favorito'),
+          value: _favorite,
+          onChanged: _saving ? null : (value) => setState(() => _favorite = value),
+        ),
+        TextField(controller: _collection, enabled: !_saving, maxLength: 60,
+          decoration: const InputDecoration(labelText: 'Coleção')),
+        TextField(controller: _tags, enabled: !_saving, maxLength: 240,
+          decoration: const InputDecoration(labelText: 'Tags separadas por vírgula')),
+        TextField(controller: _review, enabled: !_saving, maxLength: 2000, maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Resenha privada')),
+        TextField(controller: _notes, enabled: !_saving, maxLength: 2000, maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Observações privadas')),
+      ],
+    );
+  }
+
   Future<void> _save() async {
     final title = _title.text.trim();
     if (_saving) return;
@@ -325,6 +431,7 @@ class _CulturalItemEditorState extends State<_CulturalItemEditor> {
     final state = context.read<NixState>();
     final rawPath = _path.text.trim();
     try {
+      final tracking = _readTracking();
       String? path;
       if (rawPath.isNotEmpty) {
         path = rawPath == widget.existing?.localImagePath
@@ -345,6 +452,7 @@ class _CulturalItemEditorState extends State<_CulturalItemEditor> {
                 creatorOrYear: '',
                 category: _category,
                 monogram: '',
+                isPublicInCardId: false,
               ))
           .copyWith(
         title: title,
@@ -357,17 +465,16 @@ class _CulturalItemEditorState extends State<_CulturalItemEditor> {
         localImagePath: path,
         clearLocalImage: path == null,
         cropScale: _crop,
+        tracking: tracking,
       );
-      if (state.userProfile.culturalItems.any((entry) => entry.id == item.id)) {
-        state.updateCulturalItem(item);
-      } else {
-        state.addCulturalItem(item);
-      }
-      Navigator.of(context).pop();
+      await state.saveCulturalItem(item);
+      if (mounted && route?.isCurrent != false) Navigator.of(context).pop();
     } on FormatException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } on FileSystemException {
       if (mounted) setState(() => _error = 'Não foi possível salvar a capa.');
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Não foi possível salvar o item no cofre.');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -416,11 +523,10 @@ class _CulturalItemEditorState extends State<_CulturalItemEditor> {
                 decoration:
                     const InputDecoration(labelText: 'Avaliação pessoal')),
             const SizedBox(height: 14),
-            TextField(
-                controller: _path,
-                onChanged: (_) => setState(() => _error = null),
-                decoration:
-                    const InputDecoration(labelText: 'Caminho da capa local')),
+            _trackingFields(),
+            if (_path.text.isNotEmpty)
+              Text(LocalImageHelper.getFileName(_path.text),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 7),
             OutlinedButton.icon(
                 onPressed: _saving ? null : _pickImage,

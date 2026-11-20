@@ -1,3 +1,5 @@
+import 'cultural_tracking.dart';
+
 enum CulturalCategory {
   movies,
   series,
@@ -9,6 +11,30 @@ enum CulturalCategory {
 }
 
 extension CulturalCategoryLabel on CulturalCategory {
+  String? get progressUnit => switch (this) {
+    CulturalCategory.books => 'Páginas',
+    CulturalCategory.series || CulturalCategory.anime => 'Episódios',
+    CulturalCategory.manga => 'Capítulos',
+    CulturalCategory.music => 'Faixas',
+    _ => null,
+  };
+
+  String? get sequenceLabel => switch (this) {
+    CulturalCategory.series || CulturalCategory.anime => 'Temporada',
+    CulturalCategory.manga => 'Volume',
+    _ => null,
+  };
+
+  String trackingLabel(CulturalStage stage) => switch ((stage, this)) {
+    (CulturalStage.active, CulturalCategory.books || CulturalCategory.manga) => 'Lendo',
+    (CulturalStage.active, CulturalCategory.music) => 'Ouvindo',
+    (CulturalStage.active, CulturalCategory.movies || CulturalCategory.series || CulturalCategory.anime) => 'Assistindo',
+    (CulturalStage.revisiting, CulturalCategory.books || CulturalCategory.manga) => 'Relendo',
+    (CulturalStage.revisiting, CulturalCategory.music) => 'Ouvindo novamente',
+    (CulturalStage.revisiting, CulturalCategory.movies || CulturalCategory.series || CulturalCategory.anime) => 'Reassistindo',
+    _ => stage.label,
+  };
+
   String get label {
     switch (this) {
       case CulturalCategory.movies:
@@ -47,6 +73,7 @@ class CulturalItem {
   final String? language;
   final String? license;
   final DateTime? updatedDate;
+  final CulturalTracking tracking;
 
   const CulturalItem({
     required this.id,
@@ -66,6 +93,7 @@ class CulturalItem {
     this.language,
     this.license,
     this.updatedDate,
+    this.tracking = const CulturalTracking(),
   });
 
   bool get isVinyl => category == CulturalCategory.music;
@@ -90,6 +118,7 @@ class CulturalItem {
     String? language,
     String? license,
     DateTime? updatedDate,
+    CulturalTracking? tracking,
   }) {
     return CulturalItem(
       id: id ?? this.id,
@@ -109,11 +138,13 @@ class CulturalItem {
       language: language ?? this.language,
       license: license ?? this.license,
       updatedDate: updatedDate ?? this.updatedDate,
+      tracking: tracking ?? this.tracking,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
+      'tracking': tracking.toJson(),
       'id': id,
       'title': title,
       'creatorOrYear': creatorOrYear,
@@ -146,6 +177,9 @@ class CulturalItem {
       id: json['id'] as String? ?? 'cult_${DateTime.now().millisecondsSinceEpoch}',
       title: json['title'] as String? ?? '',
       creatorOrYear: json['creatorOrYear'] as String? ?? '',
+      tracking: json['tracking'] is Map<String, dynamic>
+          ? CulturalTracking.fromJson(json['tracking'] as Map<String, dynamic>)
+          : const CulturalTracking(),
       category: cat,
       rating: json['rating'] as String? ?? '9.5',
       monogram: json['monogram'] as String? ?? 'NX',
