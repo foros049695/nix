@@ -257,21 +257,14 @@ class _PublicSpaceCard extends StatelessWidget {
             Divider(height: 16, color: NixColors.surfaceBorder),
             Row(
               children: [
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                      color: NixColors.textPrimary, shape: BoxShape.circle),
-                ),
-                const SizedBox(width: 5),
                 Expanded(
                   child: Text(
-                    '${space.onlineCount} on · ${space.memberCount} membros',
-                    style: TextStyle(
-                      color: NixColors.textPrimary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    [
+                      if (space.memberCount case final count?)
+                        count == 1 ? '1 membro conhecido' : '$count membros',
+                      if (space.onlineCount case final count?) '$count online',
+                    ].join(' · '),
+                    style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
                   ),
                 ),
                 const SizedBox(width: 6),

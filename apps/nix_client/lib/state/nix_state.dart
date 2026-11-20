@@ -2807,7 +2807,9 @@ class NixState extends ChangeNotifier {
       yield Space(
         id: space.id, name: space.name, initials: space.initials,
         description: space.description, categoryTag: space.categoryTag,
-        memberCount: space.memberCount, onlineCount: space.onlineCount,
+        memberCount: _isMockMode ? space.memberCount
+            : space.ownerFingerprint == _ownWorkspaceIdentity ? 1 : null,
+        onlineCount: _isMockMode ? space.onlineCount : null,
         isPublic: true,
         channels: [
           for (final channel in visible)
@@ -2837,9 +2839,15 @@ class NixState extends ChangeNotifier {
           s.categoryTag.toLowerCase().contains(query);
     }).toList();
 
-    filtered.sort((a, b) => _exploreSortAscending
-        ? a.memberCount.compareTo(b.memberCount)
-        : b.memberCount.compareTo(a.memberCount));
+    filtered.sort((a, b) {
+      final aCount = a.memberCount;
+      final bCount = b.memberCount;
+      if (aCount == null && bCount != null) return 1;
+      if (bCount == null && aCount != null) return -1;
+      final byCount = (aCount ?? 0).compareTo(bCount ?? 0);
+      return byCount == 0 ? a.name.compareTo(b.name)
+          : _exploreSortAscending ? byCount : -byCount;
+    });
     return filtered;
   }
 

@@ -76,8 +76,8 @@ class Space {
   final String? ownerFingerprint;
   final List<Channel> channels;
   final int unreadCount;
-  final int memberCount;
-  final int onlineCount;
+  final int? memberCount;
+  final int? onlineCount;
   final bool isPublic;
   final bool isPinned;
   final bool isMuted;
@@ -94,8 +94,8 @@ class Space {
     this.ownerFingerprint,
     required this.channels,
     this.unreadCount = 0,
-    this.memberCount = 12,
-    this.onlineCount = 5,
+    this.memberCount,
+    this.onlineCount,
     this.isPublic = true,
     this.isPinned = false,
     this.isMuted = false,
