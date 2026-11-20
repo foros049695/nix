@@ -278,7 +278,10 @@ class PagerGuide extends StatelessWidget {
         ],
       );
       if (centered) {
-        return Column(children: [portrait, const SizedBox(height: 8), copy]);
+        return SizedBox(
+          width: double.infinity,
+          child: Column(children: [portrait, const SizedBox(height: 8), copy]),
+        );
       }
       return Row(children: [
         portrait,

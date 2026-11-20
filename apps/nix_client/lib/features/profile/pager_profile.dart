@@ -383,27 +383,32 @@ class _PagerProfileState extends State<PagerProfile> {
   Widget _status(NixState state, bool reduced, bool wideDisplay) {
     final gate = state.securityGate;
     const instruction = '> Rede, cofre e chaves.\n> Avance para contemplar.';
+    final details = [
+      'Cofre local: ${gate.keyVaultUnlocked ? 'desbloqueado' : 'bloqueado'}',
+      'Identidade: ${gate.identityKeysLoaded ? 'Ed25519 + X25519' : 'chaves indisponíveis'}',
+      if (!gate.isStrictOffGridMode && gate.isBootstrapping)
+        'Inicialização Tor: ${gate.torBootstrapPercent}%',
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         PagerGuide(
           message: instruction,
           reducedMotion: reduced,
-          portraitSize: wideDisplay ? 148 : 56,
+          portraitSize: wideDisplay ? 132 : 56,
           centered: wideDisplay,
         ),
         const SizedBox(height: 9),
         _PagerStatusStrip(gate: gate),
         const SizedBox(height: 9),
-        Text(
-            'Cofre local: ${gate.keyVaultUnlocked ? 'desbloqueado' : 'bloqueado'}',
-            style: const TextStyle(fontSize: 13)),
-        Text(
-            'Identidade: ${gate.identityKeysLoaded ? 'Ed25519 + X25519' : 'chaves indisponíveis'}',
-            style: const TextStyle(fontSize: 13)),
-        if (!gate.isStrictOffGridMode && gate.isBootstrapping)
-          Text('Inicialização Tor: ${gate.torBootstrapPercent}%',
-              style: const TextStyle(fontSize: 13)),
+        if (wideDisplay)
+          Wrap(spacing: 16, runSpacing: 3, children: [
+            for (final detail in details)
+              Text(detail, style: const TextStyle(fontSize: 13)),
+          ])
+        else
+          for (final detail in details)
+            Text(detail, style: const TextStyle(fontSize: 13)),
       ],
     );
   }
