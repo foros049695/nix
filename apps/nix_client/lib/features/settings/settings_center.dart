@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +11,8 @@ import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
 import '../dialogs/sovereign_onboarding_dialog.dart';
 import '../profile/pager_appearance_dialog.dart';
+import 'relay_settings_dialog.dart';
+import 'microphone_test_card.dart';
 
 /// Central de Configurações Modular (V2 — Aparência Living AMOLED, Privacidade, Dispositivos e Módulos).
 class SettingsCenter extends StatefulWidget {
@@ -34,9 +35,6 @@ class SettingsCenter extends StatefulWidget {
 
 class _SettingsCenterState extends State<SettingsCenter> {
   late SettingsCategory? _compactCategory = widget.initialCompactCategory;
-  bool _isTestingMic = false;
-  double _micLevel = 0.0;
-  Timer? _micTimer;
   bool _isRunningNetDiag = false;
   String _netDiagResult = 'Clique em diagnosticar para auditar SOCKS5, ControlPort e Onion v3.';
   final TextEditingController _blockIdController = TextEditingController();
@@ -46,30 +44,11 @@ class _SettingsCenterState extends State<SettingsCenter> {
 
   @override
   void dispose() {
-    _micTimer?.cancel();
     _blockIdController.dispose();
     _newDeviceNameController.dispose();
     _bleTestMessageController.dispose();
     _loraTestMessageController.dispose();
     super.dispose();
-  }
-
-  void _toggleMicTest() {
-    if (_isTestingMic) {
-      _micTimer?.cancel();
-      setState(() {
-        _isTestingMic = false;
-        _micLevel = 0.0;
-      });
-    } else {
-      final rng = Random();
-      setState(() => _isTestingMic = true);
-      _micTimer = Timer.periodic(const Duration(milliseconds: 120), (_) {
-        if (mounted) {
-          setState(() => _micLevel = 0.20 + rng.nextDouble() * 0.72);
-        }
-      });
-    }
   }
 
   void _runConnectivityDiagnostic() async {
@@ -443,7 +422,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
           if (category == SettingsCategory.chats)
             _buildChatsSection(nixState, settings),
           if (category == SettingsCategory.audio)
-            _buildAudioSection(nixState, settings),
+            _buildAudioSection(),
           if (category == SettingsCategory.connections)
             _buildConnectionsSection(nixState, settings),
           if (category == SettingsCategory.devices)
@@ -1174,111 +1153,15 @@ class _SettingsCenterState extends State<SettingsCenter> {
   }
 
   // ================= 5.4 SOM E MICROFONE =================
-  Widget _buildAudioSection(NixState state, UserSettings s) {
+  Widget _buildAudioSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeader(
-          '5.4 Som e Microfone',
-          'Ajuste dispositivos de áudio, supressão de ruído e faça teste de eco em sandbox local.',
+          'Som e microfone',
+          'Verifique os dispositivos de áudio e o nível de entrada.',
         ),
-        _dropdownCard(
-          title: 'Dispositivo de Entrada (Microfone)',
-          subtitle: 'Dispositivo de captura isolado no subsistema PipeWire/PulseAudio.',
-          value: s.inputDevice,
-          options: const [
-            'Microfone Padrão ALSA/PipeWire (Isolado)',
-            'Headset USB Segura (Hardware Mute)',
-            'Entrada de Linha Analógica',
-          ],
-          onChanged: (v) => state.updateSettings(s.copyWith(inputDevice: v)),
-        ),
-        _dropdownCard(
-          title: 'Dispositivo de Saída (Alto-falantes / Fones)',
-          subtitle: 'Roteamento estéreo isolado para reprodução sem vazamentos.',
-          value: s.outputDevice,
-          options: const [
-            'Saída Estéreo Digital (PipeWire)',
-            'Fones de Ouvido Cabeados P3/P2',
-            'Saída HDMI / DisplayPort',
-          ],
-          onChanged: (v) => state.updateSettings(s.copyWith(outputDevice: v)),
-        ),
-        const SizedBox(height: 8),
-        _sliderCard(
-          title: 'Volume de Entrada / Ganho (${(s.inputVolume * 100).round()}%)',
-          value: s.inputVolume,
-          onChanged: (v) => state.updateSettings(s.copyWith(inputVolume: v)),
-        ),
-        const SizedBox(height: 8),
-        _sliderCard(
-          title: 'Volume de Saída (${(s.outputVolume * 100).round()}%)',
-          value: s.outputVolume,
-          onChanged: (v) => state.updateSettings(s.copyWith(outputVolume: v)),
-        ),
-        const SizedBox(height: 8),
-        _switchTile(
-          title: 'Supressão Ativa de Ruído de Fundo',
-          subtitle: 'Filtro espectral RNNoise para eliminar estalos e ruídos de ventoinha.',
-          value: s.noiseSuppression,
-          onChanged: (v) => state.updateSettings(s.copyWith(noiseSuppression: v)),
-        ),
-        _switchTile(
-          title: 'Cancelamento Acústico de Eco',
-          subtitle: 'Impede realimentação ao usar microfone e caixas de som no mesmo ambiente.',
-          value: s.echoCancellation,
-          onChanged: (v) => state.updateSettings(s.copyWith(echoCancellation: v)),
-        ),
-        const SizedBox(height: 12),
-        // Teste de Microfone em Tempo Real
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: NixColors.surfaceCard,
-            borderRadius: NixTokens.borderSm,
-            border: Border.all(color: NixColors.surfaceBorder),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('TESTE DE CAPTURA DE VOZ EM TEMPO REAL',
-                      style: TextStyle(color: NixColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700)),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: NixColors.textPrimary,
-                      side: BorderSide(color: NixColors.surfaceBorderStrong),
-                    ),
-                    onPressed: _toggleMicTest,
-                    icon: Icon(_isTestingMic ? Icons.stop_rounded : Icons.play_arrow_rounded, size: 16),
-                    label: Text(_isTestingMic ? 'Parar Teste' : 'Iniciar Teste', style: const TextStyle(fontSize: 11)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: _micLevel,
-                  backgroundColor: NixColors.surfaceActive,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    _micLevel > 0.8 ? NixColors.accentDanger : Colors.white,
-                  ),
-                  minHeight: 8,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _isTestingMic
-                    ? 'Fale no microfone. O medidor responde em tempo real sem transmitir áudio para a rede.'
-                    : 'Pressione "Iniciar Teste" para calibrar o ganho do microfone localmente.',
-                style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
-              ),
-            ],
-          ),
-        ),
+        const MicrophoneTestCard(),
       ],
     );
   }
@@ -1308,6 +1191,21 @@ class _SettingsCenterState extends State<SettingsCenter> {
               state.exitOffGridModeAndConnectTor();
             }
           },
+        ),
+        Material(
+          type: MaterialType.transparency,
+          child: ListTile(
+            leading: const Icon(Icons.dns_outlined),
+            title: const Text('Relay de mensagens'),
+            subtitle: Text(state.hasRelayConfiguration
+                ? 'Endereço Onion e credenciais salvos no cofre'
+                : 'Informe os dados fornecidos pelo operador'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => showDialog<void>(
+              context: context,
+              builder: (_) => RelaySettingsDialog(state: state),
+            ),
+          ),
         ),
         _switchTile(
           title: 'Ocultar Informações Sensíveis de Rede',

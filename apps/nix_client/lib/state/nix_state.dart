@@ -565,14 +565,21 @@ class NixState extends ChangeNotifier {
     try {
       if (await db.getEntryCount() == 0) {
         final seed = await rootBundle.load('assets/catalog/seed_catalog.db');
+        final bytes = seed.buffer.asUint8List(seed.offsetInBytes, seed.lengthInBytes);
+        const bundledSeedSha256 =
+            'f14e9d230bbbcdcd1542771a8bc9d87ff4045a61058afc3c4dba6dd97e846c6c';
+        if (std_crypto.sha256.convert(bytes).toString() != bundledSeedSha256) {
+          throw const FormatException('O catálogo incluído no aplicativo falhou na verificação de integridade.');
+        }
         final file = File(db.path);
         final temporary = File('${db.path}.seed.tmp');
-        await temporary.writeAsBytes(
-          seed.buffer.asUint8List(seed.offsetInBytes, seed.lengthInBytes),
-          flush: true,
-        );
-        await db.close();
-        await temporary.rename(file.path);
+        try {
+          await temporary.writeAsBytes(bytes, flush: true);
+          await db.close();
+          await temporary.rename(file.path);
+        } finally {
+          if (await temporary.exists()) await temporary.delete();
+        }
         if (_disposed || _panicWipe != null) return;
         db = await CatalogDatabase.open(path: file.path);
       }
@@ -629,6 +636,101 @@ class NixState extends ChangeNotifier {
     }
   }
 
+  static const _relayPreferenceKey = 'messaging.relay.v1';
+
+  bool _useCurrentTorPort = false;
+
+  RelayClient? get _relayForMessaging {
+    final relay = _activeRelayClient;
+    if (relay == null || !_useCurrentTorPort) return relay;
+    return RelayClient(
+      baseUri: relay.baseUri,
+      policy: TransportPolicy(socksPort: _embeddedTor.socksPort),
+    );
+  }
+
+  bool get hasRelayConfiguration => _activeRelayClient != null;
+
+  String get localRelayMailboxId => _activeMailboxCredentials?.mailboxId ??
+      (_primaryIdentity == null
+          ? ''
+          : SovereignMessenger.deriveMailboxCredentials(_primaryIdentity!.publicId)
+              .mailboxId);
+
+  Uri? get relayAddress => _activeRelayClient?.baseUri;
+
+  Uri _validateRelayAddress(String address) {
+    final uri = Uri.tryParse(address.trim());
+    if (uri == null ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        !TransportPolicy.isValidOnionV3Host(uri.host) ||
+        uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment ||
+        (uri.path.isNotEmpty && uri.path != '/')) {
+      throw const FormatException('Informe o endereço HTTP(S) de um relay Onion v3.');
+    }
+    return uri;
+  }
+
+  void _activateProvisionedRelay(Uri uri, MailboxCredentials credentials) {
+    configureRelayTransport(
+      relayClient: RelayClient(
+        baseUri: uri,
+        policy: TransportPolicy(socksPort: _embeddedTor.socksPort),
+      ),
+      mailboxCredentials: credentials,
+    );
+    _useCurrentTorPort = true;
+  }
+
+  Future<void> saveRelayConfiguration({
+    required String address,
+    required String readToken,
+    required String writeToken,
+  }) async {
+    final repo = _preferencesRepo;
+    final mailbox = localRelayMailboxId;
+    if (_localDatabase?.cipherInfo.isEncrypted != true || repo == null ||
+        mailbox.isEmpty || _panicWipe != null) {
+      throw StateError('Desbloqueie o cofre SQLCipher antes de configurar o relay.');
+    }
+    final uri = _validateRelayAddress(address);
+    final read = readToken.trim();
+    final write = writeToken.trim();
+    if (read.isEmpty || read.length > 512 || write.length > 512 ||
+        RegExp(r'\s').hasMatch(read) || RegExp(r'\s').hasMatch(write) ||
+        RegExp(r'^read_[0-9a-f]{64}$').hasMatch(read)) {
+      throw const FormatException('Use as credenciais provisionadas pelo operador do relay.');
+    }
+    await repo.setOption(_relayPreferenceKey, {
+      'address': uri.toString(),
+      'mailbox': mailbox,
+      'readToken': read,
+      'writeToken': write,
+    });
+    if (_disposed || _panicWipe != null) return;
+    _activateProvisionedRelay(uri, MailboxCredentials(
+      mailboxId: mailbox, readToken: read, writeQuotaToken: write,
+    ));
+  }
+
+  Future<void> _restoreRelayConfiguration() async {
+    if (_localDatabase?.cipherInfo.isEncrypted != true) return;
+    try {
+      final settings = await _preferencesRepo?.getOption(_relayPreferenceKey);
+      if (settings is! Map || settings['mailbox'] != localRelayMailboxId) return;
+      _activateProvisionedRelay(
+        _validateRelayAddress(settings['address'] as String),
+        MailboxCredentials(
+          mailboxId: settings['mailbox'] as String,
+          readToken: settings['readToken'] as String,
+          writeQuotaToken: settings['writeToken'] as String,
+        ),
+      );
+    } catch (_) {
+      _lastMessagingError = 'A configuração do relay no cofre é inválida.';
+    }
+  }
+
   /// Configura o cliente de transporte do relay cego e credenciais de mailbox para o [SovereignMessenger].
   void configureRelayTransport({
     required RelayClient relayClient,
@@ -642,6 +744,7 @@ class NixState extends ChangeNotifier {
         'Configure uma credencial de leitura provisionada pelo operador do relay.',
       );
     }
+    _useCurrentTorPort = false;
     _activeRelayClient = relayClient;
     if (mailboxCredentials != null) {
       _activeMailboxCredentials = mailboxCredentials;
@@ -650,7 +753,7 @@ class NixState extends ChangeNotifier {
         _primaryIdentity!.publicId,
       );
     }
-    _rebuildSovereignMessenger();
+    if (_sovereignMessenger == null) _rebuildSovereignMessenger();
     notifyListeners();
   }
 
@@ -948,64 +1051,66 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Adiciona um novo contato soberano por Card ID / Chave Pública (Seção 6).
-  Future<void> addNewContact({
-    required String publicId,
-    String? nickname,
-  }) async {
-    final cleanId = publicId.trim();
-    if (cleanId.isEmpty) return;
+  /// Importa a identidade, a caixa postal e a pré-chave assinadas pelo contato.
+  Future<void>? _importingInvitation;
 
-    final effectiveName = (nickname != null && nickname.trim().isNotEmpty)
-        ? nickname.trim()
-        : (cleanId.length > 15 ? 'Par ${cleanId.substring(0, 14)}' : cleanId);
-
-    final dmId = 'dm_${DateTime.now().millisecondsSinceEpoch}';
-
-    // Se o banco de dados SQLCipher estiver ativo, persiste o contato
-    if (_localDatabase != null && _contactRepo != null) {
-      try {
-        await _contactRepo!.upsertContact(
-          id: cleanId,
-          edPublic: Uint8List(32),
-          xPublic: Uint8List(32),
-          fingerprint: cleanId,
-          displayName: effectiveName,
-          verification: 'verified',
-        );
-      } catch (e) {
-        debugPrint('[NixState] Aviso ao inserir contato no banco local: $e');
-      }
+  Future<void> addNewContact({required String publicId, String? nickname}) {
+    if (_importingInvitation != null) {
+      return Future.error(StateError('Já existe um convite sendo importado.'));
     }
+    return _importingInvitation = _importContactInvitation(publicId, nickname)
+        .whenComplete(() => _importingInvitation = null);
+  }
 
-    final newDm = DirectMessageThread(
-      id: dmId,
-      peerName: effectiveName,
-      peerPublicId: cleanId,
-      statusText: 'Sessão P2P Cifrada · Roteamento Tor Onion v3',
-      isOnline: true,
-      isVerified: true,
-      trustLevel: NixTrustLevel.level2Yellow,
-      unreadCount: 0,
-      messages: [
-        Message(
-          id: 'msg_welcome_$dmId',
-          channelId: dmId,
-          senderName: 'Sistema Nix',
-          senderFingerprint: 'SISTEMA-FAIL-CLOSED',
-          isMe: false,
-          isVerified: true,
-          text: 'Conversa privada iniciada com $effectiveName. Mensagens cifradas de ponta a ponta (Double Ratchet) e roteadas via Tor.',
-          timestamp: DateTime.now().toUtc(),
-        ),
-      ],
+  Future<void> _importContactInvitation(String publicId, String? nickname) async {
+    final raw = publicId.trim();
+    if (raw.length > 8192 || !raw.startsWith('{')) {
+      throw const FormatException('Cole o convite assinado completo do contato.');
+    }
+    final messenger = _sovereignMessenger;
+    if (messenger == null) {
+      throw StateError('Desbloqueie o cofre para importar um convite.');
+    }
+    final result = await messenger.importAndVerifyCardJson(
+      rawJson: raw,
+      markVerifiedOutOfBand: false,
+      upgradeLegacyPlaceholder: true,
     );
-
-    _directMessages.add(newDm);
-    _selectedDm = newDm;
-    _homeSubTab = HomeSubTab.directChat;
-    _activeArea = NixActiveArea.homePrivate;
-    notifyListeners();
+    final peerId = result.publicId;
+    final bundle = result.signedPreKeyBundle;
+    if (result.status != CardImportStatus.importedUnverified ||
+        peerId == null || bundle == null) {
+      throw StateError(result.status == CardImportStatus.keyChangedWarning
+          ? 'As chaves do contato mudaram. Confirme a identidade antes de continuar.'
+          : 'O convite é inválido ou expirou.');
+    }
+    final localId = messenger.identity.publicId;
+    final id = SovereignMessenger.invitationConversationId(localId, peerId);
+    final alias = nickname?.trim();
+    final title = alias != null && alias.isNotEmpty
+        ? alias
+        : result.displayName ?? peerId;
+    // Só um lado inicia X3DH, mesmo se ambos importarem os convites ao mesmo tempo.
+    if (localId.compareTo(peerId) < 0 &&
+        await messenger.getSessionMetadata(id) == null) {
+      await messenger.establishInitiatorSession(
+        conversationId: id,
+        peerPublicId: peerId,
+        peerDeviceId: 'dev_primary',
+        peerBundle: bundle,
+        peerTitle: title,
+        peerMailbox: result.mailboxId,
+      );
+    } else if (await messenger.conversationRepo.getConversation(id) == null) {
+      await messenger.conversationRepo.createConversation(
+        id: id,
+        kind: 'direct',
+        ownerIdentityId: localId,
+        title: title,
+      );
+    }
+    await _refreshDirectThreadsFromDatabase();
+    selectDirectMessage(_directMessages.firstWhere((thread) => thread.id == id));
   }
 
   /// Procedimento Anti-Forense / Botão de Pânico (estilo BleachBit):
@@ -1054,6 +1159,8 @@ class NixState extends ChangeNotifier {
     _localDeviceId = 'dev_primary';
     _localDatabase = null;
     _sovereignMessenger = null;
+    _activeRelayClient = null;
+    _activeMailboxCredentials = null;
     _archiveService = null;
     _mediaCatalogService = null;
     _identityRepo = null;
@@ -1461,7 +1568,7 @@ class NixState extends ChangeNotifier {
     await _startupPreferences;
     await flushPreferences();
     await _restoreWorkspaceLayout();
-    await _restorePersonalPreferences();
+    final restoredAvatarStyle = await _restorePersonalPreferences();
     if (_localDatabase == null || _identityRepo == null) return;
 
     // 1. Varre mensagens efêmeras expiradas antes de montar o estado em memória
@@ -1516,8 +1623,11 @@ class NixState extends ChangeNotifier {
       publicId: publicId,
       displayName: restoredName,
       bio: (profileRow?['bio'] as String?) ?? _userProfile.bio,
-      avatarStyle: (profileRow?['avatar_object_id'] as String?) ?? _userProfile.avatarStyle,
+      avatarStyle: restoredAvatarStyle ??
+          (profileRow?['avatar_object_id'] as String?) ?? _userProfile.avatarStyle,
     );
+
+    await _restoreRelayConfiguration();
 
     // 3. Restaura contatos verificados e conversas diretas / Mensagens Salvas
     await _refreshDirectThreadsFromDatabase(publicId: publicId);
@@ -1638,9 +1748,14 @@ class NixState extends ChangeNotifier {
         final existingIdx = _directMessages.indexWhere((d) => d.id == cid);
         final sessionRow = await _sessionRepo?.getSessionByConversation(cid);
         final sessionMeta = await _sovereignMessenger?.getSessionMetadata(cid);
-        final hasSession = sessionRow != null;
+        final hasSession = sessionRow != null && sessionMeta != null;
+        final invitedPeer = cid.startsWith('dm_pair_')
+            ? cid.split('_').skip(2).where((id) => id != myPublicId).firstOrNull
+            : null;
         final existingPeerId = (sessionMeta?['peerPublicId'] as String?) ??
-            (existingIdx != -1 ? _directMessages[existingIdx].peerPublicId : cid);
+            (existingIdx != -1 ? _directMessages[existingIdx].peerPublicId : invitedPeer ?? cid);
+        final peerContact = await _contactRepo?.getContact(existingPeerId);
+        final isVerified = hasSession && peerContact?['verification'] == 'verified';
         final existingPeerMailbox = (sessionMeta?['peerMailbox'] as String?) ??
             (existingIdx != -1 ? _directMessages[existingIdx].peerMailboxId : null) ??
             SovereignMessenger.deriveMailboxCredentials(existingPeerId).mailboxId;
@@ -1674,7 +1789,7 @@ class NixState extends ChangeNotifier {
                 r['created_at'] as int,
                 isUtc: true,
               ),
-              isVerified: hasSession && mappedState != 'failed',
+              isVerified: isVerified && mappedState != 'failed',
               deliveryState: mappedState,
               deliveryError: mappedState == 'failed'
                   ? 'Falha no envio do envelope ao relay.'
@@ -1691,11 +1806,11 @@ class NixState extends ChangeNotifier {
           peerMailboxId: existingPeerMailbox,
           hasActiveSession: hasSession,
           statusText: hasSession
-              ? 'Sessão E2EE Double Ratchet Ativa · Tor Onion v3'
-              : 'Sessão criptográfica pendente de handshake',
-          isOnline: hasSession,
-          isVerified: hasSession,
-          trustLevel: hasSession ? NixTrustLevel.level3Green : NixTrustLevel.level1Red,
+              ? 'Sessão E2EE preparada'
+              : 'Aguardando a primeira mensagem cifrada do contato',
+          isOnline: false,
+          isVerified: isVerified,
+          trustLevel: isVerified ? NixTrustLevel.level3Green : NixTrustLevel.level1Red,
           unreadCount: 0,
           messages: msgs,
         );
@@ -2294,15 +2409,16 @@ class NixState extends ChangeNotifier {
     }
   }
 
-  Future<void> _restorePersonalPreferences() async {
+  Future<String?> _restorePersonalPreferences() async {
     final restored = await _preferenceStore.readPersonal(_preferencesRepo, _userProfile);
-    if (restored == null) return;
+    if (restored == null) return null;
     if (restored.settings case final settings?) {
       _settings = settings;
       _calls.restoreMicrophone(settings.microphoneMuted);
       NixColors.sync(NixSurfaceScheme.resolve(settings.themeMode), currentPalette);
     }
     _userProfile = restored.profile;
+    return restored.avatarStyle;
   }
 
   Future<void> _restoreWorkspaceLayout() async {
@@ -2851,7 +2967,18 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Exporta o Card ID assinado localmente com SignedPreKey X25519 ativa para handshake X3DH.
+  Future<String>? _exportingInvitation;
+
+  Future<String> exportContactInvitation() {
+    if (!_settings.allowPublicIdSharing) {
+      throw StateError('Ative o compartilhamento da identidade para criar o convite.');
+    }
+    return _exportingInvitation ??= exportLocalSignedCardJson().whenComplete(() {
+      _exportingInvitation = null;
+    });
+  }
+
+  /// Exporta o convite assinado com uma SignedPreKey X25519 para X3DH.
   Future<String> exportLocalSignedCardJson({
     String? displayName,
     String preKeyId = 'spk_active_1',
@@ -2862,14 +2989,14 @@ class NixState extends ChangeNotifier {
         '[Fail-Closed] SovereignMessenger / Identidade Seed A não inicializados.',
       );
     }
-    final provisioned = await messenger.provisionSignedPreKey(preKeyId: preKeyId);
+    final bundle = await messenger.signedPreKeyForInvitation(preKeyId);
     final creds = _activeMailboxCredentials ??
         SovereignMessenger.deriveMailboxCredentials(_primaryIdentity!.publicId);
     _activeMailboxCredentials = creds;
     return messenger.exportSignedCardJson(
       displayName: displayName ?? _userProfile.effectiveDisplayName,
       mailboxId: creds.mailboxId,
-      preKeyBundle: provisioned.bundle,
+      preKeyBundle: bundle,
     );
   }
 
@@ -2980,10 +3107,12 @@ class NixState extends ChangeNotifier {
       return (acceptedOutbox: 0, failedOutbox: 0, receivedInbox: 0);
     }
     final messenger = _sovereignMessenger;
-    final relay = _activeRelayClient;
+    final relay = _relayForMessaging;
     if (messenger == null || relay == null) {
       _lastMessagingError =
-          '[Fail-Closed] Transporte de relay ou SovereignMessenger não configurados.';
+          messenger == null
+              ? 'Desbloqueie o cofre para sincronizar as conversas.'
+              : 'Configure o relay Onion em Configurações → Conexões.';
       notifyListeners();
       return (acceptedOutbox: 0, failedOutbox: 0, receivedInbox: 0);
     }
@@ -2991,12 +3120,28 @@ class NixState extends ChangeNotifier {
         SovereignMessenger.deriveMailboxCredentials(messenger.identity.publicId);
     _activeMailboxCredentials = creds;
 
-    final flushRes = await messenger.flushOutbox(relayClient: relay);
-    final pollRes = await messenger.pollAndCommitInbox(
-      creds: creds,
+    final flushRes = await messenger.flushOutbox(
       relayClient: relay,
-      preKeyId: preKeyId,
+      quotaToken: creds.writeQuotaToken.isEmpty ? null : creds.writeQuotaToken,
     );
+    if (_disposed || _panicWipe != null || _isStrictOffGridMode) {
+      return (acceptedOutbox: flushRes.accepted, failedOutbox: flushRes.failed, receivedInbox: 0);
+    }
+    final PollCommitResult pollRes;
+    try {
+      pollRes = await messenger.pollAndCommitInbox(
+        creds: creds,
+        relayClient: relay,
+        preKeyId: preKeyId,
+      );
+    } catch (_) {
+      if (!_disposed && _panicWipe == null) {
+        _lastMessagingError = 'Falha ao ler a caixa postal. Confira o Tor e as credenciais do relay.';
+        await _refreshDirectThreadsFromDatabase();
+        if (!_disposed) notifyListeners();
+      }
+      return (acceptedOutbox: flushRes.accepted, failedOutbox: flushRes.failed, receivedInbox: 0);
+    }
     if (flushRes.failed > 0) {
       _lastMessagingError =
           'Falha ao transmitir ${flushRes.failed} envelope(s) da Outbox ao relay.';
@@ -3201,7 +3346,7 @@ class NixState extends ChangeNotifier {
       final sessionMeta = await messenger.getSessionMetadata(thread.id);
       if (sessionMeta == null) {
         final err =
-            'Sessão criptográfica Double Ratchet inexistente para ${thread.peerName}. Importe o Card ID assinado do par antes de enviar.';
+            'A sessão cifrada com ${thread.peerName} ainda não foi iniciada. Troque os convites assinados e sincronize o relay.';
         _lastMessagingError = err;
         final failedMsg = Message(
           id: 'dm_failed_${DateTime.now().millisecondsSinceEpoch}',
@@ -3245,7 +3390,7 @@ class NixState extends ChangeNotifier {
             preparedManifests.add(manifest);
             displayAttachmentNames.add(manifest.fileName);
           } else {
-            displayAttachmentNames.add(LocalImageHelper.getFileName(att));
+            throw const FormatException('Um anexo não está mais disponível no dispositivo.');
           }
         }
 
@@ -3289,9 +3434,11 @@ class NixState extends ChangeNotifier {
           } catch (_) {
             // O envelope original continua disponível na outbox cifrada.
           }
-        } else if (_activeRelayClient != null) {
-          final flushRes = await messenger.flushOutbox(
-            relayClient: _activeRelayClient!,
+        } else if (_relayForMessaging case final relay?) {
+          await messenger.flushOutbox(
+            relayClient: relay,
+            quotaToken: _activeMailboxCredentials?.writeQuotaToken.isNotEmpty == true
+                ? _activeMailboxCredentials!.writeQuotaToken : null,
           );
           final msgRows = await _localDatabase!.rawDatabase.query(
             'messages',
@@ -3304,7 +3451,7 @@ class NixState extends ChangeNotifier {
             currentDeliveryState =
                 (msgRows.first['delivery_state'] as String?) ?? 'queued';
           }
-          if (currentDeliveryState == 'failed' || flushRes.failed > 0) {
+          if (currentDeliveryState == 'failed') {
             currentDeliveryState = 'failed';
             currentDeliveryError =
                 'Falha ao entregar envelope cifrado ao relay Tor/SOCKS5.';
@@ -3318,7 +3465,7 @@ class NixState extends ChangeNotifier {
           senderName: _userProfile.effectiveDisplayName,
           senderFingerprint: _securityContext.myFingerprint,
           isMe: true,
-          isVerified: currentDeliveryState != 'failed',
+          isVerified: thread.isVerified && currentDeliveryState != 'failed',
           deliveryState: currentDeliveryState,
           deliveryError: currentDeliveryError,
           text: cleanBody,
@@ -3342,7 +3489,9 @@ class NixState extends ChangeNotifier {
         notifyListeners();
         return;
       } catch (e) {
-        final err = 'Falha transacional ou criptográfica no envio: $e';
+        final err = e is FormatException
+            ? e.message
+            : 'O envio cifrado falhou. Verifique a conversa e tente novamente.';
         _lastMessagingError = err;
         final failedMsg = Message(
           id: 'dm_err_${DateTime.now().millisecondsSinceEpoch}',
@@ -5306,6 +5455,14 @@ class NixState extends ChangeNotifier {
   // falhas de um serviço não impedem os demais nem deixam o cofre desbloqueado.
   Future<void> _disposeServices() async {
     await flushPreferences();
+    try {
+      await _catalogOpen;
+      await _catalogDatabase?.close();
+    } catch (_) {
+      // O catálogo público tem um ciclo de vida independente do cofre.
+    }
+    _activeRelayClient = null;
+    _activeMailboxCredentials = null;
     try {
       _embeddedTor.dispose();
     } catch (_) {

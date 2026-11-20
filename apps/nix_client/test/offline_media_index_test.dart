@@ -112,6 +112,11 @@ void main() {
       expect(searchSpace.length, equals(1));
       expect(searchSpace.first.id, equals('nix:work:movie:1'));
 
+      final accented = await mediaService.searchCatalog(query: 'Espaço');
+      expect(accented.single.id, 'nix:work:movie:1');
+      final original = await mediaService.searchCatalog(query: 'シリアル');
+      expect(original.single.id, 'nix:work:anime:1');
+
       // Busca por criador
       final searchKubrick = await mediaService.searchCatalog(query: 'Kubrick');
       expect(searchKubrick.length, equals(1));

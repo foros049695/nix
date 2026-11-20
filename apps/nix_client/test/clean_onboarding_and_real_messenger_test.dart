@@ -104,17 +104,9 @@ void main() {
       await tester.tap(find.byKey(const Key('add_contact_confirm_button')));
       await tester.pumpAndSettle();
 
-      // Contato adicionado e selecionado para chat
-      expect(nixState.directMessages.length, equals(2));
-      expect(nixState.selectedDm?.peerName, equals('Alice Soberana'));
-      expect(find.text('Alice Soberana'), findsAtLeastNWidgets(1));
-
-      // 5. Envia mensagem soberana cifrada
-      nixState.sendDirectMessage('Olá Alice, chave E2E estabelecida via Tor Onion v3!');
-      await tester.pumpAndSettle();
-
-      expect(nixState.selectedDm?.messages.length, equals(2));
-      expect(find.text('Olá Alice, chave E2E estabelecida via Tor Onion v3!'), findsAtLeastNWidgets(1));
+      // Um identificador sozinho não autentica um contato ou cria sessão.
+      expect(nixState.directMessages, hasLength(1));
+      expect(find.text('Cole o convite assinado completo do contato.'), findsOneWidget);
     });
 
     test('OnboardingStateSnapshot persiste e restaura estado transacional sem vazar a Seed A', () async {

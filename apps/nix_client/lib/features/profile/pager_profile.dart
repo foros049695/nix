@@ -180,7 +180,8 @@ class _PagerProfileState extends State<PagerProfile> {
     final reduced = _reduceMotion(state);
 
     return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(12, 16, 12, 24 + MediaQuery.paddingOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(
+          12, 16, 12, 24 + MediaQuery.paddingOf(context).bottom),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 840),
@@ -189,9 +190,9 @@ class _PagerProfileState extends State<PagerProfile> {
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 790),
                 child: PagerHousing(
-          wallpaper: state.settings.pagerWallpaperAcrossPages
-              ? PagerWallpaperLayer(state: state, readable: true)
-              : null,
+                  wallpaper: state.settings.pagerWallpaperAcrossPages
+                      ? PagerWallpaperLayer(state: state, readable: true)
+                      : null,
                   caseColor: state.settings.pagerCaseColor,
                   lcdColor: state.settings.pagerLcdColor,
                   reducedMotion: reduced,
@@ -200,7 +201,7 @@ class _PagerProfileState extends State<PagerProfile> {
                   onNext:
                       _page < 2 ? () => _selectPage(_page + 1, state) : null,
                   onMenu: () => _showPagerMenu(state),
-                  minDisplayHeight: 386,
+                  minDisplayHeight: MediaQuery.sizeOf(context).width < 600 ? 442 : 386,
                   screen: LayoutBuilder(
                     builder: (context, constraints) {
                       final narrow = constraints.maxWidth < 350;
@@ -233,6 +234,7 @@ class _PagerProfileState extends State<PagerProfile> {
                             ),
                             _PagerPanel(
                               title: _pages[1],
+                              fixedFooter: true,
                               japanese: '状態',
                               page: 2,
                               child: _status(
@@ -436,6 +438,7 @@ class _PagerPanel extends StatelessWidget {
   final int page;
   final Widget? action;
   final Widget? footer;
+  final bool fixedFooter;
   final Widget child;
 
   const _PagerPanel(
@@ -444,6 +447,7 @@ class _PagerPanel extends StatelessWidget {
       required this.page,
       this.action,
       this.footer,
+      this.fixedFooter = false,
       required this.child});
 
   @override
@@ -485,11 +489,21 @@ class _PagerPanel extends StatelessWidget {
               const Divider(color: pagerRule, height: 1),
               Expanded(
                 child: SingleChildScrollView(
+                  primary: false,
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: child,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      child,
+                      if (footer != null && !fixedFooter) ...[
+                        const SizedBox(height: 8),
+                        footer!,
+                      ],
+                    ],
+                  ),
                 ),
               ),
-              if (footer != null) footer!,
+              if (footer != null && fixedFooter) footer!,
             ],
           ),
         ),
@@ -742,13 +756,24 @@ class _ContemplationSettingsState extends State<_ContemplationSettings> {
           SwitchListTile(
             title: const Text('Fundo em todas as telas do Pager'),
             value: state.settings.pagerWallpaperAcrossPages,
-            onChanged: (value) => state.updateSettings(state.settings.copyWith(pagerWallpaperAcrossPages: value)),
+            onChanged: (value) => state.updateSettings(
+                state.settings.copyWith(pagerWallpaperAcrossPages: value)),
             contentPadding: EdgeInsets.zero,
           ),
-          _avatarSlider('Desfoque do fundo', state.settings.pagerWallpaperBlur / 18, 0, 1,
-              (value) => state.updateSettings(state.settings.copyWith(pagerWallpaperBlur: value * 18))),
-          _avatarSlider('Sombra do fundo', state.settings.pagerWallpaperShade, 0, .75,
-              (value) => state.updateSettings(state.settings.copyWith(pagerWallpaperShade: value))),
+          _avatarSlider(
+              'Desfoque do fundo',
+              state.settings.pagerWallpaperBlur / 18,
+              0,
+              1,
+              (value) => state.updateSettings(
+                  state.settings.copyWith(pagerWallpaperBlur: value * 18))),
+          _avatarSlider(
+              'Sombra do fundo',
+              state.settings.pagerWallpaperShade,
+              0,
+              .75,
+              (value) => state.updateSettings(
+                  state.settings.copyWith(pagerWallpaperShade: value))),
           Wrap(
             spacing: 8,
             children: [

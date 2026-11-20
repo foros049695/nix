@@ -160,6 +160,11 @@ class SovereignMessenger {
     String? storageRootDir,
   }) : storageRootDir = storageRootDir ?? _resolveDefaultStorageRootDir();
 
+  static String invitationConversationId(String localId, String remoteId) {
+    final ids = [localId, remoteId]..sort();
+    return 'dm_pair_${ids.join('_')}';
+  }
+
   /// Deriva credenciais de mailbox determinísticas para um `publicId` local.
   static MailboxCredentials deriveMailboxCredentials(String publicId) {
     final clean = publicId.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
@@ -189,6 +194,15 @@ class SovereignMessenger {
       info: utf8.encode('Nix-RatchetSessionWrap-v1'),
     );
     return derived.extract();
+  }
+
+  /// Reutiliza a pré-chave anunciada para manter os convites anteriores válidos.
+  Future<SignedPreKeyBundle> signedPreKeyForInvitation(String preKeyId) async {
+    final pair = await loadSignedPreKey(preKeyId);
+    if (pair != null) {
+      return SignedPreKeyBundle.create(owner: identity, signedPreKeyPair: pair);
+    }
+    return (await provisionSignedPreKey(preKeyId: preKeyId)).bundle;
   }
 
   /// Gera e persiste uma SignedPreKey X25519 local assinada pela Ed25519 do usuário.
@@ -279,6 +293,7 @@ class SovereignMessenger {
   Future<CardImportResult> importAndVerifyCardJson({
     required String rawJson,
     bool markVerifiedOutOfBand = true,
+    bool upgradeLegacyPlaceholder = false,
   }) async {
     try {
       final map = jsonDecode(rawJson) as Map<String, dynamic>;
@@ -318,6 +333,25 @@ class SovereignMessenger {
         );
       }
 
+      final fingerprint = std_crypto.sha256
+          .convert([...edBytes, ...xBytes])
+          .toString()
+          .substring(0, 16)
+          .toUpperCase();
+      final expectedId =
+          'NIX-${fingerprint.substring(0, 4)}-${fingerprint.substring(4, 8)}'
+          '-${fingerprint.substring(8, 12)}-${fingerprint.substring(12)}';
+      if (edBytes.length != 32 ||
+          xBytes.length != 32 ||
+          publicId != expectedId ||
+          publicId == identity.publicId ||
+          !RegExp(r'^[a-zA-Z0-9_-]{3,128}$').hasMatch(mailboxId)) {
+        return const CardImportResult(
+          status: CardImportStatus.invalidSignatureOrExpired,
+          reason: 'Identidade ou caixa postal do convite inválida.',
+        );
+      }
+
       final spkBundle = SignedPreKeyBundle(
         identityEd25519: SimplePublicKey(edBytes, type: KeyPairType.ed25519),
         identityX25519: SimplePublicKey(xBytes, type: KeyPairType.x25519),
@@ -336,8 +370,12 @@ class SovereignMessenger {
       if (existing != null) {
         final prevEd = existing['ed_public'] as List<int>;
         final prevX = existing['x_public'] as List<int>;
-        final keyChanged =
-            !_constantTimeEq(prevEd, edBytes) || !_constantTimeEq(prevX, xBytes);
+        // O formulário antigo gravava contatos com as duas chaves zeradas.
+        final placeholder = upgradeLegacyPlaceholder && prevEd.length == 32 && prevX.length == 32 &&
+            prevEd.every((byte) => byte == 0) && prevX.every((byte) => byte == 0) &&
+            (await contactRepo.getKeyHistory(publicId)).isEmpty;
+        final keyChanged = !placeholder &&
+            (!_constantTimeEq(prevEd, edBytes) || !_constantTimeEq(prevX, xBytes));
         if (keyChanged) {
           final history = await contactRepo.getKeyHistory(publicId);
           final nextVer =
@@ -361,8 +399,11 @@ class SovereignMessenger {
         }
       }
 
-      final verification =
-          markVerifiedOutOfBand ? 'verified' : 'unverified';
+      final verified = markVerifiedOutOfBand ||
+          (existing?['verification'] == 'verified' &&
+              _constantTimeEq(existing!['ed_public'] as List<int>, edBytes) &&
+              _constantTimeEq(existing['x_public'] as List<int>, xBytes));
+      final verification = verified ? 'verified' : 'unverified';
       final now = DateTime.now().toUtc().millisecondsSinceEpoch;
       await contactRepo.upsertContact(
         id: publicId,
@@ -371,7 +412,7 @@ class SovereignMessenger {
         fingerprint: publicId,
         displayName: displayName,
         verification: verification,
-        verifiedAt: markVerifiedOutOfBand ? now : null,
+        verifiedAt: verified ? (existing?['verified_at'] as int? ?? now) : null,
       );
       final history = await contactRepo.getKeyHistory(publicId);
       if (history.isEmpty) {
@@ -709,6 +750,14 @@ class SovereignMessenger {
     return joined;
   }
 
+  Future<void> _ratchetOperations = Future<void>.value();
+
+  Future<T> _withRatchet<T>(Future<T> Function() operation) {
+    final pending = _ratchetOperations.then((_) => operation());
+    _ratchetOperations = pending.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return pending;
+  }
+
   /// Cifra via Double Ratchet e persiste `sessions`, `messages`, `message_attachments` e `outbox`
   /// dentro de uma ÚNICA transação SQLite atômica (Fase 4).
   /// Qualquer falha em [onFaultStage] ou erro de banco desfaz todas as gravações sem avançar a sessão.
@@ -720,6 +769,24 @@ class SovereignMessenger {
     int? ephemeralTtlSeconds,
     List<AttachmentManifest> attachments = const [],
     void Function(MessagingFaultStage stage)? onFaultStage,
+  }) => _withRatchet(() => _enqueueDirectMessage(
+    conversationId: conversationId,
+    destinationMailbox: destinationMailbox,
+    senderMailbox: senderMailbox,
+    text: text,
+    ephemeralTtlSeconds: ephemeralTtlSeconds,
+    attachments: attachments,
+    onFaultStage: onFaultStage,
+  ));
+
+  Future<({String messageId, String outboxId})> _enqueueDirectMessage({
+    required String conversationId,
+    required String destinationMailbox,
+    required String senderMailbox,
+    required String text,
+    required int? ephemeralTtlSeconds,
+    required List<AttachmentManifest> attachments,
+    required void Function(MessagingFaultStage stage)? onFaultStage,
   }) async {
     final loaded = await _loadEncryptedSession(conversationId);
     if (loaded == null) {
@@ -744,6 +811,7 @@ class SovereignMessenger {
       'id': msgId,
       'convId': conversationId,
       'sender': identity.publicId,
+      'senderMailbox': senderMailbox,
       'text': text,
       'ts': nowMs,
       if (expiresAtMs != null) 'expiresAt': expiresAtMs,
@@ -942,14 +1010,15 @@ class SovereignMessenger {
     String preKeyId = 'spk_active_1',
     bool simulateCrashBeforeAck = false,
   }) async {
-    return _commitInbox(
+    final envelopes = await relayClient.fetchEnvelopes(creds);
+    return _withRatchet(() => _commitInbox(
       mailboxId: creds.mailboxId,
-      envelopes: await relayClient.fetchEnvelopes(creds),
+      envelopes: envelopes,
       preKeyId: preKeyId,
       acknowledge: simulateCrashBeforeAck
           ? null
           : (ids) => relayClient.acknowledge(creds, ids),
-    );
+    ));
   }
 
   static List<int> _nearbyAad(
@@ -1038,7 +1107,7 @@ class SovereignMessenger {
     );
     if (!valid) throw const FormatException('Assinatura BLE inválida.');
 
-    return _commitInbox(
+    return _withRatchet(() => _commitInbox(
       mailboxId: mailboxId,
       preKeyId: preKeyId,
       nearbyOnly: true,
@@ -1050,7 +1119,7 @@ class SovereignMessenger {
           expiresAtUnix: expiresAtMs ~/ 1000,
         ),
       ],
-    );
+    ));
   }
 
   Future<PollCommitResult> _commitInbox({
@@ -1110,8 +1179,14 @@ class SovereignMessenger {
 
         // Valida que remetente não sofreu alteração silenciosa de chave
         final contact = await contactRepo.getContact(senderId);
-        if (nearbyOnly && contact == null) {
-          errors.add('Envelope BLE de contato sem Card ID importado.');
+        final reciprocalInvite = convId.startsWith('dm_pair_');
+        if (reciprocalInvite &&
+            convId != invitationConversationId(identity.publicId, senderId)) {
+          errors.add('Envelope incompatível com o convite da conversa.');
+          continue;
+        }
+        if ((nearbyOnly || reciprocalInvite) && contact == null) {
+          errors.add('Importe o convite assinado do remetente antes de sincronizar.');
           continue;
         }
         if (contact != null && contact['verification'] == 'changed') {
@@ -1128,8 +1203,8 @@ class SovereignMessenger {
         if (existing != null) {
           loadedSessionRow = existing.$1;
           stateObj = existing.$2;
-          if (nearbyOnly && stateObj['peerPublicId'] != senderId) {
-            errors.add('Remetente BLE não corresponde à sessão.');
+          if ((nearbyOnly || reciprocalInvite) && stateObj['peerPublicId'] != senderId) {
+            errors.add('Remetente não corresponde à sessão.');
             continue;
           }
           ratchet = await DoubleRatchet.importState(
@@ -1191,13 +1266,13 @@ class SovereignMessenger {
         final createdAt = (inner['ts'] as num?)?.toInt() ??
             DateTime.now().toUtc().millisecondsSinceEpoch;
         final expiresAt = (inner['expiresAt'] as num?)?.toInt();
-        if (nearbyOnly &&
+        if ((nearbyOnly || reciprocalInvite) &&
             (inner['sender'] != senderId ||
                 inner['convId'] != convId ||
                 inner['id'] != wireMsgId ||
                 (expiresAt != null &&
                     expiresAt <= DateTime.now().millisecondsSinceEpoch))) {
-          errors.add('Envelope BLE expirado ou incompatível com a sessão.');
+          errors.add('Envelope expirado ou incompatível com a sessão.');
           continue;
         }
 
@@ -1210,8 +1285,12 @@ class SovereignMessenger {
           }
         }
 
-        if (wire['senderMailbox'] is String) {
-          stateObj['peerMailbox'] = wire['senderMailbox'] as String;
+        final senderMailbox = reciprocalInvite
+            ? inner['senderMailbox']
+            : wire['senderMailbox'];
+        if (senderMailbox is String &&
+            RegExp(r'^[a-zA-Z0-9_-]{3,128}$').hasMatch(senderMailbox)) {
+          stateObj['peerMailbox'] = senderMailbox;
         }
         stateObj['ratchet'] = ratchet.exportState();
         final wrapKey = await _deriveSessionWrapKey();

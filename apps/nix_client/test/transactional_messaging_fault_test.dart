@@ -18,6 +18,8 @@ class _LocalBlindRelayAndSocksHarness {
   HttpServer? _relayServer;
   ServerSocket? _socksServer;
   bool failNextStoreRequest = false;
+  bool requireWriteQuota = false;
+  static const writeQuota = 'quota-from-local-harness';
   final Map<String, List<Map<String, dynamic>>> _mailboxes = {};
   int _envSeq = 0;
 
@@ -50,6 +52,12 @@ class _LocalBlindRelayAndSocksHarness {
     if (req.method == 'POST' &&
         path.startsWith('/v1/mailboxes/') &&
         path.endsWith('/envelopes')) {
+      if (requireWriteQuota &&
+          req.headers.value('X-Nix-Quota-Token') != writeQuota) {
+        req.response.statusCode = HttpStatus.forbidden;
+        await req.response.close();
+        return;
+      }
       if (failNextStoreRequest) {
         req.response.statusCode = HttpStatus.serviceUnavailable;
         req.response.write(jsonEncode({'error': 'relay_unavailable'}));
@@ -191,7 +199,8 @@ class _LocalBlindRelayAndSocksHarness {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('Fase 4: Consistência Transacional da Criptografia & Injeção de Falhas', () {
+  group('Fase 4: Consistência Transacional da Criptografia & Injeção de Falhas',
+      () {
     late Directory tempDir;
     late _LocalBlindRelayAndSocksHarness harness;
     late LocalDatabase aliceDb;
@@ -263,7 +272,8 @@ void main() {
         grant: Uint8List(64),
       );
 
-      aliceMailbox = SovereignMessenger.deriveMailboxCredentials(aliceId.publicId);
+      aliceMailbox =
+          SovereignMessenger.deriveMailboxCredentials(aliceId.publicId);
       bobMailbox = SovereignMessenger.deriveMailboxCredentials(bobId.publicId);
 
       relayClient = RelayClient(
@@ -324,8 +334,8 @@ void main() {
           'Rollback atômico quando falha ocorre em ${stage.name}: '
           'nenhum avanço inconsistente do Double Ratchet nem perda silenciosa',
           () async {
-        final sessionBefore =
-            await aliceMessenger.sessionRepo.getSessionByConversation('conv_fault_test');
+        final sessionBefore = await aliceMessenger.sessionRepo
+            .getSessionByConversation('conv_fault_test');
         expect(sessionBefore, isNotNull);
         final revBefore = sessionBefore!['revision'] as int;
 
@@ -345,11 +355,11 @@ void main() {
         );
 
         // Verifica que nem a sessão avançou, nem restou mensagem órfã ou outbox parcial
-        final sessionAfter =
-            await aliceMessenger.sessionRepo.getSessionByConversation('conv_fault_test');
+        final sessionAfter = await aliceMessenger.sessionRepo
+            .getSessionByConversation('conv_fault_test');
         expect(sessionAfter!['revision'], equals(revBefore));
-        final msgsAfterFault =
-            await aliceMessenger.messageRepo.getMessagesForConversation('conv_fault_test');
+        final msgsAfterFault = await aliceMessenger.messageRepo
+            .getMessagesForConversation('conv_fault_test');
         expect(msgsAfterFault, isEmpty);
         final outboxAfterFault =
             await aliceMessenger.outboxRepo.getPendingEnvelopes();
@@ -362,7 +372,8 @@ void main() {
           senderMailbox: aliceMailbox.mailboxId,
           text: 'Mensagem íntegra após rollback de ${stage.name}',
         );
-        final flushRes = await aliceMessenger.flushOutbox(relayClient: relayClient);
+        final flushRes =
+            await aliceMessenger.flushOutbox(relayClient: relayClient);
         expect(flushRes.accepted, equals(1));
 
         final pollRes = await bobMessenger.pollAndCommitInbox(
@@ -416,7 +427,8 @@ void main() {
         retryDelayMs: 0,
         onFaultStage: (s) {
           if (s == MessagingFaultStage.afterRemoteAcceptBeforeLocalConfirm) {
-            throw StateError('Crash simulado após HTTP 202 do relay e antes do commit local');
+            throw StateError(
+                'Crash simulado após HTTP 202 do relay e antes do commit local');
           }
         },
       );
@@ -449,18 +461,22 @@ void main() {
       expect(pollRes.skippedDuplicateCount, equals(1));
       expect(
         pollRes.committed.first.text,
-        equals('Mensagem resiliente contra falhas de transporte e pós-aceitação'),
+        equals(
+            'Mensagem resiliente contra falhas de transporte e pós-aceitação'),
       );
     });
   });
 
-  group('Fase 3: Integração Real da Mensageria em Duas Instâncias Independentes de NixState', () {
+  group(
+      'Fase 3: Integração Real da Mensageria em Duas Instâncias Independentes de NixState',
+      () {
     late Directory tempDir;
     late _LocalBlindRelayAndSocksHarness harness;
     late RelayClient relayClient;
 
     setUp(() async {
-      tempDir = await Directory.systemTemp.createTemp('nix_phase3_two_clients_');
+      tempDir =
+          await Directory.systemTemp.createTemp('nix_phase3_two_clients_');
       harness = _LocalBlindRelayAndSocksHarness();
       await harness.start();
       relayClient = RelayClient(
@@ -482,184 +498,228 @@ void main() {
       }
     });
 
-    test(
-        'Duas instâncias independentes trocam mensagens E2EE via NixState.sendDirectMessage '
-        'e syncWithRelay, diferenciam Mensagens Salvas e recuperam pendências após reinício',
-        () async {
-      final aliceVaultPath = '${tempDir.path}/alice_vault.json';
-      final aliceDbPath = '${tempDir.path}/alice.db';
-      final bobVaultPath = '${tempDir.path}/bob_vault.json';
-      final bobDbPath = '${tempDir.path}/bob.db';
+    for (final reciprocalInvite in [false, true]) {
+      test(
+          'Duas instâncias trocam mensagens E2EE (convite recíproco: $reciprocalInvite) '
+          'e syncWithRelay, diferenciam Mensagens Salvas e recuperam pendências após reinício',
+          () async {
+        final aliceVaultPath = '${tempDir.path}/alice_vault.json';
+        final aliceDbPath = '${tempDir.path}/alice.db';
+        final bobVaultPath = '${tempDir.path}/bob_vault.json';
+        final bobDbPath = '${tempDir.path}/bob.db';
 
-      final aliceState = NixState(
-        loadMockData: false,
-        keyVault: KeyVault(osKeyStorage: InMemoryOsKeyStorage()),
-      );
-      final bobState = NixState(
-        loadMockData: false,
-        keyVault: KeyVault(osKeyStorage: InMemoryOsKeyStorage()),
-      );
+        final aliceState = NixState(
+          loadMockData: false,
+          keyVault: KeyVault(osKeyStorage: InMemoryOsKeyStorage()),
+        );
+        final bobState = NixState(
+          loadMockData: false,
+          keyVault: KeyVault(osKeyStorage: InMemoryOsKeyStorage()),
+        );
 
-      expect(
-        await aliceState.initializeEncryptedDatabase(
-          passphrase: 'Alice-Sovereign-Passphrase-2026!',
+        expect(
+          await aliceState.initializeEncryptedDatabase(
+            passphrase: 'Alice-Sovereign-Passphrase-2026!',
+            customDbPath: aliceDbPath,
+            customVaultPath: aliceVaultPath,
+          ),
+          isTrue,
+        );
+        expect(
+          await bobState.initializeEncryptedDatabase(
+            passphrase: 'Bob-Sovereign-Passphrase-2026!',
+            customDbPath: bobDbPath,
+            customVaultPath: bobVaultPath,
+          ),
+          isTrue,
+        );
+
+        final identities = [
+          await NixIdentity.generate(),
+          await NixIdentity.generate()
+        ]..sort((first, second) => first.publicId.compareTo(second.publicId));
+        final aliceIdentity = identities.first;
+        final bobIdentity = identities.last;
+        MailboxCredentials credentials(NixIdentity identity) =>
+            MailboxCredentials(
+              mailboxId:
+                  SovereignMessenger.deriveMailboxCredentials(identity.publicId)
+                      .mailboxId,
+              readToken: 'read-from-local-harness',
+              writeQuotaToken: _LocalBlindRelayAndSocksHarness.writeQuota,
+            );
+        harness.requireWriteQuota = reciprocalInvite;
+        await aliceState.persistPrimaryIdentity(
+          identity: aliceIdentity,
+          displayName: 'Alice Soberana',
+        );
+        await bobState.persistPrimaryIdentity(
+          identity: bobIdentity,
+          displayName: 'Bob Soberano',
+        );
+
+        aliceState.configureRelayTransport(
+          relayClient: relayClient,
+          mailboxCredentials: credentials(aliceIdentity),
+        );
+        bobState.configureRelayTransport(
+          relayClient: relayClient,
+          mailboxCredentials: credentials(bobIdentity),
+        );
+
+        // 1. Mensagens Salvas: cofre local, não enfileira na Outbox nem usa relay
+        aliceState.openSavedMessages();
+        await aliceState
+            .sendDirectMessage('Nota privada somente no cofre local');
+        expect(aliceState.selectedDm!.isSavedMessages, isTrue);
+        final lastSaved = aliceState.selectedDm!.messages.last;
+        expect(lastSaved.deliveryState, equals('saved'));
+        expect(await aliceState.outboxRepo!.getPendingEnvelopes(), isEmpty);
+
+        // 2. Tentativa de envio remoto SEM sessão criptográfica deve falhar visivelmente (isVerified=false, state='failed')
+        const unverifiedThread = DirectMessageThread(
+          id: 'conv_unverified_peer',
+          peerName: 'Par Sem Handshake',
+          peerPublicId: 'NIX-0000-0000-0000-0000',
+          statusText: 'Sem sessão',
+          isOnline: false,
+          isVerified: false,
+          trustLevel: NixTrustLevel.level1Red,
+          messages: const [],
+        );
+        aliceState.directMessages.add(unverifiedThread);
+        aliceState.selectDirectMessage(unverifiedThread);
+        await aliceState.sendDirectMessage('Tentativa sem sessão X3DH');
+        final failedNoSessionMsg = aliceState.selectedDm!.messages.last;
+        expect(failedNoSessionMsg.deliveryState, equals('failed'));
+        expect(failedNoSessionMsg.isVerified, isFalse);
+        expect(aliceState.lastMessagingError, isNotNull);
+
+        final bobCardJson = await bobState.exportLocalSignedCardJson();
+        final aliceCardJson = await aliceState.exportLocalSignedCardJson();
+        final conversationId = reciprocalInvite
+            ? SovereignMessenger.invitationConversationId(
+                aliceIdentity.publicId, bobIdentity.publicId)
+            : 'conv_alice_bob_ui';
+        if (reciprocalInvite) {
+          // Reemitir o convite antes da primeira mensagem não pode invalidar o anterior.
+          await bobState.exportLocalSignedCardJson();
+          await bobState.addNewContact(
+              publicId: aliceCardJson, nickname: 'Alice local');
+          expect(bobState.selectedDm!.hasActiveSession, isFalse);
+          expect(bobState.selectedDm!.peerName, 'Alice local');
+          await aliceState.addNewContact(publicId: bobCardJson);
+          await aliceState.addNewContact(publicId: bobCardJson);
+          expect(aliceState.selectedDm!.hasActiveSession, isTrue);
+        } else {
+          await bobState.importPeerCardOnly(aliceCardJson,
+              conversationId: conversationId);
+          final thread = await aliceState.importPeerCardAndEstablishSession(
+            bobCardJson,
+            conversationId: conversationId,
+          );
+          expect(thread.hasActiveSession, isTrue);
+        }
+
+        // 4. Alice envia mensagem pelo fluxo de UI (NixState.sendDirectMessage) -> relay aceita ('accepted')
+        await aliceState.sendDirectMessage(
+            'Olá Bob! Mensagem enviada pela UI via SovereignMessenger.');
+        final aliceSentMsg = aliceState.selectedDm!.messages.last;
+        expect(aliceSentMsg.deliveryState, equals('accepted'));
+        expect(aliceSentMsg.isVerified, !reciprocalInvite);
+        expect(aliceState.lastMessagingError, isNull);
+
+        // 5. Bob sincroniza com o relay (NixState.syncWithRelay) -> recebe e autentica ('delivered')
+        final bobSync1 = await bobState.syncWithRelay();
+        expect(bobSync1.receivedInbox, equals(1));
+        final bobThread = bobState.directMessages.firstWhere(
+          (d) => d.id == conversationId,
+        );
+        expect(bobThread.messages.length, equals(1));
+        expect(
+          bobThread.messages.first.text,
+          equals('Olá Bob! Mensagem enviada pela UI via SovereignMessenger.'),
+        );
+        expect(bobThread.messages.first.deliveryState, equals('delivered'));
+        expect(bobThread.messages.first.isVerified, !reciprocalInvite);
+
+        // 6. Bob responde pela UI para Alice
+        bobState.selectDirectMessage(bobThread);
+        await bobState
+            .sendDirectMessage('Confirmado Alice! Ratchet bidirecional ativo.');
+        expect(bobState.selectedDm!.messages.last.deliveryState,
+            equals('accepted'));
+
+        final aliceSync1 = await aliceState.syncWithRelay();
+        expect(aliceSync1.receivedInbox, equals(1));
+        expect(
+          aliceState.selectedDm!.messages.last.text,
+          equals('Confirmado Alice! Ratchet bidirecional ativo.'),
+        );
+        expect(aliceState.selectedDm!.messages.last.deliveryState,
+            equals('delivered'));
+
+        // 7. Recuperação de mensagens pendentes após falha de relay e reinicialização completa do cliente
+        harness.failNextStoreRequest = true;
+        await aliceState
+            .sendDirectMessage('Mensagem pendente durante queda do relay');
+        expect(aliceState.selectedDm!.messages.last.deliveryState,
+            equals('failed'));
+        expect(aliceState.lastMessagingError, isNotNull);
+
+        // Encerra a instância de Alice e abre uma nova instância independente sobre o mesmo banco/vault
+        aliceState.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        final aliceRestarted = NixState(
+          loadMockData: false,
+          keyVault: KeyVault(osKeyStorage: InMemoryOsKeyStorage()),
+        );
+        await aliceRestarted.unlockWithPassphrase(
+          'Alice-Sovereign-Passphrase-2026!',
           customDbPath: aliceDbPath,
           customVaultPath: aliceVaultPath,
-        ),
-        isTrue,
-      );
-      expect(
-        await bobState.initializeEncryptedDatabase(
-          passphrase: 'Bob-Sovereign-Passphrase-2026!',
-          customDbPath: bobDbPath,
-          customVaultPath: bobVaultPath,
-        ),
-        isTrue,
-      );
+        );
+        aliceRestarted.configureRelayTransport(
+          relayClient: relayClient,
+          mailboxCredentials: credentials(aliceIdentity),
+        );
 
-      final aliceIdentity = await NixIdentity.generate();
-      final bobIdentity = await NixIdentity.generate();
-      await aliceState.persistPrimaryIdentity(
-        identity: aliceIdentity,
-        displayName: 'Alice Soberana',
-      );
-      await bobState.persistPrimaryIdentity(
-        identity: bobIdentity,
-        displayName: 'Bob Soberano',
-      );
+        final recoveredThread = aliceRestarted.directMessages.firstWhere(
+          (d) => d.id == conversationId,
+        );
+        expect(
+          recoveredThread.messages.any(
+            (m) =>
+                m.text == 'Mensagem pendente durante queda do relay' &&
+                m.deliveryState == 'failed',
+          ),
+          isTrue,
+        );
 
-      aliceState.configureRelayTransport(relayClient: relayClient);
-      bobState.configureRelayTransport(relayClient: relayClient);
+        // Restaura o relay e sincroniza a instância reiniciada
+        harness.failNextStoreRequest = false;
+        // Zera next_attempt_at na outbox para retentativa imediata em laboratório
+        await aliceRestarted.localDatabase!.rawDatabase.rawUpdate(
+          'UPDATE outbox SET next_attempt_at = 0 WHERE transport_state = ?',
+          ['failed'],
+        );
+        final retrySync = await aliceRestarted.syncWithRelay();
+        expect(retrySync.acceptedOutbox, equals(1));
 
-      // 1. Mensagens Salvas: cofre local, não enfileira na Outbox nem usa relay
-      aliceState.openSavedMessages();
-      await aliceState.sendDirectMessage('Nota privada somente no cofre local');
-      expect(aliceState.selectedDm!.isSavedMessages, isTrue);
-      final lastSaved = aliceState.selectedDm!.messages.last;
-      expect(lastSaved.deliveryState, equals('saved'));
-      expect(await aliceState.outboxRepo!.getPendingEnvelopes(), isEmpty);
+        final bobSync2 = await bobState.syncWithRelay();
+        expect(bobSync2.receivedInbox, equals(1));
+        final bobThreadAfterRecovery = bobState.directMessages.firstWhere(
+          (d) => d.id == conversationId,
+        );
+        expect(
+          bobThreadAfterRecovery.messages.last.text,
+          equals('Mensagem pendente durante queda do relay'),
+        );
 
-      // 2. Tentativa de envio remoto SEM sessão criptográfica deve falhar visivelmente (isVerified=false, state='failed')
-      const unverifiedThread = DirectMessageThread(
-        id: 'conv_unverified_peer',
-        peerName: 'Par Sem Handshake',
-        peerPublicId: 'NIX-0000-0000-0000-0000',
-        statusText: 'Sem sessão',
-        isOnline: false,
-        isVerified: false,
-        trustLevel: NixTrustLevel.level1Red,
-        messages: const [],
-      );
-      aliceState.directMessages.add(unverifiedThread);
-      aliceState.selectDirectMessage(unverifiedThread);
-      await aliceState.sendDirectMessage('Tentativa sem sessão X3DH');
-      final failedNoSessionMsg = aliceState.selectedDm!.messages.last;
-      expect(failedNoSessionMsg.deliveryState, equals('failed'));
-      expect(failedNoSessionMsg.isVerified, isFalse);
-      expect(aliceState.lastMessagingError, isNotNull);
-
-      // 3. Handshake real via Card ID assinado entre Alice e Bob
-      final bobCardJson = await bobState.exportLocalSignedCardJson();
-      final aliceCardJson = await aliceState.exportLocalSignedCardJson();
-      await bobState.importPeerCardOnly(
-        aliceCardJson,
-        conversationId: 'conv_alice_bob_ui',
-      );
-      final aliceThread = await aliceState.importPeerCardAndEstablishSession(
-        bobCardJson,
-        conversationId: 'conv_alice_bob_ui',
-      );
-      expect(aliceThread.hasActiveSession, isTrue);
-
-      // 4. Alice envia mensagem pelo fluxo de UI (NixState.sendDirectMessage) -> relay aceita ('accepted')
-      await aliceState.sendDirectMessage('Olá Bob! Mensagem enviada pela UI via SovereignMessenger.');
-      final aliceSentMsg = aliceState.selectedDm!.messages.last;
-      expect(aliceSentMsg.deliveryState, equals('accepted'));
-      expect(aliceSentMsg.isVerified, isTrue);
-      expect(aliceState.lastMessagingError, isNull);
-
-      // 5. Bob sincroniza com o relay (NixState.syncWithRelay) -> recebe e autentica ('delivered')
-      final bobSync1 = await bobState.syncWithRelay();
-      expect(bobSync1.receivedInbox, equals(1));
-      final bobThread = bobState.directMessages.firstWhere(
-        (d) => d.id == 'conv_alice_bob_ui',
-      );
-      expect(bobThread.messages.length, equals(1));
-      expect(
-        bobThread.messages.first.text,
-        equals('Olá Bob! Mensagem enviada pela UI via SovereignMessenger.'),
-      );
-      expect(bobThread.messages.first.deliveryState, equals('delivered'));
-      expect(bobThread.messages.first.isVerified, isTrue);
-
-      // 6. Bob responde pela UI para Alice
-      bobState.selectDirectMessage(bobThread);
-      await bobState.sendDirectMessage('Confirmado Alice! Ratchet bidirecional ativo.');
-      expect(bobState.selectedDm!.messages.last.deliveryState, equals('accepted'));
-
-      final aliceSync1 = await aliceState.syncWithRelay();
-      expect(aliceSync1.receivedInbox, equals(1));
-      expect(
-        aliceState.selectedDm!.messages.last.text,
-        equals('Confirmado Alice! Ratchet bidirecional ativo.'),
-      );
-      expect(aliceState.selectedDm!.messages.last.deliveryState, equals('delivered'));
-
-      // 7. Recuperação de mensagens pendentes após falha de relay e reinicialização completa do cliente
-      harness.failNextStoreRequest = true;
-      await aliceState.sendDirectMessage('Mensagem pendente durante queda do relay');
-      expect(aliceState.selectedDm!.messages.last.deliveryState, equals('failed'));
-      expect(aliceState.lastMessagingError, isNotNull);
-
-      // Encerra a instância de Alice e abre uma nova instância independente sobre o mesmo banco/vault
-      aliceState.dispose();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-
-      final aliceRestarted = NixState(
-        loadMockData: false,
-        keyVault: KeyVault(osKeyStorage: InMemoryOsKeyStorage()),
-      );
-      await aliceRestarted.unlockWithPassphrase(
-        'Alice-Sovereign-Passphrase-2026!',
-        customDbPath: aliceDbPath,
-        customVaultPath: aliceVaultPath,
-      );
-      aliceRestarted.configureRelayTransport(relayClient: relayClient);
-
-      final recoveredThread = aliceRestarted.directMessages.firstWhere(
-        (d) => d.id == 'conv_alice_bob_ui',
-      );
-      expect(
-        recoveredThread.messages.any(
-          (m) =>
-              m.text == 'Mensagem pendente durante queda do relay' &&
-              m.deliveryState == 'failed',
-        ),
-        isTrue,
-      );
-
-      // Restaura o relay e sincroniza a instância reiniciada
-      harness.failNextStoreRequest = false;
-      // Zera next_attempt_at na outbox para retentativa imediata em laboratório
-      await aliceRestarted.localDatabase!.rawDatabase.rawUpdate(
-        'UPDATE outbox SET next_attempt_at = 0 WHERE transport_state = ?',
-        ['failed'],
-      );
-      final retrySync = await aliceRestarted.syncWithRelay();
-      expect(retrySync.acceptedOutbox, equals(1));
-
-      final bobSync2 = await bobState.syncWithRelay();
-      expect(bobSync2.receivedInbox, equals(1));
-      final bobThreadAfterRecovery = bobState.directMessages.firstWhere(
-        (d) => d.id == 'conv_alice_bob_ui',
-      );
-      expect(
-        bobThreadAfterRecovery.messages.last.text,
-        equals('Mensagem pendente durante queda do relay'),
-      );
-
-      aliceRestarted.dispose();
-      bobState.dispose();
-    });
+        aliceRestarted.dispose();
+        bobState.dispose();
+      });
+    }
   });
 }

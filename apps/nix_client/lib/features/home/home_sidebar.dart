@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/direct_message.dart';
 import '../../core/models/member.dart';
@@ -394,77 +395,120 @@ class HomeSidebar extends StatelessWidget {
   }
 
   void _showAddContactDialog(BuildContext context, NixState state) {
-    final idController = TextEditingController();
-    final nameController = TextEditingController();
-    showDialog(
+    showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: NixColors.surfaceElevatedHigh,
-        title: Row(
-          children: [
-            Icon(Icons.person_add_alt_1_rounded, color: NixColors.accentYellow, size: 20),
-            const SizedBox(width: 8),
-            Text('Adicionar Contato Soberano', style: TextStyle(color: NixColors.textPrimary, fontSize: 15)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Insira o Card ID ou Chave Pública do seu contato para iniciar uma conversa cifrada de ponta a ponta sem passar por servidores.',
-              style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: idController,
-              key: const Key('add_contact_id_field'),
-              style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
-              decoration: const InputDecoration(
-                labelText: 'Card ID ou Chave Pública',
-                hintText: 'ex: NIX-XXXX-XXXX-XXXX-XXXX',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.badge_outlined),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: nameController,
-              key: const Key('add_contact_name_field'),
-              style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
-              decoration: const InputDecoration(
-                labelText: 'Nome ou Apelido (Opcional)',
-                hintText: 'ex: Alice, Bob',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.edit_note_rounded),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            key: const Key('add_contact_confirm_button'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: NixColors.accentYellow,
-              foregroundColor: Colors.black,
-            ),
-            onPressed: () {
-              final id = idController.text.trim();
-              if (id.isNotEmpty) {
-                state.addNewContact(publicId: id, nickname: nameController.text.trim());
-                Navigator.of(ctx).pop();
-              }
-            },
-            child: const Text('Adicionar e Abrir Chat', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+      builder: (_) => _ContactInvitationDialog(state: state),
     );
   }
+
+}
+
+class _ContactInvitationDialog extends StatefulWidget {
+  final NixState state;
+
+  const _ContactInvitationDialog({required this.state});
+
+  @override
+  State<_ContactInvitationDialog> createState() => _ContactInvitationDialogState();
+}
+
+class _ContactInvitationDialogState extends State<_ContactInvitationDialog> {
+  final _invitation = TextEditingController();
+  final _alias = TextEditingController();
+  bool _busy = false;
+  String? _status;
+
+  @override
+  void dispose() {
+    _invitation.dispose();
+    _alias.dispose();
+    super.dispose();
+  }
+
+  Future<void> _run(Future<void> Function() action) async {
+    setState(() { _busy = true; _status = null; });
+    try {
+      await action();
+    } on FormatException catch (error) {
+      if (mounted) setState(() => _status = error.message);
+    } on StateError catch (error) {
+      if (mounted) setState(() => _status = error.message);
+    } catch (_) {
+      if (mounted) setState(() => _status = 'Falha ao processar o convite.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    scrollable: true,
+    title: const Text('Adicionar Contato Soberano'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Troque convites por um canal confiável. Cada pessoa deve '
+            'importar o convite da outra antes de sincronizar pelo relay.'),
+        TextButton.icon(
+          onPressed: _busy ? null : () => _run(() async {
+            final invitation = await widget.state.exportContactInvitation();
+            if (!mounted) return;
+            await Clipboard.setData(ClipboardData(text: invitation));
+            if (mounted) setState(() => _status = 'Convite assinado copiado.');
+          }),
+          icon: const Icon(Icons.copy_rounded),
+          label: const Text('Copiar meu convite'),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          key: const Key('add_contact_id_field'),
+          controller: _invitation,
+          minLines: 2,
+          maxLines: 4,
+          maxLength: 8192,
+          decoration: const InputDecoration(
+            labelText: 'Convite assinado',
+            border: OutlineInputBorder(),
+            counterText: '',
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          key: const Key('add_contact_name_field'),
+          controller: _alias,
+          maxLength: 80,
+          decoration: const InputDecoration(
+            labelText: 'Apelido local (opcional)',
+            border: OutlineInputBorder(),
+            counterText: '',
+          ),
+        ),
+        if (_status != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(_status!),
+          ),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: _busy ? null : () => Navigator.of(context).pop(),
+        child: const Text('Cancelar'),
+      ),
+      FilledButton(
+        key: const Key('add_contact_confirm_button'),
+        onPressed: _busy ? null : () => _run(() async {
+          await widget.state.addNewContact(
+            publicId: _invitation.text,
+            nickname: _alias.text,
+          );
+          if (context.mounted) Navigator.of(context).pop();
+        }),
+        child: const Text('Importar e abrir conversa'),
+      ),
+    ],
+  );
 }
 
 class _DirectChatItemTile extends StatelessWidget {

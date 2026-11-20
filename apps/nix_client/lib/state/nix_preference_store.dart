@@ -51,6 +51,7 @@ class NixPreferenceStore {
     if (repository != null) {
       await repository.setOption(_personalKey, {
         'settings': settings.toJson(),
+        'avatarStyle': profile.avatarStyle,
         'avatarPath': profile.customAvatarPath,
         'avatarCropScale': profile.avatarCropScale,
         'avatarCropX': profile.avatarCropOffsetX,
@@ -88,7 +89,7 @@ class NixPreferenceStore {
     }
   }
 
-  Future<({UserSettings? settings, UserProfile profile})?> readPersonal(
+  Future<({UserSettings? settings, UserProfile profile, String? avatarStyle})?> readPersonal(
       PreferencesRepository? repository, UserProfile profile) async {
     final raw = await repository?.getOption(_personalKey);
     if (raw is! Map<String, dynamic>) return null;
@@ -104,6 +105,7 @@ class NixPreferenceStore {
       settings: options is Map<String, dynamic>
           ? UserSettings.fromJson(options)
           : null,
+      avatarStyle: raw['avatarStyle'] as String?,
       profile: profile.copyWith(
         customAvatarPath: raw['avatarPath'] as String?,
         clearCustomAvatar: raw['avatarPath'] == null,

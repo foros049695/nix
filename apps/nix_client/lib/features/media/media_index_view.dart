@@ -32,7 +32,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
   List<CatalogWork> _searchResults = [];
   List<Map<String, dynamic>> _userAcervo = [];
   bool _isLoading = false;
-  bool _catalogFailed = false;
+  String? _catalogError;
   int _searchGeneration = 0;
 
   final List<({String label, String? kind, IconData icon})> _kindFilters = [
@@ -76,7 +76,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
     final state = _nixState;
     setState(() {
       _isLoading = true;
-      _catalogFailed = false;
+      _catalogError = null;
     });
     try {
       await state.ensureCatalogDatabaseOpened();
@@ -92,10 +92,12 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
         _searchResults = results;
         _isLoading = false;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted || generation != _searchGeneration) return;
       setState(() {
-        _catalogFailed = true;
+        _catalogError = error is FormatException
+            ? error.message
+            : 'Falha ao abrir ou consultar o banco local do catálogo.';
         _isLoading = false;
       });
     }
@@ -805,20 +807,20 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                       padding: const EdgeInsets.only(right: 6),
                       child: FilterChip(
                         selected: isSelected,
+                        showCheckmark: false,
                         avatar: Icon(
                           f.icon,
                           size: 14,
-                          color: isSelected ? Colors.black : NixColors.textSecondary,
+                          color: isSelected ? context.onAccentColor : NixColors.textSecondary,
                         ),
                         label: Text(f.label),
                         labelStyle: TextStyle(
-                          color: isSelected ? Colors.black : NixColors.textPrimary,
+                          color: isSelected ? context.onAccentColor : NixColors.textPrimary,
                           fontSize: 11.5,
                           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                         ),
                         backgroundColor: NixColors.surfaceSidebar,
-                        selectedColor: Colors.amber,
-                        checkmarkColor: Colors.black,
+                        selectedColor: context.accentColor,
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         onSelected: (selected) {
                           setState(() {
@@ -839,12 +841,21 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
         Expanded(
           child: _isLoading
               ? const Center(child: Text('Carregando catálogo…'))
-              : _catalogFailed
+              : _catalogError != null
                   ? Center(
-                      child: TextButton.icon(
-                        onPressed: _executeSearch,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Catálogo indisponível. Tentar novamente'),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(_catalogError!, textAlign: TextAlign.center),
+                            TextButton.icon(
+                              onPressed: _executeSearch,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Tentar novamente'),
+                            ),
+                          ],
+                        ),
                       ),
                     )
                   : _searchResults.isEmpty

@@ -39,12 +39,16 @@ class MainActivity : FlutterActivity() {
     private var attachmentResult: MethodChannel.Result? = null
     private var attachmentExtensions: Set<String> = emptySet()
 
+    private val audioDiagnostic by lazy { NixAudioDiagnostic(this) }
     private var bleController: NixBleMeshController? = null
     private var rnodeController: NixRNodeRadioController? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
+
+        MethodChannel(messenger, "com.projetonix.nix/audio_diagnostic")
+            .setMethodCallHandler(audioDiagnostic::handle)
 
         // 1. Canal AndroidKeyStore TEE / StrongBox (AES-256-GCM)
         MethodChannel(messenger, keystoreChannelName).setMethodCallHandler { call, result ->
@@ -178,6 +182,7 @@ class MainActivity : FlutterActivity() {
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
+        if (audioDiagnostic.onPermissionResult(requestCode, grantResults)) return
         if (bleController?.onRequestPermissionsResult(requestCode, grantResults) == true) {
             return
         }
@@ -281,6 +286,11 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }.start()
+    }
+
+    override fun onStop() {
+        audioDiagnostic.stop()
+        super.onStop()
     }
 
     override fun onDestroy() {

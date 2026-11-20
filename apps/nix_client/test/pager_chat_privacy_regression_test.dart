@@ -245,6 +245,13 @@ void main() {
     expect(firstOrder.traderName, startsWith('Parte-'));
     expect(firstOrder.traderName, isNot(contains('Nome local')));
     await state.flushPreferences();
+    // Simula um snapshot antigo da linha de perfil ao lado da preferência nova.
+    await state.identityRepo!.saveProfile(
+      identityId: identity.publicId,
+      displayName: 'Nome local',
+      bio: '',
+      avatarObjectId: 'sentinel',
+    );
     await state.localDatabase!.close();
 
     final restored = NixState(loadMockData: false);

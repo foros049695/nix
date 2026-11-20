@@ -21,7 +21,12 @@ class GithubDiscoveryView extends StatefulWidget {
 }
 
 class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
-  bool _showAnalytics = true;
+  bool? _analyticsOverride;
+  static const _sortLabels = {
+    'stars': 'Mais estrelados',
+    'trending': 'Em alta na semana',
+    'updated': 'Atualizados recentemente',
+  };
   final TextEditingController _searchCtrl = TextEditingController();
 
   @override
@@ -43,6 +48,8 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
     final nixState = context.watch<NixState>();
     final accent = context.accentColor;
     final accentText = context.accentTextColor;
+    final compact = MediaQuery.sizeOf(context).width < 700;
+    final showAnalytics = _analyticsOverride ?? !compact;
 
     return ListenableBuilder(
       listenable: nixState.starwireFilters,
@@ -58,8 +65,7 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
         children: [
           // Cabeçalho da Aba Discovery
           Container(
-            height: 54,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
               color: NixColors.surfaceElevated,
               border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
@@ -77,7 +83,7 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
                         children: [
                           Flexible(
                             child: Text(
-                              'STARWIRE GITHUB DISCOVERY · ACERVO ABERTO',
+                              compact ? 'GitHub Discovery' : 'STARWIRE GITHUB DISCOVERY · ACERVO ABERTO',
                               style: TextStyle(
                                 color: NixColors.textPrimary,
                                 fontSize: 13,
@@ -87,8 +93,8 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Container(
+                          if (!compact) const SizedBox(width: 8),
+                          if (!compact) Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                             decoration: BoxDecoration(
                               color: accent.withValues(alpha: 0.16),
@@ -107,7 +113,9 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
                         ],
                       ),
                       Text(
-                        '${nixState.githubRepos.length} projetos carregados localmente · $totalTrending em alta · Salvamento privado por padrão',
+                        compact
+                            ? '${repos.length} de ${nixState.githubRepos.length} projetos'
+                            : '${nixState.githubRepos.length} projetos carregados localmente · $totalTrending em alta · Salvamento privado por padrão',
                         style: TextStyle(color: NixColors.textMuted, fontSize: 10.5),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -115,6 +123,14 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
                   ),
                 ),
                 const SizedBox(width: 8),
+                if (compact)
+                  IconButton(
+                    key: const Key('toggle_starwire_charts'),
+                    tooltip: showAnalytics ? 'Ocultar gráficos' : 'Ver gráficos',
+                    onPressed: () => setState(() => _analyticsOverride = !showAnalytics),
+                    icon: Icon(showAnalytics ? Icons.bar_chart_rounded : Icons.analytics_outlined),
+                  )
+                else
                 OutlinedButton.icon(
                   key: const Key('toggle_starwire_charts'),
                   style: OutlinedButton.styleFrom(
@@ -123,12 +139,12 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   ),
-                  onPressed: () => setState(() => _showAnalytics = !_showAnalytics),
-                  icon: Icon(_showAnalytics ? Icons.bar_chart_rounded : Icons.analytics_outlined, size: 15, color: accentText),
-                  label: Text(_showAnalytics ? 'Ocultar Gráficos' : 'Ver Gráficos', style: const TextStyle(fontSize: 11)),
+                  onPressed: () => setState(() => _analyticsOverride = !showAnalytics),
+                  icon: Icon(showAnalytics ? Icons.bar_chart_rounded : Icons.analytics_outlined, size: 15, color: accentText),
+                  label: Text(showAnalytics ? 'Ocultar Gráficos' : 'Ver Gráficos', style: const TextStyle(fontSize: 11)),
                 ),
-                const SizedBox(width: 8),
-                Container(
+                if (!compact) const SizedBox(width: 8),
+                if (!compact) Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: NixColors.surfaceActive,
@@ -197,8 +213,19 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Container(
+                    const SizedBox(width: 8),
+                    if (compact)
+                      PopupMenuButton<String>(
+                        tooltip: 'Ordenar repositórios',
+                        icon: const Icon(Icons.sort_rounded),
+                        initialValue: nixState.githubSortBy,
+                        onSelected: nixState.setGithubSortBy,
+                        itemBuilder: (_) => [
+                          for (final sort in _sortLabels.entries)
+                            PopupMenuItem(value: sort.key, child: Text(sort.value)),
+                        ],
+                      )
+                    else Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                       decoration: BoxDecoration(
                         color: NixColors.surfaceCard,
@@ -214,10 +241,9 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
-                          items: const [
-                            DropdownMenuItem(value: 'stars', child: Text('★ Mais Estrelados')),
-                            DropdownMenuItem(value: 'trending', child: Text('🔥 Em Alta / Semana')),
-                            DropdownMenuItem(value: 'updated', child: Text('⏱ Atualizados Recentemente')),
+                          items: [
+                            for (final sort in _sortLabels.entries)
+                              DropdownMenuItem(value: sort.key, child: Text(sort.value)),
                           ],
                           onChanged: (v) {
                             if (v != null) nixState.setGithubSortBy(v);
@@ -249,7 +275,7 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
 
           // Lista + Gráficos Reais Starwire
           Expanded(
-            child: repos.isEmpty && !_showAnalytics
+            child: repos.isEmpty && !showAnalytics
                 ? Center(
                     child: Text(
                       'Nenhum repositório encontrado para este filtro.',
@@ -258,9 +284,9 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.all(20),
-                    itemCount: repos.length + (_showAnalytics ? 1 : 0) + (repos.isEmpty ? 1 : 0),
+                    itemCount: repos.length + (showAnalytics ? 1 : 0) + (repos.isEmpty ? 1 : 0),
                     itemBuilder: (context, idx) {
-                      if (_showAnalytics && idx == 0) {
+                      if (showAnalytics && idx == 0) {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 16),
                           child: _StarwireRealChartsPanel(
@@ -275,7 +301,7 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
                           ),
                         );
                       }
-                      final repoIdx = _showAnalytics ? idx - 1 : idx;
+                      final repoIdx = showAnalytics ? idx - 1 : idx;
                       if (repos.isEmpty) {
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 40),
@@ -354,6 +380,7 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Row(
           children: [
             Icon(Icons.new_releases_outlined, color: context.accentTextColor, size: 20),

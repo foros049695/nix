@@ -87,6 +87,10 @@ class CatalogDatabase {
 
   Database get rawDatabase => _db;
 
+  // A configuração de sqlite3 é específica do isolate que abre o banco.
+  static final _factory =
+      createDatabaseFactoryFfi(ffiInit: LocalDatabase.ensureSqliteInitialized);
+
   static String getDefaultCatalogPath() {
     return NixPlatformPaths.resolveDataFile('nix_catalog_v1.db');
   }
@@ -97,9 +101,6 @@ class CatalogDatabase {
     bool inMemory = false,
     bool readOnly = false,
   }) async {
-    LocalDatabase.ensureSqliteInitialized();
-    final dbFactory = databaseFactoryFfi;
-
     final resolvedPath = inMemory ? inMemoryDatabasePath : (path ?? getDefaultCatalogPath());
 
     if (!inMemory && resolvedPath != inMemoryDatabasePath) {
@@ -109,7 +110,7 @@ class CatalogDatabase {
       }
     }
 
-    final db = await dbFactory.openDatabase(
+    final db = await _factory.openDatabase(
       resolvedPath,
       options: OpenDatabaseOptions(
         version: readOnly ? null : 2,
@@ -125,12 +126,14 @@ class CatalogDatabase {
       ),
     );
 
-    // Garante que o schema FTS5 esteja pronto caso a base tenha sido criada vazia
-    if (!readOnly) {
-      await _createSchema(db);
+    try {
+      // Bases importadas podem declarar a versão atual sem todos os índices.
+      if (!readOnly) await db.transaction(_createSchema);
+      return CatalogDatabase._(db, resolvedPath);
+    } catch (_) {
+      await db.close();
+      rethrow;
     }
-
-    return CatalogDatabase._(db, resolvedPath);
   }
 
   static Future<void> _upgradeSchema(DatabaseExecutor db) async {
@@ -344,7 +347,7 @@ class CatalogDatabase {
 
     // Normaliza query para FTS5 com prefix matching em cada termo
     final tokens = clean
-        .replaceAll(RegExp(r'[^\w\s]', unicode: true), ' ')
+        .replaceAll(RegExp(r'[^\p{L}\p{M}\p{N}\s]', unicode: true), ' ')
         .split(RegExp(r'\s+'))
         .where((t) => t.isNotEmpty)
         .map((t) => '"$t"*')

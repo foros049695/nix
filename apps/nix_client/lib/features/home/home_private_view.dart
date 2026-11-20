@@ -457,9 +457,12 @@ class _HomePrivateViewState extends State<HomePrivateView> {
             child: Row(
               children: [
                 Icon(
-                  dm.isSavedMessages ? Icons.bookmark_rounded : Icons.lock_rounded,
+                  dm.isSavedMessages
+                      ? Icons.bookmark_rounded
+                      : dm.hasActiveSession ? Icons.lock_rounded : Icons.lock_open_rounded,
                   size: 16,
-                  color: dm.isSavedMessages ? context.accentTextColor : NixColors.accentGreen,
+                  color: dm.isSavedMessages ? context.accentTextColor
+                      : dm.hasActiveSession ? NixColors.accentGreen : NixColors.textMuted,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
