@@ -180,7 +180,7 @@ class _PagerProfileState extends State<PagerProfile> {
                       final expandedText =
                           MediaQuery.textScalerOf(context).scale(16) > 19;
                       return SizedBox(
-                        height: narrow || expandedText ? 318 : 278,
+                        height: narrow || expandedText ? 330 : 308,
                         child: ScrollConfiguration(
                           behavior: ScrollConfiguration.of(context).copyWith(
                             dragDevices: const {
@@ -451,13 +451,15 @@ class _PagerPanel extends StatelessWidget {
                           fontSize: 20,
                         )),
                   ),
-                  Flexible(
-                    child: Text(
-                      '0$page/03',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontFamily: 'PixelifySans', fontSize: 13),
+                  const SizedBox(width: 8),
+                  Text(
+                    '0$page/03',
+                    maxLines: 1,
+                    textScaler: MediaQuery.textScalerOf(context)
+                        .clamp(maxScaleFactor: 1.5),
+                    style: const TextStyle(
+                      fontFamily: 'PixelifySans',
+                      fontSize: 13,
                     ),
                   ),
                   if (action != null) action! else const SizedBox(height: 48),
