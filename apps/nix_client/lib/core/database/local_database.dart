@@ -79,7 +79,17 @@ class LocalDatabase {
   /// Prioriza sempre binários SQLCipher reais antes do fallback SQLite de desenvolvimento.
   static void ensureSqliteInitialized() {
     if (_sqliteInitialized) return;
-    if (Platform.isAndroid) {
+    if (Platform.isWindows) {
+      // sqfliteFfiInit pode selecionar a DLL SQLite comum do cache de
+      // desenvolvimento. O cofre e o catálogo devem usar a DLL do piloto.
+      sqlite_open.open.overrideFor(sqlite_open.OperatingSystem.windows, () {
+        final testPath = Platform.environment['FLUTTER_TEST'] == 'true'
+            ? Platform.environment['NIX_TEST_WINDOWS_SQLCIPHER_PATH']
+            : null;
+        final executableDir = File(Platform.resolvedExecutable).parent.path;
+        return DynamicLibrary.open(testPath ?? '$executableDir/sqlite3.dll');
+      });
+    } else if (Platform.isAndroid) {
       try {
         sqlite_open.open.overrideFor(
             sqlite_open.OperatingSystem.android, openAndroidSqlCipherLibrary);
@@ -128,9 +138,6 @@ class LocalDatabase {
         });
       } catch (_) {}
     }
-    try {
-      sqfliteFfiInit();
-    } catch (_) {}
     _sqliteInitialized = true;
   }
 

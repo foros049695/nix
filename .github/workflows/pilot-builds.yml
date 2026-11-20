@@ -112,7 +112,7 @@ jobs:
           if (!(Test-Path "$release/nix_client.exe") -or !(Test-Path "$release/sqlite3.dll")) {
             throw 'O bundle está sem o executável do Nix ou a DLL do SQLCipher.'
           }
-          $env:PATH = "$release;$env:PATH"
+          $env:NIX_TEST_WINDOWS_SQLCIPHER_PATH = "$release/sqlite3.dll"
           $env:NIX_TEST_WINDOWS_SQLCIPHER = 'true'
           flutter test --no-pub test/windows_credential_storage_test.dart
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

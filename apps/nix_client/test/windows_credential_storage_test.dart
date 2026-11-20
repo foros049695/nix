@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_client/core/security/os_key_storage.dart';
 import 'package:nix_client/core/database/local_database.dart';
+import 'package:nix_client/core/media/catalog_database.dart';
 import 'package:nix_client/core/database/repositories.dart';
 
 void main() {
@@ -24,6 +25,14 @@ void main() {
   }, skip: !Platform.isWindows);
   test('Windows carrega SQLCipher e abre um cofre cifrado com a DLL do piloto',
       () async {
+    final catalog = await CatalogDatabase.open(inMemory: true);
+    try {
+      final version = await catalog.rawDatabase.rawQuery('PRAGMA cipher_version');
+      expect(version, isNotEmpty);
+      expect(await catalog.getEntryCount(), 0);
+    } finally {
+      await catalog.close();
+    }
     final dir = await Directory.systemTemp.createTemp('nix-windows-sqlcipher-');
     addTearDown(() => dir.delete(recursive: true));
     final path = '${dir.path}/pilot.db';
