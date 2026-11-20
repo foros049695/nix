@@ -33,7 +33,8 @@ void main() {
       final content = await torrc.readAsString();
       expect(content.contains('SocksPort 127.0.0.1:9150'), isTrue);
       expect(content.contains('ControlPort 127.0.0.1:9151'), isTrue);
-      expect(content.contains('DataDirectory ${tempDir.path}'), isTrue);
+      final torPath = Platform.isWindows ? tempDir.path.replaceAll(r'\', '/') : tempDir.path;
+      expect(content, contains('DataDirectory "$torPath"'));
       expect(content.contains('SafeSocks 1'), isTrue);
       expect(content.contains('AvoidDiskWrites 1'), isTrue);
     });

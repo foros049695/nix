@@ -1,11 +1,15 @@
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'package:ffi/ffi.dart';
 import 'android_keystore_channel_stub.dart'
     if (dart.library.ui) 'android_keystore_channel_flutter.dart';
 
+part 'windows_credential_storage.dart';
+
 /// Abstração para armazenamento de material de desbloqueio no cofre nativo do SO:
 /// - Linux Desktop: D-Bus Secret Service via `libsecret-1.so.0` (gnome-keyring / KWallet)
+/// - Windows: Windows Credential Manager (credencial genérica por usuário)
 /// - Android: Hardware/TEE `AndroidKeyStore` (AES-256-GCM) via MethodChannel
 /// - Ambiente headless/testes: fallback explícito que não simula segurança onde não existe
 abstract class OsKeyStorage {
@@ -22,6 +26,9 @@ abstract class OsKeyStorage {
     }
     if (Platform.isAndroid) {
       return AndroidKeystoreKeyStorage();
+    }
+    if (Platform.isWindows) {
+      return WindowsCredentialStorage.tryOpen() ?? PassphraseOnlyKeyStorage();
     }
     if (Platform.isLinux) {
       final linuxStorage = LinuxLibsecretKeyStorage.tryOpen();

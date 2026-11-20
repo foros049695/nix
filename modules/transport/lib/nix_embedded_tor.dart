@@ -125,7 +125,9 @@ class EmbeddedTorManager {
     // Candidatos ordenados: extras (Android nativeLibraryDir/libtor.so) > pacote local > ~/.local > sistema
     final candidates = [
       ...extra,
-      if (exeDir.isNotEmpty) '$exeDir/tor',
+      if (Platform.isWindows && exeDir.isNotEmpty) '$exeDir/tor/tor.exe',
+      if (Platform.isWindows && exeDir.isNotEmpty) '$exeDir/tor.exe',
+      if (!Platform.isWindows && exeDir.isNotEmpty) '$exeDir/tor',
       if (exeDir.isNotEmpty) '$exeDir/data/tor',
       if (home.isNotEmpty) '$home/.local/share/nix/bundle/tor',
       if (home.isNotEmpty) '$home/.local/bin/tor',
@@ -152,7 +154,7 @@ class EmbeddedTorManager {
     }
 
     // Procura no PATH (desktop POSIX)
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid && !Platform.isWindows) {
       try {
         final res = await Process.run('which', ['tor']);
         if (res.exitCode == 0) {
@@ -182,13 +184,19 @@ class EmbeddedTorManager {
     } catch (_) {}
 
     final torrcFile = File('${dir.path}/torrc');
+    final path = Platform.isWindows ? dir.path.replaceAll(r'\', '/') : dir.path;
+    final escapedPath = path
+        .replaceAll(r'\', r'\\')
+        .replaceAll('"', r'\"')
+        .replaceAll('\r', r'\r')
+        .replaceAll('\n', r'\n');
     final configContent = StringBuffer()
       ..writeln('# Torrc gerado automaticamente pelo Projeto Nix')
       ..writeln(
         'SocksPort 127.0.0.1:$_activeSocksPort IsolateClientAddr IsolateClientProtocol IsolateDestPort IsolateDestAddr',
       )
       ..writeln('ControlPort 127.0.0.1:$_activeControlPort')
-      ..writeln('DataDirectory ${dir.path}')
+      ..writeln('DataDirectory "$escapedPath"')
       ..writeln('CookieAuthentication 1')
       ..writeln('ClientOnly 1')
       ..writeln('SafeSocks 1')

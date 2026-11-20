@@ -1,3 +1,4 @@
+import 'dart:ffi';
 import 'dart:io';
 import 'platform_channel_stub.dart'
     if (dart.library.ui) 'platform_channel_flutter.dart';
@@ -98,6 +99,16 @@ class NixPlatformPaths {
       return;
     }
 
+    if (Platform.isWindows) {
+      _runtimeInfo = NixPlatformRuntimeInfo(
+        dataDir: _windowsDataDirectory(),
+        deviceAbi: Abi.current().toString(),
+        keystoreSecurityLevel: 'WINDOWS_CREDENTIAL_MANAGER',
+      );
+      _initialized = true;
+      return;
+    }
+
     // Linux / Desktop POSIX
     final home = Platform.environment['HOME'] ?? '';
     final dataDir = home.isNotEmpty ? '$home/.local/share/nix' : '.nix_data';
@@ -117,11 +128,22 @@ class NixPlatformPaths {
     if (rt != null && rt.dataDir.isNotEmpty) {
       return '${rt.dataDir}/$filename';
     }
+    if (Platform.isWindows) return '${_windowsDataDirectory()}/$filename';
     final home = Platform.environment['HOME'] ?? '';
     if (home.isEmpty) {
       return '.$filename';
     }
     return '$home/.local/share/nix/$filename';
+  }
+
+  static String _windowsDataDirectory() {
+    final local = Platform.environment['LOCALAPPDATA'];
+    if (local != null && Directory(local).isAbsolute) return '$local/Projeto Nix';
+    final profile = Platform.environment['USERPROFILE'];
+    if (profile != null && Directory(profile).isAbsolute) {
+      return '$profile/AppData/Local/Projeto Nix';
+    }
+    throw StateError('O diretório de dados do usuário Windows não está disponível.');
   }
 
   /// Retorna candidatos extras para o binário Tor nativo (ex: `nativeLibraryDir/libtor.so` no Android).
