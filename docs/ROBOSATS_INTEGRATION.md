@@ -4,7 +4,7 @@ O README do RoboSats descreve trocas P2P de Bitcoin por moedas locais, identidad
 
 | Requisito | Arquivos | Implementação | Teste | Resultado | Limitação |
 |---|---|---|---|---|---|
-| Lightning em testnet | [RoboSats](https://github.com/RoboSats/robosats) | Leitura do fluxo documentado | Inspeção do README | PARTIAL | O cliente consulta um LND próprio por Tor e verifica a rede, o valor e a expiração. A validação usou respostas de laboratório. A coordenação e a liquidação continuam abertas. |
+| Lightning em testnet | [RoboSats](https://github.com/RoboSats/robosats) | Leitura do fluxo documentado | Inspeção do README | PARTIAL | O cliente consulta um LND próprio por Tor e verifica a rede, o valor e a expiração. A validação usou respostas simuladas e um LND real em regtest. A coordenação e a liquidação continuam abertas. |
 | Bitcoin on-chain | Bitcoin Core e BIP21 | Revisão de endereços e valores, QR para carteira externa e consulta do nó de teste por Tor | Vetores BIP21 e SOCKS5 de laboratório | PARTIAL | Criação de endereço, transmissão, confirmação e aceitação externa continuam abertas. |
 | Monero | [Mercado financeiro do Nix](UNIFIED_P2P_MARKETPLACE.md) | Ofertas assinadas, sala e isolamento existentes | Testes locais de anúncios e negociações | PARTIAL | Escrow, arbitragem e liquidação exigem mecanismos próprios de Monero. |
 
@@ -17,3 +17,13 @@ v3 de teste. Para Bitcoin Core, use um usuário RPC restrito à consulta
 `GetInfo` e `DecodePayReq`. As credenciais são transitórias e a conexão usa
 o SOCKS do Tor com isolamento por consulta. A carteira externa executa
 pagamentos. A consulta do Nix somente lê dados do nó.
+
+
+O ensaio local usou Bitcoin Core 29.2 e dois nós LND 0.19.3 em regtest.
+Um proxy SOCKS de laboratório verificou a resolução remota e o isolamento
+das consultas e encaminhou apenas aos processos locais. O conector
+consultou a altura da corrente e decodificou uma fatura de 1.234 sats com o
+macaroon de leitura. A carteira externa recebeu a fatura revisada, pagou
+pelo canal local e o nó recebedor confirmou a liquidação. Uma transferência
+on-chain com fundos de regtest também recebeu seis confirmações. O ensaio
+usou apenas fundos sintéticos e conexões locais.

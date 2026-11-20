@@ -95,7 +95,9 @@ downloads de Windows x64, Linux x86-64 e Android ARM64/ARMv7 e os SHA-256.
 - Bitcoin on-chain e Lightning têm revisão, QR e cópia de pedidos
   BIP21/BOLT11. Consultas somente leitura a Bitcoin Core e LND de teste
   usam o SOCKS Onion, com circuito dedicado e sem persistir credenciais.
-  Foram usados vetores públicos e proxy SOCKS local.
+  Foram usados vetores públicos, proxy SOCKS local e nós reais em regtest.
+  O ensaio confirmou transferência on-chain e liquidação Lightning pela
+  carteira externa com fundos sintéticos.
   [Bitcoin e Lightning](ROBOSATS_INTEGRATION.md)
 
 Continuam abertas as chamadas com áudio e chat em tempo real entre
