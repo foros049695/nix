@@ -647,12 +647,14 @@ void main() {
       of: find.byType(MoneroP2pView),
       matching: find.byType(Scrollable),
     ).first;
-    await tester.scrollUntilVisible(find.text('Negociar').first, 120,
-        scrollable: marketScroll);
-    expect(find.text('Negociar').first.hitTestable(), findsOneWidget);
+    final order = state.filteredMoneroOrders.firstWhere(state.verifyMoneroOrder);
+    final trade = find.byKey(Key('trade_button_${order.id}'));
+    await tester.scrollUntilVisible(trade, 120, scrollable: marketScroll);
+    await tester.pumpAndSettle();
+    expect(trade.hitTestable(), findsOneWidget);
 
     final create = find.byKey(const Key('create_monero_order_button'));
-    await tester.ensureVisible(create);
+    await tester.scrollUntilVisible(create, -120, scrollable: marketScroll);
     await tester.pumpAndSettle();
     await tester.tap(create);
     await tester.pumpAndSettle();

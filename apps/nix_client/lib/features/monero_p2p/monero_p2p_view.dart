@@ -200,7 +200,7 @@ class MoneroP2pView extends StatelessWidget {
                               borderRadius: NixTokens.borderButtonCompact,
                               border: Border.all(color: NixColors.surfaceBorder),
                             ),
-                            child: Row(
+                            child: Wrap(
                               children: [
                                 _sideButton(
                                   context: context,
