@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
@@ -320,7 +321,29 @@ void main() {
       final seedFile = File('${Directory.current.path}/assets/catalog/seed_catalog.db');
       expect(await seedFile.exists(), isTrue);
 
-      final seedDb = await CatalogDatabase.open(path: seedFile.absolute.path);
+      final manifestFile = File(
+        '${seedFile.parent.path}/seed_catalog_manifest.json',
+      );
+      final manifest = SignedCatalogManifest.fromJson(
+        jsonDecode(await manifestFile.readAsString()) as Map<String, dynamic>,
+      );
+      final keyring = CatalogPublisherKeyring(
+        trustedKeysHex: {CatalogPublisherKeyring.fixtureTestPublisherKeyHex},
+        allowTestFixtureKey: true,
+        isProductionMode: false,
+      );
+      expect(
+        await manifest.verifyArtifactBytes(
+          await seedFile.readAsBytes(),
+          keyring: keyring,
+        ),
+        isTrue,
+      );
+
+      final seedDb = await CatalogDatabase.open(
+        path: seedFile.absolute.path,
+        readOnly: true,
+      );
       final count = await seedDb.getEntryCount();
       expect(count, equals(25));
 

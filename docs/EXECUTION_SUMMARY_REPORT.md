@@ -1,6 +1,8 @@
 # RELATÓRIO MESTRE DE EXECUÇÃO — PROJETO NIX
 ## Transição de Turno e Instruções Técnicas para Próximo Agente / IA
 
+O [registro de implementação](IMPLEMENTATION_PROGRESS.md) acompanha os resultados da Etapa 9. Os dados de transição abaixo correspondem à emissão deste relatório.
+
 **Data de Emissão:** 19 de Novembro de 2026  
 **Repositório:** `https://github.com/foros049695/nix`  
 **Branch:** `main`  

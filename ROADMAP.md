@@ -3,7 +3,7 @@
 
 **Repositório oficial:** https://github.com/foros049695/nix  
 **Referência inicial:** `742533c`  
-**Atualização de referência:** 19/11/2026  
+**Atualização de referência:** 20/11/2026\
 **Estado do produto:** Pre-alpha (núcleos P0/P1 implementados e verificados em ambiente Linux/laboratório; validação em hardware físico e infraestrutura de produção pendentes)
 
 > Este documento estabelece as fases de engenharia, os critérios de aceite (*gates*) e o protocolo de revisão técnica do Projeto Nix. Todas as alterações são incorporadas de forma verificável, preservando a estabilidade, a segurança, o modelo de privacidade e a rastreabilidade do histórico Git.
@@ -29,6 +29,26 @@ Governança de repositório e Autonomia Autorizada:
 - Toda entrega passa por validação estrita de testes unitários, integrados e verificações de segurança/privacidade antes de publicação.
 - Conforme autorização expressa do proprietário (@foros049695), o agente autônomo principal possui permissão para executar commits, integração de PRs aprovados, atualizações de branches e publicação remota no GitHub sob demanda, mantendo os critérios rigorosos de qualidade, integridade e conformidade contínua.
 - **REGRA PERMANENTE (DESATIVAÇÃO DE 4 HORAS):** A automação periódica de 4 horas (`.github/workflows/nix_maintenance_audit.yml`) foi definitivamente desativada por ordem do proprietário (commit `557f51deba9f`). É estritamente proibido recriar o workflow, reativar rotinas cron ou delegar consultas periódicas de Issues/PRs a bots. Alterações nesta política exigem aprovação explícita do proprietário. O CI bloqueia preventivamente qualquer tentativa de reintrodução via `scripts/verify_automation_policy.sh`.
+
+---
+
+## Aceite do plano mestre de implementação
+
+As etapas abaixo acompanham a entrega sequencial do plano mestre. Os gates
+de engenharia e os marcos operacionais seguem detalhados nas fases deste roadmap.
+
+| Etapa | Entrega | Estado | Evidência de aceite |
+|---|---|---|---|
+| **Etapa 0** | **Auditoria Inicial & Proteção de Automação** | **CONCLUÍDO** | `89da48c` — `scripts/verify_automation_policy.sh` no CI, `AGENTS.md` e `ROADMAP.md` atualizados. |
+| **Etapa 1** | **Segurança, Licenciamento e Assinaturas** | **CONCLUÍDO** | `7f3d32e` — `docs/METADATA_SOURCES_AND_LICENSES.md` corrigido (ODbL/DbCL), `CatalogPublisherKeyring`, `ArchiveCryptoBadge`. |
+| **Etapa 2** | **Finalizar o Nix Archive** | **CONCLUÍDO** | `6d80a67` — `article_detail_view.dart`, discussões encadeadas, refutações, citações, editor Markdown auto-save. |
+| **Etapa 3** | **Catálogo Real Nix Media Index** | **CONCLUÍDO** | `14749b1` — Importadores AOD e Wikidata; 54.692 obras reais; banco SQLite FTS5 `build/catalog/nix_catalog_full.db` (~26MB) assinado Ed25519. |
+| **Etapa 4** | **Atualizações Privadas do Media Index** | **CONCLUÍDO** | `3bbc769` — `CatalogUpdateManager` em `media_index_updater.dart`, transporte Tor SOCKS5, conferência SHA-256 + Ed25519, rollback atômico `.bak`. |
+| **Etapa 5** | **Replicação Real S3 / IPFS** | **CONCLUÍDO** | `6b69f9e` — `AwsSigV4Signer` puro em Dart, S3 TLS adapter, IPFS Kubo CIDv1 base32, fila outbox SQLite transacional (`ReplicationQueueRepository`). |
+| **Etapa 6** | **Sincronização Distribuída do Archive** | **CONCLUÍDO** | `770babd` — Transporte canônico content-addressed com sidecar metadata; `syncObjectFromNetwork`, `ArchiveTamperDetectedException`; 5/5 testes passando. |
+| **Etapa 7** | **Android, Interface e APK Release** | **CONCLUÍDO** | `5213faa` — Keystore de release 4096-bit RSA configurado; APK gerado em `build/app/outputs/flutter-apk/app-release.apk` (54,7 MB, SHA-256: `d99cd9c4...`); verificado `apksigner`; overflows de layout mobile corrigidos. |
+| **Etapa 8** | **Desempenho e Refatoração de Estado** | **CONCLUÍDO** | `de25814` — Desacoplamento de `NixState` em ViewModels especializados (`NavigationViewModel`, `PreferencesViewModel`/`SettingsViewModel`, `ChatViewModel`, `IdentityViewModel`, `MediaViewModel`, `ArchiveViewModel`); índices otimizados no FTS5 SQLite; 7/7 testes passando em `performance_and_refactoring_test.dart`. |
+| **Etapa 9** | **Documentação, testes e homologação final** | **CONCLUÍDO (HOMOLOGAÇÃO LOCAL)** | Bateria de testes, análise estática e portões de privacidade e automação aprovados. Instruções de compilação e dados do APK registrados no README. Confirmação do CI remoto após autorização do push. [Registro de implementação](docs/IMPLEMENTATION_PROGRESS.md) |
 
 ---
 
@@ -227,7 +247,7 @@ Governança de repositório e Autonomia Autorizada:
 - [x] Pipeline CI em `.github/workflows/ci.yml` executando jobs independentes e portão estático de privacidade (`scripts/verify_privacy_matrix.sh`).
 - [x] Resolução e encerramento integral de todas as Issues e PRs abertos; rotina agendada de 4h desativada a pedido do proprietário.
 - [x] Interface adaptativa mobile-first validada nas resoluções 360×800, 393×852, 412×915 e 800×1280 (tablet) com touch targets >= 48dp e ausência de dados fictícios apresentados como reais (`docs/ANDROID_UI_TEST_REPORT.md`).
-- [x] Build APK de produção gerado e validado: `build/app/outputs/flutter-apk/app-release.apk` (54.5 MB) integrando NDK, SQLCipher, TEE e Tor móvel.
+- [x] Build APK de produção gerado e validado: `build/app/outputs/flutter-apk/app-release.apk` (54.719.573 bytes), verificado com `apksigner` no esquema v2. [Relatório Android](docs/ANDROID_VALIDATION_REPORT.md)
 - [x] Documentação técnica completa em `docs/` (7 especificações formais de arquitetura, metadados, protocolo de atualização, relatórios Android, discussões e replicação).
 
 **Gate 9: CONCLUÍDO (VALIDADO EM LABORATÓRIO E TESTES INTEGRADOS).**

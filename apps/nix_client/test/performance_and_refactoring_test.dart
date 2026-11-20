@@ -4,7 +4,6 @@ import 'package:nix_client/core/media/catalog_database.dart';
 import 'package:nix_client/core/models/direct_message.dart';
 import 'package:nix_client/core/models/message.dart';
 import 'package:nix_client/core/models/publication.dart';
-import 'package:nix_client/core/models/user_settings.dart';
 import 'package:nix_client/core/theme/nix_palette.dart';
 import 'package:nix_client/features/archive/archive_view_model.dart';
 import 'package:nix_client/features/chat/chat_view_model.dart';

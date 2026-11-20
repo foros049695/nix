@@ -2,11 +2,11 @@
   "domain": "NIX-CATALOG-MANIFEST-V1",
   "version": 1,
   "artifact": "seed_catalog.db",
-  "sha256": "66ebb95a787a94718a96039330b155b2385a741494340aec6fffc4e1677fee71",
+  "sha256": "f14e9d230bbbcdcd1542771a8bc9d87ff4045a61058afc3c4dba6dd97e846c6c",
   "byteSize": 81920,
-  "issuedAtUnix": 1795118644,
+  "issuedAtUnix": 1795156504,
   "entryCount": 25,
   "signerEd25519Hex": "a805baa55178d7c0220a9d586a56db6359521455e3b66d9abf914b829a47f045",
-  "signatureHex": "18c5bba1991c203d717fc18000150c0c1094c34a49d0744bc0a0aa3afb2f98ab29667913f04c4eaa1d4ded3014485100440fde7ab3b1509806a806f098767708",
+  "signatureHex": "45de2475b22dfef5ba1604e2b23385be535c0f936668f0c8a9750e0d1e78cf64a36e68dc6eeaac614cde5c18ed991b3d588773e14db9a794beff846a3f7b0d0e",
   "isProduction": false
 }

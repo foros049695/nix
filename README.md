@@ -221,8 +221,9 @@ Após a integração dos PRs `#1`–`#18`, fechamento das Issues `#11` e `#12` e
 ## 🛠️ Compilação e Execução de Protótipos Locais
 
 ### Pré-requisitos
-* **Flutter SDK:** 3.27.x ou superior / Dart 3.6.x
+* **Flutter SDK:** 3.27.4 ou superior, com o Dart incluído no SDK
 * **Go:** 1.22 ou 1.23 (para desenvolvimento do relay)
+* **SQLite no Linux:** instale `libsqlite3-dev` (Debian/Ubuntu) para os testes do cliente.
 * **Docker & Docker Compose:** para execução do banco PostgreSQL em testes locais
 
 ### 1. Execução do Cliente Desktop (Linux)
@@ -232,30 +233,48 @@ flutter pub get
 flutter run -d linux
 ```
 
-### 2. Execução dos Testes Automatizados de Todos os Módulos
+### 2. Compilação do APK Android Release
+
+Instale o Android SDK e o JDK 17, inclua o `apksigner` do Android SDK
+Build Tools no `PATH` e confirme o ambiente com `flutter doctor -v`.
+Configure a keystore de distribuição em
+`apps/nix_client/android/key.properties` com as propriedades `storeFile`,
+`storePassword`, `keyAlias` e `keyPassword`, ou use as variáveis
+`NIX_KEYSTORE_PATH`, `NIX_KEYSTORE_PASSWORD`, `NIX_KEY_ALIAS` e `NIX_KEY_PASSWORD`.
+
 ```bash
-# Testes do Core Criptográfico
-cd modules/core_crypto
-dart test
-
-# Testes de Transporte e SOCKS
-cd ../transport
-dart test
-
-# Testes do Relay Go com Detecção de Race Conditions
-cd ../../services/nix_relay
-go test -v -race ./...
-
-# Testes de Interface e Widgets do Cliente
-cd ../../apps/nix_client
-flutter test
+cd apps/nix_client
+flutter pub get
+flutter build apk --release
+sha256sum build/app/outputs/flutter-apk/app-release.apk
+apksigner verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk
 ```
 
-### 3. Portão de Privacidade Estática
+O APK homologado na Etapa 7 tem 54.719.573 bytes e um assinante no esquema
+APK Signature Scheme v2. O relatório registra Flutter 3.27.4, Dart 3.6.2,
+Android SDK 35.0.0 e OpenJDK 17.0.21.1. O SHA-256 abaixo identifica o
+artefato histórico. [Relatório de validação Android](docs/ANDROID_VALIDATION_REPORT.md)
+
+```text
+d99cd9c4b1d4ba748fd76831287696d3e83095b235c656c9942588a5a57a2756
+```
+
+### 3. Testes e verificações
+
+A partir da raiz do repositório:
+
 ```bash
-chmod +x scripts/verify_privacy_matrix.sh
+(cd modules/core_crypto && dart pub get && dart analyze && dart test)
+(cd modules/transport && dart pub get && dart analyze && dart test)
+(cd services/nix_relay && go vet ./... && go test -race ./...)
 ./scripts/verify_privacy_matrix.sh
+./scripts/verify_automation_policy.sh
+(cd apps/nix_client && flutter pub get && flutter analyze --no-fatal-infos && HOME="$(mktemp -d)" flutter test)
 ```
+
+Os testes de transporte devem rodar em namespace de rede isolado, sem um
+serviço escutando em `127.0.0.1:9050`. Consulte as condições para rodar
+os testes do catálogo completo no [registro de implementação](docs/IMPLEMENTATION_PROGRESS.md).
 
 ---
 
