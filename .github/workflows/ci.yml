@@ -2,7 +2,7 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [main, develop, 'feature/**']
+    branches: [main, develop, 'feature/**', 'chore/**']
   pull_request:
     branches: [main, develop]
 
@@ -38,6 +38,18 @@ jobs:
     name: Relay Go Lint & Test
     timeout-minutes: 10
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout Code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -53,6 +65,8 @@ jobs:
 
       - name: Test Relay
         working-directory: services/nix_relay
+        env:
+          NIX_TEST_PG_DSN: postgres://postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/postgres?sslmode=disable
         run: |
           go vet ./...
           go test -v -race ./...
