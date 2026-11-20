@@ -376,8 +376,13 @@ void main() {
       ]);
       expect(sends.map((result) => result.accepted), [1, 0]);
       expect(await reopenedService.outboxRepo.hasPendingScheduledEnvelopes(), isFalse);
-      final inbox = await relayClient.fetchEnvelopes(bobMailbox);
-      expect(inbox, hasLength(1));
+      final inbox = await bobMessenger.pollAndCommitInbox(
+        creds: bobMailbox,
+        relayClient: relayClient,
+      );
+      expect(inbox.errors, isEmpty);
+      expect(inbox.committed.single.text, 'entrega cifrada agendada');
+      expect(inbox.ackedCount, 1);
     });
 
     test('Recorrência pula ocorrências vencidas e permite cancelar a próxima', () async {

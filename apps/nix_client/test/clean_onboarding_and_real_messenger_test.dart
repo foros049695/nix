@@ -124,6 +124,17 @@ void main() {
       expect(find.text('O QR precisa conter um convite assinado do Nix.'), findsOneWidget);
       expect(tester.widget<TextField>(input).controller!.text, '{"test": "invalid signature"}');
 
+      channels.setMockMethodCallHandler(scanner, (_) async {
+        throw PlatformException(
+          code: 'CAMERA_DENIED',
+          message: 'Autorize o acesso à câmera para ler o convite.',
+        );
+      });
+      await tester.tap(cameraButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Autorize o acesso à câmera para ler o convite.'), findsOneWidget);
+      expect(nixState.directMessages, hasLength(1));
+
       await tester.enterText(find.byKey(const Key('add_contact_id_field')), 'NIX-4B82-E119-9A00-7F22');
       await tester.enterText(find.byKey(const Key('add_contact_name_field')), 'Alice Soberana');
       await tester.tap(find.byKey(const Key('add_contact_confirm_button')));
