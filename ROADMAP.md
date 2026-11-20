@@ -10,6 +10,8 @@
 
 ---
 
+A rodada local acrescentou grupos de chat único com conversão para fórum, imagens de tópicos persistidas, banners, expansão de pastas e uma coleção integrada ao Passaporte. Também acrescentou seleção local pelo Music Index e fundo geral independente do Pager. Consulte o estado dos testes e das pendências em [Continuidade do desenvolvimento](docs/AI_DEVELOPMENT_STATE.md).
+
 ## 0. Diretrizes e Classificação de Maturidade
 
 O acompanhamento técnico adota três níveis cumulativos de verificação:
