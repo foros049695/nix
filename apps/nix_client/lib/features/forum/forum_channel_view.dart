@@ -35,9 +35,13 @@ class _ForumChannelViewState extends State<ForumChannelView> {
 
   void _submitComment(NixState state, String postId) {
     final text = _commentController.text;
-    if (text.trim().isNotEmpty) {
-      state.addForumComment(postId, text);
+    if (text.trim().isEmpty) return;
+    if (state.addForumComment(postId, text)) {
       _commentController.clear();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Este fórum não aceita seu comentário agora.')),
+      );
     }
   }
 
@@ -307,6 +311,7 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                 const SizedBox(height: 6),
                 TextField(
                   onChanged: (value) => title = value,
+                  maxLength: 120,
                   decoration: const InputDecoration(hintText: 'ex: Análise de Antena 915MHz...'),
                 ),
                 const SizedBox(height: 12),
@@ -315,6 +320,7 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                 TextField(
                   onChanged: (value) => description = value,
                   contextMenuBuilder: buildChatFormatMenu,
+                  maxLength: 8000,
                   maxLines: 3,
                   decoration: const InputDecoration(
                     hintText: 'Inclua peso, dimensões, hash ou observações...',
@@ -335,12 +341,18 @@ class _ForumChannelViewState extends State<ForumChannelView> {
               ),
               onPressed: () {
                 if (title.trim().isNotEmpty) {
-                  state.createForumPost(
+                  final created = state.createForumPost(
                     title: title,
                     description: description,
                     tags: [if (chosenTag != null) chosenTag!],
                   );
-                  Navigator.pop(ctx);
+                  if (created) {
+                    Navigator.pop(ctx);
+                  } else {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('Este fórum não aceita novos tópicos agora.')),
+                    );
+                  }
                 }
               },
               child: const Text('Publicar Tópico', style: TextStyle(fontWeight: FontWeight.bold)),

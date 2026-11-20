@@ -59,6 +59,7 @@ import 'package:nix_transport/nix_transport.dart';
 import '../features/onboarding/sovereign_onboarding_model.dart';
 import 'mock_data.dart';
 import 'nix_preference_store.dart';
+import 'forum_store.dart';
 import 'workspace_folder_store.dart';
 
 enum NixActiveArea {
@@ -1592,6 +1593,7 @@ class NixState extends ChangeNotifier {
     await _startupPreferences;
     await flushPreferences();
     await _restoreWorkspaceLayout();
+    await _restoreForum();
     await _migrateLegacyAcervo();
     final restoredAvatarStyle = await _restorePersonalPreferences();
     if (_localDatabase == null || _identityRepo == null) return;
@@ -2398,6 +2400,41 @@ class NixState extends ChangeNotifier {
 
   Future<void> flushPreferences() => _preferenceStore.flush();
 
+  ForumStore? get _forumStore {
+    final repository = _preferencesRepo;
+    if (_isMockMode || repository == null ||
+        _localDatabase?.cipherInfo.isEncrypted != true) return null;
+    return ForumStore(repository);
+  }
+
+  Future<void> _restoreForum() async {
+    final store = _forumStore;
+    if (store == null) return;
+    try {
+      final snapshot = await store.load();
+      if (_disposed || _panicWipe != null) return;
+      bool existingForum(String id) => _findChannel(id)?.type == ChannelType.forum;
+      _forumPosts = snapshot.posts.where((post) => existingForum(post.channelId)).toList();
+      _forumTags
+        ..clear()
+        ..addEntries(snapshot.tags.entries.where((entry) => existingForum(entry.key)));
+      _selectedForumPost = currentForumPosts.firstOrNull;
+    } catch (_) {
+      // Uma falha auxiliar do fórum não impede a abertura do cofre.
+    }
+  }
+
+  void _persistForum() {
+    final store = _forumStore;
+    if (store == null || _panicWipe != null || _disposed) return;
+    final posts = List<ForumPost>.of(_forumPosts);
+    final tags = _forumTags.map((channel, values) => MapEntry(channel, Map<String, String>.of(values)));
+    unawaited(_preferenceStore.enqueue(() async {
+      if (_panicWipe == null) await store.save(posts, tags);
+    }, reportErrors: false));
+  }
+
+
   Future<void> loadPersistedState() async {
     try {
       final raw = await _preferenceStore.readBootstrap();
@@ -2528,9 +2565,18 @@ class NixState extends ChangeNotifier {
 
   List<Message> get currentMessages => _messages[_currentChannel.id] ?? [];
   List<Publication> get currentPublications => _publications[_currentChannel.id] ?? [];
-  List<ForumPost> get currentForumPosts =>
-      _forumPosts.where((p) => p.channelId == _currentChannel.id).toList();
-  ForumPost? get selectedForumPost => _selectedForumPost;
+  List<ForumPost> get currentForumPosts {
+    if (_currentChannel.type != ChannelType.forum ||
+        _isLocallyBanned(_currentChannel)) return [];
+    return _forumPosts.where((p) => p.channelId == _currentChannel.id).toList();
+  }
+  ForumPost? get selectedForumPost {
+    final post = _selectedForumPost;
+    if (post == null || post.channelId != _currentChannel.id ||
+        _currentChannel.type != ChannelType.forum ||
+        _isLocallyBanned(_currentChannel)) return null;
+    return post;
+  }
   List<Member> get members => _members;
   CallState get callState => _calls.callState;
   SecurityContext get securityContext => _securityContext;
@@ -4764,12 +4810,8 @@ class NixState extends ChangeNotifier {
         _activeFolderId = 'all';
       }
     }
-    if (channel.type == ChannelType.forum) {
-      final posts = currentForumPosts;
-      if (posts.isNotEmpty &&
-          (_selectedForumPost == null || _selectedForumPost!.channelId != channel.id)) {
-        _selectedForumPost = posts.first;
-      }
+    if (_selectedForumPost?.channelId != channel.id) {
+      _selectedForumPost = currentForumPosts.firstOrNull;
     }
     _clearTransientMessageModes();
     notifyListeners();
@@ -5031,12 +5073,15 @@ class NixState extends ChangeNotifier {
       final post = _forumPosts[p];
       final cIdx = post.comments.indexWhere((m) => m.id == messageId);
       if (cIdx != -1) {
+        if (post.channelId != _currentChannel.id || _isLocallyBanned(_currentChannel) ||
+            !_currentChannel.permissions.allowReactions) return;
         final updatedComments = List<Message>.from(post.comments);
         updatedComments[cIdx] = _toggleReactionOnMessage(updatedComments[cIdx], emoji);
         _forumPosts[p] = post.copyWith(comments: updatedComments);
         if (_selectedForumPost?.id == post.id) {
           _selectedForumPost = _forumPosts[p];
         }
+        _persistForum();
         notifyListeners();
         return;
       }
@@ -5544,21 +5589,29 @@ class NixState extends ChangeNotifier {
   }
 
   void selectForumPost(ForumPost? post) {
-    _selectedForumPost = post;
+    final canonical = post == null
+        ? null
+        : currentForumPosts.where((entry) => entry.id == post.id).firstOrNull;
+    if (post != null && canonical == null) return;
+    _selectedForumPost = canonical;
     notifyListeners();
   }
 
-  void addForumComment(String postId, String text) {
-    if (text.trim().isEmpty) return;
-    final idx = _forumPosts.indexWhere((p) => p.id == postId);
-    if (idx == -1) return;
+  bool addForumComment(String postId, String text) {
+    final clean = text.trim();
+    if (clean.isEmpty || clean.length > 4000 || !canWriteForum) return false;
+    final idx = _forumPosts.indexWhere(
+      (post) => post.id == postId && post.channelId == _currentChannel.id,
+    );
+    if (idx == -1) return false;
     final newComment = Message(
-      id: 'fmsg_${DateTime.now().millisecondsSinceEpoch}',
+      id: 'fmsg_${DateTime.now().microsecondsSinceEpoch}',
       channelId: postId,
       senderName: _userProfile.effectiveDisplayName,
       senderFingerprint: _securityContext.myFingerprint,
       isMe: true,
-      text: text.trim(),
+      text: clean,
+      deliveryState: 'saved',
       timestamp: DateTime.now(),
     );
     final updatedComments = List<Message>.from(_forumPosts[idx].comments)..add(newComment);
@@ -5566,7 +5619,9 @@ class NixState extends ChangeNotifier {
     if (_selectedForumPost?.id == postId) {
       _selectedForumPost = _forumPosts[idx];
     }
+    _persistForum();
     notifyListeners();
+    return true;
   }
 
   final _forumTags = <String, Map<String, String>>{};
@@ -5574,8 +5629,22 @@ class NixState extends ChangeNotifier {
   Map<String, String> forumTagsFor(String channelId) =>
       Map.unmodifiable(_forumTags[channelId] ?? const <String, String>{});
 
+  bool _isLocallyBanned(Channel channel) =>
+      channel.bannedMembers.contains(_ownWorkspaceIdentity) ||
+      channel.bannedMembers.contains(_securityContext.myFingerprint);
+
+  bool get canWriteForum =>
+      !_disposed && _panicWipe == null &&
+      (_isMockMode || _forumStore != null) &&
+      _currentChannel.type == ChannelType.forum &&
+      _currentChannel.permissions.allowMessages &&
+      !_isLocallyBanned(_currentChannel) &&
+      !_currentChannel.mutedMembers.contains(_ownWorkspaceIdentity) &&
+      !_currentChannel.mutedMembers.contains(_securityContext.myFingerprint);
+
   bool get canManageForumTags {
-    if (_currentChannel.type != ChannelType.forum) return false;
+    if (_disposed || _panicWipe != null || _currentChannel.type != ChannelType.forum ||
+        (!_isMockMode && _forumStore == null) || _isLocallyBanned(_currentChannel)) return false;
     final identity = _userProfile.publicId;
     final fingerprint = _securityContext.myFingerprint;
     return [identity, fingerprint].where((id) => id.isNotEmpty).any(
@@ -5594,37 +5663,38 @@ class NixState extends ChangeNotifier {
     final tags = _forumTags.putIfAbsent(_currentChannel.id, () => {});
     if (tags.keys.any((tag) => tag.toLowerCase() == clean.toLowerCase())) return false;
     tags[clean] = symbol.isEmpty ? '🏷️' : symbol;
+    _persistForum();
     notifyListeners();
     return true;
   }
 
-  void createForumPost({
+  bool createForumPost({
     required String title,
     required String description,
     required List<String> tags,
   }) {
-    if (title.trim().isEmpty ||
-        _currentChannel.type != ChannelType.forum ||
-        !_currentChannel.permissions.allowMessages ||
-        tags.any((tag) => !forumTagsFor(_currentChannel.id).containsKey(tag))) return;
+    final cleanTitle = title.trim();
+    final detail = description.trim();
+    if (!canWriteForum || cleanTitle.isEmpty || cleanTitle.length > 120 ||
+        detail.length > 8000 || tags.length > 8 ||
+        tags.any((tag) => !forumTagsFor(_currentChannel.id).containsKey(tag))) return false;
     final newPost = ForumPost(
-      id: 'post_${DateTime.now().millisecondsSinceEpoch}',
+      id: 'post_${DateTime.now().microsecondsSinceEpoch}',
       channelId: _currentChannel.id,
-      title: title.trim(),
+      title: cleanTitle,
       authorName: _userProfile.effectiveDisplayName,
       authorFingerprint: _securityContext.myFingerprint,
       createdAt: DateTime.now(),
       tags: List.unmodifiable(tags),
-      description: description.trim().isEmpty ? 'Tópico aberto para análise da comunidade.' : description.trim(),
-      images: const [
-        ForumImageSpec(label: 'ANEXO #01', subtitle: 'EXIF Removido', code: 'ATT-01'),
-        ForumImageSpec(label: 'ANEXO #02', subtitle: 'Hash Verificado', code: 'ATT-02'),
-      ],
+      description: detail,
+      images: const [],
       comments: const [],
     );
     _forumPosts.insert(0, newPost);
     _selectedForumPost = newPost;
+    _persistForum();
     notifyListeners();
+    return true;
   }
 
   void setEphemeralTimer(int seconds) {

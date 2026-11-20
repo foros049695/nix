@@ -17,3 +17,9 @@ No menu do relógio do compositor de uma conversa cifrada, escolha **Criar enque
 A criação, os votos e o encerramento seguem a mesma fila cifrada do chat. Cada participante tem uma revisão de voto própria, validada a partir dos envelopes autenticados e projetada a partir do histórico do cofre. Só o autor encerra uma enquete e comunica o resultado com os votos que recebeu até aquele momento. Votos locais ainda na fila ficam sinalizados como pendentes. A visualização consulta os 2.048 eventos mais recentes da conversa para manter o custo previsível.
 
 As enquetes são identificadas nesses chats de dois participantes. A ocultação e a resposta do quiz são regras de apresentação no aplicativo. Ambas as partes recebem o conteúdo no envelope cifrado. Use a mesma versão do cliente nos dois dispositivos para interpretar os eventos. Anonimato, anexos por opção e enquetes em comunidades permanecem pendentes.
+
+## Fórum local cifrado
+
+Tópicos, tags, comentários e reações de comentários são gravados no cofre SQLCipher junto às preferências do workspace e restaurados ao desbloquear. O cliente respeita as permissões locais de envio, silenciamento e banimento. Cada tópico começa com a lista de anexos vazia. Esse armazenamento prepara a interface para um futuro transporte de eventos de comunidade.
+
+A integração automatizada abre um cofre real, registra o tópico, reabre a conta e confirma a restauração e o bloqueio de novos comentários. Em ambiente sem biblioteca SQLCipher, o teste informa a limitação. Para tornar a biblioteca obrigatória nesse teste, execute com `NIX_TEST_ENCRYPTED_FORUM=true`.

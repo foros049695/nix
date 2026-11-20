@@ -61,3 +61,7 @@ A suíte local passou com 231 testes e cinco ignorados. O CI da revisão `3a94df
 Dois clientes trocaram uma enquete pelo relay de laboratório, registraram e alteraram votos e confirmaram a autoridade do autor para encerrar. O resultado foi reconstruído após reabrir o banco. Testes do codec e da interface cobrem prazo, revisões, opções, filtros e prévia local de foto. A integração usa o Double Ratchet existente e nenhuma chave do ambiente financeiro. [Enquetes](COMMUNITIES_AND_POLLS.md) · [Fotos e mensagens](MESSAGING_AND_MEDIA_INTEGRATION.md)
 
 As enquetes em comunidades, o transporte de chamadas, Bitcoin/Lightning e o aceite em hardware permanecem abertos.
+
+O fórum local agora salva tópicos, tags, comentários e reações no SQLCipher. A integração foi executada com SQLCipher 4.6.1 e confirmou que o conteúdo e as permissões retornam após reabrir o cofre. A inspeção do banco bruto confirmou que os textos de controle não aparecem em claro. Os tópicos iniciam com a lista real de anexos vazia. [Fórum e enquetes](COMMUNITIES_AND_POLLS.md)
+
+A tentativa com a rede Tor real chegou ao handshake e parou em 14% do bootstrap. Os resultados de troca cifrada desta rodada correspondem ao relay de laboratório. O aceite por Onion externo continua pendente.
