@@ -330,6 +330,10 @@ class NixArchiveService {
     String visibility = 'public',
     int? createdAtMs,
   }) async {
+    if (visibility == 'public' && supersedesHash != null &&
+        (await archiveRepo.getObject(supersedesHash))?['visibility'] == 'restricted') {
+      visibility = 'restricted';
+    }
     final now = createdAtMs ?? DateTime.now().toUtc().millisecondsSinceEpoch;
     final cleanHtml = sanitizeRichTextHtml(rawHtmlBody);
 
@@ -369,7 +373,7 @@ class NixArchiveService {
       );
     }
 
-    if (replicationCoordinator != null) {
+    if (visibility == 'public' && replicationCoordinator != null) {
       try {
         await replicationCoordinator!.replicatePublicObject(
           objectHash: hashHex,
@@ -403,6 +407,10 @@ class NixArchiveService {
     String visibility = 'public',
     int? createdAtMs,
   }) async {
+    if (visibility == 'public' &&
+        (await archiveRepo.getObject(targetHash))?['visibility'] == 'restricted') {
+      visibility = 'restricted';
+    }
     final now = createdAtMs ?? DateTime.now().toUtc().millisecondsSinceEpoch;
     final cleanRationale = sanitizeRichTextHtml(rationaleHtml);
 
@@ -436,7 +444,7 @@ class NixArchiveService {
       targetClaimId: targetClaimId,
     );
 
-    if (replicationCoordinator != null) {
+    if (visibility == 'public' && replicationCoordinator != null) {
       try {
         await replicationCoordinator!.replicatePublicObject(
           objectHash: hashHex,

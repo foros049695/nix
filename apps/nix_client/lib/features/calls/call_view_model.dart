@@ -28,7 +28,7 @@ class CallViewModel extends ChangeNotifier {
       activeChannelId: channel.id,
       activeChannelName: channel.name,
       isConnected: true,
-      isMuted: false,
+      isMuted: _callState.isMuted,
       isDeafened: false,
       participants: onlineMembers,
       durationSeconds: 0,
@@ -49,13 +49,22 @@ class CallViewModel extends ChangeNotifier {
     if (_disposed) return;
     _callTimer?.cancel();
     _callTimer = null;
-    _callState = const CallState();
+    _callState = CallState(isMuted: _callState.isMuted);
     notifyListeners();
   }
 
   void toggleMute() {
     if (_disposed) return;
-    _callState = _callState.copyWith(isMuted: !_callState.isMuted);
+    final muted = !_callState.isMuted;
+    _callState = _callState.copyWith(
+      isMuted: muted, isDeafened: muted && _callState.isDeafened,
+    );
+    notifyListeners();
+  }
+
+  void restoreMicrophone(bool muted) {
+    if (_disposed || muted == _callState.isMuted) return;
+    _callState = _callState.copyWith(isMuted: muted);
     notifyListeners();
   }
 

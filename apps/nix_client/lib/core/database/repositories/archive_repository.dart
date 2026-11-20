@@ -76,11 +76,13 @@ class ArchiveRepository {
 
   Future<List<Map<String, dynamic>>> listObjects({
     String? kind,
+    bool publicOnly = false,
     int limit = 50,
   }) async {
+    final conditions = [if (kind != null) 'kind = ?', if (publicOnly) "visibility = 'public'"];
     return _db.query(
       'archive_objects',
-      where: kind == null ? null : 'kind = ?',
+      where: conditions.isEmpty ? null : conditions.join(' AND '),
       whereArgs: kind == null ? null : [kind],
       orderBy: 'created_at DESC',
       limit: limit,

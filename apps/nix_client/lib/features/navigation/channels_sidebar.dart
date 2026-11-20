@@ -663,20 +663,17 @@ class _UserProfileBar extends StatelessWidget {
               ),
             ),
           ),
-          IconButton(
-            icon: Icon(
-              nixState.callState.isMuted
-                  ? Icons.mic_off_outlined
-                  : Icons.mic_none_rounded,
-              size: 17,
-              color: nixState.callState.isMuted
-                  ? NixColors.accentDanger
-                  : NixColors.textSecondary,
-            ),
-            tooltip: nixState.callState.isMuted
-                ? 'Desmutar Microfone'
-                : 'Mutar Microfone',
-            onPressed: () => nixState.toggleMute(),
+          ListenableBuilder(
+            listenable: nixState.calls,
+            builder: (context, _) {
+              final muted = nixState.calls.isMuted;
+              return IconButton(
+                icon: Icon(muted ? Icons.mic_off_rounded : Icons.mic_none_rounded,
+                  size: 18, color: muted ? NixColors.accentDanger : NixColors.textSecondary),
+                tooltip: muted ? 'Desmutar microfone' : 'Mutar microfone',
+                onPressed: nixState.toggleMute,
+              );
+            },
           ),
           IconButton(
             icon: Icon(

@@ -383,15 +383,17 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 ),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: KeyboardListener(
+                  child: Focus(
                     focusNode: _keyboardFocusNode,
-                    onKeyEvent: (event) {
+                    onKeyEvent: (_, event) {
                       if (enterToSend &&
                           event is KeyDownEvent &&
                           event.logicalKey == LogicalKeyboardKey.enter &&
                           !HardwareKeyboard.instance.isShiftPressed) {
                         _send(nixState);
+                        return KeyEventResult.handled;
                       }
+                      return KeyEventResult.ignored;
                     },
                     child: TextField(
                       key: const Key('chat_message_input'),
@@ -399,6 +401,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       focusNode: _focusNode,
                       minLines: 1,
                       maxLines: 4,
+                      textInputAction: enterToSend ? TextInputAction.send : TextInputAction.newline,
+                      onSubmitted: enterToSend ? (_) => _send(nixState) : null,
                       style: TextStyle(
                           color: NixColors.textPrimary, fontSize: 13.5),
                       decoration: InputDecoration(

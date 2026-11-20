@@ -180,7 +180,7 @@ class _PagerProfileState extends State<PagerProfile> {
     final reduced = _reduceMotion(state);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
+      padding: EdgeInsets.fromLTRB(12, 16, 12, 24 + MediaQuery.paddingOf(context).bottom),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 840),

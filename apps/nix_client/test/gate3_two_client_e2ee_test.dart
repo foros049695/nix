@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_core_crypto/nix_core_crypto.dart';
 import 'package:nix_client/core/database/local_database.dart';
 import 'package:nix_client/core/messaging/sovereign_messenger.dart';
+import 'package:nix_client/core/p2p/private_trade_room.dart';
 import 'package:nix_client/core/security/key_vault.dart';
 import 'package:nix_client/core/security/os_key_storage.dart';
 import 'package:nix_client/core/security/seed_recovery.dart';
@@ -19,6 +20,9 @@ class _HarnessRelayAndSocks {
   late final ServerSocket _socks5;
   final Map<String, List<Map<String, dynamic>>> mailboxes = {};
   final Map<String, String> mailboxTokens = {};
+  final Map<String, int> onionRoutes = {};
+  final Set<String> socksIsolations = {};
+  final wire = BytesBuilder(copy: false);
   int envSeq = 0;
   bool failNextPost = false;
   bool shuffleNextFetch = false;
@@ -129,7 +133,7 @@ class _HarnessRelayAndSocks {
       final buf = <int>[];
       final completer = Completer<void>();
       late StreamSubscription<Uint8List> sub;
-      int stage = 0; // 0 = greeting, 1 = connect req
+      int stage = 0;
 
       sub = client.listen(
         (chunk) async {
@@ -137,12 +141,25 @@ class _HarnessRelayAndSocks {
           if (stage == 0 && buf.length >= 2) {
             final nMethods = buf[1];
             if (buf.length >= 2 + nMethods) {
+              final isolated = buf.sublist(2, 2 + nMethods).contains(0x02);
               buf.removeRange(0, 2 + nMethods);
-              stage = 1;
-              client.add([0x05, 0x00]); // no auth
+              stage = isolated ? 1 : 2;
+              client.add([0x05, isolated ? 0x02 : 0x00]);
             }
           }
-          if (stage == 1 && buf.length >= 5) {
+          if (stage == 1 && buf.length >= 2) {
+            final usernameLength = buf[1];
+            if (buf.length >= 3 + usernameLength) {
+              final passwordLength = buf[2 + usernameLength];
+              if (buf.length >= 3 + usernameLength + passwordLength) {
+                socksIsolations.add(ascii.decode(buf.sublist(2, 2 + usernameLength)));
+                buf.removeRange(0, 3 + usernameLength + passwordLength);
+                stage = 2;
+                client.add([0x01, 0x00]);
+              }
+            }
+          }
+          if (stage == 2 && buf.length >= 5) {
             final atyp = buf[3];
             String? host;
             int headerLen = 0;
@@ -159,20 +176,26 @@ class _HarnessRelayAndSocks {
             if (host != null) {
               final port = (buf[headerLen - 2] << 8) | buf[headerLen - 1];
               final leftover = buf.sublist(headerLen);
-              stage = 2;
+              stage = 3;
               sub.pause();
 
               // Roteia destinos `.onion` de teste para o relay local na porta de teste
               final dialHost =
                   host.endsWith('.onion') ? '127.0.0.1' : host;
-              target = await Socket.connect(dialHost, port);
+              target = await Socket.connect(dialHost, onionRoutes[host] ?? port);
               client.add([0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, 0, 0]);
               if (leftover.isNotEmpty) target!.add(leftover);
 
-              sub.onData((more) => target?.add(more));
+              sub.onData((more) {
+                if (onionRoutes.containsKey(host)) wire.add(more);
+                target?.add(more);
+              });
               sub.onDone(() => target?.close());
               sub.resume();
-              target!.listen(client.add, onDone: () => client.close());
+              target!.listen((data) {
+                if (onionRoutes.containsKey(host)) wire.add(data);
+                client.add(data);
+              }, onDone: () => client.close());
               if (!completer.isCompleted) completer.complete();
             }
           }
@@ -213,6 +236,70 @@ Uint8List _buildPngWithMetadataChunks() {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('negociação troca texto cifrado via Onion com uma única contraparte', () async {
+    final harness = _HarnessRelayAndSocks();
+    await harness.start();
+    addTearDown(harness.stop);
+    final work = await Directory.systemTemp.createTemp('nix-private-room-');
+    addTearDown(() => work.delete(recursive: true));
+    final cookie = await File('${work.path}/control_auth_cookie').writeAsBytes(List.filled(32, 7));
+    final torControl = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(torControl.close);
+    final onionId = 'm' * 56;
+    final disconnected = Completer<void>();
+    torControl.listen((socket) {
+      socket.cast<List<int>>().transform(utf8.decoder).transform(const LineSplitter())
+          .listen((line) {
+        if (line.startsWith('AUTHENTICATE ')) {
+          socket.write('250 OK\r\n');
+        } else if (line.startsWith('ADD_ONION NEW:ED25519-V3 Flags=DiscardPK ')) {
+          final port = int.parse(line.split(':').last);
+          harness.onionRoutes['$onionId.onion'] = port;
+          socket.write('250-ServiceID=$onionId\r\n250 OK\r\n');
+        } else {
+          socket.write('510 Invalid command\r\n');
+        }
+      }, onDone: () {
+        socket.destroy();
+        disconnected.complete();
+      });
+    });
+    final tor = (socksPort: harness.socksPort, controlPort: torControl.port, cookiePath: cookie.path);
+    var torReady = true;
+    final host = await PrivateTradeRoom.host(tor: tor, canUseTor: () => torReady);
+    addTearDown(host.dispose);
+    final invite = host.invitation!;
+    final guest = PrivateTradeRoom.join(invitation: invite, tor: tor, canUseTor: () => torReady);
+    addTearDown(guest.dispose);
+    final duplicate = PrivateTradeRoom.join(invitation: invite, tor: tor, canUseTor: () => torReady);
+    addTearDown(duplicate.dispose);
+    await guest.poll();
+    expect(host.invitation, isNull);
+    await expectLater(duplicate.poll(), throwsStateError);
+
+    final guestAlias = await guest.alias(host: false);
+    expect(guestAlias, await host.alias(host: false));
+    expect(guestAlias, isNot(await host.alias(host: true)));
+    final id = PrivateTradeRoom.newMessageId();
+    await guest.send('texto da contraparte', messageId: id);
+    await guest.send('texto da contraparte', messageId: id);
+    await host.send('texto do anfitrião', messageId: PrivateTradeRoom.newMessageId());
+    await guest.poll();
+    expect(guest.messages.map((entry) => entry.text),
+        ['texto da contraparte', 'texto do anfitrião']);
+    final transmitted = utf8.decode(harness.wire.takeBytes(), allowMalformed: true);
+    expect(transmitted, isNot(contains('texto')));
+    expect(transmitted, isNot(contains(invite)));
+    expect(harness.socksIsolations.length, 2);
+    torReady = false;
+    await expectLater(guest.poll(), throwsStateError);
+    host.close();
+    await disconnected.future.timeout(const Duration(seconds: 3));
+    expect(host.messages, isEmpty);
+    expect(host.invitation, isNull);
+  });
+
 
   group('Gate 3 E2EE: Alice & Bob via SOCKS5, Double Ratchet, Dedup, Chunks & Grupos', () {
     late Directory tempDir;

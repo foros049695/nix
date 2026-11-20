@@ -20,7 +20,7 @@ class ProfileOverlay extends StatelessWidget {
       key: const ValueKey('overlay_settings'),
       fullScreen: mobile,
       initialCompactCategory: state.requestedOverlaySettingsCategory,
-      onBackToCardId: state.transitionBackToCardId,
+      onBackToCardId: state.backFromOverlaySettings,
       onClose: state.closeProfileOverlay,
     );
     if (mobile && settings) return SafeArea(child: preferences);
@@ -57,7 +57,27 @@ class ProfileOverlay extends StatelessWidget {
                   constraints: BoxConstraints(
                       maxWidth: 920, maxHeight: settings ? 680 : 850),
                   child: NixGlass(
-                    child: settings ? preferences : const PagerProfile(),
+                    child: settings
+                        ? preferences
+                        : Stack(
+                            fit: StackFit.passthrough,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.only(top: 40),
+                                child: PagerProfile(),
+                              ),
+                              PositionedDirectional(
+                                top: 2,
+                                end: 3,
+                                child: IconButton(
+                                  key: const Key('close_pager_overlay'),
+                                  tooltip: 'Fechar Pager',
+                                  icon: const Icon(Icons.close_rounded),
+                                  onPressed: state.closeProfileOverlay,
+                                ),
+                              ),
+                            ],
+                          ),
                   ),
                 ),
               ),

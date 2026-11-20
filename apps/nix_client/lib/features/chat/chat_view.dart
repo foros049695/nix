@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/channel.dart';
-import '../../core/models/message.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
@@ -9,7 +8,7 @@ import '../dialogs/forward_message_dialog.dart';
 import '../design/nix_surfaces.dart';
 import 'chat_input_bar.dart';
 import 'conversation_surface.dart';
-import 'message_bubble.dart';
+import 'message_timeline.dart';
 import 'message_header.dart';
 
 class ChatView extends StatefulWidget {
@@ -22,59 +21,12 @@ class ChatView extends StatefulWidget {
 }
 
 class _ChatViewState extends State<ChatView> {
-  final _scrollController = ScrollController();
-  String? _lastMessageId;
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _scrollToBottom() {
-    final reduce = MediaQuery.disableAnimationsOf(context);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        if (reduce) {
-          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-          return;
-        }
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  void _scrollToMessage(List<Message> messages, String msgId) {
-    final idx = messages.indexWhere((m) => m.id == msgId);
-    if (idx == -1) return;
-    context.read<NixState>().highlightMessage(msgId);
-    if (_scrollController.hasClients) {
-      final maxExtent = _scrollController.position.maxScrollExtent;
-      final ratio = messages.length <= 1 ? 0.0 : idx / (messages.length - 1);
-      _scrollController.animateTo(
-        (maxExtent * ratio).clamp(0.0, maxExtent),
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOut,
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
     final messages = nixState.currentMessages;
     final pinnedMsgs = messages.where((m) => m.isPinned).toList();
     final selectedIds = nixState.selectedMessageIds;
-
-    final tail = messages.isEmpty ? null : messages.last.id;
-    if (_lastMessageId != tail) {
-      _lastMessageId = tail;
-      if (nixState.highlightedMessageId == null) _scrollToBottom();
-    }
 
     return Column(
       children: [
@@ -134,7 +86,7 @@ class _ChatViewState extends State<ChatView> {
         if (pinnedMsgs.isNotEmpty)
           InkWell(
             key: const Key('pinned_message_banner'),
-            onTap: () => _scrollToMessage(messages, pinnedMsgs.last.id),
+            onTap: () => nixState.highlightMessage(pinnedMsgs.last.id),
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
@@ -188,14 +140,10 @@ class _ChatViewState extends State<ChatView> {
           child: ConversationSurface(
             child: messages.isEmpty
                 ? _buildEmptyChat()
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = messages[index];
-                      return MessageBubble(message: msg);
-                    },
+                : MessageTimeline(
+                    key: ValueKey(widget.channel.id),
+                    messages: messages,
+                    highlightedMessageId: nixState.highlightedMessageId,
                   ),
           ),
         ),

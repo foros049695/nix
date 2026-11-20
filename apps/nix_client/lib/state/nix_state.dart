@@ -299,6 +299,7 @@ class NixState extends ChangeNotifier {
     _settings = _settings.copyWith(
       transportProfile: 'Off-Grid BLE/LoRa (Zero Rede IP)',
     );
+    unawaited(_persistState());
     _appendTorLog(
       'MODO OFF-GRID ESTRITO ATIVADO: rede Wi-Fi/Internet bloqueada; apenas BLE Mesh & LoRa/RNode.',
     );
@@ -319,6 +320,7 @@ class NixState extends ChangeNotifier {
     _settings = _settings.copyWith(
       transportProfile: 'Tor Onion v3 (Fail-Closed)',
     );
+    unawaited(_persistState());
     _torDiagnosticDetail = 'Retornando ao modo Tor Onion v3 Fail-Closed...';
     notifyListeners();
     await bootstrapSovereignEnvironment();
@@ -326,11 +328,7 @@ class NixState extends ChangeNotifier {
 
   /// Abre diretamente o painel de Controle de Rádio BLE Mesh & LoRa / RNode.
   void openHardwareRadioSettings() {
-    _isProfileOverlayOpen = true;
-    _isSettingsOpenInOverlay = true;
-    _activeSettingsCategory = SettingsCategory.connections;
-    _requestedOverlaySettingsCategory = SettingsCategory.connections;
-    notifyListeners();
+    openProfileOverlay(startInSettings: true, category: SettingsCategory.connections);
   }
 
   /// Automação completa de inicialização segura (Fail-Closed):
@@ -422,9 +420,9 @@ class NixState extends ChangeNotifier {
           isTorConnected: false,
           status: SecuritySubsystemState.failed,
         );
-        _appendTorLog('WATCHDOG FAIL-CLOSED: Tor caiu — reconectando automaticamente...');
+        _appendTorLog('WATCHDOG FAIL-CLOSED: Tor caiu, tráfego bloqueado.');
         notifyListeners();
-        unawaited(bootstrapSovereignEnvironment());
+        if (_settings.autoReconnect) unawaited(bootstrapSovereignEnvironment());
       }
     });
   }
@@ -1045,7 +1043,6 @@ class NixState extends ChangeNotifier {
       _activeMasterKey = null;
     }
     _primaryIdentity = null;
-    _moneroMarketIdentity = null;
     _fallbackArchiveIdentity = null;
     _inMemoryArchiveObjects.clear();
     _consumedMoneroNonces.clear();
@@ -1457,7 +1454,10 @@ class NixState extends ChangeNotifier {
 
   /// Recarrega identidade, perfil, contatos, conversas, estado criptográfico e mensagens após reinicialização.
   Future<void> reloadFromDatabase() async {
+    await _startupPreferences;
+    await _preferencesWrite;
     await _restoreWorkspaceLayout();
+    await _restorePersonalPreferences();
     if (_localDatabase == null || _identityRepo == null) return;
 
     // 1. Varre mensagens efêmeras expiradas antes de montar o estado em memória
@@ -1718,6 +1718,9 @@ class NixState extends ChangeNotifier {
   }) async {
     if (text.trim().isEmpty && attachments.isEmpty) return false;
 
+    // Este transporte genérico não verifica associação nem aprovação de canais.
+    if (_findChannel(conversationId) != null) return false;
+
     final now = DateTime.now().toUtc();
     final messageId = 'msg_${now.millisecondsSinceEpoch}';
 
@@ -1850,6 +1853,8 @@ class NixState extends ChangeNotifier {
     int? expiresAt,
     SecretKeyData? sessionKey,
   }) async {
+    if (_findChannel(mailboxId) != null) return false;
+
     final now = DateTime.now().toUtc();
     final exp = expiresAt ?? now.add(const Duration(days: 7)).millisecondsSinceEpoch;
     final payloadHash = Uint8List.fromList(std_crypto.sha256.convert(ciphertext).bytes);
@@ -1980,10 +1985,10 @@ class NixState extends ChangeNotifier {
       currentPalette,
     );
     if (!shouldLoadMock) {
-      loadPersistedState();
+      _startupPreferences = loadPersistedState();
       _attachHardwareRadioListeners();
       if (!isTest) {
-        unawaited(bootstrapSovereignEnvironment());
+        unawaited(_bootstrapFromPreferences());
       } else {
         _checkPersistedOnboardingStatus();
       }
@@ -2229,25 +2234,43 @@ class NixState extends ChangeNotifier {
     return NixPlatformPaths.resolveDataFile('client_prefs_v4.json');
   }
 
+  Future<void>? _startupPreferences;
   Future<void> _preferencesWrite = Future<void>.value();
 
-  Future<void> _persistState({bool workspaceChanged = false}) =>
-      _preferencesWrite = _preferencesWrite.then((_) => _writePreferences(
-        workspaceChanged: workspaceChanged,
-      ));
+  Future<void> _persistState({bool workspaceChanged = false, bool reportErrors = false}) {
+    final write = _preferencesWrite.then(
+      (_) => _writePreferences(workspaceChanged: workspaceChanged),
+    );
+    _preferencesWrite = write.catchError((Object _) {
+      // Permite nova tentativa nas próximas alterações.
+    });
+    return reportErrors ? write : _preferencesWrite;
+  }
 
+  Future<void> flushPreferences() => _preferencesWrite;
+
+  static const _personalPreferenceKey = 'personal_preferences_v1';
   static const _workspacePreferenceKey = 'workspace_layout_v1';
 
   Future<void> _writePreferences({required bool workspaceChanged}) async {
     if (_panicWipe != null) return;
-    if (workspaceChanged) {
-      try {
-        await _preferencesRepo?.setOption(_workspacePreferenceKey, {
+    final repo = _preferencesRepo;
+    if (repo != null) {
+      await repo.setOption(_personalPreferenceKey, {
+        'settings': _settings.toJson(),
+        'avatarPath': _userProfile.customAvatarPath,
+        'avatarCropScale': _userProfile.avatarCropScale,
+        'avatarCropX': _userProfile.avatarCropOffsetX,
+        'avatarCropY': _userProfile.avatarCropOffsetY,
+        'pagerMusic': _userProfile.currentActivity,
+      });
+      if (workspaceChanged) {
+        await repo.setOption(_workspacePreferenceKey, {
           'spaces': _spaces.where((space) => !space.isDirectMessages)
               .map((space) => space.toJson()).toList(),
           'folders': _folders.map((folder) => folder.toJson()).toList(),
         });
-      } catch (_) {}
+      }
     }
     if (_panicWipe != null) return;
     try {
@@ -2256,7 +2279,7 @@ class NixState extends ChangeNotifier {
       final file = File(path);
       await file.parent.create(recursive: true);
       final data = {
-        'settings': _settings.toJson(),
+        'settings': _settings.toBootstrapJson(),
         'savedAcervoIds': _savedAcervoIds.toList(),
         'pagerMusic': _userProfile.currentActivity,
         'culturalItems': _userProfile.culturalItems.map((c) => c.toJson()).toList(),
@@ -2302,6 +2325,38 @@ class NixState extends ChangeNotifier {
         notifyListeners();
       }
     } catch (_) {}
+  }
+
+  Future<void> _bootstrapFromPreferences() async {
+    await _startupPreferences;
+    if (_disposed) return;
+    if (_settings.transportProfile.startsWith('Off-Grid')) {
+      await enterStrictOffGridMode();
+    } else {
+      await bootstrapSovereignEnvironment();
+    }
+  }
+
+  Future<void> _restorePersonalPreferences() async {
+    final raw = await _preferencesRepo?.getOption(_personalPreferenceKey);
+    if (raw is! Map<String, dynamic>) return;
+    if (raw['settings'] case final Map<String, dynamic> options) {
+      _settings = UserSettings.fromJson(options);
+      _calls.restoreMicrophone(_settings.microphoneMuted);
+      NixColors.sync(NixSurfaceScheme.resolve(_settings.themeMode), currentPalette);
+    }
+    double crop(String field, double fallback, double min, double max) {
+      final value = raw[field];
+      return value is num && value.isFinite ? value.toDouble().clamp(min, max) : fallback;
+    }
+    _userProfile = _userProfile.copyWith(
+      customAvatarPath: raw['avatarPath'] as String?,
+      clearCustomAvatar: raw['avatarPath'] == null,
+      avatarCropScale: crop('avatarCropScale', 1, 1, 2.4),
+      avatarCropOffsetX: crop('avatarCropX', 0, -1, 1),
+      avatarCropOffsetY: crop('avatarCropY', 0, -1, 1),
+      currentActivity: raw['pagerMusic'] as String?,
+    );
   }
 
   Future<void> _restoreWorkspaceLayout() async {
@@ -2519,10 +2574,38 @@ class NixState extends ChangeNotifier {
     );
   }
 
+  Iterable<Space> get _publishedSpaces sync* {
+    for (final space in _spaces) {
+      if (space.isDirectMessages) continue;
+      final visible = space.channels.where((ch) => ch.permissions.isPublic).toList();
+      if (visible.isEmpty) continue;
+      yield Space(
+        id: space.id, name: space.name, initials: space.initials,
+        description: space.description, categoryTag: space.categoryTag,
+        memberCount: space.memberCount, onlineCount: space.onlineCount,
+        isPublic: true,
+        channels: [
+          for (final channel in visible)
+            Channel(
+              id: channel.id, spaceId: space.id, name: channel.name,
+              topic: channel.topic, type: channel.type, category: channel.category,
+              permissions: ChannelPermissions(
+                isPublic: true, requireApproval: channel.permissions.requireApproval,
+              ),
+            ),
+        ],
+      );
+    }
+    if (_isMockMode) {
+      yield* _discoverableSpaces.where((space) => space.isPublic &&
+          !_spaces.any((local) => local.id == space.id && local.ownerFingerprint != null));
+    }
+  }
+
   /// Lista de grupos públicos filtrada e ordenada (padrão: do menos populoso ao mais populoso).
   List<Space> get filteredDiscoverableSpaces {
     final query = _exploreSearchQuery.trim().toLowerCase();
-    final filtered = _discoverableSpaces.where((s) {
+    final filtered = _publishedSpaces.where((s) {
       if (query.isEmpty) return true;
       return s.name.toLowerCase().contains(query) ||
           s.description.toLowerCase().contains(query) ||
@@ -3504,27 +3587,15 @@ class NixState extends ChangeNotifier {
 
   // ================= MONERO P2P MARKETPLACE (FASE 7) =================
 
-  NixIdentity? _moneroMarketIdentity;
+  ({int socksPort, int controlPort, String cookiePath}) get tradeTorConnection => (
+    socksPort: _embeddedTor.socksPort,
+    controlPort: _embeddedTor.controlPort,
+    cookiePath: '${_embeddedTor.dataDirectory}/control_auth_cookie',
+  );
 
-  /// Obtém ou deriva uma chave Ed25519 isolada exclusivamente para assinatura de anúncios Monero P2P,
-  /// preservando a separação estrita entre a identidade da mensageria (Seed A) e operações Monero.
-  Future<NixIdentity> _getOrCreateIsolatedMoneroMarketIdentity() async {
-    if (_moneroMarketIdentity != null) return _moneroMarketIdentity!;
-    if (_activeMasterKey != null) {
-      final derived = await _deriveWrappingKey('Nix-MoneroAdIsolatedSigner-v1');
-      final edSeed = Uint8List.fromList(derived.bytes);
-      final xSeed = Uint8List.fromList(
-        std_crypto.sha256.convert([...edSeed, 0x58]).bytes,
-      );
-      _moneroMarketIdentity = await NixIdentity.fromSeeds(
-        ed25519Seed: edSeed,
-        x25519PrivateBytes: xSeed,
-      );
-      return _moneroMarketIdentity!;
-    }
-    _moneroMarketIdentity = await NixIdentity.generate();
-    return _moneroMarketIdentity!;
-  }
+  bool get canOpenPrivateTradeRoom =>
+      !_disposed && _panicWipe == null && !_isStrictOffGridMode &&
+      securityGate.isTorAnonymityReady;
 
   void setMoneroSide(MoneroP2pSide side) {
     _moneroFilters.setSelectedSide(side);
@@ -3571,12 +3642,14 @@ class NixState extends ChangeNotifier {
       paymentMethod: paymentMethod,
     );
 
-    final isolatedSigner = await _getOrCreateIsolatedMoneroMarketIdentity();
-    final orderId = 'xmr_ad_${DateTime.now().toUtc().millisecondsSinceEpoch}';
+    // Cada anúncio tem uma chave e um nome próprios, sem vínculo com o perfil.
+    final isolatedSigner = await NixIdentity.generate();
+    final orderId = 'xmr_ad_${base64Url.encode(SecretKeyData.random(length: 16).bytes).replaceAll('=', '')}';
+    final alias = isolatedSigner.ed25519PublicHex.substring(0, 8).toUpperCase();
     final signedAd = await SignedMoneroAd.createSigned(
       signer: isolatedSigner,
       orderId: orderId,
-      traderName: '${_userProfile.effectiveDisplayName} (Você)',
+      traderName: 'Parte-$alias',
       side: side,
       fiatCurrency: fiatCurrency,
       pricePerXmr: pricePerXmr,
@@ -3615,38 +3688,6 @@ class NixState extends ChangeNotifier {
     }
     notifyListeners();
     return order;
-  }
-
-  void openTradeWithOrder(MoneroP2pOrder order) {
-    final existingDm = _directMessages.firstWhere(
-      (dm) => dm.peerPublicId == order.traderPublicId,
-      orElse: () {
-        final newDm = DirectMessageThread(
-          id: 'dm_trade_${DateTime.now().millisecondsSinceEpoch}',
-          peerName: order.traderName,
-          peerPublicId: order.traderPublicId,
-          statusText: 'Negociação P2P Monero: ${order.formattedPrice}',
-          isOnline: order.isOnline,
-          isVerified: true,
-          trustLevel: order.trustLevel,
-          messages: [
-            Message(
-              id: 'dm_trade_init_${DateTime.now().millisecondsSinceEpoch}',
-              channelId: 'trade_${order.id}',
-              senderName: order.traderName,
-              senderFingerprint: order.traderPublicId.replaceFirst('NIX-', ''),
-              isMe: false,
-              text:
-                  'Iniciando negociação da oferta #${order.id.split('_').last}: ${order.notes}\nLimite: ${order.formattedLimits}',
-              timestamp: DateTime.now(),
-            ),
-          ],
-        );
-        _directMessages.insert(1, newDm);
-        return newDm;
-      },
-    );
-    selectDirectMessage(existingDm);
   }
 
   // ================= GITHUB DISCOVERY (STARWIRE) =================
@@ -3723,7 +3764,10 @@ class NixState extends ChangeNotifier {
 
   // ================= OVERLAY DE PERFIL, CARD ID & CONFIGURAÇÕES =================
 
+  bool _settingsOpenedFromPager = false;
+
   void openProfileOverlay({bool startInSettings = false, SettingsCategory? category}) {
+    _settingsOpenedFromPager = false;
     _isProfileOverlayOpen = true;
     _isSettingsOpenInOverlay = startInSettings;
     _requestedOverlaySettingsCategory = startInSettings ? category : null;
@@ -3734,6 +3778,7 @@ class NixState extends ChangeNotifier {
   }
 
   void closeProfileOverlay() {
+    _settingsOpenedFromPager = false;
     _isProfileOverlayOpen = false;
     _isSettingsOpenInOverlay = false;
     _requestedOverlaySettingsCategory = null;
@@ -3741,6 +3786,7 @@ class NixState extends ChangeNotifier {
   }
 
   void transitionToSettings({SettingsCategory? category}) {
+    if (!_isSettingsOpenInOverlay) _settingsOpenedFromPager = _isProfileOverlayOpen;
     _isProfileOverlayOpen = true;
     _isSettingsOpenInOverlay = true;
     _requestedOverlaySettingsCategory = category;
@@ -3750,7 +3796,16 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void backFromOverlaySettings() {
+    if (_settingsOpenedFromPager) {
+      transitionBackToCardId();
+    } else {
+      closeProfileOverlay();
+    }
+  }
+
   void transitionBackToCardId() {
+    _settingsOpenedFromPager = false;
     _isSettingsOpenInOverlay = false;
     _requestedOverlaySettingsCategory = null;
     notifyListeners();
@@ -3804,7 +3859,7 @@ class NixState extends ChangeNotifier {
         avatarObjectId: _userProfile.avatarStyle,
       ));
     }
-    if (currentActivity != null) unawaited(_persistState());
+    unawaited(_persistState());
     notifyListeners();
   }
 
@@ -4114,21 +4169,18 @@ class NixState extends ChangeNotifier {
       }
       return c;
     }).toList();
-    _settings = _settings.copyWith(connectors: updated);
-    notifyListeners();
+    updateSettings(_settings.copyWith(connectors: updated));
   }
 
   void unblockUser(String publicId) {
     final updated = _settings.blockedUserIds.where((id) => id != publicId).toList();
-    _settings = _settings.copyWith(blockedUserIds: updated);
-    notifyListeners();
+    updateSettings(_settings.copyWith(blockedUserIds: updated));
   }
 
   void blockNewUser(String publicId) {
     if (publicId.trim().isEmpty) return;
     final updated = List<String>.from(_settings.blockedUserIds)..add(publicId.trim());
-    _settings = _settings.copyWith(blockedUserIds: updated);
-    notifyListeners();
+    updateSettings(_settings.copyWith(blockedUserIds: updated));
   }
 
   void authorizeDevice(String deviceName, String fingerprint) {
@@ -4141,14 +4193,12 @@ class NixState extends ChangeNotifier {
       fingerprint: fingerprint.trim().isNotEmpty ? fingerprint.trim() : 'NX-7700-AA21',
     );
     final updated = List<AuthorizedDevice>.from(_settings.devices)..add(newDev);
-    _settings = _settings.copyWith(devices: updated);
-    notifyListeners();
+    updateSettings(_settings.copyWith(devices: updated));
   }
 
   void revokeDevice(String deviceId) {
     final updated = _settings.devices.where((d) => d.id != deviceId).toList();
-    _settings = _settings.copyWith(devices: updated);
-    notifyListeners();
+    updateSettings(_settings.copyWith(devices: updated));
   }
 
   // ================= ESPAÇOS, PASTAS (FOLDERS) & EXPLORAR =================
@@ -4304,32 +4354,49 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void joinDiscoverableSpace(Space discovered) {
-    final existingIdx = _spaces.indexWhere((s) => s.id == discovered.id);
-    if (existingIdx != -1) {
-      selectSpace(_spaces[existingIdx]);
-      return;
+  bool joinDiscoverableSpace(Space candidate) {
+    // Resolve o registro canônico, mesmo quando um item antigo da UI ainda está visível.
+    final published = _publishedSpaces.where((space) => space.id == candidate.id).firstOrNull;
+    if (published == null) return false;
+    final local = _spaces.where((space) => space.id == published.id).firstOrNull;
+    if (local != null) {
+      final allowed = published.channels.where((channel) =>
+          !channel.permissions.requireApproval || canManageChannelSettings(channel.id));
+      if (allowed.isNotEmpty) {
+        selectChannel(allowed.first);
+        return true;
+      }
+      if (_isMockMode && published.channels.isEmpty) {
+        selectSpace(local);
+        return true;
+      }
+      return false;
     }
-    final newSpace = discovered.copyWith(
-      channels: [
-        Channel(
-          id: 'ch_${discovered.id}_geral',
-          spaceId: discovered.id,
-          name: 'geral',
-          topic: discovered.description,
-          type: ChannelType.text,
-          category: 'COMUNIDADE',
-        ),
-      ],
-    );
-    _spaces.add(newSpace);
-    _persistState(workspaceChanged: true);
-    selectSpace(newSpace);
+    // Sem convite validado, o cliente só abre as comunidades de demonstração.
+    if (!_isMockMode || published.channels.isNotEmpty) return false;
+    final demo = published.copyWith(channels: [
+      Channel(
+        id: 'ch_${published.id}_geral',
+        spaceId: published.id,
+        name: 'geral',
+        topic: published.description,
+        type: ChannelType.text,
+        category: 'COMUNIDADE',
+        permissions: const ChannelPermissions(isPublic: true),
+      ),
+    ]);
+    _spaces.add(demo);
+    selectSpace(demo);
+    return true;
   }
 
   // ================= CANAIS, MENSAGENS, EDIÇÃO, FIXAÇÃO & SELEÇÃO =================
 
   void selectChannel(Channel channel) {
+    final stored = _findChannel(channel.id);
+    if (stored == null || stored.spaceId != channel.spaceId ||
+        stored.bannedMembers.contains(_ownWorkspaceIdentity)) return;
+    channel = stored;
     _activeArea = NixActiveArea.spaces;
     _currentChannel = channel.copyWith(unreadCount: 0);
     // Zera badge de não lidas no espaço
@@ -4554,7 +4621,7 @@ class NixState extends ChangeNotifier {
 
     final reply = _replyingToMessage;
     final newMessage = Message(
-      id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
+      id: 'msg_${DateTime.now().microsecondsSinceEpoch}',
       channelId: _currentChannel.id,
       senderName: _userProfile.effectiveDisplayName,
       senderFingerprint: _securityContext.myFingerprint,
@@ -4710,22 +4777,66 @@ class NixState extends ChangeNotifier {
     return true;
   }
 
-  void updateChannelSettings(Channel updatedChannel) {
-    for (int s = 0; s < _spaces.length; s++) {
-      final space = _spaces[s];
-      final cIdx = space.channels.indexWhere((c) => c.id == updatedChannel.id);
-      if (cIdx != -1) {
-        final updatedChannels = List<Channel>.from(space.channels);
-        updatedChannels[cIdx] = updatedChannel;
-        _spaces[s] = space.copyWith(channels: updatedChannels);
-        if (_currentChannel.id == updatedChannel.id) {
-          _currentChannel = updatedChannel;
-        }
-        _persistState();
+  Channel? _findChannel(String id) =>
+      _spaces.expand((space) => space.channels).where((channel) => channel.id == id).firstOrNull;
+
+  bool canManageChannelSettings(String channelId) {
+    final channel = _findChannel(channelId);
+    if (channel == null) return false;
+    final identities = {
+      _ownWorkspaceIdentity,
+      _securityContext.myFingerprint,
+      if (_isMockMode) _userProfile.publicId.replaceFirst('NIX-', ''),
+    }..remove('');
+    return identities.contains(channel.ownerFingerprint) ||
+        channel.admins.any(identities.contains) ||
+        channel.spaceId == 'local_space' && channel.id == 'general_saved';
+  }
+
+  Future<bool> updateChannelSettings(Channel updatedChannel) async {
+    final previous = _findChannel(updatedChannel.id);
+    if (previous == null || previous.spaceId != updatedChannel.spaceId ||
+        !canManageChannelSettings(updatedChannel.id)) return false;
+
+    final mayChangeImage = canEditChannelImage(previous);
+    final updated = previous.copyWith(
+      name: updatedChannel.name,
+      topic: updatedChannel.topic,
+      description: updatedChannel.description,
+      permissions: updatedChannel.permissions,
+      customImagePath: mayChangeImage ? updatedChannel.customImagePath : null,
+      clearCustomImage: mayChangeImage && updatedChannel.customImagePath == null,
+      admins: updatedChannel.admins,
+      moderators: updatedChannel.moderators,
+      mutedMembers: updatedChannel.mutedMembers,
+      bannedMembers: updatedChannel.bannedMembers,
+      auditLogs: updatedChannel.auditLogs,
+    );
+    _replaceChannel(updated);
     notifyListeners();
-        return;
+    try {
+      await _persistState(workspaceChanged: true, reportErrors: true);
+      return true;
+    } catch (_) {
+      if (!_disposed && identical(_findChannel(updated.id), updated)) {
+        _replaceChannel(previous);
+        notifyListeners();
       }
+      return false;
     }
+  }
+
+  void _replaceChannel(Channel updated) {
+    final index = _spaces.indexWhere((space) => space.id == updated.spaceId);
+    if (index == -1) return;
+    final space = _spaces[index];
+    final replacement = space.copyWith(channels: [
+      for (final channel in space.channels)
+        channel.id == updated.id ? updated : channel,
+    ]);
+    _spaces[index] = replacement;
+    if (_currentSpace.id == replacement.id) _currentSpace = replacement;
+    if (_currentChannel.id == updated.id) _currentChannel = updated;
   }
 
   final Map<String, int> _channelSenderKeyEpochs = {};
@@ -4763,6 +4874,9 @@ class NixState extends ChangeNotifier {
   }
 
   void applyAdminAction(Channel channel, {required String targetFingerprint, required String action}) {
+    final stored = _findChannel(channel.id);
+    if (stored == null || !canManageChannelSettings(stored.id)) return;
+    channel = stored;
     final admins = List<String>.from(channel.admins);
     final moderators = List<String>.from(channel.moderators);
     final muted = List<String>.from(channel.mutedMembers);
@@ -4873,6 +4987,11 @@ class NixState extends ChangeNotifier {
         (claimId: 'c${i + 1}', text: cleanClaims[i]),
     ];
 
+    final previous = supersedesHash == null ? null :
+        await _archiveRepo?.getObject(supersedesHash) ?? _inMemoryArchiveObjects[supersedesHash];
+    final visibility = _findChannel(channelId)?.permissions.isPublic == true &&
+        (supersedesHash == null || previous?['visibility'] == 'public')
+        ? 'public' : 'restricted';
     final signer = await _getOrCreateArchiveSignerIdentity();
     final nowMs = DateTime.now().toUtc().millisecondsSinceEpoch;
     String cidHash;
@@ -4885,6 +5004,7 @@ class NixState extends ChangeNotifier {
         claims: claimRecords,
         supersedesHash: supersedesHash,
         createdAtMs: nowMs,
+        visibility: visibility,
       );
     } else {
       final canonicalObj = <String, dynamic>{
@@ -4892,7 +5012,7 @@ class NixState extends ChangeNotifier {
         'title': cleanTitle,
         'bodyHtml': sanitizedContent,
         'authorEd25519': signer.ed25519PublicHex,
-        'visibility': 'public',
+        'visibility': visibility,
         'createdAt': nowMs,
         if (supersedesHash != null) 'supersedes': supersedesHash,
         'claims': claimRecords
@@ -4905,6 +5025,7 @@ class NixState extends ChangeNotifier {
       _inMemoryArchiveObjects[cidHash] = {
         'hash': cidHash,
         'kind': 'article',
+        'visibility': visibility,
         'canonical_bytes': canonicalBytes,
         'author_public': Uint8List.fromList(signer.ed25519PublicKey.bytes),
         'signature': Uint8List.fromList(sig),
@@ -4947,6 +5068,10 @@ class NixState extends ChangeNotifier {
     if (cleanRationale.isEmpty) {
       throw ArgumentError('A fundamentação da refutação não pode ser vazia.');
     }
+    final target = await _archiveRepo?.getObject(targetCidHash) ??
+        _inMemoryArchiveObjects[targetCidHash];
+    final visibility = _findChannel(channelId)?.permissions.isPublic == true &&
+        target?['visibility'] == 'public' ? 'public' : 'restricted';
     final signer = await _getOrCreateArchiveSignerIdentity();
     final nowMs = DateTime.now().toUtc().millisecondsSinceEpoch;
     String refHash;
@@ -4959,6 +5084,7 @@ class NixState extends ChangeNotifier {
         targetClaimId: targetClaimId,
         rationaleHtml: cleanRationale,
         createdAtMs: nowMs,
+        visibility: visibility,
       );
     } else {
       final canonicalObj = <String, dynamic>{
@@ -4967,7 +5093,7 @@ class NixState extends ChangeNotifier {
         'targetClaimId': targetClaimId,
         'rationaleHtml': cleanRationale,
         'authorEd25519': signer.ed25519PublicHex,
-        'visibility': 'public',
+        'visibility': visibility,
         'createdAt': nowMs,
       };
       final canonicalBytes = NixArchiveService.canonicalizeJsonBytes(canonicalObj);
@@ -4976,6 +5102,7 @@ class NixState extends ChangeNotifier {
       _inMemoryArchiveObjects[refHash] = {
         'hash': refHash,
         'kind': 'refutation',
+        'visibility': visibility,
         'canonical_bytes': canonicalBytes,
         'author_public': Uint8List.fromList(signer.ed25519PublicKey.bytes),
         'signature': Uint8List.fromList(sig),
@@ -5167,6 +5294,7 @@ class NixState extends ChangeNotifier {
 
   void toggleMute() {
     _calls.toggleMute();
+    updateSettings(_settings.copyWith(microphoneMuted: _calls.isMuted));
   }
 
   void toggleDeafen() {
@@ -5256,6 +5384,7 @@ class NixState extends ChangeNotifier {
       name: name.trim(),
       initials: initials.isNotEmpty ? initials : 'NX',
       description: description,
+      isPublic: false,
       iconEmoji: emoji.isNotEmpty ? emoji : 'NX',
       customImagePath: customImagePath,
       ownerFingerprint: _ownWorkspaceIdentity,
@@ -5273,7 +5402,6 @@ class NixState extends ChangeNotifier {
     );
 
     _spaces.add(newSpace);
-    _discoverableSpaces.add(newSpace);
     _currentSpace = newSpace;
     _currentChannel = newSpace.channels.first;
     _activeArea = NixActiveArea.spaces;
@@ -5284,6 +5412,7 @@ class NixState extends ChangeNotifier {
   // ChangeNotifier.dispose é síncrono. A limpeza continua sem bloquear a UI;
   // falhas de um serviço não impedem os demais nem deixam o cofre desbloqueado.
   Future<void> _disposeServices() async {
+    await _preferencesWrite;
     try {
       _embeddedTor.dispose();
     } catch (_) {

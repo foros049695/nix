@@ -109,6 +109,7 @@ class UserSettings {
   final bool noiseSuppression;
   final bool echoCancellation;
   final bool micPermissionGranted;
+  final bool microphoneMuted;
 
   // 5.5 Conexões e integrações
   final String transportProfile; // 'Tor Onion v3 (Fail-Closed)', 'Rede Local LAN/BLE', 'Off-Grid LoRa'
@@ -178,6 +179,7 @@ class UserSettings {
     this.noiseSuppression = true,
     this.echoCancellation = true,
     this.micPermissionGranted = true,
+    this.microphoneMuted = false,
     this.transportProfile = 'Tor Onion v3 (Fail-Closed)',
     this.hideSensitiveNetworkInfo = true,
     this.autoReconnect = true,
@@ -284,6 +286,7 @@ class UserSettings {
     bool? noiseSuppression,
     bool? echoCancellation,
     bool? micPermissionGranted,
+    bool? microphoneMuted,
     String? transportProfile,
     bool? hideSensitiveNetworkInfo,
     bool? autoReconnect,
@@ -347,6 +350,7 @@ class UserSettings {
       noiseSuppression: noiseSuppression ?? this.noiseSuppression,
       echoCancellation: echoCancellation ?? this.echoCancellation,
       micPermissionGranted: micPermissionGranted ?? this.micPermissionGranted,
+      microphoneMuted: microphoneMuted ?? this.microphoneMuted,
       transportProfile: transportProfile ?? this.transportProfile,
       hideSensitiveNetworkInfo: hideSensitiveNetworkInfo ?? this.hideSensitiveNetworkInfo,
       autoReconnect: autoReconnect ?? this.autoReconnect,
@@ -371,7 +375,7 @@ class UserSettings {
     );
   }
 
-  Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toBootstrapJson() => {
         'themeMode': themeMode.name,
         'paletteType': paletteType.name,
         'customPaletteColor': customPaletteColor,
@@ -403,6 +407,53 @@ class UserSettings {
         'transportProfile': transportProfile,
       };
 
+  Map<String, dynamic> toJson() => {
+        ...toBootstrapJson(),
+        'messageNotifications': messageNotifications,
+        'callNotifications': callNotifications,
+        'systemAlerts': systemAlerts,
+        'notificationSounds': notificationSounds,
+        'silentMode': silentMode,
+        'showMessagePreview': showMessagePreview,
+        'desktopNotifications': desktopNotifications,
+        'stripExifMetadata': stripExifMetadata,
+        'allowMediaAttachments': allowMediaAttachments,
+        'autoDownloadMedia': autoDownloadMedia,
+        'autoPlayMedia': autoPlayMedia,
+        'sendReadReceipts': sendReadReceipts,
+        'noiseSuppression': noiseSuppression,
+        'echoCancellation': echoCancellation,
+        'micPermissionGranted': micPermissionGranted,
+        'microphoneMuted': microphoneMuted,
+        'hideSensitiveNetworkInfo': hideSensitiveNetworkInfo,
+        'autoReconnect': autoReconnect,
+        'blockRemoteEmbeds': blockRemoteEmbeds,
+        'duressPinConfigured': duressPinConfigured,
+        'atakBridgeEnabled': atakBridgeEnabled,
+        'profileVisibility': profileVisibility,
+        'communicationPermission': communicationPermission,
+        'inputDevice': inputDevice,
+        'outputDevice': outputDevice,
+        'autoLockMinutes': autoLockMinutes,
+        'defaultRetentionDays': defaultRetentionDays,
+        'alertVolume': alertVolume,
+        'inputVolume': inputVolume,
+        'outputVolume': outputVolume,
+        'blockedUserIds': blockedUserIds,
+        'connectors': {for (final c in connectors) c.id: c.isEnabled},
+        'devices': [
+          for (final d in devices)
+            {
+              'id': d.id,
+              'deviceName': d.deviceName,
+              'clientVersion': d.clientVersion,
+              'lastSeenLabel': d.lastSeenLabel,
+              'isCurrent': d.isCurrent,
+              'fingerprint': d.fingerprint,
+            },
+        ],
+      };
+
   factory UserSettings.fromJson(Map<String, dynamic> json) {
     double readAvatarValue(Object? raw, double fallback, double min, double max) =>
         raw is num && raw.isFinite ? raw.toDouble().clamp(min, max) : fallback;
@@ -425,7 +476,61 @@ class UserSettings {
         }
       }
     }
+    const defaults = UserSettings();
+    T read<T>(String key, T fallback) => json[key] is T ? json[key] as T : fallback;
+    final connectorFlags = read('connectors', const <String, dynamic>{});
+    final deviceRecords = json['devices'];
     return UserSettings(
+      messageNotifications: read('messageNotifications', defaults.messageNotifications),
+      callNotifications: read('callNotifications', defaults.callNotifications),
+      systemAlerts: read('systemAlerts', defaults.systemAlerts),
+      notificationSounds: read('notificationSounds', defaults.notificationSounds),
+      silentMode: read('silentMode', defaults.silentMode),
+      showMessagePreview: read('showMessagePreview', defaults.showMessagePreview),
+      desktopNotifications: read('desktopNotifications', defaults.desktopNotifications),
+      stripExifMetadata: read('stripExifMetadata', defaults.stripExifMetadata),
+      allowMediaAttachments: read('allowMediaAttachments', defaults.allowMediaAttachments),
+      autoDownloadMedia: read('autoDownloadMedia', defaults.autoDownloadMedia),
+      autoPlayMedia: read('autoPlayMedia', defaults.autoPlayMedia),
+      sendReadReceipts: read('sendReadReceipts', defaults.sendReadReceipts),
+      noiseSuppression: read('noiseSuppression', defaults.noiseSuppression),
+      echoCancellation: read('echoCancellation', defaults.echoCancellation),
+      micPermissionGranted: read('micPermissionGranted', defaults.micPermissionGranted),
+      microphoneMuted: read('microphoneMuted', defaults.microphoneMuted),
+      hideSensitiveNetworkInfo: read('hideSensitiveNetworkInfo', defaults.hideSensitiveNetworkInfo),
+      autoReconnect: read('autoReconnect', defaults.autoReconnect),
+      blockRemoteEmbeds: read('blockRemoteEmbeds', defaults.blockRemoteEmbeds),
+      duressPinConfigured: read('duressPinConfigured', defaults.duressPinConfigured),
+      atakBridgeEnabled: read('atakBridgeEnabled', defaults.atakBridgeEnabled),
+      profileVisibility: read('profileVisibility', defaults.profileVisibility),
+      communicationPermission: read('communicationPermission', defaults.communicationPermission),
+      inputDevice: read('inputDevice', defaults.inputDevice),
+      outputDevice: read('outputDevice', defaults.outputDevice),
+      autoLockMinutes: read('autoLockMinutes', defaults.autoLockMinutes),
+      defaultRetentionDays: read('defaultRetentionDays', defaults.defaultRetentionDays),
+      alertVolume: readAvatarValue(json['alertVolume'], defaults.alertVolume, 0, 1),
+      inputVolume: readAvatarValue(json['inputVolume'], defaults.inputVolume, 0, 1),
+      outputVolume: readAvatarValue(json['outputVolume'], defaults.outputVolume, 0, 1),
+      blockedUserIds: read('blockedUserIds', defaults.blockedUserIds.cast<dynamic>()).whereType<String>().toList(),
+      connectors: [
+        for (final connector in defaults.connectors)
+          connector.copyWith(isEnabled: connectorFlags[connector.id] is bool
+              ? connectorFlags[connector.id] as bool : connector.isEnabled),
+      ],
+      devices: deviceRecords is List
+          ? [
+              for (final raw in deviceRecords.whereType<Map<String, dynamic>>())
+                if (raw['id'] is String && raw['deviceName'] is String)
+                  AuthorizedDevice(
+                    id: raw['id'] as String,
+                    deviceName: raw['deviceName'] as String,
+                    clientVersion: raw['clientVersion'] as String? ?? '',
+                    lastSeenLabel: raw['lastSeenLabel'] as String? ?? '',
+                    isCurrent: raw['isCurrent'] == true,
+                    fingerprint: raw['fingerprint'] as String? ?? '',
+                  ),
+            ]
+          : defaults.devices,
       themeMode: parsedMode,
       paletteType: parsedPalette,
       customPaletteColor: json['customPaletteColor'] as int?,

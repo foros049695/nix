@@ -252,10 +252,11 @@ class Socks5Connector {
 
     try {
       final useUserPass = username != null && password != null;
-      await writeAll(<int>[0x05, 0x01, useUserPass ? 0x02 : 0x00]);
+      final method = useUserPass ? 0x02 : 0x00;
+      await writeAll(<int>[0x05, 0x01, method]);
 
       final methodReply = await readExact(2);
-      if (methodReply[0] != 0x05 || methodReply[1] == 0xFF) {
+      if (methodReply[0] != 0x05 || methodReply[1] != method) {
         throw const TransportBlockedException('Proxy SOCKS5 rejeitou os métodos de autenticação.');
       }
 
@@ -635,9 +636,11 @@ class TorControlClient {
     required int targetPort,
     String? keyBlob,
     bool detach = false,
+    bool discardPrivateKey = false,
   }) async {
     final keySpec = keyBlob ?? 'NEW:ED25519-V3';
-    final flagsPart = detach ? ' Flags=Detach' : '';
+    final flags = [if (detach) 'Detach', if (discardPrivateKey) 'DiscardPK'];
+    final flagsPart = flags.isEmpty ? '' : ' Flags=${flags.join(',')}';
     final lines = await _sendCommand(
       'ADD_ONION $keySpec$flagsPart Port=$virtualPort,127.0.0.1:$targetPort',
     );
@@ -914,6 +917,28 @@ class RelayClient {
     return (decoded['deleted'] as num?)?.toInt() ?? 0;
   }
 
+  /// Envia uma requisição a um serviço Onion diretamente sobre o túnel Tor,
+  /// independente das operações de mailbox.
+  Future<({int statusCode, String body})> postOnionPacket(
+    String path,
+    String body, {
+    required int maxResponseBytes,
+    required String circuitIsolation,
+  }) {
+    _checkPolicy();
+    if (!TransportPolicy.isValidOnionV3Host(baseUri.host) ||
+        !RegExp(r'^/[a-z0-9-]+$').hasMatch(path) ||
+        !RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(circuitIsolation)) {
+      throw const TransportBlockedException('Destino de pacote Onion inválido.');
+    }
+    return _socksHttp('POST', baseUri.resolve(path),
+      headers: const {'Content-Type': 'application/octet-stream'},
+      body: body,
+      maxResponseBytes: maxResponseBytes,
+      circuitIsolation: circuitIsolation,
+    );
+  }
+
   Future<({int statusCode, String body})> _request(
     String method,
     String path, {
@@ -954,12 +979,19 @@ class RelayClient {
     required Map<String, String> headers,
     String? body,
     Duration timeout = const Duration(seconds: 30),
+    int? maxResponseBytes,
+    String? circuitIsolation,
   }) async {
     if (uri.scheme != 'http' && uri.scheme != 'https') {
       throw UnsupportedTransportSchemeException(uri.scheme);
     }
 
-    final connector = Socks5Connector(proxyHost: policy.socksHost, proxyPort: policy.socksPort);
+    final connector = Socks5Connector(
+      proxyHost: policy.socksHost,
+      proxyPort: policy.socksPort,
+      username: circuitIsolation,
+      password: circuitIsolation,
+    );
     final port = uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
     final conn = await connector.connectRaw(uri.host, port, requireOnionV3: true, timeout: timeout);
 
@@ -1004,6 +1036,14 @@ class RelayClient {
         while (activeSocket.available() > 0) {
           final chunk = activeSocket.read();
           if (chunk == null || chunk.isEmpty) break;
+          if (maxResponseBytes != null &&
+              responseBuilder.length + chunk.length > maxResponseBytes) {
+            if (!doneCompleter.isCompleted) {
+              doneCompleter.completeError(const HttpException('Resposta Onion excede o limite.'));
+            }
+            activeSocket.readEventsEnabled = false;
+            return;
+          }
           responseBuilder.add(chunk);
         }
         if (!doneCompleter.isCompleted &&

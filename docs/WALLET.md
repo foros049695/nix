@@ -23,3 +23,16 @@ O Nix inclui um mural para publicação de ofertas de produtos e serviços ponto
 - As ofertas são mensagens efêmeras assinadas com TTL curto.
 - O mural **não atua como custodiante, nem como intermediário de escrow automático**.
 - A reputação financeira é estritamente local e **não se transforma em um identificador global do usuário** em outros módulos.
+
+## 4. Salas privadas de negociação
+
+Use **Criar sala** no mercado ou **Negociar** em uma oferta verificada. Copie o
+convite e envie-o em particular à contraparte, que deve escolher **Usar convite**.
+O primeiro dispositivo que comprova posse do convite ocupa a vaga da contraparte.
+A sala usa um serviço Onion v3 próprio e mensagens autenticadas com
+XChaCha20-Poly1305. Os pseudônimos valem apenas naquela sessão. O cliente mantém
+o histórico em memória e encerra a sala ao fechá-la ou após 30 minutos.
+
+A entrega depende de Tor operacional nos dois dispositivos e do anfitrião online.
+A sala não recebe dados das identidades de mensageria ou da carteira. O método de
+pagamento e os dados que as partes compartilham na negociação podem identificá-las.

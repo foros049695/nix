@@ -146,8 +146,13 @@ class _ExploreSpacesViewState extends State<ExploreSpacesView> {
                               width: width,
                               child: _PublicSpaceCard(
                                 space: space,
-                                onJoin: () =>
-                                    nixState.joinDiscoverableSpace(space),
+                                onJoin: () {
+                                  if (!nixState.joinDiscoverableSpace(space)) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Entrada indisponível. O canal pode exigir aprovação.')),
+                                    );
+                                  }
+                                },
                               )),
                       ],
                     );

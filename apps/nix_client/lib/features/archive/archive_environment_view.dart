@@ -108,7 +108,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
   Future<void> _loadArticles() async {
     setState(() => _isLoading = true);
     try {
-      final objects = await _nixState.archiveRepository.listObjects(kind: 'article', limit: 50);
+      final objects = await _nixState.archiveRepository.listObjects(kind: 'article', publicOnly: true, limit: 50);
       if (mounted) {
         setState(() {
           _recentArticles = objects;

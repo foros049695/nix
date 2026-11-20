@@ -11,7 +11,7 @@ import '../chat/chat_input_bar.dart';
 import '../chat/conversation_info_panel.dart';
 import '../chat/conversation_surface.dart';
 import '../design/nix_surfaces.dart';
-import '../chat/message_bubble.dart';
+import '../chat/message_timeline.dart';
 import '../profile/pager_profile.dart';
 import '../profile/peer_card_id_dialog.dart';
 
@@ -27,14 +27,6 @@ class HomePrivateView extends StatefulWidget {
 }
 
 class _HomePrivateViewState extends State<HomePrivateView> {
-  final ScrollController _dmScrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _dmScrollController.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
@@ -629,14 +621,10 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                     style: TextStyle(color: NixColors.textMuted, fontSize: 12.5),
                   ),
                 )
-              : ListView.builder(
-                  controller: _dmScrollController,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: dm.messages.length,
-                  itemBuilder: (context, idx) {
-                    final msg = dm.messages[idx];
-                    return MessageBubble(message: msg);
-                  },
+              : MessageTimeline(
+                  key: ValueKey(dm.id),
+                  messages: dm.messages,
+                  highlightedMessageId: state.highlightedMessageId,
                 ),
           ),
         ),

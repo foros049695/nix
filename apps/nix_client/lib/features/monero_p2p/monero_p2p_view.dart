@@ -8,6 +8,7 @@ import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
 import 'trade_simulation_dialog.dart';
+import 'private_trade_room_view.dart';
 import 'payment_method_picker.dart';
 
 /// Aba Monero Non-Custodial P2P Marketplace.
@@ -35,15 +36,33 @@ class MoneroP2pView extends StatelessWidget {
           color: NixColors.background,
           child: Column(
             children: [
-              Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: TextButton.icon(
-                  onPressed: () => showDialog<void>(
-                    context: context,
-                    builder: (_) => const TradeSimulationDialog(),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 4,
+                    children: [
+                      TextButton.icon(
+                        onPressed: () => PrivateTradeRoomView.open(context, nixState),
+                        icon: const Icon(Icons.lock_outline),
+                        label: const Text('Criar sala'),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => PrivateTradeRoomView.open(context, nixState, join: true),
+                        icon: const Icon(Icons.login_rounded),
+                        label: const Text('Usar convite'),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => showDialog<void>(
+                          context: context, builder: (_) => const TradeSimulationDialog(),
+                        ),
+                        icon: const Icon(Icons.science_outlined),
+                        label: const Text('Simular negociação'),
+                      ),
+                    ],
                   ),
-                  icon: const Icon(Icons.science_outlined),
-                  label: const Text('Simular negociação'),
                 ),
               ),
               // Cabeçalho Responsivo do Mercado P2P
@@ -355,7 +374,7 @@ class MoneroP2pView extends StatelessWidget {
                           return _MoneroOrderCard(
                             order: order,
                             isCryptographicallyValid: valid,
-                            onTrade: valid ? () => nixState.openTradeWithOrder(order) : null,
+                            onTrade: valid ? () => PrivateTradeRoomView.open(context, nixState) : null,
                           );
                         },
                       ),
@@ -715,7 +734,8 @@ class _MoneroOrderCard extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          order.traderName,
+                          (RegExp(r'^Parte-[A-F0-9]{8}$').hasMatch(order.traderName)
+                                  ? order.traderName : 'Anúncio P2P'),
                           style: TextStyle(
                             color: NixColors.textPrimary,
                             fontSize: 14,
@@ -853,7 +873,8 @@ class _MoneroOrderCard extends StatelessWidget {
                                 ),
                               ),
                               Text(
-                                order.traderName,
+                                (RegExp(r'^Parte-[A-F0-9]{8}$').hasMatch(order.traderName)
+                                  ? order.traderName : 'Anúncio P2P'),
                                 style: TextStyle(
                                   color: NixColors.textPrimary,
                                   fontSize: 14,

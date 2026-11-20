@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../design/nix_surfaces.dart';
 import '../navigation/workspace_image.dart';
@@ -7,7 +6,6 @@ import '../../core/models/channel.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
-import '../profile/qr_code_painter.dart';
 
 enum _SettingsTab {
   identity,
@@ -46,7 +44,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
   late String? _imagePath = widget.channel.customImagePath;
 
   static const _sections = [
-    (_SettingsTab.identity, Icons.vpn_key_outlined, 'Identidade, Links & QR'),
+    (_SettingsTab.identity, Icons.vpn_key_outlined, 'Identidade e acesso'),
     (_SettingsTab.permissions, Icons.chat_bubble_outline_rounded, 'Permissões de Mensagens'),
     (_SettingsTab.contentProtection, Icons.shield_outlined, 'Proteção de Conteúdo'),
     (_SettingsTab.admin, Icons.admin_panel_settings_outlined, 'Membros, Admin & Logs'),
@@ -56,7 +54,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
   late TextEditingController _nameController;
   late TextEditingController _topicController;
   late TextEditingController _descController;
-  late TextEditingController _inviteLinkController;
+  bool _saving = false;
 
   late ChannelPermissions _perms;
   late List<String> _admins;
@@ -72,11 +70,6 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
     _nameController = TextEditingController(text: c.name);
     _topicController = TextEditingController(text: c.topic);
     _descController = TextEditingController(text: c.description);
-    final code = c.inviteCode ?? c.id;
-    _inviteLinkController = TextEditingController(
-      text: 'nix://onion/v3/gpoun4vo5v5h3cmcfdxtudm3nlzxri3qzjd7fhbvy6oep2ap67g4qvyd.onion/c/$code',
-    );
-
     _perms = c.permissions;
     _admins = List<String>.from(c.admins);
     _moderators = List<String>.from(c.moderators);
@@ -90,11 +83,34 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
     _nameController.dispose();
     _topicController.dispose();
     _descController.dispose();
-    _inviteLinkController.dispose();
     super.dispose();
   }
 
-  void _save(NixState state) {
+  Future<void> _save(NixState state) async {
+    if (_saving || !state.canManageChannelSettings(widget.channel.id)) return;
+    setState(() => _saving = true);
+    if (_perms.isPublic != widget.channel.permissions.isPublic ||
+        _perms.requireApproval != widget.channel.permissions.requireApproval) {
+      final allowed = await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: Text(_perms.isPublic ? 'Confirmar canal público' : 'Confirmar canal privado'),
+          content: Text(_perms.isPublic
+              ? 'O canal poderá aparecer em Explorar. ${_perms.requireApproval ? "Novas entradas exigem aprovação." : "A aprovação manual ficará desativada."}'
+              : 'O canal será removido de Explorar. Cópias já compartilhadas continuam nos dispositivos de quem as recebeu.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialog), child: const Text('Cancelar')),
+            FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Confirmar')),
+          ],
+        ),
+      );
+      if (!mounted) return;
+      if (allowed != true) {
+        setState(() => _saving = false);
+        return;
+      }
+    }
+
     final updated = widget.channel.copyWith(
       name: _nameController.text.trim(),
       topic: _topicController.text.trim(),
@@ -111,7 +127,15 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
         ..._auditLogs,
       ],
     );
-    state.updateChannelSettings(updated);
+    final saved = await state.updateChannelSettings(updated);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (!saved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível salvar as configurações do canal.')),
+      );
+      return;
+    }
     Navigator.of(context).pop();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -126,6 +150,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
   }
 
   void _runMemberAction(NixState state, String fingerprint, String action) {
+    if (!state.canManageChannelSettings(widget.channel.id)) return;
     state.applyAdminAction(
       widget.channel.copyWith(
         admins: _admins,
@@ -268,7 +293,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      onPressed: () => _save(nixState),
+                      onPressed: _saving || !nixState.canManageChannelSettings(widget.channel.id) ? null : () => _save(nixState),
                       icon: const Icon(Icons.save_rounded, size: 16),
                       label: const Text('Salvar Alterações', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
@@ -328,7 +353,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
           minimum: const EdgeInsets.fromLTRB(15, 4, 15, 8),
           child: FilledButton.icon(
             key: const Key('save_channel_settings_button'),
-            onPressed: () => _save(state),
+            onPressed: _saving || !state.canManageChannelSettings(widget.channel.id) ? null : () => _save(state),
             icon: const Icon(Icons.check_rounded),
             label: const Text('Salvar Alterações'),
           ),
@@ -409,67 +434,28 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
         _buildTextField('Descrição Detalhada', _descController, maxLines: 3),
         const SizedBox(height: 20),
 
-        _buildSectionTitle('ACESSO, LINK & QR CODE ONION V3'),
+        _buildSectionTitle('ACESSO E VISIBILIDADE'),
         const SizedBox(height: 12),
         _buildSwitchTile(
           'Canal Público na Rede Nix',
-          'Permite descoberta via catálogo Onion v3.',
+          'Mostra este canal no catálogo Explorar deste dispositivo.',
           _perms.isPublic,
           (val) => setState(() => _perms = _perms.copyWith(isPublic: val)),
           accent,
         ),
         _buildSwitchTile(
           'Exigir Aprovação de Entrada',
-          'Novos membros precisam de autorização de um moderador.',
+          'Bloqueia novas entradas sem aprovação.',
           _perms.requireApproval,
           (val) => setState(() => _perms = _perms.copyWith(requireApproval: val)),
           accent,
         ),
         const SizedBox(height: 12),
-        LayoutBuilder(builder: (context, constraints) {
-          final qr = Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: NixColors.surfaceBorder),
-            ),
-            child: CustomPaint(
-              size: const Size(82, 82),
-              painter: NixQrCodePainter(
-                data: _inviteLinkController.text,
-                foregroundColor: const Color(0xFF17191E),
-                backgroundColor: Colors.white,
-              ),
-            ),
-          );
-          final fields = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildTextField('Link de Convite Onion v3', _inviteLinkController, readOnly: true),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.copy_rounded, size: 14),
-                label: const Text('Copiar Link'),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: _inviteLinkController.text));
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Link de convite Onion copiado!'),
-                    behavior: SnackBarBehavior.floating,
-                  ));
-                },
-              ),
-            ],
-          );
-          if (constraints.maxWidth < 370) {
-            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              qr, const SizedBox(height: 12), fields,
-            ]);
-          }
-          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            qr, const SizedBox(width: 12), Expanded(child: fields),
-          ]);
-        }),
+        Text(
+          _perms.isPublic
+              ? 'A descoberta em outros dispositivos depende da publicação no catálogo da rede.'
+              : 'Canal privado · fora de Explorar.',
+        ),
       ],
     );
   }

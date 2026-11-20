@@ -108,7 +108,7 @@ void main() {
     final channelSections =
         find.byKey(const Key('mobile_channel_settings_categories'));
     expect(tester.getSize(channelSections).width, 320);
-    await tester.tap(find.text('Identidade, Links & QR'));
+    await tester.tap(find.text('Identidade e acesso'));
     await tester.pumpAndSettle();
     expect(channelSections, findsNothing);
     expect(find.text('Nome do Canal'), findsOneWidget);

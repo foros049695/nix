@@ -192,21 +192,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
                             borderRadius: NixTokens.borderSm,
                             border: Border.all(color: NixColors.surfaceBorderStrong),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.arrow_back_rounded, size: 15, color: NixColors.textPrimary),
-                              SizedBox(width: 6),
-                              Text(
-                                'Pager',
-                                style: TextStyle(
-                                  color: NixColors.textPrimary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
+                          child: const Icon(Icons.arrow_back_rounded, size: 18),
                         ),
                       ),
                       const SizedBox(width: 14),
@@ -1309,13 +1295,19 @@ class _SettingsCenterState extends State<SettingsCenter> {
         _dropdownCard(
           title: 'Perfil de Transporte de Rede',
           subtitle: 'Define o roteamento primário dos envelopes cifrados.',
-          value: s.transportProfile,
+          value: state.isStrictOffGridMode
+              ? 'Off-Grid BLE/LoRa (Zero Rede IP)' : 'Tor Onion v3 (Fail-Closed)',
           options: const [
             'Tor Onion v3 (Fail-Closed)',
-            'Rede Local LAN/BLE',
-            'Off-Grid LoRa',
+            'Off-Grid BLE/LoRa (Zero Rede IP)',
           ],
-          onChanged: (v) => state.updateSettings(s.copyWith(transportProfile: v)),
+          onChanged: (value) {
+            if (value.startsWith('Off-Grid')) {
+              state.enterStrictOffGridMode();
+            } else if (state.isStrictOffGridMode) {
+              state.exitOffGridModeAndConnectTor();
+            }
+          },
         ),
         _switchTile(
           title: 'Ocultar Informações Sensíveis de Rede',

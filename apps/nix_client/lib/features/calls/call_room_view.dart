@@ -11,7 +11,7 @@ import '../../core/models/message.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
 import '../chat/chat_input_bar.dart';
-import '../chat/message_bubble.dart';
+import '../chat/message_timeline.dart';
 
 class CallRoomView extends StatefulWidget {
   final Channel channel;
@@ -216,13 +216,7 @@ class _CallRoomViewState extends State<CallRoomView> {
         ),
         const Divider(height: 1),
         Expanded(
-          child: ListView.builder(
-            reverse: true,
-            itemCount: messages.length,
-            itemBuilder: (_, index) => MessageBubble(
-              message: messages[messages.length - index - 1],
-            ),
-          ),
+          child: MessageTimeline(key: ValueKey(channel.id), messages: messages),
         ),
         ChatInputBar(
           channelName: channel.name,

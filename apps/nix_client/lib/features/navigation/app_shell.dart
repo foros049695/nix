@@ -219,7 +219,11 @@ class AppShell extends StatelessWidget {
                     ),
                   ),
                   body: Builder(builder: (context) => Padding(
-                    padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
+                    padding: EdgeInsets.only(
+                      bottom: activeArea == NixActiveArea.homePrivate &&
+                              nixState.homeSubTab == HomeSubTab.cardId
+                          ? 0 : MediaQuery.paddingOf(context).bottom,
+                    ),
                     child: Column(
                       children: [
                         if (nixState.isStrictOffGridMode)

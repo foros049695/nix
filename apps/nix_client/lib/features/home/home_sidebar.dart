@@ -371,14 +371,17 @@ class HomeSidebar extends StatelessWidget {
               ),
             ),
           ),
-          IconButton(
-            icon: Icon(
-              state.callState.isMuted ? Icons.mic_off : Icons.mic_none,
-              size: 16,
-              color: state.callState.isMuted ? NixColors.accentDanger : NixColors.textSecondary,
-            ),
-            tooltip: state.callState.isMuted ? 'Desmutar' : 'Mutar',
-            onPressed: () => state.toggleMute(),
+          ListenableBuilder(
+            listenable: state.calls,
+            builder: (context, _) {
+              final muted = state.calls.isMuted;
+              return IconButton(
+                icon: Icon(muted ? Icons.mic_off_rounded : Icons.mic_none_rounded,
+                  size: 18, color: muted ? NixColors.accentDanger : NixColors.textSecondary),
+                tooltip: muted ? 'Desmutar microfone' : 'Mutar microfone',
+                onPressed: state.toggleMute,
+              );
+            },
           ),
           IconButton(
             icon: Icon(Icons.settings_outlined, size: 16, color: NixColors.textSecondary),
