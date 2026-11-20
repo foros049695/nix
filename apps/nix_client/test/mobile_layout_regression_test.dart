@@ -72,6 +72,12 @@ void main() {
     expect(find.text('Status'), findsOneWidget);
     expect(find.text('Sem rede'), findsOneWidget);
     expect(find.text('Cofre local: bloqueado'), findsOneWidget);
+    final contemplation = find.widgetWithText(OutlinedButton, 'Abrir contemplação');
+    expect(contemplation.hitTestable(), findsOneWidget);
+    expect(
+      tester.getBottomRight(contemplation).dy,
+      lessThan(tester.getBottomRight(find.byKey(const Key('pager_screen'))).dy),
+    );
     await tester.drag(
         find.byKey(const Key('pager_screen')), const Offset(-380, 0));
     await tester.pumpAndSettle();

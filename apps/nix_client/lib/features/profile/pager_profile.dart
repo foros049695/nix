@@ -189,7 +189,7 @@ class _PagerProfileState extends State<PagerProfile> {
                   onNext:
                       _page < 2 ? () => _selectPage(_page + 1, state) : null,
                   onMenu: () => _showPagerMenu(state),
-                  minDisplayHeight: 278,
+                  minDisplayHeight: 320,
                   screen: LayoutBuilder(
                     builder: (context, constraints) {
                       final narrow = constraints.maxWidth < 350;
@@ -363,12 +363,15 @@ class _PagerProfileState extends State<PagerProfile> {
 
   Widget _status(NixState state, bool reduced) {
     final gate = state.securityGate;
-    const instruction =
-        '> Consulte a rede e o cofre.\n> Avance para contemplar.';
+    const instruction = '> Rede, cofre e chaves.\n> Avance para contemplar.';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        PagerGuide(message: instruction, reducedMotion: reduced),
+        PagerGuide(
+          message: instruction,
+          reducedMotion: reduced,
+          portraitSize: 56,
+        ),
         const SizedBox(height: 9),
         _PagerStatusStrip(gate: gate),
         const SizedBox(height: 9),
