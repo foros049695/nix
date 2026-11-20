@@ -113,6 +113,8 @@ class CatalogDatabase {
       options: OpenDatabaseOptions(
         version: readOnly ? null : 1,
         readOnly: readOnly,
+        // A consulta do manifesto possui e fecha um handle separado do índice aberto na UI.
+        singleInstance: false,
         onCreate: readOnly
             ? null
             : (db, version) async {

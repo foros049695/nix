@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nix_client/core/media/catalog_database.dart';
 import 'package:nix_client/features/archive/article_detail_view.dart';
 import 'package:nix_client/features/archive/archive_environment_view.dart';
 import 'package:nix_client/features/media/media_index_view.dart';
@@ -77,6 +78,9 @@ void main() {
 
     testWidgets('2. Modais e Diálogos no Media Index: renderiza catálogo e aciona diálogo de atualização', (tester) async {
       await tester.binding.setSurfaceSize(const Size(393, 852));
+      final catalog = await tester.runAsync(() => CatalogDatabase.open(inMemory: true));
+      nixState.setCatalogDatabase(catalog!);
+      addTearDown(catalog.close);
 
       await tester.pumpWidget(
         buildTestHarness(
@@ -99,6 +103,9 @@ void main() {
       // Diálogo de atualização privado aberto
       expect(find.text('Atualizações Privadas do Catálogo'), findsOneWidget);
       expect(find.text('Fechar'), findsOneWidget);
+      expect(find.text('Esta versão do Nix veio sem um publicador Onion configurado.'), findsOneWidget);
+      final verify = find.widgetWithText(ElevatedButton, 'Verificar Agora');
+      expect(tester.widget<ElevatedButton>(verify).onPressed, isNull);
 
       // Fecha o diálogo
       await tester.tap(find.text('Fechar'));

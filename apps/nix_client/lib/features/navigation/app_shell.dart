@@ -8,6 +8,7 @@ import '../../core/security/key_vault.dart';
 import '../../core/security/platform_runtime.dart';
 import '../../core/security/sovereign_security_gate.dart';
 import '../../core/security/window_privacy_guard.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
@@ -239,7 +240,7 @@ class AppShell extends StatelessWidget {
                       ),
                       IconButton(
                         icon: const Icon(Icons.badge_outlined),
-                        tooltip: 'Abrir Card ID & Perfil',
+                        tooltip: 'Abrir Pager e perfil',
                         onPressed: () => nixState.openProfileOverlay(),
                       ),
                       if (activeArea == NixActiveArea.spaces)
@@ -313,7 +314,7 @@ class AppShell extends StatelessWidget {
                             _ => 0,
                           },
                           backgroundColor: NixColors.surfaceCard,
-                          indicatorColor: Colors.amber,
+                          indicatorColor: context.accentColor,
                           onDestinationSelected: (idx) {
                             switch (idx) {
                               case 0:
@@ -336,30 +337,30 @@ class AppShell extends StatelessWidget {
                                 break;
                             }
                           },
-                          destinations: const [
+                          destinations: [
                             NavigationDestination(
-                              icon: Icon(Icons.chat_bubble_outline_rounded),
-                              selectedIcon: Icon(Icons.chat_bubble_rounded, color: Colors.black),
+                              icon: const Icon(Icons.chat_bubble_outline_rounded),
+                              selectedIcon: Icon(Icons.chat_bubble_rounded, color: context.onAccentColor),
                               label: 'Conversas',
                             ),
                             NavigationDestination(
-                              icon: Icon(Icons.forum_outlined),
-                              selectedIcon: Icon(Icons.forum_rounded, color: Colors.black),
+                              icon: const Icon(Icons.forum_outlined),
+                              selectedIcon: Icon(Icons.forum_rounded, color: context.onAccentColor),
                               label: 'Grupos',
                             ),
                             NavigationDestination(
-                              icon: Icon(Icons.local_library_outlined),
-                              selectedIcon: Icon(Icons.local_library_rounded, color: Colors.black),
+                              icon: const Icon(Icons.local_library_outlined),
+                              selectedIcon: Icon(Icons.local_library_rounded, color: context.onAccentColor),
                               label: 'Acervo',
                             ),
                             NavigationDestination(
-                              icon: Icon(Icons.auto_stories_outlined),
-                              selectedIcon: Icon(Icons.auto_stories_rounded, color: Colors.black),
+                              icon: const Icon(Icons.auto_stories_outlined),
+                              selectedIcon: Icon(Icons.auto_stories_rounded, color: context.onAccentColor),
                               label: 'Arquivo',
                             ),
                             NavigationDestination(
-                              icon: Icon(Icons.currency_exchange_rounded),
-                              selectedIcon: Icon(Icons.currency_exchange_rounded, color: Colors.black),
+                              icon: const Icon(Icons.currency_exchange_rounded),
+                              selectedIcon: Icon(Icons.currency_exchange_rounded, color: context.onAccentColor),
                               label: 'Monero',
                             ),
                           ],
@@ -470,7 +471,7 @@ class AppShell extends StatelessWidget {
   String _getAreaTitle(NixActiveArea activeArea, DirectMessageThread? dm, Channel channel) {
     switch (activeArea) {
       case NixActiveArea.homePrivate:
-        return dm != null ? dm.peerName : 'Conversas Privadas & Card ID';
+        return dm != null ? dm.peerName : 'Conversas Privadas e Pager';
       case NixActiveArea.explore:
         return 'Explorar Comunidades';
       case NixActiveArea.github:

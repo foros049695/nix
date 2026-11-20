@@ -7,6 +7,7 @@ import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../dialogs/create_space_dialog.dart';
 import '../dialogs/manage_folders_dialog.dart';
+import '../dialogs/nix_symbol_picker.dart';
 import '../offline/share_app_offline_dialog.dart';
 import '../profile/nix_user_avatar.dart';
 
@@ -312,7 +313,7 @@ class _NixBrandProfileTriggerState extends State<_NixBrandProfileTrigger> {
   Widget build(BuildContext context) {
     final accent = context.accentColor;
     return Tooltip(
-      message: 'Card ID & Configurações',
+      message: 'Pager e configurações',
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
@@ -507,13 +508,10 @@ class _SpaceCompactTile extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               Center(
-                child: Text(
-                  space.initials,
-                  style: TextStyle(
-                    color: isSelected ? context.onAccentColor : NixColors.textPrimary,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
-                  ),
+                child: NixSymbol(
+                  space.iconEmoji ?? space.initials,
+                  color: isSelected ? context.onAccentColor : NixColors.textPrimary,
+                  size: 17,
                 ),
               ),
               if (space.unreadCount > 0)

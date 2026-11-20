@@ -65,6 +65,10 @@ class ProgrammableFilePickerAdapter implements FilePickerAdapter {
 }
 
 /// Implementação multiplataforma (Linux, macOS, Windows + fallback de navegação local).
+class FilePickerUnavailableException implements Exception {
+  const FilePickerUnavailableException();
+}
+
 class CrossPlatformFilePickerAdapter implements FilePickerAdapter {
   const CrossPlatformFilePickerAdapter();
 
@@ -85,23 +89,15 @@ class CrossPlatformFilePickerAdapter implements FilePickerAdapter {
           const [];
     }
     if (Platform.isLinux) {
-      final res = await _pickLinux(
-        title: 'Selecionar Arquivos / Anexos (Criptografia E2EE Nix)',
+      return _pickLinux(
+        title: 'Selecionar arquivos do Nix',
         extensions: allowedExtensions,
         multiple: allowMultiple,
       );
-      if (res.isNotEmpty) return res;
-    } else if (Platform.isMacOS) {
-      final res = await _pickMacOS(multiple: allowMultiple);
-      if (res.isNotEmpty) return res;
-    } else if (Platform.isWindows) {
-      final res = await _pickWindows(
-        extensions: allowedExtensions,
-        multiple: allowMultiple,
-      );
-      if (res.isNotEmpty) return res;
     }
-    return const [];
+    if (Platform.isMacOS) return _pickMacOS(multiple: allowMultiple);
+    if (Platform.isWindows) return _pickWindows(multiple: allowMultiple);
+    throw const FilePickerUnavailableException();
   }
 
   @override
@@ -117,11 +113,15 @@ class CrossPlatformFilePickerAdapter implements FilePickerAdapter {
     if (Platform.environment['FLUTTER_TEST'] == 'true') {
       return '/tmp/nix_test_avatar.png';
     }
-    final list = await pickAttachments(
-      allowedExtensions: allowedExtensions,
-      allowMultiple: false,
-    );
-    return list.isNotEmpty ? list.first : null;
+    try {
+      final list = await pickAttachments(
+        allowedExtensions: allowedExtensions,
+        allowMultiple: false,
+      );
+      return list.isNotEmpty ? list.first : null;
+    } on FilePickerUnavailableException {
+      return null;
+    }
   }
 
   Future<List<String>> _pickLinux({
@@ -133,50 +133,36 @@ class CrossPlatformFilePickerAdapter implements FilePickerAdapter {
         ? '*.png *.jpg *.jpeg *.webp *.gif *.mp4 *.mp3 *.ogg *.wav *.pdf *.txt *.docx *.zip'
         : extensions.map((e) => '*.$e').join(' ');
 
-    for (final bin in const ['zenity', 'qarma']) {
+    for (final bin in const ['zenity', 'qarma', 'kdialog']) {
+      final isKde = bin == 'kdialog';
+      final args = isKde
+          ? <String>[
+              '--getopenfilename',
+              if (multiple) '--multiple',
+              if (multiple) '--separate-output',
+              Platform.environment['HOME'] ?? '.',
+              '$glob|Arquivos Suportados',
+            ]
+          : <String>[
+              '--file-selection',
+              if (multiple) '--multiple',
+              if (multiple) '--separator=|',
+              '--title=$title',
+              '--file-filter=Arquivos Suportados | $glob',
+            ];
       try {
-        final args = <String>[
-          '--file-selection',
-          if (multiple) '--multiple',
-          if (multiple) '--separator=|',
-          '--title=$title',
-          '--file-filter=Arquivos Suportados | $glob',
-        ];
-        final res = await Process.run(bin, args);
-        if (res.exitCode == 0) {
-          final out = res.stdout.toString().trim();
-          if (out.isNotEmpty) {
-            return (multiple ? out.split('|') : [out])
-                .map((s) => s.trim())
-                .where((s) => s.isNotEmpty)
-                .toList();
-          }
-        }
-      } catch (_) {}
-    }
-
-    try {
-      final args = <String>[
-        '--getopenfilename',
-        if (multiple) '--multiple',
-        if (multiple) '--separate-output',
-        Platform.environment['HOME'] ?? '.',
-        '$glob|Arquivos Suportados',
-      ];
-      final res = await Process.run('kdialog', args);
-      if (res.exitCode == 0) {
-        final out = res.stdout.toString().trim();
-        if (out.isNotEmpty) {
-          return out
-              .split('\n')
-              .map((s) => s.trim())
-              .where((s) => s.isNotEmpty)
-              .toList();
-        }
+        final result = await Process.run(bin, args);
+        // O seletor abriu. Cancelar encerra a seleção inteira.
+        if (result.exitCode != 0) return const [];
+        final output =
+            result.stdout.toString().replaceFirst(RegExp(r'[\r\n]+$'), '');
+        if (output.isEmpty) return const [];
+        return multiple ? output.split(isKde ? '\n' : '|') : [output];
+      } on ProcessException {
+        // Tenta outra implementação apenas quando o processo não inicia.
       }
-    } catch (_) {}
-
-    return const [];
+    }
+    throw const FilePickerUnavailableException();
   }
 
   Future<List<String>> _pickMacOS({required bool multiple}) async {
@@ -206,10 +192,7 @@ class CrossPlatformFilePickerAdapter implements FilePickerAdapter {
     return const [];
   }
 
-  Future<List<String>> _pickWindows({
-    required List<String> extensions,
-    required bool multiple,
-  }) async {
+  Future<List<String>> _pickWindows({required bool multiple}) async {
     try {
       final mult = multiple ? '\$true' : '\$false';
       final script = 'Add-Type -AssemblyName System.Windows.Forms; '

@@ -210,11 +210,10 @@ class MoneroP2pView extends StatelessWidget {
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                 ),
-                                items: const [
-                                  DropdownMenuItem(value: 'BRL', child: Text('BRL (R\$)')),
-                                  DropdownMenuItem(value: 'USD', child: Text('USD (\$)')),
-                                  DropdownMenuItem(value: 'EUR', child: Text('EUR (€)')),
-                                ],
+                                items: _fiatOptions(),
+                                selectedItemBuilder: _selectedFiatLabels,
+                                menuMaxHeight: 380,
+                                menuWidth: 235,
                                 onChanged: (v) {
                                   if (v != null) nixState.setMoneroFiat(v);
                                 },
@@ -281,11 +280,10 @@ class MoneroP2pView extends StatelessWidget {
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                 ),
-                                items: const [
-                                  DropdownMenuItem(value: 'BRL', child: Text('BRL (R\$)')),
-                                  DropdownMenuItem(value: 'USD', child: Text('USD (\$)')),
-                                  DropdownMenuItem(value: 'EUR', child: Text('EUR (€)')),
-                                ],
+                                items: _fiatOptions(),
+                                selectedItemBuilder: _selectedFiatLabels,
+                                menuMaxHeight: 380,
+                                menuWidth: 235,
                                 onChanged: (v) {
                                   if (v != null) nixState.setMoneroFiat(v);
                                 },
@@ -427,6 +425,19 @@ class MoneroP2pView extends StatelessWidget {
     );
   }
 
+  static List<DropdownMenuItem<String>> _fiatOptions() => [
+    for (final currency in MoneroFiat.values)
+      DropdownMenuItem(
+        value: currency.code,
+        child: Text('${currency.code} · ${currency.label}', overflow: TextOverflow.ellipsis),
+      ),
+  ];
+
+  static List<Widget> _selectedFiatLabels(BuildContext context) => [
+    for (final currency in MoneroFiat.values)
+      Center(child: Text('${currency.code} (${currency.symbol})')),
+  ];
+
   void _showCreateOrderDialog(BuildContext context, NixState state) {
     final priceCtrl = TextEditingController(text: '850.00');
     final minLimitCtrl = TextEditingController(text: '100');
@@ -434,7 +445,7 @@ class MoneroP2pView extends StatelessWidget {
     var paymentMethod = 'PIX';
     final notesCtrl = TextEditingController(text: 'Liberação imediata em subendereço único.');
     MoneroP2pSide side = state.moneroSelectedSide;
-    final fiat = state.moneroSelectedFiat;
+    var fiat = state.moneroSelectedFiat;
     String? formError;
     bool isSigning = false;
 
@@ -463,7 +474,9 @@ class MoneroP2pView extends StatelessWidget {
                     const SizedBox(height: 14),
                     Text('TIPO DE ORDEM', style: NixTokens.labelUppercase()),
                     const SizedBox(height: 6),
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         ChoiceChip(
                           label: const Text('Quero Vender XMR'),
@@ -475,7 +488,6 @@ class MoneroP2pView extends StatelessWidget {
                           ),
                           onSelected: (_) => setModalState(() => side = MoneroP2pSide.sell),
                         ),
-                        const SizedBox(width: 8),
                         ChoiceChip(
                           label: const Text('Quero Comprar XMR'),
                           selected: side == MoneroP2pSide.buy,
@@ -489,6 +501,19 @@ class MoneroP2pView extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      key: const Key('monero_order_currency'),
+                      value: fiat,
+                      items: _fiatOptions(),
+                      selectedItemBuilder: _selectedFiatLabels,
+                      isExpanded: true,
+                      menuMaxHeight: 380,
+                      decoration: const InputDecoration(labelText: 'Moeda de cotação'),
+                      onChanged: isSigning ? null : (value) {
+                        if (value != null) setModalState(() => fiat = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
                     Text('PREÇO POR XMR', style: NixTokens.labelUppercase()),
                     const SizedBox(height: 6),
                     TextField(
@@ -496,7 +521,7 @@ class MoneroP2pView extends StatelessWidget {
                       controller: priceCtrl,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       decoration: InputDecoration(
-                        prefixText: fiat == 'BRL' ? 'R\$ ' : (fiat == 'EUR' ? '€ ' : '\$ '),
+                        prefixText: '${MoneroFiat.symbolFor(fiat)} ',
                       ),
                     ),
                     const SizedBox(height: 12),

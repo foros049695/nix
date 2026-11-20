@@ -36,3 +36,12 @@ flutter:
     - assets/data/
     - assets/migrations/
     - assets/catalog/
+    - assets/fonts/PixelifySans-OFL.txt
+    - assets/fonts/NotoEmoji-OFL.txt
+  fonts:
+    - family: PixelifySans
+      fonts:
+        - asset: assets/fonts/PixelifySans-Regular.ttf
+    - family: NixEmoji
+      fonts:
+        - asset: assets/fonts/NixEmoji.ttf

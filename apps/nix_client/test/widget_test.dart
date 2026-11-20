@@ -581,7 +581,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Modal aberto com fundo escuro/elevado e textos contrastantes (sem Colors.white em texto normal)
-    expect(find.text('Imagem de Perfil do Card ID'), findsOneWidget);
+    expect(find.text('Imagem de perfil do Pager'), findsOneWidget);
     expect(find.text('Emblema Vetorizado Nix (Oficial)'), findsOneWidget);
     expect(find.text('Monograma Tipográfico Metálico'), findsOneWidget);
     expect(find.text('Procurar'), findsOneWidget);
@@ -626,5 +626,18 @@ void main() {
     expect(find.text('Comprar XMR'), findsOneWidget);
     expect(find.text('Vender XMR'), findsOneWidget);
     expect(find.text('Negociar'), findsAtLeastNWidgets(1));
+
+    await tester.tap(find.byKey(const Key('create_monero_order_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('monero_order_currency')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('CNY · Yuan chinês'));
+    await tester.pumpAndSettle();
+    expect(find.text('CNY (CN¥)'), findsOneWidget);
+    final price = tester.widget<TextField>(
+      find.byKey(const Key('monero_order_price_input')),
+    );
+    expect(price.decoration?.prefixText, 'CN¥ ');
+    expect(tester.takeException(), isNull);
   });
 }

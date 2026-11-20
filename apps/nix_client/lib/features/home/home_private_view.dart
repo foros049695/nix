@@ -9,7 +9,7 @@ import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../chat/chat_input_bar.dart';
 import '../chat/message_bubble.dart';
-import '../profile/card_id_widget.dart';
+import '../profile/pager_profile.dart';
 import '../profile/peer_card_id_dialog.dart';
 
 /// Área Principal de Conversas Privadas (Home).
@@ -110,11 +110,11 @@ class _HomePrivateViewState extends State<HomePrivateView> {
             _buildTopHeader(
               icon: Icons.badge_outlined,
               title: 'Identidade Pública & Passaporte Cultural',
-              subtitle: 'Selecione uma conversa privada à esquerda ou gerencie seu Card ID',
+              subtitle: 'Selecione uma conversa privada à esquerda ou gerencie seu Pager',
               state: state,
             ),
             Expanded(
-              child: CardIdWidget(
+              child: PagerProfile(
                 onOpenSettings: () => state.openProfileOverlay(startInSettings: true),
                 showCulturalPassport: true,
               ),
@@ -125,7 +125,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
       case HomeSubTab.directChat:
         final dm = state.selectedDm;
         if (dm == null) {
-          return CardIdWidget(
+          return PagerProfile(
             key: const ValueKey('home_stage_fallback_card'),
             onOpenSettings: () => state.openProfileOverlay(startInSettings: true),
           );
@@ -146,7 +146,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
 
       case HomeSubTab.moneroP2p:
       case HomeSubTab.githubDiscovery:
-        return CardIdWidget(
+        return PagerProfile(
           key: const ValueKey('home_stage_default_card'),
           onOpenSettings: () => state.openProfileOverlay(startInSettings: true),
         );

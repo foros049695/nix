@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/channel.dart';
 import '../../core/models/forum_post.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../chat/message_header.dart';
+import '../dialogs/nix_symbol_picker.dart';
 
 /// Visualização de Canal de Tópicos / Fórum Interativo (Inspirado nas Imagens 9 e 10).
 /// Exibe grade de cartões com fotos 2x2 e abre um Split-Chat interativo lateral ao selecionar um tópico.
@@ -91,8 +93,6 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                                 const SizedBox(width: 10),
                                 ElevatedButton.icon(
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: NixColors.textPrimary,
-                                    foregroundColor: Colors.black,
                                     padding:
                                         const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                                     shape: RoundedRectangleBorder(
@@ -130,6 +130,8 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                               itemBuilder: (context, idx) {
                                 final tag = availableTags[idx];
                                 final isSelected = selectedTag == tag;
+                                final labelColor = isSelected
+                                    ? context.onAccentColor : NixColors.textSecondary;
                                 return InkWell(
                                   onTap: () => setState(() => _selectedTag = tag),
                                   borderRadius: BorderRadius.circular(16),
@@ -137,20 +139,21 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                                     padding:
                                         const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                     decoration: BoxDecoration(
-                                      color: isSelected ? NixColors.textPrimary : NixColors.surfaceCard,
+                                      color: isSelected ? context.accentColor : NixColors.surfaceCard,
                                       borderRadius: BorderRadius.circular(16),
                                       border: Border.all(
-                                        color: isSelected ? NixColors.textPrimary : NixColors.surfaceBorder,
+                                        color: isSelected ? context.accentColor : NixColors.surfaceBorder,
                                       ),
                                     ),
-                                    child: Text(
-                                      tags.containsKey(tag) ? '${tags[tag]} $tag' : tag,
-                                      style: TextStyle(
-                                        color: isSelected ? Colors.black : NixColors.textSecondary,
-                                        fontSize: 11.5,
-                                        fontWeight:
-                                            isSelected ? FontWeight.bold : FontWeight.normal,
-                                      ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (tags[tag] case final symbol?) ...[
+                                          NixSymbol(symbol, size: 15, color: labelColor),
+                                          const SizedBox(width: 5),
+                                        ],
+                                        Text(tag, style: TextStyle(color: labelColor, fontSize: 11.5)),
+                                      ],
                                     ),
                                   ),
                                 );
@@ -215,7 +218,7 @@ class _ForumChannelViewState extends State<ForumChannelView> {
 
   void _showTagDialog(BuildContext context, NixState state) {
     var name = '';
-    var icon = '';
+    var icon = 'i:tag';
     String? error;
     showDialog<void>(
       context: context,
@@ -228,10 +231,14 @@ class _ForumChannelViewState extends State<ForumChannelView> {
             onChanged: (value) => name = value,
             decoration: const InputDecoration(labelText: 'Nome da tag'),
           ),
-          TextField(
-            maxLength: 8,
-            onChanged: (value) => icon = value,
-            decoration: const InputDecoration(labelText: 'Ícone ou emoji'),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final value = await showNixSymbolPicker(ctx, icon);
+              if (ctx.mounted && value != null) update(() => icon = value);
+            },
+            icon: NixSymbol(icon),
+            label: const Text('Escolher ícone ou emoji'),
           ),
           if (error != null) Text(error!),
         ]),
@@ -278,11 +285,12 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                   children: tags.keys.map((t) {
                     final selected = chosenTag == t;
                     return ChoiceChip(
-                      label: Text('${tags[t]} $t', style: const TextStyle(fontSize: 11.5)),
+                      avatar: NixSymbol(tags[t]!, size: 15, color: selected ? ctx.onAccentColor : NixColors.textPrimary),
+                      label: Text(t, style: const TextStyle(fontSize: 11.5)),
                       selected: selected,
-                      selectedColor: NixColors.textPrimary,
+                      selectedColor: ctx.accentColor,
                       labelStyle: TextStyle(
-                        color: selected ? Colors.black : NixColors.textPrimary,
+                        color: selected ? ctx.onAccentColor : NixColors.textPrimary,
                         fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                       ),
                       onSelected: (value) => setModalState(() => chosenTag = value ? t : null),
@@ -360,7 +368,7 @@ class _ForumPostCard extends StatelessWidget {
           color: isSelected ? NixColors.surfaceCardHover : NixColors.surfaceCard,
           borderRadius: NixTokens.borderMd,
           border: Border.all(
-            color: isSelected ? NixColors.textPrimary : NixColors.surfaceBorderStrong,
+            color: isSelected ? context.accentColor : NixColors.surfaceBorderStrong,
             width: isSelected ? 1.4 : 1.0,
           ),
         ),
@@ -491,11 +499,8 @@ class _ForumPostCard extends StatelessWidget {
                           color: NixColors.surfaceActive,
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: Text(
-                          post.tags.first,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: NixColors.textSecondary, fontSize: 10),
+                        child: _ForumTagLabel(
+                          channelId: post.channelId, label: post.tags.first,
                         ),
                       ),
                     ),
@@ -606,9 +611,7 @@ class _SplitThreadPanel extends StatelessWidget {
                               color: NixColors.surfaceActive,
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: Text(t,
-                                style:
-                                    TextStyle(color: NixColors.textSecondary, fontSize: 11)),
+                            child: _ForumTagLabel(channelId: post.channelId, label: t),
                           ))
                       .toList(),
                 ),
@@ -790,6 +793,35 @@ class _SplitThreadPanel extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+
+class _ForumTagLabel extends StatelessWidget {
+  final String channelId;
+  final String label;
+
+  const _ForumTagLabel({required this.channelId, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final symbol = context.select<NixState, String?>(
+      (state) => state.forumTagsFor(channelId)[label],
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (symbol != null) ...[
+          NixSymbol(symbol, size: 13, color: NixColors.textSecondary),
+          const SizedBox(width: 4),
+        ],
+        Flexible(child: Text(label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
+        )),
+      ],
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'file_picker_adapter.dart';
+import 'platform_runtime.dart';
 
 /// Utilitário local para seleção, validação e remoção de metadados (EXIF/chunks) de imagens
 /// (PNG, JPEG, WebP, GIF) para Avatar e Capas Culturais do Card ID.
@@ -63,8 +64,7 @@ class LocalImageHelper {
       return null;
     }
 
-    final home = Platform.environment['HOME'] ?? '/tmp';
-    final cacheDir = Directory('$home/.local/share/nix/sanitized_media');
+    final cacheDir = Directory(NixPlatformPaths.resolveDataFile('sanitized_media'));
     await cacheDir.create(recursive: true);
 
     final ext = sourcePath.split('.').last.toLowerCase();
@@ -72,6 +72,28 @@ class LocalImageHelper {
         '${cacheDir.path}/nix_${DateTime.now().millisecondsSinceEpoch}.$ext';
     await File(outPath).writeAsBytes(cleaned, flush: true);
     return outPath;
+  }
+
+  static File get pagerWallpaper =>
+      File(NixPlatformPaths.resolveDataFile('sanitized_media/pager_wallpaper'));
+
+  static Future<bool> storePagerWallpaper(String sourcePath) async {
+    final source = File(sourcePath);
+    if (!isSupportedExtension(sourcePath) || !await source.exists() ||
+        await source.length() > 20 * 1024 * 1024) {
+      return false;
+    }
+    final cleaned = stripMetadataBytes(await source.readAsBytes());
+    final file = pagerWallpaper;
+    await file.parent.create(recursive: true);
+    final pending = File('${file.path}.pending');
+    try {
+      await pending.writeAsBytes(cleaned, flush: true);
+      await pending.rename(file.path);
+    } finally {
+      if (await pending.exists()) await pending.delete();
+    }
+    return true;
   }
 
   /// Remove metadados dos contêineres suportados sem decodificar pixels.

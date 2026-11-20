@@ -100,12 +100,12 @@ class NixSurfaceScheme {
     messageHighlight: Color(0xFF333742),
     textPrimary: Color(0xFFFFFFFF),
     textSecondary: Color(0xFFB7BAC4),
-    textMuted: Color(0x99B7BAC4),
-    textDim: Color(0x70B7BAC4),
+    textMuted: Color(0xFFA7AAB6),
+    textDim: Color(0xFF9599A8),
     textDisabled: Color(0x45B7BAC4),
     iconPrimary: Color(0xFFFFFFFF),
     iconSecondary: Color(0xFFB7BAC4),
-    iconMuted: Color(0x88B7BAC4),
+    iconMuted: Color(0xFFA0A4B2),
   );
 
   /// Tema 2 — Nix Light Yellow (Especificação V4 Oficial)
@@ -128,13 +128,13 @@ class NixSurfaceScheme {
     messageSent: Color(0xFFE9EBEF),
     messageHighlight: Color(0xFFFFF4CC),
     textPrimary: Color(0xFF17191E),
-    textSecondary: Color(0xFF60646C),
-    textMuted: Color(0xB860646C),
-    textDim: Color(0x8A60646C),
+    textSecondary: Color(0xFF4D515A),
+    textMuted: Color(0xFF525761),
+    textDim: Color(0xFF555965),
     textDisabled: Color(0x5560646C),
     iconPrimary: Color(0xFF17191E),
-    iconSecondary: Color(0xFF60646C),
-    iconMuted: Color(0x8C60646C),
+    iconSecondary: Color(0xFF4D515A),
+    iconMuted: Color(0xFF555965),
   );
 
   /// Variação AMOLED Puro (#000000)
@@ -158,12 +158,12 @@ class NixSurfaceScheme {
     messageHighlight: Color(0xFF282833),
     textPrimary: Color(0xFFFFFFFF),
     textSecondary: Color(0xFFB7BAC4),
-    textMuted: Color(0x88FFFFFF),
-    textDim: Color(0x60FFFFFF),
+    textMuted: Color(0xFFADADBE),
+    textDim: Color(0xFF9999AD),
     textDisabled: Color(0x38FFFFFF),
     iconPrimary: Color(0xFFFFFFFF),
     iconSecondary: Color(0xFFB7BAC4),
-    iconMuted: Color(0x73FFFFFF),
+    iconMuted: Color(0xFFA4A4B3),
   );
 
   static NixSurfaceScheme resolve(NixThemeMode mode, [Brightness systemBrightness = Brightness.dark]) {
@@ -278,7 +278,7 @@ class NixPalette {
       case NixPaletteType.rose:
         return rose;
       case NixPaletteType.custom:
-        final c = customColor ?? const Color(0xFFFFC928);
+        final c = (customColor ?? const Color(0xFFFFC928)).withAlpha(255);
         return NixPalette(
           type: NixPaletteType.custom,
           name: 'Personalizado',
@@ -290,32 +290,31 @@ class NixPalette {
     }
   }
 
-  /// Retorna a cor legível de texto/ícone de contraste sobre a cor de destaque.
-  Color get onAccentColor =>
-      ThemeData.estimateBrightnessForColor(primaryAccent) == Brightness.light
-          ? const Color(0xFF17191E)
+  static double contrastRatio(Color foreground, Color background) {
+    final a = foreground.computeLuminance() + 0.05;
+    final b = background.computeLuminance() + 0.05;
+    return a > b ? a / b : b / a;
+  }
+
+  static Color foregroundOn(Color background) =>
+      contrastRatio(Colors.black, background) >=
+              contrastRatio(Colors.white, background)
+          ? Colors.black
           : Colors.white;
 
-  /// Cor segura de destaque para texto/ícones sobre o fundo do esquema ativo.
-  Color readableAccentOn(NixSurfaceScheme scheme) {
-    if (!scheme.isLight) {
-      if (primaryAccent == const Color(0xFF17191E)) return Colors.white;
-      return primaryAccent;
-    }
-    final backgroundLuminance = scheme.surfaceElevatedHigh.computeLuminance();
-    final accentLuminance = primaryAccent.computeLuminance();
-    final ratio = (backgroundLuminance + 0.05) / (accentLuminance + 0.05);
-    if (ratio >= 4.5) return primaryAccent;
+  Color get onAccentColor => foregroundOn(primaryAccent);
 
-    // Escolhe a menor mistura escura que mantém AA nas superfícies claras.
+  /// Ajusta a cor de destaque para preservar a leitura nas superfícies ativas.
+  Color readableAccentOn(NixSurfaceScheme scheme) {
+    final surface = scheme.surfaceElevatedHigh;
+    if (contrastRatio(primaryAccent, surface) >= 4.5) return primaryAccent;
+
     var low = 0.0;
     var high = 1.0;
     for (var step = 0; step < 10; step++) {
       final middle = (low + high) / 2;
       final candidate = Color.lerp(primaryAccent, scheme.textPrimary, middle)!;
-      final contrast =
-          (backgroundLuminance + 0.05) / (candidate.computeLuminance() + 0.05);
-      if (contrast >= 4.5) {
+      if (contrastRatio(candidate, surface) >= 4.5) {
         high = middle;
       } else {
         low = middle;

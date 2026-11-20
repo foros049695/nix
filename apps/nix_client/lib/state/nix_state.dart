@@ -31,6 +31,7 @@ import '../core/transport/hardware_radio_bridge.dart';
 import '../core/database/local_database.dart';
 import '../core/database/repositories.dart';
 import '../core/security/key_vault.dart';
+import '../core/security/local_image_helper.dart';
 import '../core/security/seed_recovery.dart';
 import '../core/security/anti_forensic_shredder.dart';
 import '../core/messaging/sovereign_messenger.dart';
@@ -586,7 +587,15 @@ class NixState extends ChangeNotifier {
       _catalogUpdateManager ??= CatalogUpdateManager();
 
   void setCatalogDatabase(CatalogDatabase newDb) {
+    if (_disposed || _panicWipe != null) {
+      unawaited(newDb.close());
+      return;
+    }
+    final previous = _catalogDatabase;
     _catalogDatabase = newDb;
+    if (previous != null && !identical(previous, newDb)) {
+      unawaited(previous.close());
+    }
     _catalogRepo = CatalogRepository(_catalogDatabase!);
     if (_mediaRepo != null) {
       _mediaCatalogService =
@@ -1011,7 +1020,8 @@ class NixState extends ChangeNotifier {
       _torBootstrapSub = null;
       await _embeddedTor.stop();
     } catch (_) {}
-    _catalogUpdateManager?.cancel();
+    await _catalogUpdateManager?.cancelAndWait();
+    await _pagerWallpaperChange;
     try {
       await _catalogOpen;
       await _catalogDatabase?.close();
@@ -2630,7 +2640,6 @@ class NixState extends ChangeNotifier {
   void openMediaIndexArea() {
     _activeArea = NixActiveArea.mediaIndex;
     _clearTransientMessageModes();
-    ensureCatalogDatabaseOpened();
     notifyListeners();
   }
 
@@ -3869,6 +3878,53 @@ class NixState extends ChangeNotifier {
   }
 
   // ================= CONFIGURAÇÕES, TEMAS & JANELA =================
+
+  static ImageProvider get pagerWallpaperImage => ResizeImage(
+        FileImage(LocalImageHelper.pagerWallpaper),
+        width: 1440,
+        height: 1440,
+        policy: ResizeImagePolicy.fit,
+      );
+
+  int _pagerWallpaperRevision = 0;
+  int get pagerWallpaperRevision => _pagerWallpaperRevision;
+
+  Future<bool>? _pagerWallpaperChange;
+
+  Future<bool> updatePagerWallpaper(String? sourcePath) async {
+    if (_disposed || _panicWipe != null || _pagerWallpaperChange != null) {
+      return false;
+    }
+    final change = _setPagerWallpaper(sourcePath);
+    _pagerWallpaperChange = change;
+    try {
+      return await change;
+    } finally {
+      _pagerWallpaperChange = null;
+    }
+  }
+
+  Future<bool> _setPagerWallpaper(String? sourcePath) async {
+    try {
+      final wallpaper = LocalImageHelper.pagerWallpaper;
+      if (sourcePath == null) {
+        if (await wallpaper.exists()) await wallpaper.delete();
+      } else if (!await LocalImageHelper.storePagerWallpaper(sourcePath)) {
+        return false;
+      }
+      await pagerWallpaperImage.evict();
+      _pagerWallpaperRevision++;
+      if (!_disposed && _panicWipe == null) notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void updatePagerAvatarVisibility(bool showAvatar) {
+    if (_disposed || _panicWipe != null) return;
+    updateSettings(_settings.copyWith(hidePagerAvatar: !showAvatar));
+  }
 
   void updateThemeMode(NixThemeMode mode) {
     _settings = _settings.copyWith(themeMode: mode);

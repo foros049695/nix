@@ -5,7 +5,7 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../settings/settings_center.dart';
-import 'card_id_widget.dart';
+import 'pager_profile.dart';
 
 /// Painel de Perfil Animado (Fluid Motion) com Transição Integrada entre Card ID e Configurações.
 class ProfileOverlay extends StatefulWidget {
@@ -199,7 +199,7 @@ class _ProfileOverlayState extends State<ProfileOverlay>
                                           ),
                                           // Conteúdo do Card ID e Passaporte Cultural
                                           Expanded(
-                                            child: CardIdWidget(
+                                            child: PagerProfile(
                                               onOpenSettings: () => nixState.transitionToSettings(),
                                               showCulturalPassport: true,
                                             ),

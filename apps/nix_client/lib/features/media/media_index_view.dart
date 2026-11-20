@@ -7,7 +7,9 @@ import 'package:nix_transport/nix_transport.dart';
 import '../../core/media/catalog_database.dart';
 import '../../core/media/media_index_updater.dart';
 import '../../core/security/file_picker_adapter.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
+import '../../core/theme/nix_palette.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 
@@ -29,6 +31,8 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
   List<CatalogWork> _searchResults = [];
   List<Map<String, dynamic>> _userAcervo = [];
   bool _isLoading = false;
+  bool _catalogFailed = false;
+  int _searchGeneration = 0;
 
   final List<({String label, String? kind, IconData icon})> _kindFilters = [
     (label: 'Todas', kind: null, icon: Icons.all_inclusive_rounded),
@@ -64,39 +68,33 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
   NixState get _nixState => context.read<NixState>();
 
   Future<void> _executeSearch() async {
+    if (!mounted) return;
+    final generation = ++_searchGeneration;
+    final state = _nixState;
     setState(() {
       _isLoading = true;
+      _catalogFailed = false;
     });
-
     try {
-      final catalogDb = _nixState.catalogDatabase;
-      if (catalogDb != null) {
-        final results = await catalogDb.searchWorks(
-          query: _searchCtrl.text.trim(),
-          kind: _selectedKind,
-          genre: _selectedGenre,
-          limit: 60,
-        );
-        if (mounted) {
-          setState(() {
-            _searchResults = results;
-            _isLoading = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            _searchResults = [];
-            _isLoading = false;
-          });
-        }
-      }
+      await state.ensureCatalogDatabaseOpened();
+      if (!mounted || generation != _searchGeneration) return;
+      final results = await state.catalogDatabase?.searchWorks(
+        query: _searchCtrl.text.trim(),
+        kind: _selectedKind,
+        genre: _selectedGenre,
+        limit: 60,
+      ) ?? const <CatalogWork>[];
+      if (!mounted || generation != _searchGeneration) return;
+      setState(() {
+        _searchResults = results;
+        _isLoading = false;
+      });
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (!mounted || generation != _searchGeneration) return;
+      setState(() {
+        _catalogFailed = true;
+        _isLoading = false;
+      });
     }
   }
 
@@ -368,22 +366,29 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
   }
 
   Future<void> _openCatalogUpdateDialog() async {
-    final updateManager = _nixState.catalogUpdateManager;
+    final nixState = _nixState;
+    final updateManager = nixState.catalogUpdateManager;
     const source = String.fromEnvironment('NIX_CATALOG_MANIFEST_URL');
     final manifestUri = Uri.tryParse(source);
-    final policy = TransportPolicy(socksPort: _nixState.embeddedTor.socksPort);
-    updateManager.transportPolicy = policy;
+    void useTorPort() {
+      updateManager.transportPolicy = TransportPolicy(
+        socksPort: nixState.embeddedTor.socksPort,
+      );
+    }
     String? localError;
     final configured = manifestUri != null &&
         (manifestUri.scheme == 'http' || manifestUri.scheme == 'https') &&
         TransportPolicy.isValidOnionV3Host(manifestUri.host) &&
         manifestUri.userInfo.isEmpty &&
-        updateManager.keyring.trustedKeysHex.isNotEmpty;
-    final available = configured && _nixState.securityGate.isTorAnonymityReady;
+        !manifestUri.hasFragment;
+    final hasTrustedKey = updateManager.keyring.trustedKeysHex.any(
+      (key) => key != CatalogPublisherKeyring.fixtureTestPublisherKeyHex,
+    );
 
     int currentVer = 0;
     List<CatalogVersionEntry> history = [];
     try {
+      await nixState.ensureCatalogDatabaseOpened();
       currentVer = await updateManager.getInstalledVersion();
       history = await updateManager.getVersionHistory();
     } catch (_) {}
@@ -403,13 +408,27 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
               builder: (context, snapshot) {
                 final currentProgress = snapshot.data ?? progress;
                 final isUpdating = updateManager.isBusy;
+                final state = context.watch<NixState>();
+                final available = configured && hasTrustedKey &&
+                    !state.isStrictOffGridMode && state.securityGate.isTorAnonymityReady;
+                final accent = context.accentTextColor;
+                final errorColor = NixPalette.crimson.readableAccentOn(context.nixScheme);
+                final sourceStatus = !configured
+                    ? 'Esta versão do Nix veio sem um publicador Onion configurado.'
+                    : !hasTrustedKey
+                        ? 'A chave pública do publicador não foi configurada.'
+                        : available
+                            ? 'Publicador configurado. Conexão via Tor.'
+                            : state.isStrictOffGridMode
+                                ? 'Atualização remota indisponível no modo off-grid.'
+                                : 'Conecte o Tor para verificar atualizações.';
 
                 return AlertDialog(
                   backgroundColor: NixColors.surfaceCard,
                   shape: RoundedRectangleBorder(borderRadius: NixTokens.borderMd),
                   title: Row(
                     children: [
-                      const Icon(Icons.shield_outlined, color: Colors.greenAccent, size: 22),
+                      Icon(Icons.shield_outlined, color: accent, size: 22),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -442,7 +461,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                               children: [
                                 Row(
                                   children: [
-                                    const Icon(Icons.inventory_2_outlined, size: 16, color: Colors.amber),
+                                    Icon(Icons.inventory_2_outlined, size: 16, color: accent),
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
@@ -459,15 +478,11 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                                 const SizedBox(height: 6),
                                 Row(
                                   children: [
-                                    const Icon(Icons.vpn_lock_rounded, size: 16, color: Colors.greenAccent),
+                                    Icon(Icons.vpn_lock_rounded, size: 16, color: accent),
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
-                                        !configured
-                                            ? 'Atualizações remotas sem publicador Onion configurado.'
-                                            : available
-                                                ? 'Transporte: Tor SOCKS5'
-                                                : 'Conecte o Tor para verificar atualizações.',
+                                        sourceStatus,
                                         style: TextStyle(
                                           color: NixColors.textSecondary,
                                           fontSize: 12,
@@ -479,15 +494,20 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                               ],
                             ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Baixa um novo catálogo de metadados assinado. A busca e o acervo pessoal continuam locais.',
+                            style: TextStyle(color: NixColors.textSecondary, fontSize: 13),
+                          ),
+                          const SizedBox(height: 12),
                           if (localError != null)
-                            Text(localError!, style: const TextStyle(color: Colors.redAccent)),
+                            Text(localError!, style: TextStyle(color: errorColor)),
                           if (currentProgress.statusMessage.isNotEmpty) ...[
                             Text(
                               currentProgress.statusMessage,
                               style: TextStyle(
                                 color: currentProgress.stage == CatalogUpdateStage.error
-                                    ? Colors.redAccent
+                                    ? errorColor
                                     : NixColors.textPrimary,
                                 fontSize: 13,
                               ),
@@ -503,10 +523,11 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                               color: Colors.amber,
                             ),
                             const SizedBox(height: 12),
-                            Align(
+                            if (updateManager.canCancel)
+                              Align(
                               alignment: Alignment.centerRight,
                               child: TextButton.icon(
-                                icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.redAccent),
+                                icon: Icon(Icons.cancel_outlined, size: 16, color: errorColor),
                                 label: const Text('Cancelar', style: TextStyle(color: Colors.redAccent)),
                                 onPressed: () {
                                   updateManager.cancel();
@@ -603,9 +624,9 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                             child: TextButton.icon(
                               icon: const Icon(Icons.cleaning_services_outlined, size: 14),
                               label: const Text('Limpar Cache / Temporários', style: TextStyle(fontSize: 11)),
-                              onPressed: () async {
+                              onPressed: isUpdating ? null : () async {
                                 final freed = await updateManager.cleanupStorage();
-                                if (mounted) {
+                                if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(content: Text('Armazenamento limpo: ${(freed / 1024).toStringAsFixed(1)} KB liberados.')),
                                   );
@@ -638,14 +659,15 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                           }
                           setDlgState(() => localError = null);
                           try {
+                            useTorPort();
                             final newDb = await updateManager.downloadAndApplyUpdate(
                               manifest: manifest,
                               packageUri: manifestUri.resolve(package),
                             );
-                            _nixState.setCatalogDatabase(newDb);
+                            nixState.setCatalogDatabase(newDb);
                             currentVer = await updateManager.getInstalledVersion();
                             history = await updateManager.getVersionHistory();
-                            await _executeSearch();
+                            if (mounted) await _executeSearch();
                             if (ctx.mounted) setDlgState(() {});
                           } catch (_) {}
                         },
@@ -658,6 +680,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                         onPressed: !available ? null : () async {
                           setDlgState(() => localError = null);
                           try {
+                            useTorPort();
                             await updateManager.checkForUpdate(manifestUri: manifestUri);
                           } catch (_) {}
                         },
@@ -692,7 +715,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
             ),
           IconButton(
             tooltip: 'Atualizações Privadas do Catálogo (Tor)',
-            icon: const Icon(Icons.cloud_sync_rounded, color: Colors.amber),
+            icon: Icon(Icons.cloud_sync_rounded, color: context.accentTextColor),
             onPressed: _openCatalogUpdateDialog,
           ),
           const SizedBox(width: 8),
@@ -849,10 +872,18 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
         // Conteúdo
         Expanded(
           child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: Colors.amber))
-              : _searchResults.isEmpty
-                  ? _buildEmptyState()
-                  : _buildResultsList(isCompact),
+              ? const Center(child: Text('Carregando catálogo…'))
+              : _catalogFailed
+                  ? Center(
+                      child: TextButton.icon(
+                        onPressed: _executeSearch,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Catálogo indisponível. Tentar novamente'),
+                      ),
+                    )
+                  : _searchResults.isEmpty
+                      ? _buildEmptyState()
+                      : _buildResultsList(isCompact),
         ),
       ],
     );

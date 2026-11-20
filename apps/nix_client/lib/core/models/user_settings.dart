@@ -123,6 +123,7 @@ class UserSettings {
   final bool quantizeViewportDimensions;
   final bool blockRemoteEmbeds;
   final bool reducedMotion;
+  final bool hidePagerAvatar;
   final bool duressPinConfigured;
   final bool atakBridgeEnabled;
 
@@ -218,6 +219,7 @@ class UserSettings {
     this.quantizeViewportDimensions = false,
     this.blockRemoteEmbeds = true,
     this.reducedMotion = false,
+    this.hidePagerAvatar = false,
     this.duressPinConfigured = true,
     this.atakBridgeEnabled = false,
   });
@@ -272,6 +274,7 @@ class UserSettings {
     bool? quantizeViewportDimensions,
     bool? blockRemoteEmbeds,
     bool? reducedMotion,
+    bool? hidePagerAvatar,
     bool? duressPinConfigured,
     bool? atakBridgeEnabled,
   }) {
@@ -325,6 +328,7 @@ class UserSettings {
       quantizeViewportDimensions: quantizeViewportDimensions ?? this.quantizeViewportDimensions,
       blockRemoteEmbeds: blockRemoteEmbeds ?? this.blockRemoteEmbeds,
       reducedMotion: reducedMotion ?? this.reducedMotion,
+      hidePagerAvatar: hidePagerAvatar ?? this.hidePagerAvatar,
       duressPinConfigured: duressPinConfigured ?? this.duressPinConfigured,
       atakBridgeEnabled: atakBridgeEnabled ?? this.atakBridgeEnabled,
     );
@@ -342,12 +346,14 @@ class UserSettings {
         'dockWidth': dockWidth,
         'sidebarWidth': sidebarWidth,
         'cardIdVisibility': cardIdVisibility,
+        'allowPublicIdSharing': allowPublicIdSharing,
         'compactChatMode': compactChatMode,
         'fontScale': fontScale,
         'enterToSend': enterToSend,
         'persistWindowGeometry': persistWindowGeometry,
         'quantizeViewportDimensions': quantizeViewportDimensions,
         'reducedMotion': reducedMotion,
+        'hidePagerAvatar': hidePagerAvatar,
         'transportProfile': transportProfile,
       };
 
@@ -382,12 +388,14 @@ class UserSettings {
       dockWidth: (json['dockWidth'] as num?)?.toDouble() ?? 78.0,
       sidebarWidth: (json['sidebarWidth'] as num?)?.toDouble() ?? 288.0,
       cardIdVisibility: (json['cardIdVisibility'] as String?) ?? 'Apenas Contatos Verificados',
+      allowPublicIdSharing: (json['allowPublicIdSharing'] as bool?) ?? true,
       compactChatMode: (json['compactChatMode'] as bool?) ?? false,
       fontScale: (json['fontScale'] as num?)?.toDouble() ?? 1.0,
       enterToSend: (json['enterToSend'] as bool?) ?? true,
       persistWindowGeometry: (json['persistWindowGeometry'] as bool?) ?? false,
       quantizeViewportDimensions: (json['quantizeViewportDimensions'] as bool?) ?? false,
       reducedMotion: (json['reducedMotion'] as bool?) ?? false,
+      hidePagerAvatar: (json['hidePagerAvatar'] as bool?) ?? false,
       transportProfile: (json['transportProfile'] as String?) ?? 'Tor Onion v3 (Fail-Closed)',
     );
   }

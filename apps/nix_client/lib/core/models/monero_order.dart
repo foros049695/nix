@@ -5,6 +5,38 @@ enum MoneroP2pSide {
   sell, // Vender XMR
 }
 
+/// Moedas de cotação das ofertas. Os códigos são preservados no registro assinado.
+enum MoneroFiat {
+  brl('BRL', 'Real brasileiro', 'R\$'),
+  usd('USD', 'Dólar americano', '\$'),
+  eur('EUR', 'Euro', '€'),
+  cny('CNY', 'Yuan chinês', 'CN¥'),
+  ars('ARS', 'Peso argentino', 'AR\$'),
+  mxn('MXN', 'Peso mexicano', 'MX\$'),
+  clp('CLP', 'Peso chileno', 'CL\$'),
+  cop('COP', 'Peso colombiano', 'CO\$'),
+  uyu('UYU', 'Peso uruguaio', '\$U'),
+  gbp('GBP', 'Libra esterlina', '£'),
+  jpy('JPY', 'Iene japonês', 'JP¥'),
+  cad('CAD', 'Dólar canadense', 'CA\$'),
+  aud('AUD', 'Dólar australiano', 'A\$'),
+  chf('CHF', 'Franco suíço', 'CHF'),
+  inr('INR', 'Rúpia indiana', '₹');
+
+  const MoneroFiat(this.code, this.label, this.symbol);
+
+  final String code;
+  final String label;
+  final String symbol;
+
+  static String symbolFor(String code) {
+    for (final currency in values) {
+      if (code == currency.code) return currency.symbol;
+    }
+    return code;
+  }
+}
+
 class MoneroP2pOrder {
   final String id;
   final String traderName;
@@ -13,7 +45,7 @@ class MoneroP2pOrder {
   final double reputationScore;
   final int completedTrades;
   final MoneroP2pSide side;
-  final String fiatCurrency; // 'BRL', 'USD', 'EUR'
+  final String fiatCurrency;
   final double pricePerXmr;
   final double minFiatLimit;
   final double maxFiatLimit;
@@ -170,17 +202,7 @@ class MoneroP2pOrder {
     );
   }
 
-  String get fiatSymbol {
-    switch (fiatCurrency) {
-      case 'BRL':
-        return 'R\$';
-      case 'EUR':
-        return '€';
-      case 'USD':
-      default:
-        return '\$';
-    }
-  }
+  String get fiatSymbol => MoneroFiat.symbolFor(fiatCurrency);
 
   String get formattedPrice => '$fiatSymbol ${pricePerXmr.toStringAsFixed(2)} / XMR';
   String get formattedLimits =>

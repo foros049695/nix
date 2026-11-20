@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/nix_colors.dart';
+import '../../core/theme/nix_palette.dart';
 import '../../core/models/channel.dart';
 import '../../core/models/member.dart';
 import '../../state/nix_state.dart';
@@ -311,7 +312,7 @@ class _CallRoomViewState extends State<CallRoomView> {
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: NixColors.accentVoice,
-              foregroundColor: NixColors.textPrimary,
+              foregroundColor: NixPalette.foregroundOn(NixColors.accentVoice),
               padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)),
@@ -364,7 +365,7 @@ class _CallRoomViewState extends State<CallRoomView> {
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: NixColors.accentDanger,
-              foregroundColor: NixColors.textPrimary,
+              foregroundColor: NixPalette.foregroundOn(NixColors.accentDanger),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)),

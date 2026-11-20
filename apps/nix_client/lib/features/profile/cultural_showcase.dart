@@ -8,7 +8,7 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 
-/// Seção de Personalização Cultural & Acervo do Card ID
+/// Passaporte cultural e acervo do perfil
 /// (Filmes, Séries, Animes, Mangás, Livros, Vinis e Repositórios GitHub).
 class CulturalShowcase extends StatefulWidget {
   const CulturalShowcase({super.key});
@@ -95,51 +95,57 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
             ],
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  key: const Key('cultural_catalog_search_input'),
-                  controller: _searchCtrl,
-                  onChanged: (value) {
-                    setState(() => _searchQuery = value);
-                    nixState.searchCulturalCatalog(value);
-                  },
-                  style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
-                  decoration: InputDecoration(
-                    hintText: 'Busca local FTS5 no acervo (título, autor, linguagem)...',
-                    prefixIcon: Icon(Icons.search_rounded, size: 16, color: NixColors.textMuted),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    filled: true,
-                    fillColor: NixColors.surfaceCard,
-                    border: OutlineInputBorder(
-                      borderRadius: NixTokens.borderSm,
-                      borderSide: BorderSide(color: NixColors.surfaceBorder),
+          LayoutBuilder(
+            builder: (context, constraints) => Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const Key('cultural_catalog_search_input'),
+                    controller: _searchCtrl,
+                    onChanged: (value) {
+                      setState(() => _searchQuery = value);
+                      nixState.searchCulturalCatalog(value);
+                    },
+                    style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
+                    decoration: InputDecoration(
+                      hintText: 'Buscar no acervo (título, autor, idioma)…',
+                      prefixIcon: Icon(Icons.search_rounded, size: 16, color: NixColors.textMuted),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      filled: true,
+                      fillColor: NixColors.surfaceCard,
+                      border: OutlineInputBorder(
+                        borderRadius: NixTokens.borderSm,
+                        borderSide: BorderSide(color: NixColors.surfaceBorder),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              if (MediaQuery.sizeOf(context).width >= 560)
-              Container(
-                key: const Key('cultural_catalog_stage_badge'),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                decoration: BoxDecoration(
-                  color: NixColors.surfaceCard,
-                  borderRadius: NixTokens.borderSm,
-                  border: Border.all(color: NixColors.surfaceBorder),
-                ),
-                child: Text(
-                  'BUSCA LOCAL · OPT-IN REMOTO ISOLADO',
-                  style: TextStyle(
-                    color: NixColors.textSecondary,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
+                if (constraints.maxWidth >= 560) ...[
+                  const SizedBox(width: 8),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: constraints.maxWidth * .40),
+                    child: Container(
+                      key: const Key('cultural_catalog_stage_badge'),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: NixColors.surfaceCard,
+                        borderRadius: NixTokens.borderSm,
+                        border: Border.all(color: NixColors.surfaceBorder),
+                      ),
+                      child: Text(
+                        'BUSCA LOCAL · OPT-IN REMOTO ISOLADO',
+                        style: TextStyle(
+                          color: NixColors.textSecondary,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ],
+                ],
+              ],
+            ),
           ),
           const SizedBox(height: 12),
 
@@ -831,7 +837,7 @@ class _GithubRepoAcervoCard extends StatelessWidget {
                 ),
               ),
               Tooltip(
-                message: item.isPublicInCardId ? 'Visível no Card ID' : 'Oculto no Card ID',
+                message: item.isPublicInCardId ? 'Visível no perfil público' : 'Oculto no perfil público',
                 child: InkWell(
                   onTap: onToggleVisibility,
                   child: Icon(

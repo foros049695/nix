@@ -87,7 +87,7 @@ class HomeSidebar extends StatelessWidget {
                 _navTile(
                   context,
                   icon: Icons.badge_outlined,
-                  label: 'Card ID (Identidade)',
+                  label: 'Pager (Identidade)',
                   isSelected: nixState.activeArea == NixActiveArea.homePrivate &&
                       activeTab == HomeSubTab.cardId,
                   onTap: () => nixState.selectHomeSubTab(HomeSubTab.cardId),

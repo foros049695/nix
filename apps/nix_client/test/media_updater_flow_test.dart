@@ -70,7 +70,10 @@ void main() {
       final v1Bytes = await createValidCatalogBytes(version: 1, count: 5);
       await File(catalogPath).writeAsBytes(v1Bytes);
 
+      final live = await CatalogDatabase.open(path: catalogPath);
+      addTearDown(live.close);
       expect(await mgr.getInstalledVersion(), equals(1));
+      expect(await live.getEntryCount(), equals(5));
     });
 
     test('2. Política Tor Fail-Closed bloqueia destinos clearnet sem vazamento de rede', () async {

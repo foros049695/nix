@@ -417,9 +417,13 @@ class MediaIndexUpdater {
     // 1. Verificação anti-rollback
     if (await targetFile.exists()) {
       try {
-        final existingDb = await CatalogDatabase.open(path: activePath);
-        final currentVersion = await existingDb.getVersion();
-        await existingDb.close();
+        final existingDb = await CatalogDatabase.open(path: activePath, readOnly: true);
+        final int currentVersion;
+        try {
+          currentVersion = await existingDb.getVersion();
+        } finally {
+          await existingDb.close();
+        }
 
         if (manifest.version <= currentVersion) {
           throw CatalogRollbackRejectedException(
@@ -647,9 +651,11 @@ class CatalogUpdateManager {
     }
     try {
       final db = await CatalogDatabase.open(path: targetDbPath, readOnly: true);
-      final ver = await db.getVersion();
-      await db.close();
-      return ver;
+      try {
+        return await db.getVersion();
+      } finally {
+        await db.close();
+      }
     } catch (_) {
       return 0;
     }
@@ -658,6 +664,7 @@ class CatalogUpdateManager {
   Future<SignedCatalogManifest?> checkForUpdate({
     required Uri manifestUri,
   }) async {
+    if (isBusy) throw StateError('Já existe uma operação de catálogo em andamento.');
     _isCancelled = false;
     _emitProgress(const CatalogUpdateProgress(
       stage: CatalogUpdateStage.checking,
@@ -681,6 +688,12 @@ class CatalogUpdateManager {
       }
 
       final currentVersion = await getInstalledVersion();
+      if (_isCancelled) throw const CatalogUpdateCancelledException();
+      if (manifest.version < currentVersion) {
+        throw CatalogRollbackRejectedException(
+          'O publicador oferece v${manifest.version}, abaixo da versão instalada v$currentVersion.',
+        );
+      }
       if (manifest.version > currentVersion) {
         _emitProgress(CatalogUpdateProgress(
           stage: CatalogUpdateStage.updateAvailable,
@@ -709,7 +722,7 @@ class CatalogUpdateManager {
       _emitProgress(CatalogUpdateProgress(
         stage: CatalogUpdateStage.error,
         errorMessage: e.toString(),
-        statusMessage: 'Falha na verificação de atualização.',
+        statusMessage: _failureMessage(e, 'Não foi possível obter o manifesto via Tor.'),
       ));
       rethrow;
     }
@@ -720,6 +733,7 @@ class CatalogUpdateManager {
     required Uri packageUri,
     void Function(CatalogUpdateProgress)? onProgress,
   }) async {
+    if (isBusy) throw StateError('Já existe uma operação de catálogo em andamento.');
     _isCancelled = false;
     _emitProgress(CatalogUpdateProgress(
       stage: CatalogUpdateStage.downloading,
@@ -822,13 +836,36 @@ class CatalogUpdateManager {
       _emitProgress(CatalogUpdateProgress(
         stage: CatalogUpdateStage.error,
         errorMessage: e.toString(),
-        statusMessage: 'Erro durante atualização do catálogo.',
+        statusMessage: _failureMessage(e, 'Não foi possível baixar ou instalar o catálogo via Tor.'),
       ));
       rethrow;
     }
   }
 
+  String _failureMessage(Object error, String fallback) => switch (error) {
+    CatalogRollbackRejectedException() => error.message,
+    CatalogKeyRevokedException() ||
+    CatalogUntrustedSignerException() ||
+    CatalogTestKeyRejectedException() => 'A chave que assinou o catálogo não é confiável.',
+    CatalogIntegrityVerificationException() ||
+    FormatException() => 'O manifesto ou pacote não passou na verificação de integridade.',
+    TransportBlockedException() => 'Destino bloqueado. As atualizações exigem Tor.',
+    _ => fallback,
+  };
+
+  bool get canCancel => _currentProgress.stage == CatalogUpdateStage.checking ||
+      _currentProgress.stage == CatalogUpdateStage.downloading;
+
+  Future<void> cancelAndWait() async {
+    final completion = isBusy
+        ? progressStream.firstWhere((progress) => !isBusy)
+        : null;
+    cancel();
+    await completion;
+  }
+
   void cancel() {
+    if (isBusy && !canCancel) return;
     _isCancelled = true;
     _activeHttpClient?.close(force: true);
     _activeHttpClient = null;
@@ -836,18 +873,12 @@ class CatalogUpdateManager {
       _activeRawSocket?.close();
     } catch (_) {}
     _activeRawSocket = null;
-
-    final inc = File('$targetDbPath.incoming');
-    if (inc.existsSync()) {
-      try {
-        inc.deleteSync();
-      } catch (_) {}
+    if (!isBusy) {
+      _emitProgress(const CatalogUpdateProgress(
+        stage: CatalogUpdateStage.cancelled,
+        statusMessage: 'Operação cancelada.',
+      ));
     }
-
-    _emitProgress(const CatalogUpdateProgress(
-      stage: CatalogUpdateStage.cancelled,
-      statusMessage: 'Operação cancelada.',
-    ));
   }
 
   Future<Uint8List> _downloadBytes(
@@ -1050,6 +1081,7 @@ class CatalogUpdateManager {
   }
 
   Future<int> cleanupStorage() async {
+    if (isBusy) return 0;
     int freed = 0;
     final incoming = File('$targetDbPath.incoming');
     if (await incoming.exists()) {

@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -33,6 +32,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   final List<String> _pendingAttachments = [];
   bool _showEmojiPicker = false;
+  bool _pickingAttachments = false;
   String _selectedEmojiCategory = 'Sorrisos';
   String _emojiSearchQuery = '';
   String? _lastLoadedEditId;
@@ -181,42 +181,30 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   Future<void> _pickAttachments() async {
-    List<String> picked;
+    if (_pickingAttachments) return;
+    _pickingAttachments = true;
     try {
-      picked = await LocalImageHelper.pickAttachmentsNativeDesktop();
+      List<String> picked;
+      try {
+        picked = await LocalImageHelper.pickAttachmentsNativeDesktop();
+      } on FilePickerUnavailableException {
+        if (!mounted) return;
+        picked = await CrossPlatformFilePickerAdapter.showPortableFileChooserDialog(
+          context,
+          allowedExtensions: LocalImageHelper.supportedMediaExtensions,
+        );
+      }
+      if (picked.isNotEmpty && mounted) {
+        setState(() => _pendingAttachments.addAll(picked));
+      }
     } on PlatformException catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  error.message ?? 'Não foi possível selecionar arquivos.')),
+          SnackBar(content: Text(error.message ?? 'Não foi possível selecionar arquivos.')),
         );
       }
-      return;
-    }
-    if (!mounted) return;
-    if (picked.isNotEmpty) {
-      setState(() {
-        _pendingAttachments.addAll(picked);
-      });
-      return;
-    }
-    if (Platform.environment['FLUTTER_TEST'] == 'true') {
-      setState(() {
-        _pendingAttachments.add('documento_seguro.pdf');
-      });
-      return;
-    }
-    if (Platform.isAndroid) return;
-    final fallbackPicked =
-        await CrossPlatformFilePickerAdapter.showPortableFileChooserDialog(
-      context,
-      allowedExtensions: LocalImageHelper.supportedMediaExtensions,
-    );
-    if (fallbackPicked.isNotEmpty && mounted) {
-      setState(() {
-        _pendingAttachments.addAll(fallbackPicked);
-      });
+    } finally {
+      _pickingAttachments = false;
     }
   }
 
@@ -383,7 +371,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                             border: Border.all(color: NixColors.surfaceBorder),
                           ),
                           alignment: Alignment.center,
-                          child: Text(e, style: const TextStyle(fontSize: 18)),
+                          child: Text(e, style: const TextStyle(fontSize: 18, fontFamilyFallback: ['NixEmoji'])),
                         ),
                       );
                     },

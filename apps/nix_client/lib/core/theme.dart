@@ -71,21 +71,23 @@ class NixTheme {
             primary: palette.primaryAccent,
             onPrimary: onPrimary,
             secondary: palette.secondaryAccent,
-            onSecondary: onPrimary,
+            onSecondary: NixPalette.foregroundOn(palette.secondaryAccent),
             tertiary: palette.subtleAccent,
             surface: scheme.surfaceCard,
             onSurface: scheme.textPrimary,
             error: NixColors.accentDanger,
+            onError: NixPalette.foregroundOn(NixColors.accentDanger),
           )
         : ColorScheme.dark(
             primary: palette.primaryAccent,
             onPrimary: onPrimary,
             secondary: palette.secondaryAccent,
-            onSecondary: onPrimary,
+            onSecondary: NixPalette.foregroundOn(palette.secondaryAccent),
             tertiary: palette.subtleAccent,
             surface: scheme.surfaceCard,
             onSurface: scheme.textPrimary,
             error: NixColors.accentDanger,
+            onError: NixPalette.foregroundOn(NixColors.accentDanger),
           );
 
     return ThemeData(

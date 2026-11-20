@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
+import 'nix_symbol_picker.dart';
 
 class CreateSpaceDialog extends StatefulWidget {
   const CreateSpaceDialog({super.key});
@@ -13,9 +14,7 @@ class CreateSpaceDialog extends StatefulWidget {
 class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
-  String _selectedEmoji = '🛡️';
-
-  final List<String> _emojis = ['🏴‍☠️', '🛡️', '📡', '🪙', '🔒', '⚡', '🌐', '🦊', '🦉', '⚔️'];
+  String _selectedEmoji = 'i:shield';
 
   @override
   void dispose() {
@@ -39,37 +38,30 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
             children: [
               Text(
                 'ÍCONE DO ESPAÇO',
-                style: TextStyle(color: NixColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    color: NixColors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _emojis.map((emoji) {
-                  final isSelected = _selectedEmoji == emoji;
-                  return InkWell(
-                    onTap: () => setState(() => _selectedEmoji = emoji),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: isSelected ? NixColors.surfaceCardHover : NixColors.surfaceCard,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: isSelected ? NixColors.accentGreen : NixColors.surfaceBorder,
-                          width: isSelected ? 2 : 1,
-                        ),
-                      ),
-                      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 20))),
-                    ),
-                  );
-                }).toList(),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final value =
+                      await showNixSymbolPicker(context, _selectedEmoji);
+                  if (mounted && value != null) {
+                    setState(() => _selectedEmoji = value);
+                  }
+                },
+                icon: NixSymbol(_selectedEmoji),
+                label: const Text('Escolher ícone ou emoji'),
               ),
               const SizedBox(height: 16),
               Text(
                 'NOME DO ESPAÇO',
-                style: TextStyle(color: NixColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    color: NixColors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 6),
               TextField(
@@ -81,7 +73,10 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
               const SizedBox(height: 14),
               Text(
                 'DESCRIÇÃO / FINALIDADE',
-                style: TextStyle(color: NixColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    color: NixColors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 6),
               TextField(
@@ -102,9 +97,8 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: NixColors.accentGreen,
-            foregroundColor: Colors.black,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
           onPressed: () {
             if (_nameController.text.trim().isNotEmpty) {
@@ -116,7 +110,8 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
               Navigator.pop(context);
             }
           },
-          child: const Text('Criar Espaço', style: TextStyle(fontWeight: FontWeight.bold)),
+          child: const Text('Criar Espaço',
+              style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
     );

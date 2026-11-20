@@ -72,3 +72,17 @@ python3 tools/metadata_builder/build_catalog.py \
   --manifest /caminho/nix_catalog_full_manifest.json \
   --version 2
 ```
+
+## 4. Atualizações privadas no cliente
+
+O Media Index pesquisa o banco local. A ação **Verificar Agora** consulta, via Tor,
+um manifesto de metadados assinado com Ed25519. Quando encontra uma versão
+superior, o cliente oferece a instalação e verifica a assinatura, o SHA-256 e a
+integridade do SQLite antes de trocar o banco. O acervo pessoal fica separado.
+
+Para distribuir atualizações, publique o manifesto e o arquivo `.db` indicado
+nele no mesmo serviço Onion v3. Compile o cliente com
+`--dart-define=NIX_CATALOG_MANIFEST_URL=<URL_ONION_DO_MANIFESTO>` e
+`--dart-define=NIX_CATALOG_PUBLISHER_KEY_HEX=<CHAVE_PUBLICA_ED25519_EM_HEX>`.
+Use somente a chave pública no cliente. As builds sem esses parâmetros
+mantêm a busca local e exibem a atualização remota como indisponível.
