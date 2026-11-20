@@ -7,7 +7,7 @@ OUT_FILE="${1:-$ROOT_DIR/dist/sbom.cdx.json}"
 mkdir -p "$(dirname "$OUT_FILE")"
 
 python3 - "$ROOT_DIR" "$OUT_FILE" <<'PY'
-import json, pathlib, re, sys, datetime
+import json, pathlib, re, sys, uuid
 
 root = pathlib.Path(sys.argv[1])
 out = pathlib.Path(sys.argv[2])
@@ -16,8 +16,19 @@ components = []
 # 1. Go module dependencies (services/nix_relay/go.mod)
 go_mod = root / "services/nix_relay/go.mod"
 if go_mod.exists():
+    in_require = False
     for line in go_mod.read_text(encoding="utf-8").splitlines():
         line = line.strip()
+        if line == "require (":
+            in_require = True
+            continue
+        if in_require and line == ")":
+            in_require = False
+            continue
+        if not in_require:
+            if not line.startswith("require "):
+                continue
+            line = line.removeprefix("require ").lstrip()
         m = re.match(r'^([^\s/]+/[^\s]+)\s+(v[0-9A-Za-z.\-+]+)', line)
         if m:
             name, ver = m.group(1), m.group(2)
@@ -62,20 +73,23 @@ for lock_rel in ["modules/core_crypto/pubspec.lock", "modules/transport/pubspec.
                 })
             cur_pkg = None
 
+client_yaml = (root / "apps/nix_client/pubspec.yaml").read_text(encoding="utf-8")
+client_version = re.search(r"^version:\s*(\S+)", client_yaml, re.MULTILINE)[1]
+sorted_components = sorted(components, key=lambda component: component["purl"])
+inventory = json.dumps([client_version, sorted_components], sort_keys=True)
 sbom = {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
-    "serialNumber": "urn:uuid:nix-sovereign-sbom-v04",
+    "serialNumber": f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, inventory)}",
     "version": 1,
     "metadata": {
-        "timestamp": "2026-11-19T00:00:00Z",
         "component": {
             "type": "application",
             "name": "projeto-nix",
-            "version": "0.4.0-prealpha"
+            "version": client_version
         }
     },
-    "components": sorted(components, key=lambda c: c["purl"])
+    "components": sorted_components
 }
 out.write_text(json.dumps(sbom, indent=2) + "\n", encoding="utf-8")
 print(f"SBOM CycloneDX 1.5 gravado em {out} ({len(components)} componentes)")
