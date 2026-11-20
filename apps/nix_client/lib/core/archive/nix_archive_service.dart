@@ -35,6 +35,8 @@ class NixArchiveService {
     'h4',
     'a',
     'span',
+    'sup',
+    'section',
     'table',
     'thead',
     'tbody',

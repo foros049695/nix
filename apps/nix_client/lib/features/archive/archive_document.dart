@@ -80,6 +80,11 @@ class ArchiveDocument extends StatelessWidget {
                 ),
           ],
         );
+      case 'section':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: _blocks(context, node.nodes, depth + 1),
+        );
       case 'blockquote':
         return DecoratedBox(
           decoration: BoxDecoration(
@@ -165,6 +170,9 @@ class ArchiveDocument extends StatelessWidget {
     if (depth >= 12) return TextSpan(text: node.text);
     final tag = node.localName;
     if (tag == 'br') return const TextSpan(text: '\n');
+    if (tag == 'sup') {
+      return TextSpan(text: '[${node.text}]', style: const TextStyle(fontSize: 11));
+    }
     if (tag == 'a') {
       final href = Uri.tryParse(node.attributes['href'] ?? '');
       if (href != null &&

@@ -80,6 +80,16 @@ void main() {
       expect(safe, isNot(contains('injetado')));
     });
 
+    test('As notas de rodapé mantêm referências e o corpo no HTML assinado', () {
+      final format = compileArchiveMarkdown(
+        'Afirmação verificável.[^fonte]\n\n[^fonte]: Documento público de referência.',
+      );
+      expect(format, contains('<sup>'));
+      expect(format, contains('<h4>Notas de rodapé</h4>'));
+      expect(format, contains('Documento público de referência.'));
+      expect(NixArchiveService.sanitizeRichTextHtml(format), format);
+    });
+
     testWidgets('ArticleDetailView renderiza metadados reais, corpo, alegações e badge Ed25519', (tester) async {
       final articleHash = await archiveService.publishArticle(
         author: alice,

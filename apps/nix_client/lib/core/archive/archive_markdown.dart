@@ -13,5 +13,9 @@ String compileArchiveMarkdown(String markdown) {
     extensionSet: md.ExtensionSet.gitHubFlavored,
     encodeHtml: true,
   );
-  return NixArchiveService.sanitizeRichTextHtml(html);
+  final withFootnoteHeading = html.replaceAll(
+    '<section class="footnotes">',
+    '<section><h4>Notas de rodapé</h4>',
+  );
+  return NixArchiveService.sanitizeRichTextHtml(withFootnoteHeading);
 }
