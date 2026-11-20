@@ -1,3 +1,4 @@
+import '../navigation/workspace_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/space.dart';
@@ -191,26 +192,15 @@ class _PublicSpaceCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (space.banner != null) ...[
+              WorkspaceBannerView(banner: space.banner, height: 105),
+              const SizedBox(height: 10),
+            ],
             Row(
               children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: NixColors.surfaceActive,
-                    borderRadius: NixTokens.borderSm,
-                    border: Border.all(color: Colors.white30),
-                  ),
-                  child: Center(
-                    child: Text(
-                      space.initials,
-                      style: TextStyle(
-                        color: NixColors.textPrimary,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
+                WorkspaceImage(
+                  path: space.customImagePath, size: 42,
+                  fallback: CircleAvatar(child: Text(space.initials)),
                 ),
                 const SizedBox(width: 12),
                 Expanded(

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../core/models/workspace_banner.dart';
 import '../../core/security/file_picker_adapter.dart';
 import '../../core/security/local_image_helper.dart';
 
@@ -108,4 +109,49 @@ class _WorkspaceImageFieldState extends State<WorkspaceImageField> {
           Text(_error!,
               style: TextStyle(color: Theme.of(context).colorScheme.error)),
       ]);
+}
+
+class WorkspaceBannerView extends StatelessWidget {
+  const WorkspaceBannerView({super.key, required this.banner, this.height = 132});
+  final WorkspaceBanner? banner;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = banner;
+    if (value == null) return const SizedBox.shrink();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Image.file(
+        File(value.path), height: height, width: double.infinity,
+        alignment: Alignment(value.x, value.y), fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      ),
+    );
+  }
+}
+
+class WorkspaceBannerField extends StatelessWidget {
+  const WorkspaceBannerField({super.key, required this.banner, required this.onChanged});
+  final WorkspaceBanner? banner;
+  final ValueChanged<WorkspaceBanner?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = banner;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('Banner'),
+      WorkspaceBannerView(banner: value, height: 90),
+      WorkspaceImageField(path: value?.path, onChanged: (path) =>
+        onChanged(path == null ? null : WorkspaceBanner(path))),
+      if (value != null) ...[
+        const Text('Posição horizontal do recorte'),
+        Slider(value: value.x, min: -1, max: 1, onChanged: (x) =>
+          onChanged(WorkspaceBanner(value.path, x: x, y: value.y))),
+        const Text('Posição vertical do recorte'),
+        Slider(value: value.y, min: -1, max: 1, onChanged: (y) =>
+          onChanged(WorkspaceBanner(value.path, x: value.x, y: y))),
+      ],
+    ]);
+  }
 }

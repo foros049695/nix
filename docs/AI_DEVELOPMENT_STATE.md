@@ -17,3 +17,5 @@ Imagem de tópico incorporada ao cofre com a sanitização do Archive. O teste S
 As pastas do dock passaram a expandir, recolher e listar entradas, com preferência de expansão persistida. Os 5 testes de `attachments_call_and_music_test.dart` passaram, incluindo expansão e remoção da pasta com o gesto já suportado pela lista de canais.
 
 Media Index agora usa a mesma coleção do Passaporte no Pager. Os registros antigos são projetados no mesmo formato e as fichas atuais têm prioridade pelo ID. Passaram 10 testes de Passaporte e Media Index. Próxima etapa: banners e acabamento de capas.
+
+Banners independentes do avatar passaram a aparecer na área superior do grupo e do canal e nos cartões locais de Explorar. Seleção, recorte por posição, prévia e remoção reutilizam o seletor de imagem. Passaram 15 testes de Passaporte, Explorar e layout.

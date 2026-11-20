@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../design/nix_surfaces.dart';
 import '../navigation/workspace_image.dart';
 import '../../core/models/channel.dart';
+import '../../core/models/workspace_banner.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
@@ -42,6 +43,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
   _SettingsTab _activeTab = _SettingsTab.identity;
   _SettingsTab? _compactTab;
   late String? _imagePath = widget.channel.customImagePath;
+  late WorkspaceBanner? _banner = widget.channel.banner;
 
   static const _sections = [
     (_SettingsTab.identity, Icons.vpn_key_outlined, 'Identidade e acesso'),
@@ -121,6 +123,8 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
       permissions: _perms,
       customImagePath: state.canEditChannelImage(widget.channel) ? _imagePath : widget.channel.customImagePath,
       clearCustomImage: state.canEditChannelImage(widget.channel) && _imagePath == null,
+      banner: _banner,
+      clearBanner: _banner == null,
       admins: _admins,
       moderators: _moderators,
       mutedMembers: _mutedMembers,
@@ -426,6 +430,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
       children: [
         if (context.read<NixState>().canEditChannelImage(widget.channel)) ...[
           WorkspaceImageField(path: _imagePath, onChanged: (path) => setState(() => _imagePath = path)),
+          WorkspaceBannerField(banner: _banner, onChanged: (value) => setState(() => _banner = value)),
           const SizedBox(height: 12),
         ],
         _buildSectionTitle('IDENTIDADE DO CANAL'),

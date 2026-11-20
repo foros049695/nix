@@ -1,3 +1,4 @@
+import 'workspace_banner.dart';
 import 'channel.dart';
 
 class SpaceFolder {
@@ -77,6 +78,7 @@ class Space {
       channels.single.type == ChannelType.text;
   final String? iconEmoji;
   final String? customImagePath;
+  final WorkspaceBanner? banner;
   final String? ownerFingerprint;
   final List<Channel> channels;
   final int unreadCount;
@@ -96,6 +98,7 @@ class Space {
     this.usesGroupFormat = false,
     this.iconEmoji,
     this.customImagePath,
+    this.banner,
     this.ownerFingerprint,
     required this.channels,
     this.unreadCount = 0,
@@ -114,6 +117,7 @@ class Space {
         'description': description,
         'iconEmoji': iconEmoji,
         'customImagePath': customImagePath,
+        'banner': banner?.toJson(),
         'ownerFingerprint': ownerFingerprint,
         'usesGroupFormat': usesGroupFormat,
         'isPublic': isPublic,
@@ -132,6 +136,7 @@ class Space {
       description: data['description'] as String? ?? '',
       iconEmoji: data['iconEmoji'] as String?,
       customImagePath: data['customImagePath'] as String?,
+      banner: WorkspaceBanner.fromJson(data['banner']),
       ownerFingerprint: data['ownerFingerprint'] as String?,
       usesGroupFormat: data['usesGroupFormat'] == true,
       isPublic: data['isPublic'] == true,
@@ -154,6 +159,8 @@ class Space {
     String? iconEmoji,
     String? customImagePath,
     bool clearCustomImage = false,
+    WorkspaceBanner? banner,
+    bool clearBanner = false,
     List<Channel>? channels,
     int? unreadCount,
     int? memberCount,
@@ -172,6 +179,7 @@ class Space {
       iconEmoji: iconEmoji ?? this.iconEmoji,
       customImagePath:
           clearCustomImage ? null : customImagePath ?? this.customImagePath,
+      banner: clearBanner ? null : banner ?? this.banner,
       ownerFingerprint: ownerFingerprint,
       usesGroupFormat: usesGroupFormat,
       channels: channels ?? this.channels,

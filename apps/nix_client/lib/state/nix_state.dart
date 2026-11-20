@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart' show compute, listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MethodChannel, rootBundle;
 import '../core/models/space.dart';
+import '../core/models/workspace_banner.dart';
 import '../core/models/channel.dart';
 import '../core/models/message.dart';
 import '../core/models/member.dart';
@@ -2846,6 +2847,8 @@ class NixState extends ChangeNotifier {
         memberCount: _isMockMode ? space.memberCount
             : space.ownerFingerprint == _ownWorkspaceIdentity ? 1 : null,
         onlineCount: _isMockMode ? space.onlineCount : null,
+        customImagePath: space.customImagePath,
+        banner: space.banner ?? visible.first.banner,
         isPublic: true,
         channels: [
           for (final channel in visible)
@@ -5486,6 +5489,8 @@ class NixState extends ChangeNotifier {
       permissions: updatedChannel.permissions,
       customImagePath: mayChangeImage ? updatedChannel.customImagePath : null,
       clearCustomImage: mayChangeImage && updatedChannel.customImagePath == null,
+      banner: mayChangeImage ? updatedChannel.banner : null,
+      clearBanner: mayChangeImage && updatedChannel.banner == null,
       admins: updatedChannel.admins,
       moderators: updatedChannel.moderators,
       mutedMembers: updatedChannel.mutedMembers,
@@ -6049,6 +6054,28 @@ class NixState extends ChangeNotifier {
     if (_currentSpace.id == spaceId) _currentSpace = updated;
     _persistState(workspaceChanged: true);
     notifyListeners();
+  }
+
+  Future<bool> editSpaceBanner(String id, WorkspaceBanner? banner) async {
+    final index = _spaces.indexWhere((space) => space.id == id);
+    if (index < 0 || !canEditSpaceImage(_spaces[index])) return false;
+    final previous = _spaces[index];
+    final updated = previous.copyWith(banner: banner, clearBanner: banner == null);
+    _spaces[index] = updated;
+    if (_currentSpace.id == id) _currentSpace = updated;
+    notifyListeners();
+    try {
+      await _persistState(workspaceChanged: true, reportErrors: true);
+      return true;
+    } catch (_) {
+      final current = _spaces.indexOf(updated);
+      if (current >= 0 && !_disposed) {
+        _spaces[current] = previous;
+        if (identical(_currentSpace, updated)) _currentSpace = previous;
+        notifyListeners();
+      }
+      return false;
+    }
   }
 
   void editChannelImage(String channelId, String? path) {

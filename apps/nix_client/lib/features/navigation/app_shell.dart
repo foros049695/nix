@@ -408,17 +408,17 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       return const NixArchiveEnvironmentView();
     }
 
-    switch (channel.type) {
-      case ChannelType.text:
-      case ChannelType.announcement:
-        return ChatView(key: ValueKey(channel.id), channel: channel);
-      case ChannelType.forum:
-        return ForumChannelView(key: ValueKey(channel.id), channel: channel);
-      case ChannelType.voice:
-        return CallRoomView(key: ValueKey(channel.id), channel: channel);
-      case ChannelType.publication:
-        return PublicationRoomView(key: ValueKey(channel.id), channel: channel);
-    }
+    final stage = switch (channel.type) {
+      ChannelType.text || ChannelType.announcement => ChatView(key: ValueKey(channel.id), channel: channel),
+      ChannelType.forum => ForumChannelView(key: ValueKey(channel.id), channel: channel),
+      ChannelType.voice => CallRoomView(key: ValueKey(channel.id), channel: channel),
+      ChannelType.publication => PublicationRoomView(key: ValueKey(channel.id), channel: channel),
+    };
+    final banner = channel.banner ?? state.currentSpace.banner;
+    return banner == null ? stage : Column(children: [
+      WorkspaceBannerView(banner: banner, height: 104),
+      Expanded(child: stage),
+    ]);
   }
 }
 

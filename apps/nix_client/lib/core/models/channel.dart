@@ -1,3 +1,4 @@
+import 'workspace_banner.dart';
 import 'package:flutter/material.dart';
 import '../theme/nix_colors.dart';
 
@@ -219,6 +220,7 @@ class Channel {
   final bool isMuted;
   final String category;
   final String? customImagePath;
+  final WorkspaceBanner? banner;
   final String? inviteCode;
   final ChannelPermissions permissions;
   final String ownerFingerprint;
@@ -241,6 +243,7 @@ class Channel {
     this.isMuted = false,
     required this.category,
     this.customImagePath,
+    this.banner,
     this.inviteCode,
     this.permissions = const ChannelPermissions(),
     this.ownerFingerprint = '7E3A-9F01-C45B-289D',
@@ -281,6 +284,7 @@ class Channel {
         'category': category,
         'ownerFingerprint': ownerFingerprint,
         'customImagePath': customImagePath,
+        'banner': banner?.toJson(),
         'inviteCode': inviteCode,
         'isEncrypted': isEncrypted,
         'isPinned': isPinned,
@@ -307,6 +311,7 @@ class Channel {
       category: data['category'] as String? ?? 'COMUNIDADE',
       ownerFingerprint: data['ownerFingerprint'] as String? ?? '',
       customImagePath: data['customImagePath'] as String?,
+      banner: WorkspaceBanner.fromJson(data['banner']),
       inviteCode: data['inviteCode'] as String?,
       type: ChannelType.values.firstWhere((type) => type.name == data['type'],
           orElse: () => ChannelType.text),
@@ -335,6 +340,8 @@ class Channel {
     String? category,
     String? customImagePath,
     bool clearCustomImage = false,
+    WorkspaceBanner? banner,
+    bool clearBanner = false,
     String? inviteCode,
     ChannelPermissions? permissions,
     List<String>? admins,
@@ -357,6 +364,7 @@ class Channel {
       category: category ?? this.category,
       customImagePath:
           clearCustomImage ? null : customImagePath ?? this.customImagePath,
+      banner: clearBanner ? null : banner ?? this.banner,
       inviteCode: inviteCode ?? this.inviteCode,
       permissions: permissions ?? this.permissions,
       ownerFingerprint: ownerFingerprint,

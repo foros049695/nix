@@ -54,6 +54,7 @@ class ChannelsSidebar extends StatelessWidget {
       child: Column(
         children: [
           _SpaceHeader(space: space),
+          WorkspaceBannerView(banner: space.banner, height: 68),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
             child: Column(
@@ -278,25 +279,30 @@ class _SpaceHeader extends StatelessWidget {
 
   const _SpaceHeader({required this.space});
 
-  void _showImageEditor(BuildContext context, NixState state) {
-    showDialog<void>(
+  Future<void> _showImageEditor(BuildContext context, NixState state) async {
+    var path = space.customImagePath;
+    var banner = space.banner;
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Imagem de ${space.name}'),
-        content: WorkspaceImageField(
-          path: space.customImagePath,
-          onChanged: (path) {
-            state.editSpaceImage(space.id, path);
-            Navigator.of(context).pop();
-          },
+      builder: (dialog) => StatefulBuilder(
+        builder: (context, refresh) => AlertDialog(
+          scrollable: true,
+          title: Text('Imagens de ${space.name}'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('Avatar'),
+            WorkspaceImageField(path: path, onChanged: (value) => refresh(() => path = value)),
+            WorkspaceBannerField(banner: banner, onChanged: (value) => refresh(() => banner = value)),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialog), child: const Text('Cancelar')),
+            FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Salvar')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Fechar')),
-        ],
       ),
     );
+    if (!context.mounted || confirmed != true) return;
+    if (path != space.customImagePath) state.editSpaceImage(space.id, path);
+    if (!identical(banner, space.banner)) await state.editSpaceBanner(space.id, banner);
   }
 
   @override
