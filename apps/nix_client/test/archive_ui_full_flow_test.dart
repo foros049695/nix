@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -75,6 +76,42 @@ void main() {
       expect(find.text('VERIFIED'), findsOneWidget);
       expect(find.text('Alegações Auditáveis e Refutações (1)'), findsOneWidget);
       expect(find.text('Discussões Encadeadas (0)'), findsOneWidget);
+    });
+
+    testWidgets('o autor silenciado pode ser restaurado com a discussão vazia',
+        (tester) async {
+      final hash = await archiveService.publishArticle(
+        author: alice,
+        title: 'Artigo com comentário silenciado',
+        rawHtmlBody: '<p>Texto original.</p>',
+      );
+      await archiveService.publishComment(
+        author: alice,
+        authorPersonaId: 'persona_alice',
+        targetObjectHash: hash,
+        contentMarkdown: 'Comentário local recuperável.',
+      );
+      await archiveService.muteAuthor(Uint8List.fromList(alice.ed25519PublicKey.bytes));
+      final row = await archiveRepo.getObject(hash);
+      await tester.pumpWidget(
+        ChangeNotifierProvider<NixState>.value(
+          value: nixState,
+          child: MaterialApp(home: ArticleDetailView(articleObject: row!)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Comentário local recuperável.'), findsNothing);
+      final manage = find.byTooltip('Gerenciar moderação local');
+      await tester.ensureVisible(manage);
+      await tester.tap(manage);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remover moderação'));
+      await tester.pumpAndSettle();
+      expect(find.text('Nenhum autor silenciado ou bloqueado.'), findsOneWidget);
+      await tester.tap(find.text('Fechar'));
+      await tester.pumpAndSettle();
+      expect(find.text('Discussões Encadeadas (1)'), findsOneWidget);
+      expect(await archiveService.verifyStoredObject(hash), isTrue);
     });
 
     testWidgets('NixArchiveEnvironmentView renderiza as 4 abas e aba de discussões funcional', (tester) async {

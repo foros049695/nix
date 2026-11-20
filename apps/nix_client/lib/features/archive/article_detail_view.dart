@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,7 @@ import '../../core/archive/nix_archive_service.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import 'archive_moderation_dialog.dart';
 
 /// Visualizador Completo e Interativo de Artigo do Nix Archive (Fase 19 / Etapa 2).
 class ArticleDetailView extends StatefulWidget {
@@ -244,22 +246,32 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
     );
   }
 
+  Future<void> _refreshComments() async {
+    final comments = await _archiveService.getThreadedComments(_objectHash);
+    if (!mounted) return;
+    setState(() => _comments = comments);
+    for (final comment in comments) {
+      if (!_commentCryptoCache.containsKey(comment['hash'])) {
+        unawaited(_verifyComment(comment['hash'] as String));
+      }
+    }
+  }
+
   Future<void> _moderateAuthor(List<int> authorPublicBytes, String action) async {
     final pubBytes = Uint8List.fromList(authorPublicBytes);
-    if (action == 'mute') {
-      await _archiveService.muteAuthor(pubBytes, reason: 'Silenciado pelo usuário');
-    } else if (action == 'block') {
-      await _archiveService.blockAuthor(pubBytes, reason: 'Bloqueado pelo usuário');
-    } else {
-      await _archiveService.unmoderateAuthor(pubBytes);
-    }
-
-    _comments = await _archiveService.getThreadedComments(_objectHash);
-    if (mounted) {
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Moderação local aplicada: $action')),
-      );
+    try {
+      if (action == 'mute') {
+        await _archiveService.muteAuthor(pubBytes, reason: 'Silenciado pelo usuário');
+      } else {
+        await _archiveService.blockAuthor(pubBytes, reason: 'Bloqueado pelo usuário');
+      }
+      if (mounted) await _refreshComments();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Falha ao atualizar a moderação local.')),
+        );
+      }
     }
   }
 
@@ -565,6 +577,19 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
                           ),
                         ),
                       ),
+                      IconButton(
+                        tooltip: 'Gerenciar moderação local',
+                        icon: const Icon(Icons.person_off_outlined),
+                        onPressed: () => showDialog<void>(
+                          context: context,
+                          builder: (_) => ArchiveModerationDialog(
+                            service: _archiveService,
+                            onChanged: () {
+                              if (mounted) unawaited(_refreshComments());
+                            },
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -705,10 +730,6 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
                                         const PopupMenuItem(
                                           value: 'block',
                                           child: Text('Bloquear Autor Localmente'),
-                                        ),
-                                        const PopupMenuItem(
-                                          value: 'unmute',
-                                          child: Text('Remover Moderação'),
                                         ),
                                       ],
                                     ),
