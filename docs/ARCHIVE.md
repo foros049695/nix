@@ -40,3 +40,5 @@ Cada artigo ou evidência publicado no Nix Archive é transformado em um objeto 
 ## Gerenciar moderação local
 
 Em **Discussões Encadeadas**, use **Gerenciar moderação local** para ver e restaurar autores silenciados ou bloqueados, inclusive quando a discussão estiver vazia. A operação atualiza apenas a filtragem local do Archive.
+
+O editor e o leitor compartilham a marcação saneada. A prévia usa os mesmos elementos do artigo assinado. [Validação do editor](ARCHIVE_EDITOR_VALIDATION.md)

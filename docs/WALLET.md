@@ -40,3 +40,5 @@ pagamento e os dados que as partes compartilham na negociação podem identific�
 ## Mercado integrado
 
 O [relatório de mercado](UNIFIED_P2P_MARKETPLACE.md) registra o fluxo Monero existente e o plano de integração do Bitcoin. A negociação depende dos mecanismos de liquidação comprovados e da confirmação explícita dos participantes.
+
+A entrada **Monero** abre o mercado. A aba **Carteira e histórico** mostra o saldo da carteira externa quando disponível e as liquidações locais.
