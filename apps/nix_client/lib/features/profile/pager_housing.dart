@@ -112,69 +112,80 @@ class _PagerHousingState extends State<PagerHousing> {
           child: SizedBox(
             width: width,
             height: height,
-            child: DecoratedBox(
-              key: const Key('pager_rendered_shell'),
-              decoration: BoxDecoration(
-                image: DecorationImage(
-                  image: const AssetImage('assets/images/pager_shell.webp'),
-                  colorFilter: pagerCaseFilter(widget.caseColor),
-                  fit: BoxFit.fill,
-                  scale: 1 / scale,
-                  centerSlice: Rect.fromLTRB(
-                    133 * scale,
-                    143 * scale,
-                    867 * scale,
-                    395 * scale,
-                  ),
-                ),
-              ),
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: 133 * scale,
-                    right: 133 * scale,
-                    top: 114 * scale,
-                    height: displayHeight,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(23 * scale),
-                      child: ColoredBox(
-                        color: Color(widget.lcdColor.rgb),
-                        child: Material(
-                          type: MaterialType.transparency,
-                          child: widget.wallpaper == null ? widget.screen : Stack(
-                            fit: StackFit.expand,
-                            children: [widget.wallpaper!, widget.screen],
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: OverflowBox(
+                    alignment: Alignment.topLeft,
+                    minWidth: 1000,
+                    maxWidth: 1000,
+                    minHeight: height / scale,
+                    maxHeight: height / scale,
+                    child: Transform.scale(
+                      scale: scale,
+                      alignment: Alignment.topLeft,
+                      child: DecoratedBox(
+                        key: const Key('pager_rendered_shell'),
+                        decoration: BoxDecoration(
+                          image: DecorationImage(
+                            image: const AssetImage(
+                                'assets/images/pager_shell.webp'),
+                            colorFilter: pagerCaseFilter(widget.caseColor),
+                            fit: BoxFit.fill,
+                            centerSlice:
+                                const Rect.fromLTRB(133, 143, 867, 395),
                           ),
                         ),
                       ),
                     ),
                   ),
-                  _positionKey(
-                    scale,
-                    extension,
-                    261,
-                    128,
-                    'Anterior',
-                    widget.onPrevious,
+                ),
+                Positioned(
+                  left: 133 * scale,
+                  right: 133 * scale,
+                  top: 114 * scale,
+                  height: displayHeight,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(23 * scale),
+                    child: ColoredBox(
+                      color: Color(widget.lcdColor.rgb),
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: widget.wallpaper == null
+                            ? widget.screen
+                            : Stack(
+                                fit: StackFit.expand,
+                                children: [widget.wallpaper!, widget.screen],
+                              ),
+                      ),
+                    ),
                   ),
-                  _positionKey(
-                    scale,
-                    extension,
-                    398,
-                    204,
-                    widget.nextLabel,
-                    widget.onNext,
-                  ),
-                  _positionKey(
-                    scale,
-                    extension,
-                    611,
-                    128,
-                    'Menu do Pager',
-                    widget.onMenu,
-                  ),
-                ],
-              ),
+                ),
+                _positionKey(
+                  scale,
+                  extension,
+                  261,
+                  128,
+                  'Anterior',
+                  widget.onPrevious,
+                ),
+                _positionKey(
+                  scale,
+                  extension,
+                  398,
+                  204,
+                  widget.nextLabel,
+                  widget.onNext,
+                ),
+                _positionKey(
+                  scale,
+                  extension,
+                  611,
+                  128,
+                  'Menu do Pager',
+                  widget.onMenu,
+                ),
+              ],
             ),
           ),
         ),
