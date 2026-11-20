@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 import '../database/local_database.dart';
@@ -147,10 +148,7 @@ class AntiForensicShredder {
     String? customBaseDir,
     int passes = defaultPasses,
   }) async {
-    var filesOverwritten = 0;
-    var totalBytesWiped = 0;
     var memoryWiped = false;
-    final shreddedPaths = <String>[];
     final errors = <String, String>{};
 
     if (activeDatabase != null) {
@@ -180,10 +178,29 @@ class AntiForensicShredder {
     }
 
     final home = Platform.environment['HOME'] ?? '';
-    final effectiveBaseDir = customBaseDir ??
-        NixPlatformPaths.runtimeInfo?.dataDir ??
-        (home.isNotEmpty ? '$home/.local/share/nix' : '.');
-    final baseDir = effectiveBaseDir;
+    final dataDir = customBaseDir ?? NixPlatformPaths.runtimeInfo?.dataDir;
+    return _wipeOnWorker(home, dataDir, passes, memoryWiped, errors);
+  }
+
+  static Future<ShredReport> _wipeOnWorker(
+    String home,
+    String? dataDir,
+    int passes,
+    bool memoryWiped,
+    Map<String, String> errors,
+  ) => Isolate.run(() => _wipeFiles(home, dataDir, passes, memoryWiped, errors));
+
+  static Future<ShredReport> _wipeFiles(
+    String home,
+    String? dataDir,
+    int passes,
+    bool memoryWiped,
+    Map<String, String> errors,
+  ) async {
+    final baseDir = dataDir ?? (home.isNotEmpty ? '$home/.local/share/nix' : '.');
+    var filesOverwritten = 0;
+    var totalBytesWiped = 0;
+    final shreddedPaths = <String>[];
 
     Future<void> wipeTarget(String path) async {
       try {
@@ -202,17 +219,15 @@ class AntiForensicShredder {
       }
     }
 
-    for (final target in wipeTargets(
-        home: home,
-        customBaseDir: customBaseDir ?? NixPlatformPaths.runtimeInfo?.dataDir)) {
+    for (final target in wipeTargets(home: home, customBaseDir: dataDir)) {
       await wipeTarget(target);
     }
-    if (customBaseDir == null && NixPlatformPaths.runtimeInfo?.dataDir != null) {
-      await wipeTarget('${NixPlatformPaths.runtimeInfo!.dataDir}/onboarding_state.json');
-    } else if (customBaseDir != null) {
-      await wipeTarget('$customBaseDir/onboarding_state.json');
-    } else if (home.isNotEmpty) {
-      await wipeTarget('$home/.local/share/nix/onboarding_state.json');
+    for (final name in const [
+      'onboarding_state.json', 'nix_catalog_v1.db', 'nix_catalog_v1.db-wal',
+      'nix_catalog_v1.db-shm', 'nix_catalog_v1.db.bak', 'nix_catalog_v1.db.seed.tmp',
+      'catalog_update_history.json',
+    ]) {
+      await wipeTarget('$baseDir/$name');
     }
 
     // Não segue links do cache para arquivos fora do diretório da conta.
@@ -222,6 +237,7 @@ class AntiForensicShredder {
       'encrypted_objects',
       'tor_data',
       'downloads',
+      'nix_attachment_imports',
     ]) {
       final storageDir = Directory('$baseDir/$name');
       try {

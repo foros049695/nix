@@ -27,7 +27,9 @@ class _GithubDiscoveryViewState extends State<GithubDiscoveryView> {
   @override
   void initState() {
     super.initState();
-    _searchCtrl.text = context.read<NixState>().githubSearchQuery;
+    final state = context.read<NixState>();
+    _searchCtrl.text = state.githubSearchQuery;
+    unawaited(state.loadStarwireRepos());
   }
 
   @override

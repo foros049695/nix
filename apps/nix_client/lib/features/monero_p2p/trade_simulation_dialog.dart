@@ -1,6 +1,8 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import '../../core/theme/nix_colors.dart';
+import 'payment_method_picker.dart';
 
 enum _TradeStage { draft, open, accepted, paymentReported, dispute, closed }
 
@@ -23,7 +25,7 @@ class _TradeSimulationDialogState extends State<TradeSimulationDialog> {
 
   final _random = Random.secure();
   final _entry = TextEditingController();
-  final _events = <String>[];
+  final _events = <({String text, bool? maker})>[];
   var _stage = _TradeStage.draft;
   var _method = 'BTC / Lightning';
   var _side = 'Comprar';
@@ -49,7 +51,7 @@ class _TradeSimulationDialogState extends State<TradeSimulationDialog> {
   void _advance(_TradeStage next, String description) {
     setState(() {
       _stage = next;
-      _events.add(description);
+      _events.add((text: description, maker: null));
     });
   }
 
@@ -71,8 +73,7 @@ class _TradeSimulationDialogState extends State<TradeSimulationDialog> {
     if (decision) {
       _advance(_TradeStage.closed, 'Decisão simulada: $text');
     } else {
-      final role = _asMaker ? 'Autor' : 'Contraparte';
-      setState(() => _events.add('$role: $text'));
+      setState(() => _events.add((text: text, maker: _asMaker)));
     }
   }
 
@@ -103,23 +104,12 @@ class _TradeSimulationDialogState extends State<TradeSimulationDialog> {
                   ],
                   onChanged: (value) => setState(() => _side = value!),
                 ),
-                DropdownButtonFormField(
+                PaymentMethodPicker(
                   value: _method,
-                  decoration: const InputDecoration(labelText: 'Meio simulado'),
-                  items: [
-                    'BTC / Lightning',
-                    'Monero',
-                    'Stablecoin',
-                    'Pix',
-                    'Boleto'
-                  ]
-                      .map((method) =>
-                          DropdownMenuItem(value: method, child: Text(method)))
-                      .toList(),
-                  onChanged: (value) => setState(() => _method = value!),
+                  onChanged: (method) => setState(() => _method = method),
                 ),
               ],
-              if (_method == 'Pix' || _method == 'Boleto')
+              if (_method == 'PIX' || _method == 'Boleto')
                 const Padding(
                   padding: EdgeInsets.only(top: 8),
                   child: Text(
@@ -135,7 +125,41 @@ class _TradeSimulationDialogState extends State<TradeSimulationDialog> {
                 Text(inDispute
                     ? 'Dossiê da ordem para o árbitro'
                     : 'Linha do tempo'),
-                for (final event in _events) Text(event),
+                for (final event in _events)
+                  if (event.maker == null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      child: Text(event.text,
+                          style: TextStyle(color: NixColors.textSecondary)),
+                    )
+                  else
+                    Align(
+                      alignment: event.maker!
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 285),
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: event.maker!
+                              ? NixColors.surfaceElevated
+                              : NixColors.surfaceCard,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: NixColors.surfaceBorder),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(event.maker! ? 'Autor' : 'Contraparte',
+                                style: TextStyle(
+                                    fontSize: 11, color: NixColors.accentText)),
+                            Text(event.text),
+                          ],
+                        ),
+                      ),
+                    ),
               ],
               if (inTrade || inDispute) ...[
                 const SizedBox(height: 12),
@@ -151,16 +175,26 @@ class _TradeSimulationDialogState extends State<TradeSimulationDialog> {
                 TextField(
                   controller: _entry,
                   maxLength: 300,
+                  textInputAction:
+                      inDispute ? TextInputAction.done : TextInputAction.send,
+                  onSubmitted: (_) => _addEntry(decision: inDispute),
                   decoration: InputDecoration(
+                    suffixIcon: inDispute
+                        ? null
+                        : IconButton(
+                            tooltip: 'Enviar mensagem',
+                            icon: const Icon(Icons.send_rounded),
+                            onPressed: () => _addEntry(decision: false),
+                          ),
                     labelText:
                         inDispute ? 'Decisão simulada' : 'Mensagem da ordem',
                   ),
                 ),
-                TextButton(
-                  onPressed: () => _addEntry(decision: inDispute),
-                  child: Text(
-                      inDispute ? 'Registrar decisão' : 'Adicionar mensagem'),
-                ),
+                if (inDispute)
+                  TextButton(
+                    onPressed: () => _addEntry(decision: true),
+                    child: const Text('Registrar decisão'),
+                  ),
               ],
             ],
           ),

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as std_crypto;
 import 'package:cryptography/cryptography.dart';
 import 'package:nix_core_crypto/nix_core_crypto.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import '../core/models/space.dart';
@@ -538,19 +539,45 @@ class NixState extends ChangeNotifier {
     _identityVm.setPrimaryIdentity(identity);
   }
 
+  Future<void>? _catalogOpen;
+
   Future<void> ensureCatalogDatabaseOpened() async {
-    if (_catalogDatabase == null) {
-      _catalogDatabase = await CatalogDatabase.open();
-      _catalogRepo = CatalogRepository(_catalogDatabase!);
-      if (_mediaRepo != null) {
-        _mediaCatalogService =
-            MediaCatalogService(_mediaRepo!, catalogRepo: _catalogRepo);
+    if (_catalogDatabase != null || _panicWipe != null) return;
+    final opening = _catalogOpen ??= _openCatalog();
+    try {
+      await opening;
+    } finally {
+      if (identical(_catalogOpen, opening)) _catalogOpen = null;
+    }
+  }
+
+  Future<void> _openCatalog() async {
+    final db = await CatalogDatabase.open();
+    if (_disposed || _panicWipe != null) {
+      await db.close();
+      return;
+    }
+    try {
+      if (await db.getEntryCount() == 0) {
+        final seed = await rootBundle.load('assets/catalog/seed_catalog.db');
+        final file = File(db.path);
+        final temporary = File('${db.path}.seed.tmp');
+        await temporary.writeAsBytes(
+          seed.buffer.asUint8List(seed.offsetInBytes, seed.lengthInBytes),
+          flush: true,
+        );
+        await db.close();
+        await temporary.rename(file.path);
+        if (_disposed || _panicWipe != null) return;
+        setCatalogDatabase(await CatalogDatabase.open(path: file.path));
+        return;
       }
-      _mediaVm.attachServices(
-        catalogService: _mediaCatalogService,
-        catalogDatabase: _catalogDatabase,
-      );
-      notifyListeners();
+      setCatalogDatabase(db);
+    } catch (_) {
+      try {
+        await db.close();
+      } catch (_) {}
+      rethrow;
     }
   }
 
@@ -970,12 +997,26 @@ class NixState extends ChangeNotifier {
 
   /// Procedimento Anti-Forense / Botão de Pânico (estilo BleachBit):
   /// Destrói a memória RAM, fecha banco e sobrescreve arquivos em múltiplas passagens destrutivas.
-  Future<ShredReport> panicWipeAllData({String? customBaseDir}) async {
+  Future<ShredReport>? _panicWipe;
+
+  Future<ShredReport> panicWipeAllData({String? customBaseDir}) {
+    return _panicWipe ??= _runPanicWipe(customBaseDir).whenComplete(() {
+      _panicWipe = null;
+    });
+  }
+
+  Future<ShredReport> _runPanicWipe(String? customBaseDir) async {
     try {
       _torBootstrapSub?.cancel();
       _torBootstrapSub = null;
       await _embeddedTor.stop();
     } catch (_) {}
+    _catalogUpdateManager?.cancel();
+    try {
+      await _catalogOpen;
+      await _catalogDatabase?.close();
+    } catch (_) {}
+    _catalogDatabase = null;
     _calls.reset();
     _peerHover.reset();
     _starwireFilters.resetFilters();
@@ -995,6 +1036,7 @@ class NixState extends ChangeNotifier {
     _fallbackArchiveIdentity = null;
     _inMemoryArchiveObjects.clear();
     _consumedMoneroNonces.clear();
+    _forumTags.clear();
     _localDeviceId = 'dev_primary';
     _localDatabase = null;
     _sovereignMessenger = null;
@@ -1923,7 +1965,6 @@ class NixState extends ChangeNotifier {
       NixSurfaceScheme.resolve(_settings.themeMode),
       currentPalette,
     );
-    loadStarwireRepos();
     if (!shouldLoadMock) {
       loadPersistedState();
       _attachHardwareRadioListeners();
@@ -2233,29 +2274,39 @@ class NixState extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// Carrega o catálogo real Starwire (4.188 repositórios) do asset JSON.
-  Future<void> loadStarwireRepos() async {
+  Future<void>? _starwireLoad;
+
+  /// Carrega o catálogo na primeira visita à descoberta.
+  Future<void> loadStarwireRepos() => _starwireLoad ??= _loadStarwireRepos();
+
+  Future<void> _loadStarwireRepos() async {
+    if (_isMockMode) return;
     try {
-      final jsonString = await rootBundle.loadString('assets/data/starwire_repos.json');
-      final dynamic decoded = jsonDecode(jsonString);
-      if (decoded is List) {
-        final parsed = decoded
-            .map((item) {
-              final r = GithubRepository.fromStarwireJson(item as Map<String, dynamic>);
-              return _savedAcervoIds.contains(r.id)
-                  ? r.copyWith(isSavedInAcervo: true)
-                  : r;
-            })
-            .toList();
-        if (parsed.isNotEmpty) {
-          _githubRepos = parsed;
-          _starwireFilters.updateRepos(parsed);
-          notifyListeners();
-        }
-      }
+      final raw = await rootBundle.loadString(
+        'assets/data/starwire_repos.json',
+        cache: false,
+      );
+      final repos = await compute(_parseStarwireRepos, raw);
+      if (_disposed || repos.isEmpty) return;
+      _githubRepos = repos.map((repo) {
+        return _savedAcervoIds.contains(repo.id)
+            ? repo.copyWith(isSavedInAcervo: true)
+            : repo;
+      }).toList();
+      _starwireFilters.updateRepos(_githubRepos);
+      notifyListeners();
     } catch (_) {
-      // Fallback gracioso em testes unitários sem asset bundle completo
+      // Permite retentar ao voltar à aba depois de uma falha de leitura.
+      _starwireLoad = null;
     }
+  }
+
+  static List<GithubRepository> _parseStarwireRepos(String raw) {
+    final data = jsonDecode(raw) as List<dynamic>;
+    return [
+      for (final row in data)
+        GithubRepository.fromStarwireJson(row as Map<String, dynamic>),
+    ];
   }
 
   // Getters principais
@@ -2995,7 +3046,7 @@ class NixState extends ChangeNotifier {
     String text, {
     List<String> attachments = const [],
   }) async {
-    if (_selectedDm == null) return;
+    if (_selectedDm == null || _panicWipe != null) return;
     if (text.trim().isEmpty && attachments.isEmpty) return;
 
     if (_editingMessage != null) {
@@ -4329,7 +4380,7 @@ class NixState extends ChangeNotifier {
   }
 
   bool sendMessage(String text, {List<String> attachments = const []}) {
-    if (text.trim().isEmpty && attachments.isEmpty) return false;
+    if (_panicWipe != null || (text.trim().isEmpty && attachments.isEmpty)) return false;
     if (!_currentChannel.permissions.allowMessages) return false;
     if (attachments.isNotEmpty && !_currentChannel.permissions.allowFiles) return false;
     final myFp = _securityContext.myFingerprint;
@@ -4358,6 +4409,7 @@ class NixState extends ChangeNotifier {
       ephemeralSeconds: _selectedEphemeralTimer,
       remainingSeconds: _selectedEphemeralTimer,
       isVerified: true,
+      deliveryState: _currentChannel.type == ChannelType.voice ? 'saved' : 'queued',
       attachments: attachments,
       replyToMessageId: reply?.id,
       replyToSenderName: reply?.senderName,
@@ -4881,12 +4933,44 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
+  final _forumTags = <String, Map<String, String>>{};
+
+  Map<String, String> forumTagsFor(String channelId) =>
+      Map.unmodifiable(_forumTags[channelId] ?? const <String, String>{});
+
+  bool get canManageForumTags {
+    if (_currentChannel.type != ChannelType.forum) return false;
+    final identity = _userProfile.publicId;
+    final fingerprint = _securityContext.myFingerprint;
+    return [identity, fingerprint].where((id) => id.isNotEmpty).any(
+      (id) => _currentChannel.ownerFingerprint == id ||
+          _currentChannel.admins.contains(id),
+    );
+  }
+
+  bool createForumTag(String name, String icon) {
+    final clean = name.trim();
+    final symbol = icon.trim();
+    if (!canManageForumTags || clean.isEmpty || clean.length > 32 ||
+        clean.toLowerCase() == 'todos' || symbol.length > 16) {
+      return false;
+    }
+    final tags = _forumTags.putIfAbsent(_currentChannel.id, () => {});
+    if (tags.keys.any((tag) => tag.toLowerCase() == clean.toLowerCase())) return false;
+    tags[clean] = symbol.isEmpty ? '🏷️' : symbol;
+    notifyListeners();
+    return true;
+  }
+
   void createForumPost({
     required String title,
     required String description,
     required List<String> tags,
   }) {
-    if (title.trim().isEmpty) return;
+    if (title.trim().isEmpty ||
+        _currentChannel.type != ChannelType.forum ||
+        !_currentChannel.permissions.allowMessages ||
+        tags.any((tag) => !forumTagsFor(_currentChannel.id).containsKey(tag))) return;
     final newPost = ForumPost(
       id: 'post_${DateTime.now().millisecondsSinceEpoch}',
       channelId: _currentChannel.id,
@@ -4894,7 +4978,7 @@ class NixState extends ChangeNotifier {
       authorName: _userProfile.effectiveDisplayName,
       authorFingerprint: _securityContext.myFingerprint,
       createdAt: DateTime.now(),
-      tags: tags.isEmpty ? const ['Discussão'] : tags,
+      tags: List.unmodifiable(tags),
       description: description.trim().isEmpty ? 'Tópico aberto para análise da comunidade.' : description.trim(),
       images: const [
         ForumImageSpec(label: 'ANEXO #01', subtitle: 'EXIF Removido', code: 'ATT-01'),
@@ -4913,6 +4997,9 @@ class NixState extends ChangeNotifier {
   }
 
   // ================= CHAMADAS DE VOZ (DELEGADAS PARA CALLVIEWMODEL) =================
+
+  List<Message> messagesForChannel(String channelId) =>
+      List.unmodifiable(_messages[channelId] ?? const []);
 
   void joinCall(Channel channel) {
     _calls.joinCall(channel, onlineMembers: _members.where((m) => m.isOnline).toList());
@@ -4951,6 +5038,9 @@ class NixState extends ChangeNotifier {
       topic: topic.isNotEmpty ? topic : 'Novo tópico de discussão segura.',
       type: type,
       category: category,
+      ownerFingerprint: _userProfile.publicId.isNotEmpty
+          ? _userProfile.publicId
+          : _securityContext.myFingerprint,
     );
 
     final updatedChannels = List<Channel>.from(_currentSpace.channels)..add(newChannel);

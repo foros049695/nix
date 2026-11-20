@@ -7,6 +7,7 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import 'trade_simulation_dialog.dart';
+import 'payment_method_picker.dart';
 
 /// Aba Monero Non-Custodial P2P Marketplace.
 /// Exibe anúncios assinados com verificação Ed25519 local, controle de expiração,
@@ -430,7 +431,7 @@ class MoneroP2pView extends StatelessWidget {
     final priceCtrl = TextEditingController(text: '850.00');
     final minLimitCtrl = TextEditingController(text: '100');
     final maxLimitCtrl = TextEditingController(text: '5000');
-    final methodCtrl = TextEditingController(text: 'PIX');
+    var paymentMethod = 'PIX';
     final notesCtrl = TextEditingController(text: 'Liberação imediata em subendereço único.');
     MoneroP2pSide side = state.moneroSelectedSide;
     final fiat = state.moneroSelectedFiat;
@@ -533,9 +534,10 @@ class MoneroP2pView extends StatelessWidget {
                     const SizedBox(height: 12),
                     Text('MÉTODO DE PAGAMENTO', style: NixTokens.labelUppercase()),
                     const SizedBox(height: 6),
-                    TextField(
+                    PaymentMethodPicker(
                       key: const Key('monero_order_method_input'),
-                      controller: methodCtrl,
+                      value: paymentMethod,
+                      onChanged: (method) => setModalState(() => paymentMethod = method),
                     ),
                     const SizedBox(height: 12),
                     Text('INSTRUÇÕES / TERMOS P2P', style: NixTokens.labelUppercase()),
@@ -574,7 +576,7 @@ class MoneroP2pView extends StatelessWidget {
                         final price = double.tryParse(priceCtrl.text.trim());
                         final minL = double.tryParse(minLimitCtrl.text.trim());
                         final maxL = double.tryParse(maxLimitCtrl.text.trim());
-                        final method = methodCtrl.text.trim();
+                        final method = paymentMethod;
                         if (price == null || price <= 0) {
                           setModalState(() => formError = 'Informe um preço por XMR válido (> 0).');
                           return;

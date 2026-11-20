@@ -23,16 +23,6 @@ class _ForumChannelViewState extends State<ForumChannelView> {
   String _selectedTag = 'Todos';
   final TextEditingController _commentController = TextEditingController();
 
-  final List<String> _availableTags = const [
-    'Todos',
-    'Hardware',
-    'Eletrônicos',
-    'Segurança',
-    'Reviews',
-    'Audiovisual',
-    'Outros',
-  ];
-
   @override
   void dispose() {
     _commentController.dispose();
@@ -51,10 +41,13 @@ class _ForumChannelViewState extends State<ForumChannelView> {
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
     final allPosts = nixState.currentForumPosts;
+    final tags = nixState.forumTagsFor(widget.channel.id);
+    final availableTags = ['Todos', ...tags.keys];
     final selectedPost = nixState.selectedForumPost;
+    final selectedTag = availableTags.contains(_selectedTag) ? _selectedTag : 'Todos';
 
     final filteredPosts = allPosts.where((post) {
-      final matchesTag = _selectedTag == 'Todos' || post.tags.contains(_selectedTag);
+      final matchesTag = selectedTag == 'Todos' || post.tags.contains(selectedTag);
       final matchesSearch = _searchQuery.trim().isEmpty ||
           post.title.toLowerCase().contains(_searchQuery.trim().toLowerCase()) ||
           post.description.toLowerCase().contains(_searchQuery.trim().toLowerCase());
@@ -116,17 +109,27 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                             ),
                           ),
 
+                          if (nixState.canManageForumTags)
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                onPressed: () => _showTagDialog(context, nixState),
+                                icon: const Icon(Icons.sell_outlined),
+                                label: const Text('Criar tag'),
+                              ),
+                            ),
+
                           // Barra de Tags / Filtros
                           SizedBox(
                             height: 36,
                             child: ListView.separated(
                               scrollDirection: Axis.horizontal,
                               padding: const EdgeInsets.symmetric(horizontal: 18),
-                              itemCount: _availableTags.length,
+                              itemCount: availableTags.length,
                               separatorBuilder: (_, __) => const SizedBox(width: 6),
                               itemBuilder: (context, idx) {
-                                final tag = _availableTags[idx];
-                                final isSelected = _selectedTag == tag;
+                                final tag = availableTags[idx];
+                                final isSelected = selectedTag == tag;
                                 return InkWell(
                                   onTap: () => setState(() => _selectedTag = tag),
                                   borderRadius: BorderRadius.circular(16),
@@ -141,7 +144,7 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                                       ),
                                     ),
                                     child: Text(
-                                      tag,
+                                      tags.containsKey(tag) ? '${tags[tag]} $tag' : tag,
                                       style: TextStyle(
                                         color: isSelected ? Colors.black : NixColors.textSecondary,
                                         fontSize: 11.5,
@@ -210,37 +213,79 @@ class _ForumChannelViewState extends State<ForumChannelView> {
     );
   }
 
+  void _showTagDialog(BuildContext context, NixState state) {
+    var name = '';
+    var icon = '';
+    String? error;
+    showDialog<void>(
+      context: context,
+      builder: (_) => StatefulBuilder(builder: (ctx, update) => AlertDialog(
+        scrollable: true,
+        title: const Text('Criar tag deste canal'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            maxLength: 32,
+            onChanged: (value) => name = value,
+            decoration: const InputDecoration(labelText: 'Nome da tag'),
+          ),
+          TextField(
+            maxLength: 8,
+            onChanged: (value) => icon = value,
+            decoration: const InputDecoration(labelText: 'Ícone ou emoji'),
+          ),
+          if (error != null) Text(error!),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          FilledButton(
+            onPressed: () {
+              if (state.createForumTag(name, icon)) {
+                Navigator.pop(ctx);
+              } else {
+                update(() => error = 'Tag inválida ou já existente neste canal.');
+              }
+            },
+            child: const Text('Criar tag'),
+          ),
+        ],
+      )),
+    );
+  }
+
   void _showCreateTopicModal(BuildContext context, NixState state) {
-    final titleCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    String chosenTag = 'Hardware';
+    var title = '';
+    var description = '';
+    String? chosenTag;
+    final tags = state.forumTagsFor(widget.channel.id);
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) => AlertDialog(
           title: const Text('Criar Novo Tópico no Fórum'),
+          scrollable: true,
           content: SizedBox(
             width: 440,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('TAG DO TÓPICO', style: NixTokens.labelUppercase()),
+                if (tags.isNotEmpty)
+                  Text('TAG OPCIONAL', style: NixTokens.labelUppercase()),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 6,
-                  children: _availableTags.where((t) => t != 'Todos').map((t) {
+                  children: tags.keys.map((t) {
                     final selected = chosenTag == t;
                     return ChoiceChip(
-                      label: Text(t, style: const TextStyle(fontSize: 11.5)),
+                      label: Text('${tags[t]} $t', style: const TextStyle(fontSize: 11.5)),
                       selected: selected,
                       selectedColor: NixColors.textPrimary,
                       labelStyle: TextStyle(
                         color: selected ? Colors.black : NixColors.textPrimary,
                         fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                       ),
-                      onSelected: (_) => setModalState(() => chosenTag = t),
+                      onSelected: (value) => setModalState(() => chosenTag = value ? t : null),
                     );
                   }).toList(),
                 ),
@@ -248,14 +293,14 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                 Text('TÍTULO DO TÓPICO', style: NixTokens.labelUppercase()),
                 const SizedBox(height: 6),
                 TextField(
-                  controller: titleCtrl,
+                  onChanged: (value) => title = value,
                   decoration: const InputDecoration(hintText: 'ex: Análise de Antena 915MHz...'),
                 ),
                 const SizedBox(height: 12),
                 Text('DESCRIÇÃO / ESPECIFICAÇÕES', style: NixTokens.labelUppercase()),
                 const SizedBox(height: 6),
                 TextField(
-                  controller: descCtrl,
+                  onChanged: (value) => description = value,
                   maxLines: 3,
                   decoration: const InputDecoration(
                     hintText: 'Inclua peso, dimensões, hash ou observações...',
@@ -275,11 +320,11 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                 foregroundColor: Colors.black,
               ),
               onPressed: () {
-                if (titleCtrl.text.trim().isNotEmpty) {
+                if (title.trim().isNotEmpty) {
                   state.createForumPost(
-                    title: titleCtrl.text,
-                    description: descCtrl.text,
-                    tags: [chosenTag],
+                    title: title,
+                    description: description,
+                    tags: [if (chosenTag != null) chosenTag!],
                   );
                   Navigator.pop(ctx);
                 }

@@ -159,9 +159,15 @@ class _HomePrivateViewState extends State<HomePrivateView> {
     required String subtitle,
     required NixState state,
   }) {
+    final compact = MediaQuery.sizeOf(context).width < 520;
+    final transport = state.isStrictOffGridMode
+        ? 'Bluetooth off-grid'
+        : state.securityGate.isTorAnonymityReady
+            ? 'Tor Onion v3'
+            : 'Tor indisponível';
     return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      constraints: const BoxConstraints(minHeight: 52),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 20, vertical: 6),
       decoration: BoxDecoration(
         color: NixColors.surfaceElevated,
         border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
@@ -186,37 +192,27 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                 ),
                 Text(
                   subtitle,
+                  maxLines: 1,
                   style: TextStyle(color: NixColors.textMuted, fontSize: 10.5),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          // Status Tor Onion
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: NixColors.surfaceActive,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: Colors.white24, width: 0.5),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.lock_outline_rounded, size: 11, color: NixColors.accentGreen),
-                SizedBox(width: 5),
-                Text(
-                  'TOR ONION V3 E2EE',
-                  style: TextStyle(
-                    color: NixColors.textSecondary,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ],
+          const SizedBox(width: 8),
+          Tooltip(
+            message: transport,
+            child: Icon(
+              state.isStrictOffGridMode ? Icons.bluetooth : Icons.lock_outline_rounded,
+              semanticLabel: transport,
+              size: 18,
+              color: NixColors.textSecondary,
             ),
           ),
+          if (!compact) ...[
+            const SizedBox(width: 5),
+            Text(transport, style: TextStyle(color: NixColors.textSecondary, fontSize: 11)),
+          ],
         ],
       ),
     );

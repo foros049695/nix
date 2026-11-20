@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme/nix_colors.dart';
 
 /// Abstração multiplataforma portável para seleção de arquivos e imagens (Fase 8).
@@ -12,7 +13,13 @@ abstract class FilePickerAdapter {
   });
 
   Future<String?> pickImage({
-    List<String> allowedExtensions = const ['png', 'jpg', 'jpeg', 'webp', 'gif'],
+    List<String> allowedExtensions = const [
+      'png',
+      'jpg',
+      'jpeg',
+      'webp',
+      'gif'
+    ],
   });
 }
 
@@ -37,13 +44,20 @@ class ProgrammableFilePickerAdapter implements FilePickerAdapter {
     if (allowedExtensions.isEmpty) return List<String>.from(nextAttachments);
     return nextAttachments.where((path) {
       final lower = path.toLowerCase();
-      return allowedExtensions.any((ext) => lower.endsWith('.${ext.toLowerCase()}'));
+      return allowedExtensions
+          .any((ext) => lower.endsWith('.${ext.toLowerCase()}'));
     }).toList();
   }
 
   @override
   Future<String?> pickImage({
-    List<String> allowedExtensions = const ['png', 'jpg', 'jpeg', 'webp', 'gif'],
+    List<String> allowedExtensions = const [
+      'png',
+      'jpg',
+      'jpeg',
+      'webp',
+      'gif'
+    ],
   }) async {
     pickImageCalls++;
     return nextImage;
@@ -61,6 +75,14 @@ class CrossPlatformFilePickerAdapter implements FilePickerAdapter {
   }) async {
     if (Platform.environment['FLUTTER_TEST'] == 'true') {
       return const ['documento_seguro.pdf'];
+    }
+    if (Platform.isAndroid) {
+      return await const MethodChannel('com.projetonix.nix/platform')
+              .invokeListMethod<String>('pickLocalAttachments', {
+            'extensions': allowedExtensions,
+            'multiple': allowMultiple,
+          }) ??
+          const [];
     }
     if (Platform.isLinux) {
       final res = await _pickLinux(
@@ -84,7 +106,13 @@ class CrossPlatformFilePickerAdapter implements FilePickerAdapter {
 
   @override
   Future<String?> pickImage({
-    List<String> allowedExtensions = const ['png', 'jpg', 'jpeg', 'webp', 'gif'],
+    List<String> allowedExtensions = const [
+      'png',
+      'jpg',
+      'jpeg',
+      'webp',
+      'gif'
+    ],
   }) async {
     if (Platform.environment['FLUTTER_TEST'] == 'true') {
       return '/tmp/nix_test_avatar.png';
@@ -184,8 +212,7 @@ class CrossPlatformFilePickerAdapter implements FilePickerAdapter {
   }) async {
     try {
       final mult = multiple ? '\$true' : '\$false';
-      final script =
-          'Add-Type -AssemblyName System.Windows.Forms; '
+      final script = 'Add-Type -AssemblyName System.Windows.Forms; '
           '\$d = New-Object System.Windows.Forms.OpenFileDialog; '
           '\$d.Multiselect = $mult; '
           'if (\$d.ShowDialog() -eq "OK") { \$d.FileNames -join "|" }';
@@ -213,159 +240,199 @@ class CrossPlatformFilePickerAdapter implements FilePickerAdapter {
     String title = 'Selecionar Arquivo Local (Criptografia E2EE)',
     List<String> allowedExtensions = const [],
   }) async {
-    final pathCtrl = TextEditingController();
-    String currentDir =
-        Platform.environment['HOME'] ?? Directory.current.path;
-    String? errorMsg;
+    return await showDialog<List<String>>(
+          context: context,
+          builder: (_) => _PortableFileChooser(
+            title: title,
+            allowedExtensions: allowedExtensions,
+          ),
+        ) ??
+        const [];
+  }
+}
 
-    final selected = await showDialog<List<String>>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) {
-          List<FileSystemEntity> entries = const [];
-          try {
-            final dir = Directory(currentDir);
-            if (dir.existsSync()) {
-              entries = dir.listSync().where((e) {
-                final name = e.uri.pathSegments.isNotEmpty
-                    ? e.uri.pathSegments.last
-                    : '';
-                if (name.startsWith('.')) return false;
-                if (e is Directory) return true;
-                if (allowedExtensions.isEmpty) return true;
-                final lower = e.path.toLowerCase();
-                return allowedExtensions
-                    .any((ext) => lower.endsWith('.${ext.toLowerCase()}'));
-              }).take(40).toList();
-            }
-          } catch (_) {}
+class _PortableFileChooser extends StatefulWidget {
+  const _PortableFileChooser({
+    required this.title,
+    required this.allowedExtensions,
+  });
 
-          return AlertDialog(
-            backgroundColor: NixColors.surfaceElevatedHigh,
-            title: Text(
-              title,
-              style: TextStyle(
-                color: NixColors.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
+  final String title;
+  final List<String> allowedExtensions;
+
+  @override
+  State<_PortableFileChooser> createState() => _PortableFileChooserState();
+}
+
+class _PortableFileChooserState extends State<_PortableFileChooser> {
+  final pathCtrl = TextEditingController();
+  String currentDir = Platform.environment['HOME'] ?? Directory.current.path;
+  String? errorMsg;
+  late List<FileSystemEntity> entries;
+
+  @override
+  void initState() {
+    super.initState();
+    entries = _readEntries();
+  }
+
+  @override
+  void dispose() {
+    pathCtrl.dispose();
+    super.dispose();
+  }
+
+  List<FileSystemEntity> _readEntries() {
+    List<FileSystemEntity> entries = const [];
+    try {
+      final dir = Directory(currentDir);
+      if (dir.existsSync()) {
+        entries = dir
+            .listSync()
+            .where((e) {
+              final name = e.path.split(Platform.pathSeparator).last;
+              if (name.startsWith('.')) return false;
+              if (e is Directory) return true;
+              if (widget.allowedExtensions.isEmpty) return true;
+              final lower = e.path.toLowerCase();
+              return widget.allowedExtensions
+                  .any((ext) => lower.endsWith('.${ext.toLowerCase()}'));
+            })
+            .take(40)
+            .toList();
+      }
+    } catch (_) {}
+
+    return entries;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allowedExtensions = widget.allowedExtensions;
+    return AlertDialog(
+      scrollable: true,
+      backgroundColor: NixColors.surfaceElevatedHigh,
+      title: Text(
+        widget.title,
+        style: TextStyle(
+          color: NixColors.textPrimary,
+          fontSize: 15,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              key: const Key('portable_file_picker_path_input'),
+              controller: pathCtrl,
+              style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5),
+              decoration: const InputDecoration(
+                labelText: 'Caminho completo do arquivo local',
+                hintText: '/caminho/para/arquivo.png',
+                isDense: true,
               ),
             ),
-            content: SizedBox(
-              width: 460,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  TextField(
-                    key: const Key('portable_file_picker_path_input'),
-                    controller: pathCtrl,
-                    style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5),
-                    decoration: const InputDecoration(
-                      labelText: 'Caminho completo do arquivo local',
-                      hintText: '/caminho/para/arquivo.png',
-                      isDense: true,
-                    ),
-                  ),
-                  if (entries.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 160,
-                      child: ListView.builder(
-                        itemCount: entries.length,
-                        itemBuilder: (_, i) {
-                          final e = entries[i];
-                          final isDir = e is Directory;
-                          final name =
-                              e.path.split(Platform.pathSeparator).last;
-                          return ListTile(
-                            dense: true,
-                            leading: Icon(
-                              isDir
-                                  ? Icons.folder_outlined
-                                  : Icons.insert_drive_file_outlined,
-                              size: 16,
-                              color: NixColors.textSecondary,
-                            ),
-                            title: Text(
-                              name,
-                              style: TextStyle(
-                                color: NixColors.textPrimary,
-                                fontSize: 12,
-                              ),
-                            ),
-                            onTap: () {
-                              if (isDir) {
-                                setDlgState(() => currentDir = e.path);
-                              } else {
-                                setDlgState(() {
-                                  pathCtrl.text = e.path;
-                                  errorMsg = null;
-                                });
-                              }
-                            },
-                          );
-                        },
+            if (entries.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 160,
+                child: ListView.builder(
+                  itemCount: entries.length,
+                  itemBuilder: (_, i) {
+                    final e = entries[i];
+                    final isDir = e is Directory;
+                    final name = e.path.split(Platform.pathSeparator).last;
+                    return ListTile(
+                      dense: true,
+                      leading: Icon(
+                        isDir
+                            ? Icons.folder_outlined
+                            : Icons.insert_drive_file_outlined,
+                        size: 16,
+                        color: NixColors.textSecondary,
                       ),
-                    ),
-                  ],
-                  if (errorMsg != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      errorMsg!,
-                      style: const TextStyle(
-                        color: Colors.redAccent,
-                        fontSize: 11.5,
+                      title: Text(
+                        name,
+                        style: TextStyle(
+                          color: NixColors.textPrimary,
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(const <String>[]),
-                child: Text(
-                  'Cancelar',
-                  style: TextStyle(color: NixColors.textMuted),
-                ),
-              ),
-              ElevatedButton(
-                key: const Key('portable_file_picker_confirm_button'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: NixColors.accentYellow,
-                  foregroundColor: Colors.black,
-                ),
-                onPressed: () {
-                  final raw = pathCtrl.text.trim();
-                  if (raw.isEmpty || !File(raw).existsSync()) {
-                    setDlgState(() => errorMsg = 'Arquivo local não encontrado.');
-                    return;
-                  }
-                  if (allowedExtensions.isNotEmpty) {
-                    final lower = raw.toLowerCase();
-                    final ok = allowedExtensions
-                        .any((ext) => lower.endsWith('.${ext.toLowerCase()}'));
-                    if (!ok) {
-                      setDlgState(
-                        () => errorMsg =
-                            'Extensão não permitida (${allowedExtensions.join(', ')}).',
-                      );
-                      return;
-                    }
-                  }
-                  Navigator.of(ctx).pop([raw]);
-                },
-                child: const Text(
-                  'Selecionar',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                      onTap: () {
+                        if (isDir) {
+                          setState(() {
+                            currentDir = e.path;
+                            entries = _readEntries();
+                          });
+                        } else {
+                          setState(() {
+                            pathCtrl.text = e.path;
+                            errorMsg = null;
+                          });
+                        }
+                      },
+                    );
+                  },
                 ),
               ),
             ],
-          );
-        },
+            if (errorMsg != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                errorMsg!,
+                style: const TextStyle(
+                  color: Colors.redAccent,
+                  fontSize: 11.5,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(const <String>[]),
+          child: Text(
+            'Cancelar',
+            style: TextStyle(color: NixColors.textMuted),
+          ),
+        ),
+        ElevatedButton(
+          key: const Key('portable_file_picker_confirm_button'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: NixColors.accentYellow,
+            foregroundColor: Colors.black,
+          ),
+          onPressed: () {
+            final raw = pathCtrl.text.trim();
+            if (raw.isEmpty || !File(raw).existsSync()) {
+              setState(() => errorMsg = 'Arquivo local não encontrado.');
+              return;
+            }
+            if (allowedExtensions.isNotEmpty) {
+              final lower = raw.toLowerCase();
+              final ok = allowedExtensions
+                  .any((ext) => lower.endsWith('.${ext.toLowerCase()}'));
+              if (!ok) {
+                setState(
+                  () => errorMsg =
+                      'Extensão não permitida (${allowedExtensions.join(', ')}).',
+                );
+                return;
+              }
+            }
+            Navigator.of(context).pop([raw]);
+          },
+          child: const Text(
+            'Selecionar',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+      ],
     );
-    pathCtrl.dispose();
-    return selected ?? const [];
   }
 }

@@ -2187,7 +2187,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
           ],
         ),
         content: const Text(
-          'Esta operação é irreversível. Todos os dados serão sobrescritos com ruído aleatório em 3 passagens (estilo BleachBit) e não poderão ser recuperados nem por análise forense de disco.\n\nDeseja prosseguir com o pânico?',
+          'Esta operação remove os dados locais da conta. As três passagens de sobrescrita podem demorar, especialmente com arquivos grandes. Memórias flash podem manter cópias físicas fora do alcance do app.\n\nDeseja prosseguir com o pânico?',
           style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
         ),
         actions: [
@@ -2200,7 +2200,13 @@ class _SettingsCenterState extends State<SettingsCenter> {
             child: const Text('SIM, DESTRUIR TUDO', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             onPressed: () async {
               Navigator.of(ctx).pop();
+              final messenger = ScaffoldMessenger.of(context);
+              messenger.showSnackBar(const SnackBar(
+                duration: Duration(minutes: 5),
+                content: Text('Apagando os dados locais…'),
+              ));
               final report = await state.panicWipeAllData();
+              if (messenger.mounted) messenger.hideCurrentSnackBar();
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(

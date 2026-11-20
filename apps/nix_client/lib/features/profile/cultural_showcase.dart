@@ -71,13 +71,13 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                 children: [
                   Icon(Icons.album_outlined, color: NixColors.textPrimary, size: 18),
                   const SizedBox(width: 8),
-                  Text(
+                  Flexible(child: Text(
                     'PASSAPORTE CULTURAL & ACERVO',
                     style: NixTokens.labelUppercase().copyWith(
                       color: NixColors.textPrimary,
                       letterSpacing: 1.2,
                     ),
-                  ),
+                  )),
                 ],
               ),
               OutlinedButton.icon(
@@ -121,6 +121,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                 ),
               ),
               const SizedBox(width: 8),
+              if (MediaQuery.sizeOf(context).width >= 560)
               Container(
                 key: const Key('cultural_catalog_stage_badge'),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),

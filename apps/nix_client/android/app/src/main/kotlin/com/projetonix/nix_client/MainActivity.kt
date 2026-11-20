@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Build
+import android.provider.OpenableColumns
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
@@ -33,6 +34,10 @@ class MainActivity : FlutterActivity() {
 
     private val localMediaRequest = 15201
     private var localMediaResult: MethodChannel.Result? = null
+
+    private val attachmentRequest = 15202
+    private var attachmentResult: MethodChannel.Result? = null
+    private var attachmentExtensions: Set<String> = emptySet()
 
     private var bleController: NixBleMeshController? = null
     private var rnodeController: NixRNodeRadioController? = null
@@ -88,6 +93,30 @@ class MainActivity : FlutterActivity() {
         // 2. Canal Runtime Nativo Android (filesDir, nativeLibraryDir/libtor.so, ABI, allowBackup)
         MethodChannel(messenger, platformChannelName).setMethodCallHandler { call, result ->
             when (call.method) {
+                "pickLocalAttachments" -> {
+                    if (attachmentResult != null) {
+                        result.error("ATTACHMENT_BUSY", "O seletor já está aberto.", null)
+                    } else {
+                        try {
+                            val extensions = call.argument<List<String>>("extensions").orEmpty()
+                                .map { it.lowercase() }.toSet()
+                            val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = if (extensions.isNotEmpty() &&
+                                    extensions.all { it in setOf("png", "jpg", "jpeg", "webp", "gif") }
+                                ) "image/*" else "*/*"
+                                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, call.argument<Boolean>("multiple") == true)
+                                putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+                            }
+                            attachmentResult = result
+                            attachmentExtensions = extensions
+                            startActivityForResult(picker, attachmentRequest)
+                        } catch (_: Exception) {
+                            attachmentResult = null
+                            result.error("ATTACHMENT_PICKER", "Seletor de arquivos indisponível.", null)
+                        }
+                    }
+                }
                 "openLocalMedia" -> {
                     if (localMediaResult != null) {
                         result.error("MEDIA_BUSY", "O seletor de mídia já está aberto.", null)
@@ -157,6 +186,10 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == attachmentRequest) {
+            readSelectedAttachments(resultCode, data)
+            return
+        }
         if (requestCode != localMediaRequest) return
         val result = localMediaResult ?: return
         localMediaResult = null
@@ -184,7 +217,75 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun readSelectedAttachments(resultCode: Int, data: Intent?) {
+        val result = attachmentResult ?: return
+        attachmentResult = null
+        if (resultCode != Activity.RESULT_OK || data == null) {
+            result.success(emptyList<String>())
+            return
+        }
+        val extensions = attachmentExtensions
+        val selection = data.clipData
+        val files = if (selection != null) {
+            if (selection.itemCount > 8) {
+                result.error("ATTACHMENT_LIMIT", "Selecione no máximo oito arquivos.", null)
+                return
+            }
+            (0 until selection.itemCount).mapNotNull { selection.getItemAt(it).uri }
+        } else {
+            listOfNotNull(data.data)
+        }
+
+        Thread {
+            val imports = File(filesDir, "nix_attachment_imports")
+            val batch = File(imports, java.util.UUID.randomUUID().toString())
+            try {
+                val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000
+                imports.listFiles()?.filter { it.lastModified() < cutoff }
+                    ?.forEach { it.deleteRecursively() }
+                check(batch.mkdirs())
+                var remaining = 8 * 1024 * 1024
+                val paths = files.mapIndexed { index, uri ->
+                    require(uri.scheme == "content")
+                    val name = contentResolver.query(
+                        uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+                    )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                        ?: error("Arquivo sem nome")
+                    val safeName = name.replace(Regex("[^a-zA-Z0-9 ._-]"), "_")
+                    val extension = safeName.substringAfterLast('.', "").lowercase()
+                    require(extension.matches(Regex("[a-z0-9]{1,12}")))
+                    require(extensions.isEmpty() || extension in extensions)
+                    val folder = File(batch, index.toString())
+                    check(folder.mkdir())
+                    val base = safeName.substringBeforeLast('.').take(96)
+                    val target = File(folder, "$base.$extension")
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        target.outputStream().use { output ->
+                            val buffer = ByteArray(64 * 1024)
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                remaining -= count
+                                require(remaining >= 0)
+                                output.write(buffer, 0, count)
+                            }
+                        }
+                    } ?: error("Arquivo indisponível")
+                    target.absolutePath
+                }
+                runOnUiThread { result.success(paths) }
+            } catch (_: Exception) {
+                batch.deleteRecursively()
+                runOnUiThread {
+                    result.error("ATTACHMENT_IMPORT", "Selecione arquivos compatíveis, até 8 MiB ao todo.", null)
+                }
+            }
+        }.start()
+    }
+
     override fun onDestroy() {
+        attachmentResult?.error("ATTACHMENT_INTERRUPTED", "Seleção interrompida.", null)
+        attachmentResult = null
         localMediaResult?.error("MEDIA_INTERRUPTED", "Seleção de mídia interrompida.", null)
         localMediaResult = null
         bleController?.stopMesh()

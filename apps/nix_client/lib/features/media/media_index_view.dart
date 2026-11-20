@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:nix_transport/nix_transport.dart';
 import '../../core/media/catalog_database.dart';
 import '../../core/media/media_index_updater.dart';
 import '../../core/security/file_picker_adapter.dart';
@@ -368,6 +369,18 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
 
   Future<void> _openCatalogUpdateDialog() async {
     final updateManager = _nixState.catalogUpdateManager;
+    const source = String.fromEnvironment('NIX_CATALOG_MANIFEST_URL');
+    final manifestUri = Uri.tryParse(source);
+    final policy = TransportPolicy(socksPort: _nixState.embeddedTor.socksPort);
+    updateManager.transportPolicy = policy;
+    String? localError;
+    final configured = manifestUri != null &&
+        (manifestUri.scheme == 'http' || manifestUri.scheme == 'https') &&
+        TransportPolicy.isValidOnionV3Host(manifestUri.host) &&
+        manifestUri.userInfo.isEmpty &&
+        updateManager.keyring.trustedKeysHex.isNotEmpty;
+    final available = configured && _nixState.securityGate.isTorAnonymityReady;
+
     int currentVer = 0;
     List<CatalogVersionEntry> history = [];
     try {
@@ -450,7 +463,11 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
-                                        'Transporte: Tor SOCKS5 (Zero vazamento pessoal)',
+                                        !configured
+                                            ? 'Atualizações remotas sem publicador Onion configurado.'
+                                            : available
+                                                ? 'Transporte: Tor SOCKS5'
+                                                : 'Conecte o Tor para verificar atualizações.',
                                         style: TextStyle(
                                           color: NixColors.textSecondary,
                                           fontSize: 12,
@@ -463,6 +480,8 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                             ),
                           ),
                           const SizedBox(height: 16),
+                          if (localError != null)
+                            Text(localError!, style: const TextStyle(color: Colors.redAccent)),
                           if (currentProgress.statusMessage.isNotEmpty) ...[
                             Text(
                               currentProgress.statusMessage,
@@ -610,21 +629,25 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                         icon: const Icon(Icons.download_rounded, size: 16),
                         label: const Text('Aplicar Atualização'),
                         style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
-                        onPressed: () async {
-                          setDlgState(() {});
+                        onPressed: !available ? null : () async {
+                          final manifest = currentProgress.availableManifest!;
+                          final package = manifest.artifactName;
+                          if (!RegExp(r'^[A-Za-z0-9][A-Za-z0-9_.-]*[.]db$').hasMatch(package)) {
+                            setDlgState(() => localError = 'Nome do pacote inválido no manifesto.');
+                            return;
+                          }
+                          setDlgState(() => localError = null);
                           try {
                             final newDb = await updateManager.downloadAndApplyUpdate(
-                              manifest: currentProgress.availableManifest!,
-                              packageUri: Uri.parse('http://127.0.0.1:9050/nix_catalog_v2.db'),
+                              manifest: manifest,
+                              packageUri: manifestUri.resolve(package),
                             );
                             _nixState.setCatalogDatabase(newDb);
                             currentVer = await updateManager.getInstalledVersion();
                             history = await updateManager.getVersionHistory();
                             await _executeSearch();
-                            setDlgState(() {});
-                          } catch (_) {
-                            setDlgState(() {});
-                          }
+                            if (ctx.mounted) setDlgState(() {});
+                          } catch (_) {}
                         },
                       )
                     else if (!isUpdating)
@@ -632,14 +655,11 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                         icon: const Icon(Icons.refresh_rounded, size: 16),
                         label: const Text('Verificar Agora'),
                         style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
-                        onPressed: () async {
-                          setDlgState(() {});
+                        onPressed: !available ? null : () async {
+                          setDlgState(() => localError = null);
                           try {
-                            await updateManager.checkForUpdate(
-                              manifestUri: Uri.parse('http://127.0.0.1:9050/nix_catalog_manifest.json'),
-                            );
+                            await updateManager.checkForUpdate(manifestUri: manifestUri);
                           } catch (_) {}
-                          setDlgState(() {});
                         },
                       ),
                   ],

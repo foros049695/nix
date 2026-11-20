@@ -4,88 +4,163 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/models/channel.dart';
 import '../../core/models/member.dart';
 import '../../state/nix_state.dart';
+import '../chat/chat_input_bar.dart';
+import '../chat/message_bubble.dart';
 
-class CallRoomView extends StatelessWidget {
+class CallRoomView extends StatefulWidget {
   final Channel channel;
 
   const CallRoomView({super.key, required this.channel});
 
   @override
+  State<CallRoomView> createState() => _CallRoomViewState();
+}
+
+class _CallRoomViewState extends State<CallRoomView> {
+  bool _showTextChat = false;
+  Channel get channel => widget.channel;
+
+  @override
   Widget build(BuildContext context) {
     final nixState = context.read<NixState>();
 
-    return ListenableBuilder(
-      listenable: nixState.calls,
-      builder: (context, _) {
-        final call = nixState.calls.callState;
-        final isCurrentCallActive = call.isConnected && call.activeChannelId == channel.id;
+    return LayoutBuilder(builder: (context, constraints) {
+      final split = constraints.maxWidth >= 760;
+      final callView = ListenableBuilder(
+        listenable: nixState.calls,
+        builder: (context, _) {
+          final call = nixState.calls.callState;
+          final isCurrentCallActive =
+              call.isConnected && call.activeChannelId == channel.id;
 
-        final minutes = (call.durationSeconds ~/ 60).toString().padLeft(2, '0');
-        final seconds = (call.durationSeconds % 60).toString().padLeft(2, '0');
+          final minutes =
+              (call.durationSeconds ~/ 60).toString().padLeft(2, '0');
+          final seconds =
+              (call.durationSeconds % 60).toString().padLeft(2, '0');
 
-        return Column(
-          children: [
-            // Cabeçalho da Sala de Call
-            Container(
-              height: 52,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: NixColors.surfaceSidebar,
-                border: Border(bottom: BorderSide(color: NixColors.surfaceBorder, width: 1)),
+          return Column(
+            children: [
+              // Cabeçalho da Sala de Call
+              Container(
+                height: 52,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: NixColors.surfaceSidebar,
+                  border: Border(
+                      bottom:
+                          BorderSide(color: NixColors.surfaceBorder, width: 1)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.volume_up_rounded,
+                        color: NixColors.accentVoice, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        channel.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: NixColors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    if (split)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: NixColors.accentTor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                              color: NixColors.accentTor.withOpacity(0.3)),
+                        ),
+                        child: Text(
+                          'TOR ONION E2EE · ZERO IP LEAK',
+                          style: TextStyle(
+                              color: NixColors.accentTor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    if (isCurrentCallActive && split)
+                      Text(
+                        'Duração: $minutes:$seconds',
+                        style: TextStyle(
+                            color: NixColors.textSecondary,
+                            fontSize: 12,
+                            fontFamily: 'monospace'),
+                      ),
+                    IconButton(
+                      tooltip: _showTextChat
+                          ? 'Fechar chat da sala'
+                          : 'Abrir chat da sala',
+                      onPressed: () =>
+                          setState(() => _showTextChat = !_showTextChat),
+                      icon: const Icon(Icons.chat_outlined),
+                    ),
+                  ],
+                ),
               ),
-              child: Row(
-                children: [
-                  Icon(Icons.volume_up_rounded, color: NixColors.accentVoice, size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    channel.name,
-                    style: TextStyle(
-                      color: NixColors.textPrimary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: NixColors.accentTor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: NixColors.accentTor.withOpacity(0.3)),
-                    ),
-                    child: Text(
-                      'TOR ONION E2EE · ZERO IP LEAK',
-                      style: TextStyle(color: NixColors.accentTor, fontSize: 10, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const Spacer(),
-                  if (isCurrentCallActive)
-                    Text(
-                      'Duração: $minutes:$seconds',
-                      style: TextStyle(color: NixColors.textSecondary, fontSize: 12, fontFamily: 'monospace'),
-                    ),
-                ],
+
+              // Área Central: Grid de Participantes
+              Expanded(
+                child: Container(
+                  color: NixColors.background,
+                  padding: const EdgeInsets.all(24),
+                  child: isCurrentCallActive
+                      ? _buildActiveCallGrid(call.participants, call.isMuted)
+                      : _buildJoinCallPrompt(context, nixState),
+                ),
               ),
+
+              // Barra de Controles da Call (se conectado)
+              if (isCurrentCallActive) _buildControlBar(context, nixState),
+            ],
+          );
+        },
+      );
+      if (!_showTextChat) return callView;
+      final messages = context.watch<NixState>().messagesForChannel(channel.id);
+      final chat = Column(children: [
+        ListTile(
+          title: Text('Chat da sala · ${channel.name}',
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: const Text('Mensagens locais desta sala'),
+          trailing: IconButton(
+            tooltip: 'Fechar chat da sala',
+            icon: const Icon(Icons.close),
+            onPressed: () => setState(() => _showTextChat = false),
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: ListView.builder(
+            reverse: true,
+            itemCount: messages.length,
+            itemBuilder: (_, index) => MessageBubble(
+              message: messages[messages.length - index - 1],
             ),
-
-            // Área Central: Grid de Participantes
-            Expanded(
-              child: Container(
-                color: NixColors.background,
-                padding: const EdgeInsets.all(24),
-                child: isCurrentCallActive
-                    ? _buildActiveCallGrid(call.participants, call.isMuted)
-                    : _buildJoinCallPrompt(context, nixState),
-              ),
-            ),
-
-            // Barra de Controles da Call (se conectado)
-            if (isCurrentCallActive)
-              _buildControlBar(context, nixState),
-          ],
-        );
-      },
-    );
+          ),
+        ),
+        ChatInputBar(
+          channelName: channel.name,
+          onSendCustom: (text, attachments) {
+            if (nixState.currentChannel.id == channel.id) {
+              nixState.sendMessage(text, attachments: attachments);
+            }
+          },
+        ),
+      ]);
+      if (!split) return chat;
+      return Row(children: [
+        Expanded(child: callView),
+        VerticalDivider(width: 1, color: NixColors.surfaceBorder),
+        SizedBox(width: 340, child: chat),
+      ]);
+    });
   }
 
   Widget _buildActiveCallGrid(List<Member> participants, bool isMeMuted) {
@@ -110,7 +185,9 @@ class CallRoomView extends StatelessWidget {
                 color: NixColors.surfaceCard,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isSpeaking ? NixColors.accentGreen : NixColors.surfaceBorder,
+                  color: isSpeaking
+                      ? NixColors.accentGreen
+                      : NixColors.surfaceBorder,
                   width: isSpeaking ? 2 : 1,
                 ),
                 boxShadow: isSpeaking
@@ -136,7 +213,9 @@ class CallRoomView extends StatelessWidget {
                           color: NixColors.surfaceCardHover,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: isSpeaking ? NixColors.accentGreen : NixColors.surfaceBorder,
+                            color: isSpeaking
+                                ? NixColors.accentGreen
+                                : NixColors.surfaceBorder,
                             width: 2,
                           ),
                         ),
@@ -144,7 +223,9 @@ class CallRoomView extends StatelessWidget {
                           child: Icon(
                             Icons.person,
                             size: 36,
-                            color: isSpeaking ? NixColors.accentGreen : NixColors.textSecondary,
+                            color: isSpeaking
+                                ? NixColors.accentGreen
+                                : NixColors.textSecondary,
                           ),
                         ),
                       ),
@@ -160,7 +241,8 @@ class CallRoomView extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         member.roleName,
-                        style: TextStyle(color: NixColors.textMuted, fontSize: 11),
+                        style:
+                            TextStyle(color: NixColors.textMuted, fontSize: 11),
                       ),
                     ],
                   ),
@@ -174,9 +256,15 @@ class CallRoomView extends StatelessWidget {
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Icon(
-                        member.name.contains('Você') && isMeMuted ? Icons.mic_off : (isSpeaking ? Icons.graphic_eq : Icons.mic),
+                        member.name.contains('Você') && isMeMuted
+                            ? Icons.mic_off
+                            : (isSpeaking ? Icons.graphic_eq : Icons.mic),
                         size: 14,
-                        color: member.name.contains('Você') && isMeMuted ? NixColors.accentDanger : (isSpeaking ? NixColors.accentGreen : NixColors.textMuted),
+                        color: member.name.contains('Você') && isMeMuted
+                            ? NixColors.accentDanger
+                            : (isSpeaking
+                                ? NixColors.accentGreen
+                                : NixColors.textMuted),
                       ),
                     ),
                   ),
@@ -199,14 +287,19 @@ class CallRoomView extends StatelessWidget {
             decoration: BoxDecoration(
               color: NixColors.surfaceCard,
               shape: BoxShape.circle,
-              border: Border.all(color: NixColors.accentVoice.withOpacity(0.4), width: 2),
+              border: Border.all(
+                  color: NixColors.accentVoice.withOpacity(0.4), width: 2),
             ),
-            child: Icon(Icons.volume_up_rounded, color: NixColors.accentVoice, size: 64),
+            child: Icon(Icons.volume_up_rounded,
+                color: NixColors.accentVoice, size: 64),
           ),
           const SizedBox(height: 20),
           Text(
             'Sala de Voz: ${channel.name}',
-            style: TextStyle(color: NixColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(
+                color: NixColors.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(
@@ -220,11 +313,13 @@ class CallRoomView extends StatelessWidget {
               backgroundColor: NixColors.accentVoice,
               foregroundColor: NixColors.textPrimary,
               padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () => nixState.joinCall(channel),
             icon: const Icon(Icons.call, size: 20),
-            label: const Text('Entrar na Sala de Call', style: TextStyle(fontWeight: FontWeight.bold)),
+            label: const Text('Entrar na Sala de Call',
+                style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -238,7 +333,8 @@ class CallRoomView extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
       decoration: BoxDecoration(
         color: NixColors.surfaceSidebar,
-        border: Border(top: BorderSide(color: NixColors.surfaceBorder, width: 1)),
+        border:
+            Border(top: BorderSide(color: NixColors.surfaceBorder, width: 1)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -248,7 +344,8 @@ class CallRoomView extends StatelessWidget {
             icon: call.isMuted ? Icons.mic_off : Icons.mic,
             label: call.isMuted ? 'Mutado' : 'Microfone',
             isActive: !call.isMuted,
-            color: call.isMuted ? NixColors.accentDanger : NixColors.textPrimary,
+            color:
+                call.isMuted ? NixColors.accentDanger : NixColors.textPrimary,
             onTap: () => nixState.toggleMute(),
           ),
           const SizedBox(width: 16),
@@ -257,7 +354,9 @@ class CallRoomView extends StatelessWidget {
             icon: call.isDeafened ? Icons.headset_off : Icons.headset,
             label: call.isDeafened ? 'Surdo' : 'Áudio',
             isActive: !call.isDeafened,
-            color: call.isDeafened ? NixColors.accentDanger : NixColors.textPrimary,
+            color: call.isDeafened
+                ? NixColors.accentDanger
+                : NixColors.textPrimary,
             onTap: () => nixState.toggleDeafen(),
           ),
           const SizedBox(width: 24),
@@ -267,11 +366,13 @@ class CallRoomView extends StatelessWidget {
               backgroundColor: NixColors.accentDanger,
               foregroundColor: NixColors.textPrimary,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () => nixState.leaveCall(),
             icon: const Icon(Icons.call_end, size: 18),
-            label: const Text('Desconectar', style: TextStyle(fontWeight: FontWeight.bold)),
+            label: const Text('Desconectar',
+                style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -311,7 +412,9 @@ class _ControlIconButton extends StatelessWidget {
           children: [
             Icon(icon, color: color, size: 18),
             const SizedBox(width: 6),
-            Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+            Text(label,
+                style: TextStyle(
+                    color: color, fontSize: 12, fontWeight: FontWeight.w600)),
           ],
         ),
       ),

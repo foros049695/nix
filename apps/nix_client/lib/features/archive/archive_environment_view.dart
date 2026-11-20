@@ -256,7 +256,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
     setState(() => _isLoadingDiscussionComments = true);
     try {
       final comments = await _archiveService.getThreadedComments(articleHash);
-      if (mounted) {
+      if (mounted && _selectedDiscussionArticle?['hash'] == articleHash) {
         setState(() {
           _discussionComments = comments;
           _isLoadingDiscussionComments = false;
@@ -268,7 +268,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
         }
       }
     } catch (_) {
-      if (mounted) setState(() => _isLoadingDiscussionComments = false);
+      if (mounted && _selectedDiscussionArticle?['hash'] == articleHash) setState(() => _isLoadingDiscussionComments = false);
     }
   }
 
@@ -899,7 +899,10 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
                   tooltip: 'Voltar à lista de tópicos',
                   onPressed: () => setState(() {
                     _selectedDiscussionArticle = null;
-                    _discussionComments.clear();
+                    _discussionComments = [];
+                    _discussionCommentCrypto.clear();
+                    _discussionCommentCtrl.clear();
+                    _isLoadingDiscussionComments = false;
                   }),
                 ),
                 const SizedBox(width: 8),

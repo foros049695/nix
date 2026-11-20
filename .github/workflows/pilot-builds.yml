@@ -51,18 +51,31 @@ jobs:
         with:
           flutter-version: '3.27.4'
           channel: stable
-      - name: Build Android test APK
+      - name: Build Android pilot APKs
+        env:
+          NIX_ANDROID_PILOT: 'true'
         run: |
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
           flutter pub get
-          flutter build apk --debug
-          cp build/app/outputs/flutter-apk/app-debug.apk nix-android-pilot-debug.apk
-          sha256sum nix-android-pilot-debug.apk > nix-android-pilot-debug.sha256
+          flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64
+          for abi in arm64-v8a armeabi-v7a; do
+            cp "build/app/outputs/flutter-apk/app-$abi-release.apk" "nix-android-pilot-$abi.apk"
+            "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify "nix-android-pilot-$abi.apk"
+            sha256sum "nix-android-pilot-$abi.apk" > "nix-android-pilot-$abi.sha256"
+            wc -c "nix-android-pilot-$abi.apk"
+          done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: nix-android-pilot-debug
+          name: nix-android-pilot-arm64
           path: |
-            apps/nix_client/nix-android-pilot-debug.apk
-            apps/nix_client/nix-android-pilot-debug.sha256
+            apps/nix_client/nix-android-pilot-arm64-v8a.apk
+            apps/nix_client/nix-android-pilot-arm64-v8a.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nix-android-pilot-armv7
+          path: |
+            apps/nix_client/nix-android-pilot-armeabi-v7a.apk
+            apps/nix_client/nix-android-pilot-armeabi-v7a.sha256
           if-no-files-found: error

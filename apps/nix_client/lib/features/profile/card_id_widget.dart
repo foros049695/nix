@@ -55,7 +55,8 @@ class _CardIdWidgetState extends State<CardIdWidget> {
     setState(() => _idCopied = true);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Identificador público copiado para a área de transferência.'),
+        content:
+            Text('Identificador público copiado para a área de transferência.'),
         duration: Duration(seconds: 2),
       ),
     );
@@ -77,9 +78,11 @@ class _CardIdWidgetState extends State<CardIdWidget> {
     final nixState = context.watch<NixState>();
     final profile = nixState.userProfile;
     final effectiveName = profile.effectiveDisplayName;
+    final compact = MediaQuery.sizeOf(context).width < 520;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      padding:
+          EdgeInsets.symmetric(horizontal: compact ? 12 : 24, vertical: 16),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 840),
@@ -97,7 +100,8 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                   final box = context.findRenderObject() as RenderBox?;
                   if (box != null && box.hasSize) {
                     final local = box.globalToLocal(event.position);
-                    final dx = ((local.dx / box.size.width) * 2 - 1).clamp(-1.0, 1.0);
+                    final dx =
+                        ((local.dx / box.size.width) * 2 - 1).clamp(-1.0, 1.0);
                     final dy = ((local.dy / 340) * 2 - 1).clamp(-1.0, 1.0);
                     setState(() => _hoverAlign = Offset(dx, dy));
                   }
@@ -111,12 +115,18 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(NixTokens.radiusCardId),
                     gradient: LinearGradient(
-                      begin: Alignment(-0.8 + _hoverAlign.dx * 0.4, -0.9 + _hoverAlign.dy * 0.4),
-                      end: Alignment(0.8 - _hoverAlign.dx * 0.4, 0.9 - _hoverAlign.dy * 0.4),
+                      begin: Alignment(-0.8 + _hoverAlign.dx * 0.4,
+                          -0.9 + _hoverAlign.dy * 0.4),
+                      end: Alignment(0.8 - _hoverAlign.dx * 0.4,
+                          0.9 - _hoverAlign.dy * 0.4),
                       colors: [
-                        _isHovered ? const Color(0xFF757984) : const Color(0xFF484B52),
+                        _isHovered
+                            ? const Color(0xFF757984)
+                            : const Color(0xFF484B52),
                         const Color(0xFF1C1D20),
-                        _isHovered ? const Color(0xFF8C909C) : const Color(0xFF565962),
+                        _isHovered
+                            ? const Color(0xFF8C909C)
+                            : const Color(0xFF565962),
                         const Color(0xFF121315),
                       ],
                     ),
@@ -130,12 +140,15 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                     ],
                   ),
                   child: Container(
-                    padding: const EdgeInsets.all(24),
+                    padding: EdgeInsets.all(compact ? 16 : 24),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(NixTokens.radiusCardId - 2),
+                      borderRadius:
+                          BorderRadius.circular(NixTokens.radiusCardId - 2),
                       gradient: LinearGradient(
-                        begin: Alignment(-0.9 + _hoverAlign.dx * 0.5, -0.8 + _hoverAlign.dy * 0.5),
-                        end: Alignment(0.9 - _hoverAlign.dx * 0.5, 0.8 - _hoverAlign.dy * 0.5),
+                        begin: Alignment(-0.9 + _hoverAlign.dx * 0.5,
+                            -0.8 + _hoverAlign.dy * 0.5),
+                        end: Alignment(0.9 - _hoverAlign.dx * 0.5,
+                            0.8 - _hoverAlign.dy * 0.5),
                         colors: const [
                           Color(0xFF050506),
                           Color(0xFF111215),
@@ -155,7 +168,8 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              const Icon(Icons.shield_outlined, color: NixColors.platinumAccent, size: 16),
+                              const Icon(Icons.shield_outlined,
+                                  color: NixColors.platinumAccent, size: 16),
                               const SizedBox(width: 8),
                               const Expanded(
                                 child: Text(
@@ -185,10 +199,12 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   child: Container(
                                     padding: const EdgeInsets.all(7),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.06),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.06),
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(
-                                        color: context.accentColor.withValues(alpha: 0.45),
+                                        color: context.accentColor
+                                            .withValues(alpha: 0.45),
                                         width: 0.9,
                                       ),
                                     ),
@@ -215,23 +231,28 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const _MetallicChipWidget(),
-                                  const SizedBox(width: 18),
+                                  if (!compact) ...[
+                                    const _MetallicChipWidget(),
+                                    const SizedBox(width: 18),
+                                  ],
                                   // Foto de Perfil com Edição/Remoção e Suporte a Imagem Local
                                   InkWell(
-                                    key: const Key('card_id_avatar_edit_button'),
-                                    onTap: () => _showAvatarEditorModal(context, nixState),
+                                    key:
+                                        const Key('card_id_avatar_edit_button'),
+                                    onTap: () => _showAvatarEditorModal(
+                                        context, nixState),
                                     borderRadius: BorderRadius.circular(44),
                                     child: Stack(
                                       children: [
                                         Container(
-                                          width: 78,
-                                          height: 78,
+                                          width: compact ? 56 : 78,
+                                          height: compact ? 56 : 78,
                                           decoration: BoxDecoration(
                                             shape: BoxShape.circle,
                                             color: const Color(0xFF0A0A0C),
                                             border: Border.all(
-                                              color: NixColors.platinumAccent.withOpacity(0.65),
+                                              color: NixColors.platinumAccent
+                                                  .withOpacity(0.65),
                                               width: 1.8,
                                             ),
                                             boxShadow: const [
@@ -242,7 +263,8 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                             ],
                                           ),
                                           clipBehavior: Clip.antiAlias,
-                                          child: _buildAvatarContent(profile, effectiveName),
+                                          child: _buildAvatarContent(
+                                              profile, effectiveName),
                                         ),
                                         Positioned(
                                           bottom: 0,
@@ -252,9 +274,13 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                             decoration: BoxDecoration(
                                               color: NixColors.surfaceActive,
                                               shape: BoxShape.circle,
-                                              border: Border.all(color: Colors.white38),
+                                              border: Border.all(
+                                                  color: Colors.white38),
                                             ),
-                                            child: const Icon(Icons.camera_alt_outlined, size: 12, color: Colors.white),
+                                            child: const Icon(
+                                                Icons.camera_alt_outlined,
+                                                size: 12,
+                                                color: Colors.white),
                                           ),
                                         ),
                                       ],
@@ -262,16 +288,21 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   ),
                                   const SizedBox(width: 16),
                                   // Nome de Usuário (Opcional com Fallback Determinístico NX-XXXX)
-                                  ConstrainedBox(
-                                    constraints: const BoxConstraints(maxWidth: 260),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Flexible(
-                                              child: Text(
+                                  Flexible(
+                                    child: ConstrainedBox(
+                                      constraints:
+                                          const BoxConstraints(maxWidth: 260),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Wrap(
+                                            spacing: 8,
+                                            runSpacing: 4,
+                                            crossAxisAlignment:
+                                                WrapCrossAlignment.center,
+                                            children: [
+                                              Text(
                                                 effectiveName,
                                                 style: const TextStyle(
                                                   color: Colors.white,
@@ -279,50 +310,61 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                                   fontWeight: FontWeight.w800,
                                                   letterSpacing: 1.4,
                                                 ),
+                                                maxLines: 2,
                                                 overflow: TextOverflow.ellipsis,
                                               ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white12,
-                                                borderRadius: BorderRadius.circular(4),
-                                                border: Border.all(color: Colors.white24, width: 0.5),
-                                              ),
-                                              child: Text(
-                                                'SINCE ${profile.memberSinceYear}',
-                                                style: const TextStyle(
-                                                  color: NixColors.platinumAccent,
-                                                  fontSize: 9,
-                                                  fontWeight: FontWeight.bold,
-                                                  letterSpacing: 1.0,
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white12,
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                  border: Border.all(
+                                                      color: Colors.white24,
+                                                      width: 0.5),
+                                                ),
+                                                child: Text(
+                                                  'SINCE ${profile.memberSinceYear}',
+                                                  style: const TextStyle(
+                                                    color: NixColors
+                                                        .platinumAccent,
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.bold,
+                                                    letterSpacing: 1.0,
+                                                  ),
                                                 ),
                                               ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Row(
-                                          children: [
-                                            Icon(Icons.verified_user_rounded, size: 12, color: NixColors.accentGreen),
-                                            const SizedBox(width: 4),
-                                            Flexible(
-                                              child: Text(
-                                                profile.displayName.isEmpty
-                                                    ? 'Identidade Anônima Soberana'
-                                                    : 'Identidade Criptográfica Verificada',
-                                                style: TextStyle(
-                                                  color: NixColors.textSecondary,
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w500,
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            children: [
+                                              Icon(Icons.verified_user_rounded,
+                                                  size: 12,
+                                                  color: NixColors.accentGreen),
+                                              const SizedBox(width: 4),
+                                              Flexible(
+                                                child: Text(
+                                                  profile.displayName.isEmpty
+                                                      ? 'Identidade Anônima Soberana'
+                                                      : 'Identidade Criptográfica Verificada',
+                                                  style: TextStyle(
+                                                    color:
+                                                        NixColors.textSecondary,
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                                 ),
-                                                overflow: TextOverflow.ellipsis,
                                               ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
+                                            ],
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -346,7 +388,8 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   decoration: BoxDecoration(
                                     color: Colors.black,
                                     borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.white30, width: 1),
+                                    border: Border.all(
+                                        color: Colors.white30, width: 1),
                                   ),
                                   child: NixQrCodeWidget(
                                     data: profile.qrPublicPayload,
@@ -371,14 +414,17 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                             ),
                             child: _isEditingBio
                                 ? Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       TextField(
                                         controller: _nameController,
                                         maxLength: 32,
-                                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                                        style: const TextStyle(
+                                            color: Colors.white, fontSize: 13),
                                         decoration: const InputDecoration(
-                                          labelText: 'Nome de Exibição / Pseudônimo (Deixe vazio para NX-XXXX anônimo)',
+                                          labelText:
+                                              'Nome de Exibição / Pseudônimo (Deixe vazio para NX-XXXX anônimo)',
                                           counterText: '',
                                         ),
                                       ),
@@ -387,41 +433,56 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                         controller: _bioController,
                                         maxLength: 180,
                                         maxLines: 2,
-                                        style: const TextStyle(color: Colors.white, fontSize: 12.5),
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12.5),
                                         decoration: const InputDecoration(
-                                          labelText: 'Biografia Curta (Máx 180 caracteres)',
+                                          labelText:
+                                              'Biografia Curta (Máx 180 caracteres)',
                                         ),
                                       ),
                                       const SizedBox(height: 8),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.end,
+                                      Wrap(
+                                        alignment: WrapAlignment.end,
                                         children: [
                                           TextButton(
-                                            onPressed: () => setState(() => _isEditingBio = false),
+                                            onPressed: () => setState(
+                                                () => _isEditingBio = false),
                                             child: Text('Cancelar',
-                                                style: TextStyle(color: NixColors.textMuted, fontSize: 12)),
+                                                style: TextStyle(
+                                                    color: NixColors.textMuted,
+                                                    fontSize: 12)),
                                           ),
                                           const SizedBox(width: 8),
                                           ElevatedButton(
                                             style: ElevatedButton.styleFrom(
-                                              backgroundColor: context.accentColor,
-                                              foregroundColor: context.onAccentColor,
-                                              visualDensity: VisualDensity.compact,
+                                              backgroundColor:
+                                                  context.accentColor,
+                                              foregroundColor:
+                                                  context.onAccentColor,
+                                              visualDensity:
+                                                  VisualDensity.compact,
                                             ),
-                                            onPressed: () => _saveBioAndName(nixState),
+                                            onPressed: () =>
+                                                _saveBioAndName(nixState),
                                             child: const Text('Salvar',
-                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                                style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight:
+                                                        FontWeight.bold)),
                                           ),
                                         ],
                                       ),
                                     ],
                                   )
                                 : Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             const Text(
                                               'BIOGRAFIA & INTERESSES',
@@ -447,11 +508,13 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                         ),
                                       ),
                                       IconButton(
-                                        icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFFB7BAC4)),
+                                        icon: const Icon(Icons.edit_outlined,
+                                            size: 16, color: Color(0xFFB7BAC4)),
                                         tooltip: 'Editar Biografia e Nome',
                                         onPressed: () {
                                           _bioController.text = profile.bio;
-                                          _nameController.text = profile.displayName;
+                                          _nameController.text =
+                                              profile.displayName;
                                           setState(() => _isEditingBio = true);
                                         },
                                       ),
@@ -462,19 +525,23 @@ class _CardIdWidgetState extends State<CardIdWidget> {
 
                           // Identificador Público Destacado + Botão Copiar com Feedback Visual
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
                             decoration: BoxDecoration(
                               color: const Color(0xFF08080A),
                               borderRadius: NixTokens.borderSm,
-                              border: Border.all(color: Colors.white24, width: 1),
+                              border:
+                                  Border.all(color: Colors.white24, width: 1),
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.fingerprint_rounded, color: NixColors.platinumAccent, size: 18),
+                                const Icon(Icons.fingerprint_rounded,
+                                    color: NixColors.platinumAccent, size: 18),
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       const Text(
                                         'IDENTIFICADOR PÚBLICO SOBERANO',
@@ -500,22 +567,50 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                OutlinedButton.icon(
-                                  key: const Key('copy_public_id_button'),
-                                  style: OutlinedButton.styleFrom(
-                                    backgroundColor: _idCopied ? Colors.white : Colors.white.withOpacity(0.08),
-                                    foregroundColor: _idCopied ? Colors.black : Colors.white,
-                                    side: const BorderSide(color: Colors.white30),
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                if (compact)
+                                  IconButton(
+                                    key: const Key('copy_public_id_button'),
+                                    color: Colors.white,
+                                    tooltip:
+                                        _idCopied ? 'ID copiado' : 'Copiar ID',
+                                    onPressed: () =>
+                                        _copyPublicId(profile.publicId),
+                                    icon: Icon(_idCopied
+                                        ? Icons.check_rounded
+                                        : Icons.copy_rounded),
+                                  )
+                                else
+                                  OutlinedButton.icon(
+                                    key: const Key('copy_public_id_button'),
+                                    style: OutlinedButton.styleFrom(
+                                      backgroundColor: _idCopied
+                                          ? Colors.white
+                                          : Colors.white.withOpacity(0.08),
+                                      foregroundColor: _idCopied
+                                          ? Colors.black
+                                          : Colors.white,
+                                      side: const BorderSide(
+                                          color: Colors.white30),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 8),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(6)),
+                                    ),
+                                    onPressed: () =>
+                                        _copyPublicId(profile.publicId),
+                                    icon: Icon(
+                                        _idCopied
+                                            ? Icons.check_rounded
+                                            : Icons.copy_rounded,
+                                        size: 14),
+                                    label: Text(
+                                      _idCopied ? 'COPIADO' : 'COPIAR ID',
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold),
+                                    ),
                                   ),
-                                  onPressed: () => _copyPublicId(profile.publicId),
-                                  icon: Icon(_idCopied ? Icons.check_rounded : Icons.copy_rounded, size: 14),
-                                  label: Text(
-                                    _idCopied ? 'COPIADO' : 'COPIAR ID',
-                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
                               ],
                             ),
                           ),
@@ -543,13 +638,16 @@ class _CardIdWidgetState extends State<CardIdWidget> {
 
     if (avatarStyle == 'none') {
       return Center(
-        child: Icon(Icons.person_outline_rounded, color: NixColors.platinumAccent, size: 34),
+        child: Icon(Icons.person_outline_rounded,
+            color: NixColors.platinumAccent, size: 34),
       );
     }
     if (avatarStyle == 'monogram') {
       return Center(
         child: Text(
-          displayName.isNotEmpty ? displayName.substring(0, displayName.length >= 2 ? 2 : 1) : 'NX',
+          displayName.isNotEmpty
+              ? displayName.substring(0, displayName.length >= 2 ? 2 : 1)
+              : 'NX',
           style: const TextStyle(
             color: NixColors.platinumAccent,
             fontSize: 24,
@@ -561,14 +659,16 @@ class _CardIdWidgetState extends State<CardIdWidget> {
     }
     if (avatarStyle == 'sentinel') {
       return const Center(
-        child: Icon(Icons.security_rounded, color: NixColors.platinumAccent, size: 34),
+        child: Icon(Icons.security_rounded,
+            color: NixColors.platinumAccent, size: 34),
       );
     }
     if (avatarStyle == 'local_file' && customPath != null) {
       final file = File(customPath);
       if (file.existsSync()) {
         return Transform.translate(
-          offset: Offset(profile.avatarCropOffsetX * 20, profile.avatarCropOffsetY * 20),
+          offset: Offset(
+              profile.avatarCropOffsetX * 20, profile.avatarCropOffsetY * 20),
           child: Transform.scale(
             scale: profile.avatarCropScale.clamp(1.0, 2.5),
             child: Image.file(
@@ -577,14 +677,16 @@ class _CardIdWidgetState extends State<CardIdWidget> {
               width: 78,
               height: 78,
               errorBuilder: (_, __, ___) => const Center(
-                child: Icon(Icons.broken_image_outlined, color: NixColors.platinumAccent, size: 30),
+                child: Icon(Icons.broken_image_outlined,
+                    color: NixColors.platinumAccent, size: 30),
               ),
             ),
           ),
         );
       }
       return const Center(
-        child: Icon(Icons.image_outlined, color: NixColors.platinumAccent, size: 36),
+        child: Icon(Icons.image_outlined,
+            color: NixColors.platinumAccent, size: 36),
       );
     }
     // Padrão: Medalhão Vetorizado Oficial Nix sobre metal escuro
@@ -594,14 +696,16 @@ class _CardIdWidgetState extends State<CardIdWidget> {
         'assets/images/nix_logo_light.png',
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => const Center(
-          child: Icon(Icons.shield_moon_outlined, color: Colors.white, size: 32),
+          child:
+              Icon(Icons.shield_moon_outlined, color: Colors.white, size: 32),
         ),
       ),
     );
   }
 
   void _showAvatarEditorModal(BuildContext context, NixState state) {
-    final pathCtrl = TextEditingController(text: state.userProfile.customAvatarPath ?? '');
+    var selectedPath = state.userProfile.customAvatarPath ?? '';
+    var pathRevision = 0;
     double cropScale = state.userProfile.avatarCropScale;
     double offsetX = state.userProfile.avatarCropOffsetX;
     double offsetY = state.userProfile.avatarCropOffsetY;
@@ -637,7 +741,8 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                   children: [
                     Text(
                       'Selecione PNG, JPEG ou WebP do dispositivo. Os metadados EXIF/IPTC são removidos automaticamente antes do armazenamento local.',
-                      style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                      style: TextStyle(
+                          color: NixColors.textSecondary, fontSize: 12),
                     ),
                     const SizedBox(height: 14),
                     _avatarOptionTile(
@@ -681,15 +786,21 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('IMAGEM LOCAL (PNG / JPEG / WebP)', style: NixTokens.labelUppercase()),
+                          Text('IMAGEM LOCAL (PNG / JPEG / WebP)',
+                              style: NixTokens.labelUppercase()),
                           const SizedBox(height: 8),
                           Row(
                             children: [
                               Expanded(
-                                child: TextField(
-                                  key: const Key('avatar_local_path_input'),
-                                  controller: pathCtrl,
-                                  style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
+                                child: TextFormField(
+                                  key: pathRevision == 0
+                                      ? const Key('avatar_local_path_input')
+                                      : ValueKey('avatar_local_path_input_$pathRevision'),
+                                  initialValue: selectedPath,
+                                  onChanged: (value) => selectedPath = value,
+                                  style: TextStyle(
+                                      color: NixColors.textPrimary,
+                                      fontSize: 12),
                                   decoration: const InputDecoration(
                                     hintText: '/caminho/para/avatar.png',
                                     isDense: true,
@@ -700,20 +811,30 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                               OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: NixColors.textPrimary,
-                                  side: BorderSide(color: NixColors.surfaceBorderStrong),
+                                  side: BorderSide(
+                                      color: NixColors.surfaceBorderStrong),
                                 ),
                                 onPressed: () async {
-                                  final picked = await LocalImageHelper.pickImageNativeDesktop();
-                                  if (picked != null) {
-                                    pathCtrl.text = picked;
+                                  try {
+                                    final picked = await LocalImageHelper.pickImageNativeDesktop();
+                                    if (picked == null || !context.mounted) return;
                                     setModalState(() {
+                                      selectedPath = picked;
+                                      pathRevision++;
                                       previewPath = picked;
                                       statusMsg = null;
                                     });
+                                  } on PlatformException catch (error) {
+                                    if (context.mounted) {
+                                      setModalState(() => statusMsg = error.message ??
+                                          'Não foi possível importar a imagem.');
+                                    }
                                   }
                                 },
-                                icon: const Icon(Icons.folder_open_rounded, size: 15),
-                                label: const Text('Procurar', style: TextStyle(fontSize: 11.5)),
+                                icon: const Icon(Icons.folder_open_rounded,
+                                    size: 15),
+                                label: const Text('Procurar',
+                                    style: TextStyle(fontSize: 11.5)),
                               ),
                             ],
                           ),
@@ -728,53 +849,68 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   height: 64,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    border: Border.all(color: accent, width: 2.0),
+                                    border:
+                                        Border.all(color: accent, width: 2.0),
                                   ),
                                   clipBehavior: Clip.antiAlias,
                                   child: Transform.translate(
                                     offset: Offset(offsetX * 16, offsetY * 16),
                                     child: Transform.scale(
                                       scale: cropScale,
-                                      child: Image.file(File(previewPath!), fit: BoxFit.cover),
+                                      child: Image.file(File(previewPath!),
+                                          fit: BoxFit.cover),
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         'Recorte & Enquadramento (${cropScale.toStringAsFixed(1)}x)',
-                                        style: TextStyle(color: NixColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w600),
+                                        style: TextStyle(
+                                            color: NixColors.textPrimary,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600),
                                       ),
                                       Slider(
                                         value: cropScale,
                                         min: 1.0,
                                         max: 2.4,
                                         activeColor: accent,
-                                        onChanged: (v) => setModalState(() => cropScale = v),
+                                        onChanged: (v) =>
+                                            setModalState(() => cropScale = v),
                                       ),
                                       Row(
                                         children: [
-                                          Text('X', style: TextStyle(color: NixColors.textMuted, fontSize: 10)),
+                                          Text('X',
+                                              style: TextStyle(
+                                                  color: NixColors.textMuted,
+                                                  fontSize: 10)),
                                           Expanded(
                                             child: Slider(
                                               value: offsetX,
                                               min: -1.0,
                                               max: 1.0,
                                               activeColor: accent,
-                                              onChanged: (v) => setModalState(() => offsetX = v),
+                                              onChanged: (v) => setModalState(
+                                                  () => offsetX = v),
                                             ),
                                           ),
-                                          Text('Y', style: TextStyle(color: NixColors.textMuted, fontSize: 10)),
+                                          Text('Y',
+                                              style: TextStyle(
+                                                  color: NixColors.textMuted,
+                                                  fontSize: 10)),
                                           Expanded(
                                             child: Slider(
                                               value: offsetY,
                                               min: -1.0,
                                               max: 1.0,
                                               activeColor: accent,
-                                              onChanged: (v) => setModalState(() => offsetY = v),
+                                              onChanged: (v) => setModalState(
+                                                  () => offsetY = v),
                                             ),
                                           ),
                                         ],
@@ -788,7 +924,9 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                           if (statusMsg != null) ...[
                             const SizedBox(height: 6),
                             Text(statusMsg!,
-                                style: TextStyle(color: NixColors.accentDanger, fontSize: 11)),
+                                style: TextStyle(
+                                    color: NixColors.accentDanger,
+                                    fontSize: 11)),
                           ],
                           const SizedBox(height: 10),
                           Row(
@@ -799,14 +937,19 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   foregroundColor: context.onAccentColor,
                                 ),
                                 onPressed: () async {
-                                  final raw = pathCtrl.text.trim();
-                                  if (!LocalImageHelper.isSupportedExtension(raw)) {
-                                    setModalState(() => statusMsg = 'Use apenas PNG, JPEG ou WebP.');
+                                  final raw = selectedPath.trim();
+                                  if (!LocalImageHelper.isSupportedExtension(
+                                      raw)) {
+                                    setModalState(() => statusMsg =
+                                        'Use apenas PNG, JPEG ou WebP.');
                                     return;
                                   }
-                                  final cleaned = await LocalImageHelper.sanitizeAndStoreImage(raw);
+                                  final cleaned = await LocalImageHelper
+                                      .sanitizeAndStoreImage(raw);
+                                  if (!context.mounted) return;
                                   if (cleaned == null) {
-                                    setModalState(() => statusMsg = 'Arquivo não encontrado no caminho informado.');
+                                    setModalState(() => statusMsg =
+                                        'Arquivo não encontrado no caminho informado.');
                                     return;
                                   }
                                   state.updateProfile(
@@ -820,15 +963,20 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                        content: Text('Avatar local aplicado com metadados EXIF sanitizados.'),
+                                        content: Text(
+                                            'Avatar local aplicado com metadados EXIF sanitizados.'),
                                       ),
                                     );
                                   }
                                 },
                                 icon: const Icon(Icons.check_rounded, size: 15),
-                                label: const Text('Aplicar & Sanitizar EXIF', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                label: const Text('Aplicar & Sanitizar EXIF',
+                                    style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.bold)),
                               ),
-                              if (state.userProfile.customAvatarPath != null) ...[
+                              if (state.userProfile.customAvatarPath !=
+                                  null) ...[
                                 const SizedBox(width: 8),
                                 TextButton(
                                   onPressed: () {
@@ -840,7 +988,9 @@ class _CardIdWidgetState extends State<CardIdWidget> {
                                   },
                                   child: Text(
                                     'Remover Foto',
-                                    style: TextStyle(color: NixColors.accentDanger, fontSize: 11.5),
+                                    style: TextStyle(
+                                        color: NixColors.accentDanger,
+                                        fontSize: 11.5),
                                   ),
                                 ),
                               ],
@@ -865,7 +1015,11 @@ class _CardIdWidgetState extends State<CardIdWidget> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: Text('Fechar', style: TextStyle(color: NixColors.textSecondary, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                child: Text('Fechar',
+                    style: TextStyle(
+                        color: NixColors.textSecondary,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600)),
               ),
             ],
           );
@@ -896,7 +1050,9 @@ class _CardIdWidgetState extends State<CardIdWidget> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? ctx.accentColor.withValues(alpha: 0.14) : NixColors.surfaceCard,
+          color: isSelected
+              ? ctx.accentColor.withValues(alpha: 0.14)
+              : NixColors.surfaceCard,
           borderRadius: NixTokens.borderSm,
           border: Border.all(
             color: isSelected ? ctx.accentColor : NixColors.surfaceBorder,
@@ -914,8 +1070,14 @@ class _CardIdWidgetState extends State<CardIdWidget> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
-                  Text(subtitle, style: TextStyle(color: NixColors.textSecondary, fontSize: 11)),
+                  Text(title,
+                      style: TextStyle(
+                          color: NixColors.textPrimary,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600)),
+                  Text(subtitle,
+                      style: TextStyle(
+                          color: NixColors.textSecondary, fontSize: 11)),
                 ],
               ),
             ),
@@ -989,16 +1151,20 @@ class _ChipLinesPainter extends CustomPainter {
       ..color = const Color(0xFF424449)
       ..strokeWidth = 0.8;
 
-    canvas.drawLine(Offset(size.width * 0.35, 0), Offset(size.width * 0.35, size.height), paint);
-    canvas.drawLine(Offset(size.width * 0.65, 0), Offset(size.width * 0.65, size.height), paint);
-    canvas.drawLine(Offset(0, size.height * 0.5), Offset(size.width, size.height * 0.5), paint);
+    canvas.drawLine(Offset(size.width * 0.35, 0),
+        Offset(size.width * 0.35, size.height), paint);
+    canvas.drawLine(Offset(size.width * 0.65, 0),
+        Offset(size.width * 0.65, size.height), paint);
+    canvas.drawLine(Offset(0, size.height * 0.5),
+        Offset(size.width, size.height * 0.5), paint);
 
     final rect = Rect.fromCenter(
       center: Offset(size.width * 0.5, size.height * 0.5),
       width: 14,
       height: 12,
     );
-    canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(2)), paint);
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(2)), paint);
   }
 
   @override

@@ -4,6 +4,7 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+def isPilotBuild = System.getenv("NIX_ANDROID_PILOT") == "true"
 def keystoreProperties = new Properties()
 def keystorePropertiesFile = rootProject.file('key.properties')
 if (keystorePropertiesFile.exists()) {
@@ -62,7 +63,10 @@ android {
     buildTypes {
         release {
             // Configuração protegida de release: rejeita debug keystore para distribuição
-            if (signingConfigs.release.storeFile != null && signingConfigs.release.storeFile.exists()) {
+            if (isPilotBuild) {
+                applicationIdSuffix ".pilot"
+                signingConfig signingConfigs.debug
+            } else if (signingConfigs.release.storeFile != null && signingConfigs.release.storeFile.exists()) {
                 signingConfig signingConfigs.release
             } else {
                 signingConfig null
@@ -76,7 +80,7 @@ android {
 tasks.configureEach { task ->
     if (task.name in ['validateSigningRelease', 'packageRelease', 'packageReleaseBundle']) {
         task.doFirst {
-            if (android.signingConfigs.release.storeFile == null) {
+            if (!isPilotBuild && android.signingConfigs.release.storeFile == null) {
                 throw new GradleException("Configure a keystore release usando key.properties ou NIX_KEYSTORE_PATH, NIX_KEYSTORE_PASSWORD, NIX_KEY_ALIAS e NIX_KEY_PASSWORD.")
             }
         }

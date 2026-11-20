@@ -262,13 +262,19 @@ d99cd9c4b1d4ba748fd76831287696d3e83095b235c656c9942588a5a57a2756
 ### Builds do piloto
 
 O workflow manual [Nix pilot builds](.github/workflows/pilot-builds.yml)
-empacota o desktop **Linux x86-64** e um **APK Android de teste**. No Linux,
-extraia o tarball e execute `./bundle/nix_client`. O APK usa a assinatura
-de depuração do runner e serve para instalações de teste.
+empacota o desktop **Linux x86-64** e APKs Android de teste separados por
+arquitetura. Use `arm64-v8a` em Android 64 bits e `armeabi-v7a` em ARM 32 bits.
+O piloto Android é compilado em modo release e assinado com a chave de
+depuração do runner. O pacote `com.projetonix.nix_client.pilot` instala
+separado do Nix anterior, com dados próprios. No Linux, extraia o tarball
+e execute `./bundle/nix_client`.
 
 Para distribuição, passe as chaves públicas oficiais pelo Dart com
 `--dart-define=NIX_RELEASE_PUBLISHER_KEY_HEX=<chave-publica>` e
-`--dart-define=NIX_CATALOG_PUBLISHER_KEY_HEX=<chave-publica>`. A partir da
+`--dart-define=NIX_CATALOG_PUBLISHER_KEY_HEX=<chave-publica>`.
+Para atualizar o catálogo remoto, configure também
+`--dart-define=NIX_CATALOG_MANIFEST_URL=http://<publicador>.onion/manifest.json`.
+O catálogo inicial é fornecido no APK. A partir da
 raiz do repositório, após `flutter pub get` no cliente:
 
 ```bash
