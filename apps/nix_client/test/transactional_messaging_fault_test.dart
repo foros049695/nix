@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_client/core/database/local_database.dart';
 import 'package:nix_client/core/media/voice_note.dart';
+import 'package:nix_client/core/messaging/direct_poll.dart';
 import 'package:nix_client/core/messaging/sovereign_messenger.dart';
 import 'package:nix_client/core/messaging/scheduled_messages.dart';
 import 'package:nix_client/core/models/direct_message.dart';
@@ -324,6 +325,62 @@ void main() {
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);
       }
+    });
+
+    test('Dois clientes votam, alteram e encerram uma enquete pelo relay', () async {
+      const conversation = 'conv_fault_test';
+      Future<void> enqueue(SovereignMessenger sender, MailboxCredentials senderMailbox,
+          DirectPollEvent Function(Map<String, DirectPollState>, String) event) =>
+        sender.enqueueDirectPollEvent(
+          conversationId: conversation,
+          senderMailbox: senderMailbox.mailboxId,
+          build: event,
+          mayEnqueue: () => true,
+        );
+      Future<void> deliver(SovereignMessenger sender, SovereignMessenger recipient,
+          MailboxCredentials recipientMailbox) async {
+        expect((await sender.flushOutbox(relayClient: relayClient)).accepted, 1);
+        final received = await recipient.pollAndCommitInbox(
+          creds: recipientMailbox, relayClient: relayClient,
+        );
+        expect(received.errors, isEmpty);
+        expect(received.committed, hasLength(1));
+      }
+      await enqueue(aliceMessenger, aliceMailbox, (_, __) => DirectPollSpec.create(
+        question: 'Qual plano?',
+        description: 'Escolha as opções adequadas.',
+        options: ['Alfa', 'Beta', 'Gama'],
+        multiple: true,
+        allowRevote: true,
+        hideResults: true,
+      ));
+      await deliver(aliceMessenger, bobMessenger, bobMailbox);
+      final initial = (await bobMessenger.directPollsFor(conversation, aliceId.publicId)).values.single;
+      final id = initial.id;
+      expect(initial.spec.question, 'Qual plano?');
+      expect(initial.spec.hideResults, isTrue);
+      Future<void> bobVote(List<int> choices) => enqueue(
+        bobMessenger, bobMailbox, (polls, actor) => polls[id]!.makeVote(actor, choices, DateTime.now()),
+      );
+      await bobVote([0, 1]);
+      await deliver(bobMessenger, aliceMessenger, aliceMailbox);
+      await bobVote([2]);
+      await deliver(bobMessenger, aliceMessenger, aliceMailbox);
+      final beforeClose = (await aliceMessenger.directPollsFor(conversation, bobId.publicId))[id]!;
+      expect(beforeClose.counts, [0, 0, 1]);
+      await expectLater(enqueue(bobMessenger, bobMailbox,
+          (polls, actor) => polls[id]!.makeClose(actor)), throwsStateError);
+      await enqueue(aliceMessenger, aliceMailbox, (polls, actor) => polls[id]!.makeClose(actor));
+      await deliver(aliceMessenger, bobMessenger, bobMailbox);
+      final finalPoll = (await bobMessenger.directPollsFor(conversation, aliceId.publicId))[id]!;
+      expect(finalPoll.closed, isTrue);
+      expect(finalPoll.counts, [0, 0, 1]);
+      await expectLater(bobVote([1]), throwsStateError);
+      final bobKey = bobMessenger.vaultMasterKey;
+      await bobDb.close();
+      bobDb = await LocalDatabase.open(path: '${tempDir.path}/bob.db', rawCipherKey: bobKey);
+      final restarted = SovereignMessenger(database: bobDb, identity: bobId, vaultMasterKey: bobKey);
+      expect((await restarted.directPollsFor(conversation, aliceId.publicId))[id]!.counts, [0, 0, 1]);
     });
 
     test('Nota de voz no limite chega cifrada e cabe no envelope PostgreSQL', () async {

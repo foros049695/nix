@@ -271,8 +271,34 @@ void main() {
     ));
     await tester.tap(find.byKey(const Key('chat_attach_button')));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Arquivos'));
+    await tester.pumpAndSettle();
     expect(picker.pickAttachmentsCalls, 1);
     expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('Fotos usa filtro de imagens, mostra prévia e permite remover', (tester) async {
+    final state = NixState();
+    addTearDown(state.dispose);
+    final original = LocalImageHelper.filePickerAdapter;
+    addTearDown(() => LocalImageHelper.filePickerAdapter = original);
+    final photo = File('assets/images/nix_logo_128.png').absolute.path;
+    LocalImageHelper.filePickerAdapter = ProgrammableFilePickerAdapter(
+      nextAttachments: [photo, 'segredo.pdf'],
+    );
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: state,
+      child: const MaterialApp(home: Scaffold(body: ChatInputBar(channelName: 'geral'))),
+    ));
+    await tester.tap(find.byKey(const Key('chat_attach_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Fotos'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(ValueKey('attachment_preview_$photo')), findsOneWidget);
+    expect(find.text('segredo.pdf'), findsNothing);
+    await tester.tap(find.byKey(const Key('remove_attachment_0')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(ValueKey('attachment_preview_$photo')), findsNothing);
   });
 
   testWidgets('Seletor oferece ícones e emojis', (tester) async {

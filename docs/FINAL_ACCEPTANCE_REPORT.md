@@ -8,8 +8,8 @@ Foram inspecionadas as capturas do Nix e amostras de quadros de sete vídeos. As
 |---|---|---|---|---|---|
 | A. Correções críticas | [Mensagens](MESSAGING_AND_MEDIA_INTEGRATION.md), [Áudio](AUDIO_DEVICE_DIAGNOSTIC.md) | Convites recíprocos, leitura de QR no Android, relay, avatar e diagnóstico de áudio | Suíte Flutter, teste com dois clientes e relay local | PARTIAL | Câmera, onboarding e conversa por Onion externo e hardware de áudio aguardam homologação. |
 | B. Interface adaptativa | [Android](ANDROID_UI_REMEDIATION.md) | Pager, filtros e navegação compacta no Discovery | Testes Flutter com largura variável | PARTIAL | Matriz completa de resoluções e painéis redimensionáveis ainda em aberto. |
-| C. Texto e mídia | [Mensagens](MESSAGING_AND_MEDIA_INTEGRATION.md) | Seletor, prévia de imagem, falha explícita de anexo ausente e agendamento de texto direto | Testes de timeline e anexos | PARTIAL | Notas de voz e formatação contextual básica entregues. Galeria, anexos de vídeo, stickers e áudio de chamadas continuam pendentes. |
-| D. Comunidades | [Comunidades e enquetes](COMMUNITIES_AND_POLLS.md) | Visibilidade e agrupamento local preservados | Testes de privacidade e pastas | PARTIAL | Comunidades distribuídas, papéis, tags, editor de tópicos enriquecido e enquetes continuam pendentes. |
+| C. Texto e mídia | [Mensagens](MESSAGING_AND_MEDIA_INTEGRATION.md) | Seletor, prévia de imagem, falha explícita de anexo ausente e agendamento de texto direto | Testes de timeline e anexos | PARTIAL | Notas de voz, seleção de fotos com prévia e formatação contextual básica entregues. Vídeo inline, stickers e áudio de chamadas continuam pendentes. |
+| D. Comunidades | [Comunidades e enquetes](COMMUNITIES_AND_POLLS.md) | Visibilidade e agrupamento local preservados | Testes de privacidade e pastas | PARTIAL | Enquetes cifradas disponíveis em conversas diretas. Comunidades distribuídas, papéis, tags e enquetes em grupos continuam pendentes. |
 | E. Archive | [Archive](ARCHIVE_EDITOR_VALIDATION.md) | Editor Markdown, revisão visual, moderação reversível e assinatura preservada | Teste de fluxo Archive | PARTIAL | Notas de rodapé preservadas. Mídias autorizadas e reações estão pendentes. |
 | F. Acervo e música | [Catálogo](MEDIA_PROGRESS_AND_MUSIC.md) | Catálogo local, busca Unicode, progresso cultural e playlist local do Pager no Android | Testes de abertura, busca e integridade | PARTIAL | Playlist do Pager aceita WAV no Linux e Windows. Playlists do acervo, publicação opcional e resenhas formatadas continuam pendentes. |
 | G. Finanças | [Mercado](UNIFIED_P2P_MARKETPLACE.md), [RoboSats](ROBOSATS_INTEGRATION.md) | Mercado e carteira em uma entrada, com análise de integração RoboSats | Testes locais de isolamento e assinatura | PARTIAL | Bitcoin on-chain, Lightning, coordenadores e liquidação Monero real continuam pendentes. |
@@ -54,3 +54,10 @@ Continuam pendentes mídia e gravação em chamadas, comunidades e enquetes dist
 Continuam pendentes chamadas de voz e sua gravação, enquetes e comunidades distribuídas, Bitcoin/Lightning, aceitação física e ensaios por relay Onion externo.
 
 A suíte local passou com 231 testes e cinco ignorados. O CI da revisão `3a94df4` passou no relay, no cliente, nos módulos Dart e nos gates de privacidade. O player Linux iniciou um fluxo WAV real em uma saída virtual PulseAudio por socket local e encerrou o fluxo ao parar. [CI da revisão](https://github.com/foros049695/nix/actions/runs/44811641607) · [Pilotos nativos](https://github.com/foros049695/nix/actions/runs/44811643293)
+
+
+## Enquetes diretas e fotos no compositor
+
+Dois clientes trocaram uma enquete pelo relay de laboratório, registraram e alteraram votos e confirmaram a autoridade do autor para encerrar. O resultado foi reconstruído após reabrir o banco. Testes do codec e da interface cobrem prazo, revisões, opções, filtros e prévia local de foto. A integração usa o Double Ratchet existente e nenhuma chave do ambiente financeiro. [Enquetes](COMMUNITIES_AND_POLLS.md) · [Fotos e mensagens](MESSAGING_AND_MEDIA_INTEGRATION.md)
+
+As enquetes em comunidades, o transporte de chamadas, Bitcoin/Lightning e o aceite em hardware permanecem abertos.

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/models/message.dart';
+import '../../core/messaging/direct_poll.dart';
+import 'direct_poll_widgets.dart';
 import 'message_bubble.dart';
 
 class MessageTimeline extends StatefulWidget {
@@ -8,10 +10,12 @@ class MessageTimeline extends StatefulWidget {
     super.key,
     required this.messages,
     this.highlightedMessageId,
+    this.directPolls = const {},
   });
 
   final List<Message> messages;
   final String? highlightedMessageId;
+  final Map<String, DirectPollState> directPolls;
 
   @override
   State<MessageTimeline> createState() => _MessageTimelineState();
@@ -81,6 +85,16 @@ class _MessageTimelineState extends State<MessageTimeline> {
         itemCount: widget.messages.length,
         itemBuilder: (context, index) {
           final message = widget.messages[widget.messages.length - index - 1];
+          final poll = widget.directPolls[message.id];
+          if (poll != null) {
+            return DirectPollCard(
+              key: ValueKey(message.id),
+              poll: poll,
+              conversationId: message.channelId,
+              outgoing: message.isMe,
+              deliveryState: message.deliveryState,
+            );
+          }
           return MessageBubble(key: ValueKey(message.id), message: message);
         },
       );

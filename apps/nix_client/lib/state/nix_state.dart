@@ -35,6 +35,7 @@ import '../core/security/local_image_helper.dart';
 import '../core/security/seed_recovery.dart';
 import '../core/security/anti_forensic_shredder.dart';
 import '../core/messaging/sovereign_messenger.dart';
+import '../core/messaging/direct_poll.dart';
 import '../core/messaging/scheduled_messages.dart';
 import '../core/p2p/monero_ad_verifier.dart';
 import '../core/archive/nix_archive_service.dart';
@@ -121,6 +122,7 @@ class NixState extends ChangeNotifier {
   late Map<String, List<Message>> _messages;
   late Map<String, List<Publication>> _publications;
   late List<ForumPost> _forumPosts;
+  final _directPolls = <String, Map<String, DirectPollState>>{};
   late List<Member> _members;
   late UserProfile _userProfile;
   late List<DirectMessageThread> _directMessages;
@@ -1135,7 +1137,7 @@ class NixState extends ChangeNotifier {
     _scheduledWakeup?.cancel();
     _scheduledWakeup = null;
     await _scheduledRun;
-    await _voiceSend;
+    await _interactiveDirectSend;
     if (Platform.isAndroid) {
       try {
         await const MethodChannel('com.projetonix.nix/voice_notes')
@@ -1177,6 +1179,7 @@ class NixState extends ChangeNotifier {
     _inMemoryArchiveObjects.clear();
     _consumedMoneroNonces.clear();
     _forumTags.clear();
+    _directPolls.clear();
     _localDeviceId = 'dev_primary';
     _localDatabase = null;
     _sovereignMessenger = null;
@@ -1779,10 +1782,15 @@ class NixState extends ChangeNotifier {
             (existingIdx != -1 ? _directMessages[existingIdx].peerPublicId : invitedPeer ?? cid);
         final peerContact = await _contactRepo?.getContact(existingPeerId);
         final isVerified = hasSession && peerContact?['verification'] == 'verified';
+        if (hasSession && _sovereignMessenger != null) {
+          _directPolls[cid] = await _sovereignMessenger!.directPollsFor(cid, existingPeerId);
+        } else {
+          _directPolls.remove(cid);
+        }
         final existingPeerMailbox = (sessionMeta?['peerMailbox'] as String?) ??
             (existingIdx != -1 ? _directMessages[existingIdx].peerMailboxId : null) ??
             SovereignMessenger.deriveMailboxCredentials(existingPeerId).mailboxId;
-        final msgRows = await _messageRepo!.getMessagesForConversation(cid, limit: 200);
+        final msgRows = await _messageRepo!.getLatestMessagesForConversation(cid);
         final msgs = <Message>[];
         for (final r in msgRows) {
           final msgId = r['id'] as String;
@@ -3424,9 +3432,9 @@ class NixState extends ChangeNotifier {
     }
   }
 
-  Future<void>? _voiceSend;
+  Future<void>? _interactiveDirectSend;
 
-  bool canSendVoiceNote(String conversationId) =>
+  bool _canSendInteractiveDirect(String conversationId) =>
       canScheduleDirectMessages && !_isStrictOffGridMode &&
       _selectedDm?.id == conversationId && _selectedDm?.hasActiveSession == true &&
       _selectedDm?.isSavedMessages == false &&
@@ -3446,23 +3454,71 @@ class NixState extends ChangeNotifier {
     }
   }
 
-  Future<void> sendVoiceNote(String conversationId, VoiceNote note) async {
+  Map<String, DirectPollState> directPollsFor(String conversationId) =>
+      _directPolls[conversationId] ?? const {};
+
+  bool canUseDirectPolls(String conversationId) => _canSendInteractiveDirect(conversationId);
+
+  bool canSendVoiceNote(String conversationId) => _canSendInteractiveDirect(conversationId);
+
+  Future<void> createDirectPoll(String conversationId, DirectPollSpec poll) =>
+      _sendDirectPollEvent(conversationId, (_, __) => poll);
+
+  Future<void> voteDirectPoll(String conversationId, String pollId, List<int> choices) =>
+      _sendDirectPollEvent(conversationId, (polls, actor) {
+        final poll = polls[pollId];
+        if (poll == null) throw StateError('Enquete indisponível.');
+        return poll.makeVote(actor, choices, DateTime.now());
+      });
+
+  Future<void> closeDirectPoll(String conversationId, String pollId) =>
+      _sendDirectPollEvent(conversationId, (polls, actor) {
+        final poll = polls[pollId];
+        if (poll == null) throw StateError('Enquete indisponível.');
+        return poll.makeClose(actor);
+      });
+
+  Future<void> _sendDirectPollEvent(
+    String conversationId,
+    DirectPollEvent Function(Map<String, DirectPollState>, String) build,
+  ) => _sendInteractiveDirect(
+    conversationId,
+    (messenger, allowed) => messenger.enqueueDirectPollEvent(
+      conversationId: conversationId,
+      senderMailbox: localRelayMailboxId,
+      build: build,
+      mayEnqueue: allowed,
+    ),
+  );
+
+  Future<void> sendVoiceNote(String conversationId, VoiceNote note) =>
+      _sendInteractiveDirect(
+    conversationId,
+    (messenger, allowed) => messenger.enqueueVoiceNote(
+      conversationId: conversationId,
+      senderMailbox: localRelayMailboxId,
+      note: note,
+      ephemeralTtlSeconds: _selectedEphemeralTimer,
+      mayEnqueue: allowed,
+    ),
+  );
+
+  Future<void> _sendInteractiveDirect(
+    String conversationId,
+    Future<void> Function(SovereignMessenger, bool Function()) enqueue,
+  ) async {
     final messenger = _sovereignMessenger;
     bool allowed() => identical(messenger, _sovereignMessenger) &&
-        canSendVoiceNote(conversationId);
-    if (_voiceSend != null || messenger == null || !allowed()) {
-      throw StateError('Abra uma conversa direta com sessão cifrada para enviar áudio.');
+        _canSendInteractiveDirect(conversationId);
+    if (_interactiveDirectSend != null || messenger == null || !allowed()) {
+      throw StateError('Abra uma conversa direta com sessão cifrada e aguarde o envio anterior.');
     }
     final relay = _relayForMessaging;
     final send = () async {
-      await messenger.enqueueVoiceNote(
-        conversationId: conversationId,
-        senderMailbox: localRelayMailboxId,
-        note: note,
-        ephemeralTtlSeconds: _selectedEphemeralTimer,
-        mayEnqueue: allowed,
-      );
+      await enqueue(messenger, allowed);
       try {
+        if (!_disposed && _panicWipe == null) await _refreshDirectThreadsFromDatabase();
+        if (!_disposed && _panicWipe == null) notifyListeners();
         bool maySend() => allowed() && securityGate.isTorAnonymityReady;
         if (relay != null && relay.policy.mode == TransportMode.torFailClosed &&
             TransportPolicy.isValidOnionV3Host(relay.baseUri.host) && maySend()) {
@@ -3471,20 +3527,18 @@ class NixState extends ChangeNotifier {
             relayClient: relay, quotaToken: quota?.isNotEmpty == true ? quota : null,
             maySend: maySend,
           );
-        }
-        if (!_disposed && _panicWipe == null) {
-          await _refreshDirectThreadsFromDatabase();
+          if (!_disposed && _panicWipe == null) await _refreshDirectThreadsFromDatabase();
         }
       } catch (_) {
         // O envelope já gravado continua disponível para sincronização.
       }
       if (!_disposed && _panicWipe == null) notifyListeners();
     }();
-    _voiceSend = send.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _interactiveDirectSend = send.then<void>((_) {}, onError: (Object _, StackTrace __) {});
     try {
       await send;
     } finally {
-      _voiceSend = null;
+      _interactiveDirectSend = null;
     }
   }
 
@@ -5736,7 +5790,7 @@ class NixState extends ChangeNotifier {
       // Continua o fechamento do banco mesmo se a malha falhar.
     }
     await _scheduledRun;
-    await _voiceSend;
+    await _interactiveDirectSend;
     try {
       await _localDatabase?.close();
     } catch (_) {

@@ -1,3 +1,4 @@
+import '../messaging/direct_poll.dart';
 import 'message.dart';
 import 'member.dart';
 
@@ -51,7 +52,13 @@ class DirectMessageThread {
           ? 'Notas criptografadas, links, arquivos e encaminhamentos privados.'
           : 'Sessão Double Ratchet estabelecida.';
     }
-    return messages.last.text;
+    final text = messages.last.text;
+    return switch (DirectPollEvent.parse(text)) {
+      DirectPollSpec(:final question) => 'Enquete · $question',
+      DirectPollVote() => 'Voto em enquete',
+      DirectPollClose() => 'Enquete encerrada',
+      null => text,
+    };
   }
 
   DateTime? get lastActivityAt => messages.isNotEmpty ? messages.last.timestamp : null;

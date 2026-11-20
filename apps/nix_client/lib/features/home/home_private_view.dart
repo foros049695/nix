@@ -1,3 +1,4 @@
+import '../../core/messaging/direct_poll.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -627,7 +628,13 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                 )
               : MessageTimeline(
                   key: ValueKey(dm.id),
-                  messages: dm.messages,
+                  messages: dm.isSavedMessages ? dm.messages : dm.messages.where((message) {
+                    final text = message.text;
+                    if (!text.startsWith(DirectPollEvent.prefix)) return true;
+                    final event = DirectPollEvent.parse(text);
+                    return event is! DirectPollVote && event is! DirectPollClose;
+                  }).toList(),
+                  directPolls: dm.isSavedMessages ? const {} : state.directPollsFor(dm.id),
                   highlightedMessageId: state.highlightedMessageId,
                 ),
           ),

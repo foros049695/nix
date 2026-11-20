@@ -10,6 +10,7 @@ import '../database/repositories.dart';
 import '../security/local_image_helper.dart';
 import '../media/voice_note.dart';
 import 'scheduled_messages.dart';
+import 'direct_poll.dart';
 
 /// Resultado da importação out-of-band (QR/JSON) de um Card ID soberano.
 enum CardImportStatus {
@@ -818,6 +819,44 @@ class SovereignMessenger {
         deriveMailboxCredentials(peer).mailboxId;
   }
 
+  Future<Map<String, DirectPollState>> directPollsFor(
+    String conversationId, String remoteId,
+  ) async => DirectPollState.project(
+    await messageRepo.getProtocolMessages(conversationId, DirectPollEvent.prefix),
+    localId: identity.publicId,
+    remoteId: remoteId,
+  );
+
+  Future<void> enqueueDirectPollEvent({
+    required String conversationId,
+    required String senderMailbox,
+    required DirectPollEvent Function(Map<String, DirectPollState>, String) build,
+    required bool Function() mayEnqueue,
+  }) => _withRatchet(() async {
+    final destination = await _directDestination(conversationId);
+    final metadata = await getSessionMetadata(conversationId);
+    final peer = metadata?['peerPublicId'] as String?;
+    if (destination == null || peer == null || !mayEnqueue()) {
+      throw StateError('A conversa precisa de uma sessão cifrada válida.');
+    }
+    final polls = await directPollsFor(conversationId, peer);
+    final event = build(polls, identity.publicId);
+    final text = event.encode();
+    if (DirectPollEvent.parse(text) == null) {
+      throw const FormatException('O evento da enquete é inválido.');
+    }
+    await _enqueueDirectMessage(
+      conversationId: conversationId,
+      destinationMailbox: destination,
+      senderMailbox: senderMailbox,
+      text: text,
+      ephemeralTtlSeconds: null,
+      attachments: const [],
+      onFaultStage: null,
+      mayEnqueue: mayEnqueue,
+    );
+  });
+
   Future<void> enqueueVoiceNote({
     required String conversationId,
     required String senderMailbox,
@@ -1442,6 +1481,16 @@ class SovereignMessenger {
         final text = inner['text'] as String? ?? '';
         final createdAt = (inner['ts'] as num?)?.toInt() ??
             DateTime.now().toUtc().millisecondsSinceEpoch;
+        if (text.startsWith(DirectPollEvent.prefix) &&
+            (stateObj['peerPublicId'] != senderId ||
+                inner['sender'] != senderId ||
+                inner['convId'] != convId ||
+                inner['id'] != wireMsgId ||
+                !DirectPollEvent.acceptsTimestamp(createdAt) ||
+                (!reciprocalInvite && existing == null && contact == null))) {
+          errors.add('Evento de enquete incompatível com a sessão.');
+          continue;
+        }
         final expiresAt = (inner['expiresAt'] as num?)?.toInt();
         if ((nearbyOnly || reciprocalInvite) &&
             (inner['sender'] != senderId ||

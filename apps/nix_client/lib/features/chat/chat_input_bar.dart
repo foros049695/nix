@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'voice_note_dialog.dart';
 import 'chat_inline_format.dart';
+import 'direct_poll_widgets.dart';
 import 'emoji_catalog.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -31,6 +34,8 @@ class ChatInputBar extends StatefulWidget {
   @override
   State<ChatInputBar> createState() => _ChatInputBarState();
 }
+
+enum _AttachmentSource { photos, files }
 
 class _ChatInputBarState extends State<ChatInputBar> {
   final _controller = TextEditingController();
@@ -81,15 +86,46 @@ class _ChatInputBarState extends State<ChatInputBar> {
     if (_pickingAttachments) return;
     _pickingAttachments = true;
     try {
+      final source = await showModalBottomSheet<_AttachmentSource>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheet) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Fotos'),
+                onTap: () => Navigator.pop(sheet, _AttachmentSource.photos),
+              ),
+              ListTile(
+                leading: const Icon(Icons.attach_file),
+                title: const Text('Arquivos'),
+                onTap: () => Navigator.pop(sheet, _AttachmentSource.files),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (!mounted || source == null) return;
+      final extensions = source == _AttachmentSource.photos
+          ? LocalImageHelper.supportedExtensions
+          : LocalImageHelper.supportedMediaExtensions;
       List<String> picked;
       try {
-        picked = await LocalImageHelper.pickAttachmentsNativeDesktop();
+        picked = await LocalImageHelper.filePickerAdapter.pickAttachments(
+          allowedExtensions: extensions,
+          allowMultiple: true,
+        );
       } on FilePickerUnavailableException {
         if (!mounted) return;
         picked = await CrossPlatformFilePickerAdapter.showPortableFileChooserDialog(
           context,
-          allowedExtensions: LocalImageHelper.supportedMediaExtensions,
+          allowedExtensions: extensions,
         );
+      }
+      if (source == _AttachmentSource.photos) {
+        picked = picked.where(LocalImageHelper.isSupportedExtension).toList();
       }
       if (picked.isNotEmpty && mounted) {
         setState(() => _pendingAttachments.addAll(picked));
@@ -97,7 +133,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     } on PlatformException catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.message ?? 'Não foi possível selecionar arquivos.')),
+          SnackBar(content: Text(error.message ?? 'Não foi possível selecionar os arquivos.')),
         );
       }
     } finally {
@@ -403,6 +439,18 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   height: 36,
                   child: _EphemeralTimerSelector(
                     currentTimer: ephemeralTimer,
+                    onPoll: voiceConversation != null && nixState.canUseDirectPolls(voiceConversation)
+                        ? () {
+                            _focusNode.unfocus();
+                            showDialog<void>(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (_) => CreateDirectPollDialog(
+                                onCreate: (poll) => nixState.createDirectPoll(voiceConversation, poll),
+                              ),
+                            );
+                          }
+                        : null,
                     onChanged: nixState.setEphemeralTimer,
                     onSchedule: nixState.canScheduleDirectMessages &&
                             widget.scheduledConversationId != null
@@ -553,7 +601,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   Widget _buildAttachmentsPreviewTray(BuildContext context) {
     return Container(
-      height: 48,
+      height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
         color: NixColors.surfaceCard,
@@ -589,7 +637,23 @@ class _ChatInputBarState extends State<ChatInputBar> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 16, color: context.accentTextColor),
+                if (LocalImageHelper.isSupportedExtension(path) && File(path).isAbsolute)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image.file(
+                      File(path),
+                      key: ValueKey('attachment_preview_$path'),
+                      width: 36,
+                      height: 36,
+                      cacheWidth: 72,
+                      fit: BoxFit.cover,
+                      excludeFromSemantics: true,
+                      errorBuilder: (_, __, ___) =>
+                          Icon(icon, size: 16, color: context.accentTextColor),
+                    ),
+                  )
+                else
+                  Icon(icon, size: 16, color: context.accentTextColor),
                 const SizedBox(width: 6),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 160),
@@ -666,12 +730,14 @@ class _EphemeralTimerSelector extends StatelessWidget {
   final int currentTimer;
   final ValueChanged<int> onChanged;
   final VoidCallback? onSchedule;
+  final VoidCallback? onPoll;
   final VoidCallback? onShowSchedules;
 
   const _EphemeralTimerSelector({
     required this.currentTimer,
     required this.onChanged,
     this.onSchedule,
+    this.onPoll,
     this.onShowSchedules,
   });
 
@@ -680,7 +746,8 @@ class _EphemeralTimerSelector extends StatelessWidget {
     final isTimerActive = currentTimer > 0;
     return PopupMenuButton<int>(
       key: const Key('chat_timer_button'),
-      tooltip: onSchedule == null ? 'Temporizador de Mensagem Efêmera' : 'Temporizador e agendamento',
+      tooltip: onPoll != null ? 'Enquete, temporizador e agendamento' :
+          onSchedule == null ? 'Temporizador de Mensagem Efêmera' : 'Temporizador e agendamento',
       initialValue: currentTimer,
       onSelected: (value) {
         switch (value) {
@@ -688,6 +755,8 @@ class _EphemeralTimerSelector extends StatelessWidget {
             onSchedule?.call();
           case -2:
             onShowSchedules?.call();
+          case -3:
+            onPoll?.call();
           default:
             onChanged(value);
         }
@@ -732,6 +801,8 @@ class _EphemeralTimerSelector extends StatelessWidget {
         ],
       ),
       itemBuilder: (context) => [
+        if (onPoll != null)
+          const PopupMenuItem(value: -3, child: Text('Criar enquete')),
         if (onSchedule != null) ...[
           const PopupMenuItem(value: -1, child: Text('Agendar este texto')),
           const PopupMenuItem(value: -2, child: Text('Ver agendamentos')),

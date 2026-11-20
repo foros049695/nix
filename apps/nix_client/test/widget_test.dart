@@ -558,6 +558,8 @@ void main() {
     // Clica no botão de anexo (simulado em teste)
     await tester.tap(find.byKey(const Key('chat_attach_button')));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Arquivos'));
+    await tester.pumpAndSettle();
 
     // Bandeja de anexo exibe o arquivo selecionado com botão de remover
     expect(find.text('documento_seguro.pdf'), findsOneWidget);

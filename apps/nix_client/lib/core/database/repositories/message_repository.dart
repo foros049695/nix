@@ -58,6 +58,34 @@ class MessageRepository {
     );
   }
 
+  Future<List<Map<String, dynamic>>> getLatestMessagesForConversation(
+      String conversationId,
+      {int limit = 200}) async {
+    final recent = await _db.query(
+      'messages',
+      where: 'conversation_id = ? AND delivery_state != ?',
+      whereArgs: [conversationId, 'deleted'],
+      orderBy: 'created_at DESC, id DESC',
+      limit: limit,
+    );
+    return recent.reversed.toList();
+  }
+
+  Future<List<Map<String, Object?>>> getProtocolMessages(
+    String conversationId,
+    String prefix,
+  ) =>
+      _db.query(
+        'messages',
+        columns: ['id', 'author_key', 'created_at', 'body', 'delivery_state'],
+        where:
+            'conversation_id = ? AND delivery_state != ? AND expires_at IS NULL '
+            'AND substr(body, 1, ?) = ?',
+        whereArgs: [conversationId, 'deleted', prefix.length, prefix],
+        orderBy: 'created_at DESC, id DESC',
+        limit: 2048,
+      );
+
   Future<void> updateDeliveryState(String messageId, String newState) async {
     await _db.update(
       'messages',
