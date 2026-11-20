@@ -189,71 +189,74 @@ class _PagerProfileState extends State<PagerProfile> {
             children: [
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 790),
-                child: PagerHousing(
-                  wallpaper: state.settings.pagerWallpaperAcrossPages
-                      ? PagerWallpaperLayer(state: state, readable: true)
-                      : null,
-                  caseColor: state.settings.pagerCaseColor,
-                  lcdColor: state.settings.pagerLcdColor,
-                  reducedMotion: reduced,
-                  onPrevious:
-                      _page > 0 ? () => _selectPage(_page - 1, state) : null,
-                  onNext:
-                      _page < 2 ? () => _selectPage(_page + 1, state) : null,
-                  onMenu: () => _showPagerMenu(state),
-                  minDisplayHeight: MediaQuery.sizeOf(context).width < 600 ? 442 : 386,
-                  screen: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final narrow = constraints.maxWidth < 350;
-                      return ScrollConfiguration(
-                        behavior: ScrollConfiguration.of(context).copyWith(
-                          dragDevices: const {
-                            PointerDeviceKind.touch,
-                            PointerDeviceKind.mouse,
-                            PointerDeviceKind.stylus,
-                            PointerDeviceKind.trackpad,
-                          },
-                        ),
-                        child: PageView(
-                          key: const Key('pager_screen'),
-                          controller: _controller,
-                          onPageChanged: (page) => setState(() => _page = page),
-                          children: [
-                            _PagerPanel(
-                              title: _pages[0],
-                              japanese: '身分証',
-                              page: 1,
-                              footer: const PagerShortcuts(),
-                              action: IconButton(
-                                key: const Key('card_id_settings_gear'),
-                                tooltip: 'Abrir Central de Configurações',
-                                onPressed: () => _openSettings(state),
-                                icon: const Icon(Icons.settings_outlined),
-                              ),
-                              child: _identity(state, profile, narrow),
-                            ),
-                            _PagerPanel(
-                              title: _pages[1],
-                              fixedFooter: true,
-                              japanese: '状態',
-                              page: 2,
-                              child: _status(
-                                  state, reduced, constraints.maxWidth >= 460),
-                              footer: OutlinedButton(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: pagerInk,
-                                  side: const BorderSide(color: pagerInk),
+                child: LayoutBuilder(
+                  builder: (context, housing) => PagerHousing(
+                    wallpaper: state.settings.pagerWallpaperAcrossPages
+                        ? PagerWallpaperLayer(state: state, readable: true)
+                        : null,
+                    caseColor: state.settings.pagerCaseColor,
+                    lcdColor: state.settings.pagerLcdColor,
+                    reducedMotion: reduced,
+                    onPrevious:
+                        _page > 0 ? () => _selectPage(_page - 1, state) : null,
+                    onNext:
+                        _page < 2 ? () => _selectPage(_page + 1, state) : null,
+                    onMenu: () => _showPagerMenu(state),
+                    minDisplayHeight: housing.maxWidth < 576 ? 442 : 386,
+                    screen: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final narrow = constraints.maxWidth < 350;
+                        return ScrollConfiguration(
+                          behavior: ScrollConfiguration.of(context).copyWith(
+                            dragDevices: const {
+                              PointerDeviceKind.touch,
+                              PointerDeviceKind.mouse,
+                              PointerDeviceKind.stylus,
+                              PointerDeviceKind.trackpad,
+                            },
+                          ),
+                          child: PageView(
+                            key: const Key('pager_screen'),
+                            controller: _controller,
+                            onPageChanged: (page) =>
+                                setState(() => _page = page),
+                            children: [
+                              _PagerPanel(
+                                title: _pages[0],
+                                japanese: '身分証',
+                                page: 1,
+                                footer: const PagerShortcuts(),
+                                action: IconButton(
+                                  key: const Key('card_id_settings_gear'),
+                                  tooltip: 'Abrir Central de Configurações',
+                                  onPressed: () => _openSettings(state),
+                                  icon: const Icon(Icons.settings_outlined),
                                 ),
-                                onPressed: () => _selectPage(2, state),
-                                child: const Text('Abrir contemplação'),
+                                child: _identity(state, profile, narrow),
                               ),
-                            ),
-                            _ContemplationScreen(
-                                showAvatar: !state.settings.hidePagerAvatar),
-                          ],
-                        ),
-                      );
-                    },
+                              _PagerPanel(
+                                title: _pages[1],
+                                fixedFooter: true,
+                                japanese: '状態',
+                                page: 2,
+                                child: _status(state, reduced,
+                                    constraints.maxWidth >= 460),
+                                footer: OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: pagerInk,
+                                    side: const BorderSide(color: pagerInk),
+                                  ),
+                                  onPressed: () => _selectPage(2, state),
+                                  child: const Text('Abrir contemplação'),
+                                ),
+                              ),
+                              _ContemplationScreen(
+                                  showAvatar: !state.settings.hidePagerAvatar),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
