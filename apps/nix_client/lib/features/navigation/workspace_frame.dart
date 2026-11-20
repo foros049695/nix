@@ -22,7 +22,7 @@ enum WorkspaceTab {
   spaces('Grupos', Icons.forum_outlined, Icons.forum_rounded),
   media('Acervo', Icons.local_library_outlined, Icons.local_library_rounded),
   archive('Arquivo', Icons.auto_stories_outlined, Icons.auto_stories_rounded),
-  market('Monero', Icons.currency_exchange_rounded,
+  market('Cripto', Icons.currency_exchange_rounded,
       Icons.currency_exchange_rounded);
 
   const WorkspaceTab(this.label, this.icon, this.activeIcon);

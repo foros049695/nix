@@ -146,7 +146,7 @@ class HomeSidebar extends StatelessWidget {
                   context,
                   key: const Key('home_nav_monero'),
                   icon: Icons.currency_exchange_rounded,
-                  label: 'Mercado Monero P2P',
+                  label: 'Mercado Cripto',
                   isSelected: nixState.activeArea == NixActiveArea.moneroP2p,
                   onTap: () => nixState.openMoneroP2pArea(),
                 ),

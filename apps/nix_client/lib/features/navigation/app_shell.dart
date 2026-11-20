@@ -386,7 +386,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       case NixActiveArea.github:
         return 'GitHub Discovery';
       case NixActiveArea.moneroP2p:
-        return 'Mercado Monero P2P';
+        return 'Mercado Cripto';
       case NixActiveArea.mediaIndex:
         return 'Nix Media Index (Offline-First)';
       case NixActiveArea.archive:
