@@ -24,3 +24,17 @@ Baseado nos testes de integração e benchmark da Fase 4:
 4. **Backup e Restauração PostgreSQL (`database/examples/backup_metadata.sh`, `restore_metadata.sh`):**
    - Backups de metadados excluem estritamente payloads (`--exclude-table-data=nix.envelopes`).
    - O script de restauração reconcilia contadores (`used_bytes=0`, `pending_count=0`) e purga capabilities expiradas/revogadas antes de reabrir o serviço.
+
+
+### Cotas do relay em PostgreSQL
+
+A inicialização padrão do relay aplica a migração `relay_002_durable_quota.sql`.
+Quando o banco é provisionado separadamente, aplique a migração após a
+`relay_001_initial.sql` e conceda ao papel do relay `EXECUTE` na função
+`nix.put_envelope_with_quota(text,uuid,bytea,integer,bytea,bigint)`.
+
+Atualize todas as instâncias que compartilham o banco no mesmo rollout. A cota
+soma os bytes pendentes e ainda válidos do mesmo hash de token em todas as
+mailboxes. ACK e expiração liberam o consumo. Envelopes anteriores à migração
+seguem sujeitos aos limites global e da mailbox. O vínculo a um token de cota
+começa nas novas inserções.

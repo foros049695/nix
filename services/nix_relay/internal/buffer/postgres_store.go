@@ -5,13 +5,13 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	_ "embed"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,12 +27,13 @@ type PostgresMailboxStore struct {
 	baseTTL                  time.Duration
 	maxAttachmentBytes       int64
 	maxInFlightPerQuotaToken int64
-	mu                       sync.RWMutex
-	quotaUsage               map[string]int64
 	totalStored              atomic.Int64
 	totalAcked               atomic.Int64
 	totalPruned              atomic.Int64
 }
+
+//go:embed postgres_quota.sql
+var postgresQuotaMigrationSQL string
 
 const postgresSchemaBootstrapSQL = `
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -137,6 +138,19 @@ func NewPostgresMailboxStore(ctx context.Context, dsn string, baseTTL time.Durat
 			_ = db.Close()
 			return nil, fmt.Errorf("%w: schema init: %v", ErrPersistence, err)
 		}
+		if _, err := db.ExecContext(ctx, postgresQuotaMigrationSQL); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("%w: migração de cotas: %v", ErrPersistence, err)
+		}
+	}
+	var quotaAvailable bool
+	err = db.QueryRowContext(pingCtx, `
+      SELECT has_function_privilege(
+        to_regprocedure('nix.put_envelope_with_quota(text,uuid,bytea,integer,bytea,bigint)'), 'EXECUTE'
+      ) IS TRUE`).Scan(&quotaAvailable)
+	if err != nil || !quotaAvailable {
+		_ = db.Close()
+		return nil, fmt.Errorf("%w: verifique a migração relay_002_durable_quota e a permissão EXECUTE", ErrPersistence)
 	}
 
 	return &PostgresMailboxStore{
@@ -144,7 +158,6 @@ func NewPostgresMailboxStore(ctx context.Context, dsn string, baseTTL time.Durat
 		baseTTL:                  baseTTL,
 		maxAttachmentBytes:       maxAttachmentBytes,
 		maxInFlightPerQuotaToken: maxInFlightPerQuotaToken,
-		quotaUsage:               make(map[string]int64),
 	}, nil
 }
 
@@ -205,15 +218,6 @@ func (s *PostgresMailboxStore) Store(
 	if prunerState == StateCriticalBlock && byteSize > 1*1024*1024 {
 		return Envelope{}, ErrCriticalPressure
 	}
-	if quotaToken != "" {
-		s.mu.Lock()
-		if s.quotaUsage[quotaToken]+byteSize > s.maxInFlightPerQuotaToken {
-			s.mu.Unlock()
-			return Envelope{}, ErrQuotaExceeded
-		}
-		s.quotaUsage[quotaToken] += byteSize
-		s.mu.Unlock()
-	}
 
 	effTTL := int64(MaxTTLForState(prunerState, s.baseTTL).Seconds())
 	if requestedTTLSeconds > 0 && requestedTTLSeconds < effTTL {
@@ -222,34 +226,31 @@ func (s *PostgresMailboxStore) Store(
 	if effTTL < 1 {
 		effTTL = 1
 	}
+	if effTTL > 604800 {
+		effTTL = 604800
+	}
 
 	boxHex := canonicalMailboxHex(mailboxID)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := s.ensureMailbox(ctx, boxHex); err != nil {
-		if quotaToken != "" {
-			s.mu.Lock()
-			s.quotaUsage[quotaToken] -= byteSize
-			s.mu.Unlock()
-		}
 		return Envelope{}, fmt.Errorf("%w: %v", ErrPersistence, err)
 	}
 
-	deliveryUUID := newRandomUUIDv4()
 	var envID string
 	var expiresAt time.Time
 	var state string
 	err = s.db.QueryRowContext(
 		ctx,
-		`SELECT envelope_id::text, expires_at, envelope_state FROM nix.put_envelope($1, $2::uuid, $3, $4)`,
-		boxHex, deliveryUUID, raw, effTTL,
+		`SELECT envelope_id::text, expires_at, envelope_state
+         FROM nix.put_envelope_with_quota($1, $2::uuid, $3, $4, decode(NULLIF($5, ''), 'hex'), $6)`,
+		boxHex, newRandomUUIDv4(), raw, effTTL, quotaTokenHash(quotaToken), s.maxInFlightPerQuotaToken,
 	).Scan(&envID, &expiresAt, &state)
 	if err != nil {
-		if quotaToken != "" {
-			s.mu.Lock()
-			s.quotaUsage[quotaToken] -= byteSize
-			s.mu.Unlock()
+		var pgError *pq.Error
+		if errors.As(err, &pgError) && pgError.Code == "NX001" {
+			return Envelope{}, ErrQuotaExceeded
 		}
 		return Envelope{}, fmt.Errorf("%w: %v", ErrPersistence, err)
 	}
@@ -261,7 +262,6 @@ func (s *PostgresMailboxStore) Store(
 		CreatedAt:  now.UTC().Unix(),
 		ExpiresAt:  expiresAt.UTC().Unix(),
 		ByteSize:   byteSize,
-		QuotaToken: quotaToken,
 	}, nil
 }
 

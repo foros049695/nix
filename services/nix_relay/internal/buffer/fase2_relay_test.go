@@ -288,3 +288,92 @@ func TestLegacyQuotaTokenMigration(t *testing.T) {
 		t.Fatal("a migração deve conservar apenas o hash de cota")
 	}
 }
+
+func TestPostgresDurableQuotaAcrossStores(t *testing.T) {
+	dsn := os.Getenv("NIX_TEST_PG_DSN")
+	if dsn == "" {
+		t.Skip("NIX_TEST_PG_DSN não definido")
+	}
+	const limit = 4
+	ctx := context.Background()
+	open := func(init bool) *PostgresMailboxStore {
+		t.Helper()
+		store, err := NewPostgresMailboxStore(ctx, dsn, time.Hour, 1024, limit, init)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = store.Close() })
+		return store
+	}
+	first := open(true)
+	second := open(false)
+	pair := []*PostgresMailboxStore{first, second}
+	boxes := []string{"quota-a-" + newRandomUUIDv4(), "quota-b-" + newRandomUUIDv4()}
+	token := "quota-fixture-" + newRandomUUIDv4()
+
+	type result struct {
+		box string
+		env Envelope
+		err error
+	}
+	results := make(chan result, 2)
+	for i, store := range pair {
+		go func(store *PostgresMailboxStore, box string) {
+			env, err := store.Store(box, "dGVzdA==", 60, token, StateNormal, time.Now())
+			results <- result{box, env, err}
+		}(store, boxes[i])
+	}
+	var accepted result
+	var successes, denials int
+	for range pair {
+		result := <-results
+		switch {
+		case result.err == nil:
+			successes++
+			accepted = result
+		case errors.Is(result.err, ErrQuotaExceeded):
+			denials++
+		default:
+			t.Fatal(result.err)
+		}
+	}
+	if successes != 1 || denials != 1 {
+		t.Fatalf("esperado um envio aceito e um bloqueado, obtidos %d e %d", successes, denials)
+	}
+
+	reopened := open(false)
+	storeFullPayload := func(ttl int64) (Envelope, error) {
+		return reopened.Store(boxes[0], "dGVzdA==", ttl, token, StateNormal, time.Now())
+	}
+	if _, err := storeFullPayload(60); !errors.Is(err, ErrQuotaExceeded) {
+		t.Fatalf("a segunda instância deve respeitar a cota persistida: %v", err)
+	}
+	if n, err := second.Ack(accepted.box, []string{accepted.env.ID}); err != nil || n != 1 {
+		t.Fatalf("ACK deve liberar a cota: removidos=%d, erro=%v", n, err)
+	}
+	if _, err := storeFullPayload(1); err != nil {
+		t.Fatal(err)
+	}
+	// Espera a expiração registrada pelo servidor, com um limite para o teste.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		_, err := storeFullPayload(60)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, ErrQuotaExceeded) || time.Now().After(deadline) {
+			t.Fatalf("cota não liberada após expiração: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestEmbeddedQuotaMigrationMatchesRelease(t *testing.T) {
+	migration, err := os.ReadFile("../../../../database/migrations/relay_002_durable_quota.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(migration) != postgresQuotaMigrationSQL {
+		t.Fatal("a migração embutida difere da migração distribuída")
+	}
+}
