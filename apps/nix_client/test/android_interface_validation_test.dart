@@ -189,11 +189,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final navBar = tester.widget<NavigationBar>(find.byType(NavigationBar));
-      expect(navBar.destinations.length, greaterThanOrEqualTo(4));
+      final navBar = find.byKey(const Key('floating_workspace_tabs'));
+      expect(find.descendant(of: navBar, matching: find.byType(InkWell)), findsNWidgets(5));
 
       // Touch target verification: todas as abas devem ter altura utilizável
-      final navBarSize = tester.getSize(find.byType(NavigationBar));
+      final navBarSize = tester.getSize(navBar);
       expect(navBarSize.height, greaterThanOrEqualTo(48.0));
     });
   });

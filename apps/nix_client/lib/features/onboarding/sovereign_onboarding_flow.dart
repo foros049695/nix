@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../profile/pager_housing.dart';
+import '../design/nix_bilingual_label.dart';
 import '../design/nix_surfaces.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -655,6 +656,8 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
   }
 
   Widget _buildAccessPager() {
+    final settings = widget.nixState.settings;
+    final lcd = Color(settings.pagerLcdColor.rgb);
     final first = _currentStep == OnboardingStep.welcome;
     final canAdvance = _canAdvanceFromCurrentStep();
     final description = switch (_currentStep) {
@@ -670,7 +673,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
     };
     if (!first) {
       return NixFrame(
-        background: pagerLcd,
+        background: lcd,
         padding: const EdgeInsets.all(9),
         child: PagerGuide(
           message: description,
@@ -683,6 +686,8 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 570),
         child: PagerHousing(
+          caseColor: settings.pagerCaseColor,
+          lcdColor: settings.pagerLcdColor,
           reducedMotion: widget.nixState.settings.reducedMotion,
           minDisplayHeight: 242,
           onMenu: () => setState(() => _showDiagnostics = !_showDiagnostics),
@@ -693,11 +698,12 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  'Acesso',
-                  style: const TextStyle(fontFamily: pagerDisplayFont, color: pagerInk, fontSize: 17),
+                const NixBilingualLabel(
+                  label: 'Acesso',
+                  japanese: '認証',
+                  style: TextStyle(fontFamily: pagerDisplayFont, color: pagerInk, fontSize: 17),
                 ),
-                const Divider(color: Color(0xFF6DA5B3)),
+                const Divider(color: pagerRule),
                 PagerGuide(
                   message: description,
                   reducedMotion: widget.nixState.settings.reducedMotion,
@@ -708,7 +714,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
                         key: const Key('onboarding_next_button'),
                         onPressed: _handleNextStepAction,
                         style: FilledButton.styleFrom(
-                          backgroundColor: pagerInk, foregroundColor: pagerLcd,
+                          backgroundColor: pagerInk, foregroundColor: lcd,
                           textStyle: const TextStyle(fontFamily: pagerDisplayFont, fontSize: 16),
                         ),
                         child: const Text('Iniciar'),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../design/nix_bilingual_label.dart';
+import '../design/nix_surfaces.dart';
 import '../../core/models/channel.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
@@ -17,10 +19,16 @@ enum _SettingsTab {
 
 class ChannelSettingsDialog extends StatefulWidget {
   final Channel channel;
+  final bool fullScreen;
 
-  const ChannelSettingsDialog({super.key, required this.channel});
+  const ChannelSettingsDialog({super.key, required this.channel, this.fullScreen = false});
 
   static Future<void> show(BuildContext context, Channel channel) {
+    if (MediaQuery.sizeOf(context).width < nixDesktopBreakpoint) {
+      return Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => ChannelSettingsDialog(channel: channel, fullScreen: true),
+      ));
+    }
     return showDialog<void>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.72),
@@ -34,6 +42,15 @@ class ChannelSettingsDialog extends StatefulWidget {
 
 class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
   _SettingsTab _activeTab = _SettingsTab.identity;
+  _SettingsTab? _compactTab;
+
+  static const _sections = [
+    (_SettingsTab.identity, Icons.vpn_key_outlined, 'Identidade, Links & QR', '識別'),
+    (_SettingsTab.permissions, Icons.chat_bubble_outline_rounded, 'Permissões de Mensagens', '権限'),
+    (_SettingsTab.contentProtection, Icons.shield_outlined, 'Proteção de Conteúdo', '保護'),
+    (_SettingsTab.admin, Icons.admin_panel_settings_outlined, 'Membros, Admin & Logs', '管理'),
+    (_SettingsTab.security, Icons.security_rounded, 'Limites & Anti-Spam', '制限'),
+  ];
 
   late TextEditingController _nameController;
   late TextEditingController _topicController;
@@ -137,6 +154,8 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
     final accent = context.accentColor;
     final accentText = context.accentTextColor;
 
+    if (widget.fullScreen) return _buildFullScreen(nixState, accent, accentText);
+
     return Center(
       child: Material(
         color: Colors.transparent,
@@ -200,41 +219,14 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
                       child: ListView(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         children: [
-                          _buildTabItem(
-                            tab: _SettingsTab.identity,
-                            label: 'Identidade, Links & QR',
-                            icon: Icons.vpn_key_outlined,
-                            accent: accent,
-                            accentText: accentText,
-                          ),
-                          _buildTabItem(
-                            tab: _SettingsTab.permissions,
-                            label: 'Permissões de Mensagens',
-                            icon: Icons.chat_bubble_outline_rounded,
-                            accent: accent,
-                            accentText: accentText,
-                          ),
-                          _buildTabItem(
-                            tab: _SettingsTab.contentProtection,
-                            label: 'Proteção de Conteúdo',
-                            icon: Icons.shield_outlined,
-                            accent: accent,
-                            accentText: accentText,
-                          ),
-                          _buildTabItem(
-                            tab: _SettingsTab.admin,
-                            label: 'Membros, Admin & Logs',
-                            icon: Icons.admin_panel_settings_outlined,
-                            accent: accent,
-                            accentText: accentText,
-                          ),
-                          _buildTabItem(
-                            tab: _SettingsTab.security,
-                            label: 'Limites & Anti-Spam',
-                            icon: Icons.security_rounded,
-                            accent: accent,
-                            accentText: accentText,
-                          ),
+                          for (final section in _sections)
+                            _buildTabItem(
+                              tab: section.$1,
+                              label: section.$3,
+                              icon: section.$2,
+                              accent: accent,
+                              accentText: accentText,
+                            ),
                         ],
                       ),
                     ),
@@ -281,6 +273,61 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFullScreen(NixState state, Color accent, Color accentText) {
+    final current = _compactTab;
+    final section = current == null ? null : _sections.firstWhere((entry) => entry.$1 == current);
+
+    void back() {
+      FocusScope.of(context).unfocus();
+      setState(() => _compactTab = null);
+    }
+
+    return PopScope(
+      canPop: current == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && current != null) back();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: BackButton(onPressed: current == null ? () => Navigator.of(context).pop() : back),
+          title: NixBilingualLabel(label: section?.$3 ?? '#${widget.channel.name}', japanese: section?.$4 ?? '設定'),
+        ),
+        body: SafeArea(
+          bottom: false,
+          child: current == null
+              ? ListView(
+                  key: const Key('mobile_channel_settings_categories'),
+                  children: [
+                    for (final entry in _sections)
+                      ListTile(
+                        leading: Icon(entry.$2),
+                        title: NixBilingualLabel(label: entry.$3, japanese: entry.$4),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => setState(() {
+                          _compactTab = entry.$1;
+                          _activeTab = entry.$1;
+                        }),
+                      ),
+                  ],
+                )
+              : Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+                  child: KeyedSubtree(key: ValueKey(current), child: _buildActiveTabContent(state, accent, accentText)),
+                ),
+        ),
+        bottomNavigationBar: SafeArea(
+          minimum: const EdgeInsets.fromLTRB(15, 4, 15, 8),
+          child: FilledButton.icon(
+            key: const Key('save_channel_settings_button'),
+            onPressed: () => _save(state),
+            icon: const Icon(Icons.check_rounded),
+            label: const Text('Salvar Alterações'),
           ),
         ),
       ),
@@ -372,54 +419,50 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
           accent,
         ),
         const SizedBox(height: 12),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: NixColors.surfaceBorder),
-              ),
-              child: CustomPaint(
-                size: const Size(82, 82),
-                painter: NixQrCodePainter(
-                  data: _inviteLinkController.text,
-                  foregroundColor: const Color(0xFF17191E),
-                  backgroundColor: Colors.white,
-                ),
+        LayoutBuilder(builder: (context, constraints) {
+          final qr = Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: NixColors.surfaceBorder),
+            ),
+            child: CustomPaint(
+              size: const Size(82, 82),
+              painter: NixQrCodePainter(
+                data: _inviteLinkController.text,
+                foregroundColor: const Color(0xFF17191E),
+                backgroundColor: Colors.white,
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildTextField('Link de Convite Onion v3', _inviteLinkController, readOnly: true),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      OutlinedButton.icon(
-                        icon: Icon(Icons.copy_rounded, size: 14, color: NixColors.textPrimary),
-                        label: Text('Copiar Link', style: TextStyle(fontSize: 11.5, color: NixColors.textPrimary)),
-                        onPressed: () {
-                          Clipboard.setData(ClipboardData(text: _inviteLinkController.text));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Link de convite Onion copiado!'),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ],
+          );
+          final fields = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildTextField('Link de Convite Onion v3', _inviteLinkController, readOnly: true),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.copy_rounded, size: 14),
+                label: const Text('Copiar Link'),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: _inviteLinkController.text));
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Link de convite Onion copiado!'),
+                    behavior: SnackBarBehavior.floating,
+                  ));
+                },
               ),
-            ),
-          ],
-        ),
+            ],
+          );
+          if (constraints.maxWidth < 370) {
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              qr, const SizedBox(height: 12), fields,
+            ]);
+          }
+          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            qr, const SizedBox(width: 12), Expanded(child: fields),
+          ]);
+        }),
       ],
     );
   }
@@ -846,13 +889,16 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: NixColors.surfaceBorder),
       ),
-      child: SwitchListTile(
-        title: Text(title, style: TextStyle(color: NixColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-        subtitle: Text(subtitle, style: TextStyle(color: NixColors.textMuted, fontSize: 11)),
-        value: value,
-        activeColor: accent,
-        onChanged: onChanged,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      child: Material(
+        type: MaterialType.transparency,
+        child: SwitchListTile(
+          title: Text(title, style: TextStyle(color: NixColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+          subtitle: Text(subtitle, style: TextStyle(color: NixColors.textMuted, fontSize: 11)),
+          value: value,
+          activeColor: accent,
+          onChanged: onChanged,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        ),
       ),
     );
   }

@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import '../design/nix_surfaces.dart';
 import '../profile/peer_card_id_dialog.dart';
 
 enum _InfoMediaTab { overview, photos, videos, files, audio, links, pinned }
@@ -16,12 +17,26 @@ enum _InfoMediaTab { overview, photos, videos, files, audio, links, pinned }
 class ConversationInfoPanel extends StatefulWidget {
   final DirectMessageThread? directMessage;
   final Channel? channel;
+  final bool fullScreen;
 
   const ConversationInfoPanel({
     super.key,
     this.directMessage,
     this.channel,
+    this.fullScreen = false,
   });
+
+  static void open(BuildContext context, {DirectMessageThread? directMessage, Channel? channel}) {
+    if (MediaQuery.sizeOf(context).width >= nixDesktopBreakpoint) {
+      context.read<NixState>().toggleConversationInfoPanel();
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => Scaffold(
+      body: SafeArea(child: ConversationInfoPanel(
+        directMessage: directMessage, channel: channel, fullScreen: true,
+      )),
+    )));
+  }
 
   @override
   State<ConversationInfoPanel> createState() => _ConversationInfoPanelState();
@@ -58,11 +73,20 @@ class _ConversationInfoPanelState extends State<ConversationInfoPanel> {
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
-    final dm = widget.directMessage;
+    final original = widget.directMessage;
+    final dm = original == null ? null : nixState.directMessages.firstWhere(
+      (thread) => thread.id == original.id,
+      orElse: () => original,
+    );
     final ch = widget.channel;
     final msgs = dm != null ? dm.messages : nixState.currentMessages;
     final accent = context.accentColor;
     final accentText = context.accentTextColor;
+
+    void jumpToMessage(Message message) {
+      nixState.highlightMessage(message.id);
+      if (widget.fullScreen) Navigator.of(context).pop();
+    }
 
     // Indexação estritamente local
     final photos = <String>[];
@@ -100,7 +124,7 @@ class _ConversationInfoPanelState extends State<ConversationInfoPanel> {
 
     return Container(
       key: const Key('conversation_info_panel'),
-      width: 310,
+      width: widget.fullScreen ? double.infinity : 310,
       decoration: BoxDecoration(
         color: NixColors.surfaceSidebar,
         border: Border(left: BorderSide(color: NixColors.surfaceBorder, width: 1)),
@@ -133,9 +157,11 @@ class _ConversationInfoPanelState extends State<ConversationInfoPanel> {
                   ),
                 ),
                 IconButton(
-                  icon: Icon(Icons.close_rounded, size: 18, color: NixColors.textSecondary),
-                  tooltip: 'Fechar Painel',
-                  onPressed: () => nixState.toggleConversationInfoPanel(false),
+                  icon: Icon(widget.fullScreen ? Icons.arrow_back_rounded : Icons.close_rounded, size: 18, color: NixColors.textSecondary),
+                  tooltip: widget.fullScreen ? 'Voltar à conversa' : 'Fechar Painel',
+                  onPressed: widget.fullScreen
+                      ? () => Navigator.of(context).pop()
+                      : () => nixState.toggleConversationInfoPanel(false),
                 ),
               ],
             ),
@@ -189,7 +215,7 @@ class _ConversationInfoPanelState extends State<ConversationInfoPanel> {
                   ),
                   const SizedBox(height: 6),
                   ...filteredHistory.map((m) => InkWell(
-                        onTap: () => nixState.highlightMessage(m.id),
+                        onTap: () => jumpToMessage(m),
                         child: Container(
                           margin: const EdgeInsets.only(bottom: 6),
                           padding: const EdgeInsets.all(8),
@@ -289,7 +315,7 @@ class _ConversationInfoPanelState extends State<ConversationInfoPanel> {
                       Text('Nenhuma mensagem fixada.', style: TextStyle(color: NixColors.textMuted, fontSize: 11.5))
                     else
                       ...pinned.map((m) => InkWell(
-                            onTap: () => nixState.highlightMessage(m.id),
+                            onTap: () => jumpToMessage(m),
                             child: Container(
                               margin: const EdgeInsets.only(bottom: 6),
                               padding: const EdgeInsets.all(8),

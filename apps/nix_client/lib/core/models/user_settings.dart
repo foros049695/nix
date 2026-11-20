@@ -1,4 +1,5 @@
 import '../theme/nix_palette.dart';
+import 'pager_appearance.dart';
 
 enum SettingsCategory {
   appearance,    // 5.0 Aparência: Paleta de Cores Living AMOLED
@@ -124,6 +125,8 @@ class UserSettings {
   final bool blockRemoteEmbeds;
   final bool reducedMotion;
   final bool hidePagerAvatar;
+  final PagerCaseColor pagerCaseColor;
+  final PagerLcdColor pagerLcdColor;
   final bool duressPinConfigured;
   final bool atakBridgeEnabled;
 
@@ -220,6 +223,8 @@ class UserSettings {
     this.blockRemoteEmbeds = true,
     this.reducedMotion = false,
     this.hidePagerAvatar = false,
+    this.pagerCaseColor = PagerCaseColor.violet,
+    this.pagerLcdColor = PagerLcdColor.cyan,
     this.duressPinConfigured = true,
     this.atakBridgeEnabled = false,
   });
@@ -275,6 +280,8 @@ class UserSettings {
     bool? blockRemoteEmbeds,
     bool? reducedMotion,
     bool? hidePagerAvatar,
+    PagerCaseColor? pagerCaseColor,
+    PagerLcdColor? pagerLcdColor,
     bool? duressPinConfigured,
     bool? atakBridgeEnabled,
   }) {
@@ -329,6 +336,8 @@ class UserSettings {
       blockRemoteEmbeds: blockRemoteEmbeds ?? this.blockRemoteEmbeds,
       reducedMotion: reducedMotion ?? this.reducedMotion,
       hidePagerAvatar: hidePagerAvatar ?? this.hidePagerAvatar,
+      pagerCaseColor: pagerCaseColor ?? this.pagerCaseColor,
+      pagerLcdColor: pagerLcdColor ?? this.pagerLcdColor,
       duressPinConfigured: duressPinConfigured ?? this.duressPinConfigured,
       atakBridgeEnabled: atakBridgeEnabled ?? this.atakBridgeEnabled,
     );
@@ -354,6 +363,8 @@ class UserSettings {
         'quantizeViewportDimensions': quantizeViewportDimensions,
         'reducedMotion': reducedMotion,
         'hidePagerAvatar': hidePagerAvatar,
+        'pagerCaseColor': pagerCaseColor.name,
+        'pagerLcdColor': pagerLcdColor.name,
         'transportProfile': transportProfile,
       };
 
@@ -396,6 +407,8 @@ class UserSettings {
       quantizeViewportDimensions: (json['quantizeViewportDimensions'] as bool?) ?? false,
       reducedMotion: (json['reducedMotion'] as bool?) ?? false,
       hidePagerAvatar: (json['hidePagerAvatar'] as bool?) ?? false,
+      pagerCaseColor: PagerCaseColor.read(json['pagerCaseColor']),
+      pagerLcdColor: PagerLcdColor.read(json['pagerLcdColor']),
       transportProfile: (json['transportProfile'] as String?) ?? 'Tor Onion v3 (Fail-Closed)',
     );
   }

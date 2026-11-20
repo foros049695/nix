@@ -6,7 +6,15 @@ import '../../state/nix_state.dart';
 import '../profile/peer_card_id_dialog.dart';
 
 class MembersPanel extends StatelessWidget {
-  const MembersPanel({super.key});
+  const MembersPanel({super.key, this.fullScreen = false});
+
+  final bool fullScreen;
+
+  static void show(BuildContext context) => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold(
+          body: SafeArea(child: MembersPanel(fullScreen: true)),
+        )),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -14,7 +22,8 @@ class MembersPanel extends StatelessWidget {
     final members = nixState.members;
 
     return Container(
-      width: 240,
+      key: const Key('members_panel'),
+      width: fullScreen ? double.infinity : 240,
       decoration: BoxDecoration(
         color: NixColors.surfaceSidebar,
         border: Border(
@@ -30,6 +39,7 @@ class MembersPanel extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Row(
               children: [
+                if (fullScreen) BackButton(onPressed: () => Navigator.of(context).pop()),
                 Text(
                   'PARTICIPANTES',
                   style: TextStyle(
@@ -105,7 +115,7 @@ class _MemberTile extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    member.name[0],
+                    member.name.characters.take(1).toString(),
                     style: TextStyle(color: NixColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                 ),
@@ -147,7 +157,7 @@ class _MemberTile extends StatelessWidget {
                   ],
                 ),
                 Text(
-                  member.fingerprint.substring(0, 9),
+                  member.fingerprint.characters.take(9).toString(),
                   style: TextStyle(
                     color: NixColors.textMuted,
                     fontSize: 9,

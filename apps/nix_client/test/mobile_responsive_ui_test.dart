@@ -50,7 +50,7 @@ void main() {
       );
     }
 
-    testWidgets('Resolução 360x800 (Compacto): renderiza AppShell sem overflow e com NavigationBar', (tester) async {
+    testWidgets('Resolução 360x800: AppShell renderiza a barra flutuante sem overflow', (tester) async {
       await tester.binding.setSurfaceSize(const Size(360, 800));
 
       await tester.pumpWidget(
@@ -61,10 +61,12 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byType(NavigationBar), findsOneWidget);
-      expect(find.text('Conversas'), findsOneWidget);
-      expect(find.text('Acervo'), findsOneWidget);
-      expect(find.text('Arquivo'), findsOneWidget);
+      final bar = find.byKey(const Key('floating_workspace_tabs'));
+      expect(bar, findsOneWidget);
+      for (final label in ['Conversas', 'Acervo', 'Arquivo']) {
+        expect(find.descendant(of: bar, matching: find.text(label)), findsOneWidget);
+      }
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('Resolução 393x852 (Smartphone padrão): renderiza MediaIndexView com busca e chips', (tester) async {

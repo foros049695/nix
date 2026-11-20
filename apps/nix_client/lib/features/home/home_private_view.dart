@@ -8,6 +8,7 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../chat/chat_input_bar.dart';
+import '../chat/conversation_info_panel.dart';
 import '../chat/conversation_surface.dart';
 import '../design/nix_surfaces.dart';
 import '../chat/message_bubble.dart';
@@ -466,7 +467,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
         // Cabeçalho clicável (abre Painel de Informações da Conversa ou Card ID no nome)
         InkWell(
           key: const Key('dm_chat_header'),
-          onTap: () => state.toggleConversationInfoPanel(),
+          onTap: () => ConversationInfoPanel.open(context, directMessage: dm),
           child: Container(
             height: 52,
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -485,7 +486,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                 Expanded(
                   child: InkWell(
                     onTap: dm.isSavedMessages
-                        ? state.toggleConversationInfoPanel
+                        ? () => ConversationInfoPanel.open(context, directMessage: dm)
                         : () => PeerCardIdDialog.showForDirectMessage(context, dm),
                     borderRadius: NixTokens.borderButtonCompact,
                     child: NixPanelTitle(
@@ -530,7 +531,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                         : NixColors.textSecondary,
                   ),
                   tooltip: 'Informações & Mídia da Conversa',
-                  onPressed: () => state.toggleConversationInfoPanel(),
+                  onPressed: () => ConversationInfoPanel.open(context, directMessage: dm),
                 ),
               ],
             ),
@@ -681,12 +682,13 @@ class _HomePrivateViewState extends State<HomePrivateView> {
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  gradient: NixTokens.amoledMetalGradient,
+                  color: NixColors.surfaceCard,
                   borderRadius: NixTokens.borderMd,
                   border: Border.all(color: NixColors.surfaceBorderStrong),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Wrap(
+                  spacing: 16,
+                  runSpacing: 10,
                   children: [
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -699,17 +701,15 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                                 letterSpacing: 1.0)),
                         const SizedBox(height: 6),
                         Text(state.moneroWalletBalanceLabel,
-                            style: const TextStyle(
-                                color: Colors.white,
+                            style: TextStyle(
+                                color: NixColors.textPrimary,
                                 fontSize: 20,
                                 fontWeight: FontWeight.w800,
                                 fontFamily: 'monospace')),
                       ],
                     ),
-                    Chip(
-                      label: Text(state.moneroWalletStatusLabel, style: const TextStyle(fontSize: 11)),
-                      backgroundColor: NixColors.surfaceCard,
-                    ),
+                    Text(state.moneroWalletStatusLabel,
+                        style: TextStyle(fontSize: 12, color: NixColors.textSecondary)),
                   ],
                 ),
               ),

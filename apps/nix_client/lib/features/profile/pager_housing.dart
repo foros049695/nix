@@ -1,12 +1,34 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../core/models/pager_appearance.dart';
 import '../../core/security/sovereign_security_gate.dart';
 
 const pagerInk = Color(0xFF10262D);
-const pagerLcd = Color(0xFFAEE9ED);
 const pagerDisplayFont = 'PixelifySans';
+const pagerRule = Color(0x4D10262D);
+
+ColorFilter? pagerCaseFilter(PagerCaseColor color) {
+  if (color == PagerCaseColor.violet) return null;
+  final tint = Color(color.rgb);
+  List<double> row(double channel) {
+    final gain = .60 + channel * .80;
+    return [.2126 * gain, .7152 * gain, .0722 * gain, 0, (channel - .5) * 27];
+  }
+
+  return ColorFilter.matrix([
+    ...row(tint.r),
+    ...row(tint.g),
+    ...row(tint.b),
+    0,
+    0,
+    0,
+    1,
+    0,
+  ]);
+}
 
 String pagerNetworkLabel(SovereignSecurityGateStatus status) {
   if (status.isStrictOffGridMode) return 'Off-grid';
@@ -25,6 +47,8 @@ class PagerHousing extends StatefulWidget {
   final VoidCallback? onMenu;
   final String nextLabel;
   final double minDisplayHeight;
+  final PagerCaseColor caseColor;
+  final PagerLcdColor lcdColor;
 
   const PagerHousing({
     super.key,
@@ -35,6 +59,8 @@ class PagerHousing extends StatefulWidget {
     this.onMenu,
     this.nextLabel = 'Próxima tela',
     this.minDisplayHeight = 224,
+    this.caseColor = PagerCaseColor.violet,
+    this.lcdColor = PagerLcdColor.cyan,
   });
 
   @override
@@ -89,6 +115,7 @@ class _PagerHousingState extends State<PagerHousing> {
               decoration: BoxDecoration(
                 image: DecorationImage(
                   image: const AssetImage('assets/images/pager_shell.webp'),
+                  colorFilter: pagerCaseFilter(widget.caseColor),
                   fit: BoxFit.fill,
                   scale: 1 / scale,
                   centerSlice: Rect.fromLTRB(
@@ -109,7 +136,7 @@ class _PagerHousingState extends State<PagerHousing> {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(23 * scale),
                       child: ColoredBox(
-                        color: pagerLcd,
+                        color: Color(widget.lcdColor.rgb),
                         child: Material(
                           type: MaterialType.transparency,
                           child: widget.screen,
@@ -212,14 +239,7 @@ class PagerGuide extends StatelessWidget {
           portraitSize ?? (constraints.maxWidth * .235).clamp(48.0, 108.0);
       return Row(
         children: [
-          Image.asset(
-            'assets/images/pager_assistant.png',
-            width: size,
-            height: size,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.none,
-            semanticLabel: 'Assistente Nix em pixel art',
-          ),
+          _PagerPortrait(size: size, animate: !reducesMotion),
           SizedBox(width: constraints.maxWidth >= 340 ? 20 : 10),
           Expanded(
             child: Column(
@@ -267,4 +287,79 @@ class PagerGuide extends StatelessWidget {
     fontSize: 17,
     height: 1.3,
   );
+}
+
+class _PagerPortrait extends StatefulWidget {
+  const _PagerPortrait({required this.size, required this.animate});
+
+  final double size;
+  final bool animate;
+
+  @override
+  State<_PagerPortrait> createState() => _PagerPortraitState();
+}
+
+class _PagerPortraitState extends State<_PagerPortrait> {
+  static const _open = AssetImage('assets/images/pager_assistant.png');
+  static const _closed = AssetImage('assets/images/pager_assistant_blink.png');
+  Timer? _timer;
+  bool _blinking = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scheduleBlink();
+  }
+
+  @override
+  void didUpdateWidget(_PagerPortrait oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animate != widget.animate) _scheduleBlink();
+  }
+
+  void _scheduleBlink() {
+    _timer?.cancel();
+    if (!widget.animate || !TickerMode.of(context)) {
+      _blinking = false;
+      return;
+    }
+    _timer = Timer(const Duration(milliseconds: 3700), () {
+      setState(() => _blinking = true);
+      _timer = Timer(const Duration(milliseconds: 150), () {
+        setState(() => _blinking = false);
+        _scheduleBlink();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+        dimension: widget.size,
+        child: Semantics(
+          label: 'Assistente Nix em pixel art',
+          image: true,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image(
+                  image: _open,
+                  opacity: _blinking ? const AlwaysStoppedAnimation(0) : null,
+                  filterQuality: FilterQuality.none,
+                  excludeFromSemantics: true),
+              if (widget.animate)
+                Image(
+                    image: _closed,
+                    opacity: AlwaysStoppedAnimation(_blinking ? 1.0 : 0.0),
+                    filterQuality: FilterQuality.none,
+                    excludeFromSemantics: true),
+            ],
+          ),
+        ),
+      );
 }

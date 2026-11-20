@@ -171,6 +171,7 @@ class NixState extends ChangeNotifier {
   bool _isProfileOverlayOpen = false;
   bool _isSettingsOpenInOverlay = false;
   SettingsCategory _activeSettingsCategory = SettingsCategory.appearance;
+  SettingsCategory? _requestedOverlaySettingsCategory;
 
   bool _isMembersPanelOpen = false;
   bool _isConversationInfoOpen = false;
@@ -328,6 +329,7 @@ class NixState extends ChangeNotifier {
     _isProfileOverlayOpen = true;
     _isSettingsOpenInOverlay = true;
     _activeSettingsCategory = SettingsCategory.connections;
+    _requestedOverlaySettingsCategory = SettingsCategory.connections;
     notifyListeners();
   }
 
@@ -500,7 +502,7 @@ class NixState extends ChangeNotifier {
   /// Rótulo honesto de saldo Monero não custodial (Seed B isolada da Seed A da mensageria).
   String get moneroWalletBalanceLabel => _moneroNonCustodialBalanceXmr != null
       ? '${_moneroNonCustodialBalanceXmr!.toStringAsFixed(12)} XMR'
-      : '0.000000000000 XMR (Carteira Externa Não Conectada)';
+      : 'Carteira externa desconectada';
 
   /// Rótulo honesto de conexão ao nó remoto Monero .onion.
   String get moneroWalletStatusLabel => _connectedMoneroRemoteNode != null
@@ -2380,6 +2382,7 @@ class NixState extends ChangeNotifier {
   bool get isProfileOverlayOpen => _isProfileOverlayOpen;
   bool get isSettingsOpenInOverlay => _isSettingsOpenInOverlay;
   SettingsCategory get activeSettingsCategory => _activeSettingsCategory;
+  SettingsCategory? get requestedOverlaySettingsCategory => _requestedOverlaySettingsCategory;
   bool get isMembersPanelOpen => _isMembersPanelOpen;
   bool get isConversationInfoOpen => _isConversationInfoOpen;
   String get conversationHistorySearch => _conversationHistorySearch;
@@ -3646,6 +3649,7 @@ class NixState extends ChangeNotifier {
   void openProfileOverlay({bool startInSettings = false, SettingsCategory? category}) {
     _isProfileOverlayOpen = true;
     _isSettingsOpenInOverlay = startInSettings;
+    _requestedOverlaySettingsCategory = startInSettings ? category : null;
     if (category != null) {
       _activeSettingsCategory = category;
     }
@@ -3655,12 +3659,14 @@ class NixState extends ChangeNotifier {
   void closeProfileOverlay() {
     _isProfileOverlayOpen = false;
     _isSettingsOpenInOverlay = false;
+    _requestedOverlaySettingsCategory = null;
     notifyListeners();
   }
 
   void transitionToSettings({SettingsCategory? category}) {
     _isProfileOverlayOpen = true;
     _isSettingsOpenInOverlay = true;
+    _requestedOverlaySettingsCategory = category;
     if (category != null) {
       _activeSettingsCategory = category;
     }
@@ -3669,6 +3675,7 @@ class NixState extends ChangeNotifier {
 
   void transitionBackToCardId() {
     _isSettingsOpenInOverlay = false;
+    _requestedOverlaySettingsCategory = null;
     notifyListeners();
   }
 

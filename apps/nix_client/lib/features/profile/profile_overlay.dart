@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import '../design/nix_bilingual_label.dart';
+import '../design/nix_surfaces.dart';
 import '../settings/settings_center.dart';
 import 'pager_profile.dart';
 
@@ -74,6 +76,44 @@ class _ProfileOverlayState extends State<ProfileOverlay>
     final nixState = context.watch<NixState>();
     final inSettings = nixState.isSettingsOpenInOverlay;
 
+    if (MediaQuery.sizeOf(context).width < nixDesktopBreakpoint) {
+      return Material(
+        color: NixColors.background,
+        child: SafeArea(
+          child: inSettings
+              ? SettingsCenter(
+                  key: const ValueKey('overlay_settings'),
+                  fullScreen: true,
+                  initialCompactCategory: nixState.requestedOverlaySettingsCategory,
+                  onBackToCardId: nixState.transitionBackToCardId,
+                  onClose: nixState.closeProfileOverlay,
+                )
+              : PopScope(
+                  canPop: false,
+                  onPopInvokedWithResult: (didPop, _) {
+                    if (!didPop) nixState.closeProfileOverlay();
+                  },
+                  child: Scaffold(
+                    appBar: AppBar(
+                      automaticallyImplyLeading: false,
+                      leading: BackButton(onPressed: nixState.closeProfileOverlay),
+                      title: const NixBilingualLabel(label: 'Pager e perfil', japanese: '身分証'),
+                      actions: [
+                        IconButton(
+                          key: const Key('close_profile_overlay_button'),
+                          tooltip: 'Fechar painel',
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: nixState.closeProfileOverlay,
+                        ),
+                      ],
+                    ),
+                    body: const PagerProfile(),
+                  ),
+                ),
+        ),
+      );
+    }
+
     return KeyboardListener(
       focusNode: _focusNode,
       autofocus: true,
@@ -134,6 +174,7 @@ class _ProfileOverlayState extends State<ProfileOverlay>
                                 child: inSettings
                                     ? SettingsCenter(
                                         key: const ValueKey('overlay_settings'),
+                                        initialCompactCategory: nixState.requestedOverlaySettingsCategory,
                                         onBackToCardId: () => nixState.transitionBackToCardId(),
                                         onClose: () => _closeWithAnimation(nixState),
                                       )

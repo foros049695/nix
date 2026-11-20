@@ -10,17 +10,23 @@ import '../../core/theme/nix_tokens.dart';
 import '../../core/theme/nix_palette.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
+import '../design/nix_bilingual_label.dart';
 import '../dialogs/sovereign_onboarding_dialog.dart';
+import '../profile/pager_appearance_dialog.dart';
 
 /// Central de Configurações Modular (V2 — Aparência Living AMOLED, Privacidade, Dispositivos e Módulos).
 class SettingsCenter extends StatefulWidget {
   final VoidCallback? onBackToCardId;
   final VoidCallback? onClose;
+  final SettingsCategory? initialCompactCategory;
+  final bool fullScreen;
 
   const SettingsCenter({
     super.key,
     this.onBackToCardId,
     this.onClose,
+    this.initialCompactCategory,
+    this.fullScreen = false,
   });
 
   @override
@@ -28,6 +34,7 @@ class SettingsCenter extends StatefulWidget {
 }
 
 class _SettingsCenterState extends State<SettingsCenter> {
+  late SettingsCategory? _compactCategory = widget.initialCompactCategory;
   bool _isTestingMic = false;
   double _micLevel = 0.0;
   Timer? _micTimer;
@@ -149,6 +156,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
+    if (widget.fullScreen) return _buildCompactSettings(nixState);
     final settings = nixState.settings;
     final activeCat = nixState.activeSettingsCategory;
 
@@ -157,7 +165,9 @@ class _SettingsCenterState extends State<SettingsCenter> {
       clipBehavior: Clip.antiAlias,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isCompact = constraints.maxWidth < 680;
+          if (constraints.maxWidth < 680) {
+            return _buildCompactSettings(nixState);
+          }
 
           return Column(
             children: [
@@ -228,15 +238,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
 
               // Corpo Principal: Navegação Lateral + Conteúdo da Aba
               Expanded(
-                child: isCompact
-                    ? Column(
-                        children: [
-                          _buildHorizontalCategorySelector(nixState, activeCat),
-                          Divider(height: 1, color: NixColors.surfaceBorder),
-                          Expanded(child: _buildCategoryContent(nixState, settings, activeCat)),
-                        ],
-                      )
-                    : Row(
+                child: Row(
                         children: [
                           _buildSidebarNavigation(nixState, activeCat),
                           Expanded(child: _buildCategoryContent(nixState, settings, activeCat)),
@@ -246,6 +248,67 @@ class _SettingsCenterState extends State<SettingsCenter> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  static const _categories = [
+    (SettingsCategory.appearance, Icons.palette_outlined, 'Aparência', '外観'),
+    (SettingsCategory.notifications, Icons.notifications_none_rounded, 'Notificações', '通知'),
+    (SettingsCategory.privacy, Icons.lock_outline_rounded, 'Privacidade', '安全'),
+    (SettingsCategory.chats, Icons.chat_bubble_outline_rounded, 'Chats', '会話'),
+    (SettingsCategory.audio, Icons.mic_none_rounded, 'Som e microfone', '音声'),
+    (SettingsCategory.connections, Icons.hub_outlined, 'Conexões', '接続'),
+    (SettingsCategory.devices, Icons.devices_outlined, 'Dispositivos', '端末'),
+    (SettingsCategory.survival, Icons.shield_outlined, 'Sobrevivência', '防護'),
+  ];
+
+  Widget _buildCompactSettings(NixState state) {
+    final category = _compactCategory;
+    final item = category == null ? null : _categories.firstWhere((entry) => entry.$1 == category);
+    final backToRoot = category == null ? null : () {
+      FocusScope.of(context).unfocus();
+      setState(() => _compactCategory = null);
+    };
+    final close = widget.onBackToCardId ?? widget.onClose;
+    return PopScope(
+      canPop: backToRoot == null && close == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) (backToRoot ?? close)?.call();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          leading: backToRoot != null || close != null
+              ? BackButton(onPressed: backToRoot ?? close)
+              : null,
+          title: NixBilingualLabel(label: item?.$3 ?? 'Configurações do Nix', japanese: item?.$4 ?? '設定'),
+          actions: [
+            if (widget.onClose != null)
+              IconButton(onPressed: widget.onClose, tooltip: 'Fechar configurações', icon: const Icon(Icons.close_rounded)),
+          ],
+        ),
+        body: category == null
+            ? ListView(
+                key: const Key('mobile_settings_categories'),
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                children: [
+                  for (final entry in _categories)
+                    ListTile(
+                      leading: Icon(entry.$2),
+                      title: NixBilingualLabel(label: entry.$3, japanese: entry.$4),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () {
+                        setState(() => _compactCategory = entry.$1);
+                        state.selectSettingsCategory(entry.$1);
+                      },
+                    ),
+                ],
+              )
+            : KeyedSubtree(
+                key: ValueKey('mobile_settings_${category.name}'),
+                child: _buildCategoryContent(state, state.settings, category),
+              ),
       ),
     );
   }
@@ -337,60 +400,6 @@ class _SettingsCenterState extends State<SettingsCenter> {
   );
   }
 
-  Widget _buildHorizontalCategorySelector(NixState nixState, SettingsCategory activeCat) {
-    final items = [
-      (SettingsCategory.appearance, Icons.palette_outlined, 'Aparência'),
-      (SettingsCategory.notifications, Icons.notifications_none_rounded, 'Notificações'),
-      (SettingsCategory.privacy, Icons.lock_outline_rounded, 'Privacidade'),
-      (SettingsCategory.chats, Icons.chat_bubble_outline_rounded, 'Chats'),
-      (SettingsCategory.audio, Icons.mic_none_rounded, 'Som e Mic'),
-      (SettingsCategory.connections, Icons.hub_outlined, 'Conexões'),
-      (SettingsCategory.devices, Icons.devices_outlined, 'Dispositivos'),
-      (SettingsCategory.survival, Icons.shield_outlined, 'Sobrevivência'),
-    ];
-
-    return Container(
-      height: 46,
-      color: NixColors.surfaceSidebar,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
-        itemBuilder: (context, idx) {
-          final item = items[idx];
-          final selected = activeCat == item.$1;
-          return InkWell(
-            onTap: () => nixState.selectSettingsCategory(item.$1),
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: selected ? context.accentColor : NixColors.surfaceCard,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: NixColors.surfaceBorder),
-              ),
-              child: Row(
-                children: [
-                  Icon(item.$2, size: 14, color: selected ? context.onAccentColor : NixColors.textPrimary),
-                  const SizedBox(width: 6),
-                  Text(
-                    item.$3,
-                    style: TextStyle(
-                      color: selected ? context.onAccentColor : NixColors.textPrimary,
-                      fontSize: 11.5,
-                      fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   Widget _navItem({
     required NixState nixState,
     required SettingsCategory category,
@@ -470,6 +479,12 @@ class _SettingsCenterState extends State<SettingsCenter> {
           'Configurações → Aparência → Temas',
           'Escolha uma combinação pronta ou ajuste a superfície e o destaque separadamente.',
         ),
+        OutlinedButton.icon(
+          onPressed: () => showPagerAppearance(context),
+          icon: const Icon(Icons.palette_outlined),
+          label: const Text('Cores do Pager'),
+        ),
+        const SizedBox(height: 8),
         Wrap(
           spacing: 8, runSpacing: 8,
           children: [

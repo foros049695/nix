@@ -2,17 +2,153 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nix_client/core/models/direct_message.dart';
+import 'package:nix_client/core/models/pager_appearance.dart';
+import 'package:nix_client/core/models/user_settings.dart';
 import 'package:nix_client/core/security/file_picker_adapter.dart';
 import 'package:nix_client/core/security/local_image_helper.dart';
 import 'package:nix_client/features/chat/chat_input_bar.dart';
 import 'package:nix_client/features/dialogs/nix_symbol_picker.dart';
+import 'package:nix_client/features/navigation/app_shell.dart';
 import 'package:nix_client/features/profile/qr_code_painter.dart';
 import 'package:nix_client/core/theme/nix_palette.dart';
 import 'package:nix_client/features/profile/pager_profile.dart';
+import 'package:nix_client/features/profile/pager_housing.dart';
 import 'package:nix_client/state/nix_state.dart';
 import 'package:provider/provider.dart';
 
 void main() {
+  testWidgets(
+      'Cores do Pager são independentes, persistentes e acessíveis no menu',
+      (tester) async {
+    final state = NixState();
+    addTearDown(state.dispose);
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: state,
+      child: const MaterialApp(home: Scaffold(body: PagerProfile())),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Menu do Pager'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cores do Pager'));
+    await tester.pumpAndSettle();
+
+    for (final color in ['Jade', 'Lima']) {
+      final option = find.widgetWithText(ChoiceChip, color);
+      await tester.ensureVisible(option);
+      await tester.tap(option);
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.text('Concluir'));
+    await tester.pumpAndSettle();
+
+    final housing = tester.widget<PagerHousing>(find.byType(PagerHousing));
+    expect(housing.caseColor, PagerCaseColor.jade);
+    expect(housing.lcdColor, PagerLcdColor.lime);
+    final restored = UserSettings.fromJson(state.settings.toJson());
+    expect(restored.pagerCaseColor, housing.caseColor);
+    expect(restored.pagerLcdColor, housing.lcdColor);
+    expect(UserSettings.fromJson({}).pagerLcdColor, PagerLcdColor.cyan);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'Atalhos do Pager aceitam setas, toque e arraste sem trocar de página',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(420, 780));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final state = NixState(loadMockData: true);
+    addTearDown(state.dispose);
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: state,
+      child: const MaterialApp(home: Scaffold(body: PagerProfile())),
+    ));
+    await tester.pumpAndSettle();
+
+    final rail = find.byKey(const Key('pager_shortcuts'));
+    final scroll = tester.widget<ListView>(rail).controller!;
+    await tester.tap(find.byTooltip('Mais atalhos'));
+    await tester.pumpAndSettle();
+    expect(scroll.offset, greaterThan(0));
+    await tester.drag(rail, const Offset(300, 0));
+    await tester.pumpAndSettle();
+    expect(scroll.offset, 0);
+    expect(find.text('Identidade'), findsOneWidget);
+
+    final friend = state.directMessages.firstWhere((dm) => !dm.isSavedMessages);
+    await tester.tap(find.byTooltip('Amigo · ${friend.peerName}'));
+    await tester.pumpAndSettle();
+    expect(state.selectedDm?.id, friend.id);
+  });
+
+  testWidgets(
+      'Configurações, participantes e carteira usam a largura do celular',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 690));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final state = NixState(loadMockData: true);
+    addTearDown(state.dispose);
+    final space = state.spaces.firstWhere((space) => !space.isDirectMessages);
+    state.selectSpace(space);
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: state,
+      child: const MaterialApp(home: AppShell()),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('message_header_bar')), findsNothing);
+
+    Future<void> channelAction(String action) async {
+      await tester.tap(find.byTooltip('Opções do canal'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(action));
+      await tester.pumpAndSettle();
+    }
+
+    await channelAction('Configurações do canal');
+    final channelSections =
+        find.byKey(const Key('mobile_channel_settings_categories'));
+    expect(tester.getSize(channelSections).width, 320);
+    await tester.tap(find.text('Identidade, Links & QR'));
+    await tester.pumpAndSettle();
+    expect(channelSections, findsNothing);
+    expect(find.text('Nome do Canal'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(channelSections, findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await channelAction('Participantes');
+    expect(tester.getSize(find.byKey(const Key('members_panel'))).width, 320);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await channelAction('Informações da conversa');
+    expect(
+        tester.getSize(find.byKey(const Key('conversation_info_panel'))).width,
+        320);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    state.openProfileOverlay(startInSettings: true);
+    await tester.pumpAndSettle();
+    final appSections = find.byKey(const Key('mobile_settings_categories'));
+    expect(tester.getSize(appSections).width, 320);
+    await tester.tap(find.text('Chats'));
+    await tester.pumpAndSettle();
+    expect(appSections, findsNothing);
+    expect(find.byKey(const ValueKey('mobile_settings_chats')), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(appSections, findsOneWidget);
+
+    state.closeProfileOverlay();
+    state.selectHomeSubTab(HomeSubTab.transactions);
+    await tester.pumpAndSettle();
+    expect(find.text('Carteira externa desconectada'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Pager cabe em 320 dp com nome longo e fonte ampliada', (
     tester,
   ) async {

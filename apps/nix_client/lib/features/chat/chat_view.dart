@@ -6,6 +6,7 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
 import '../dialogs/forward_message_dialog.dart';
+import '../design/nix_surfaces.dart';
 import 'chat_input_bar.dart';
 import 'conversation_surface.dart';
 import 'message_bubble.dart';
@@ -78,7 +79,8 @@ class _ChatViewState extends State<ChatView> {
     return Column(
       children: [
         // Cabeçalho clicável do Canal / Grupo
-        MessageHeader(channel: widget.channel),
+        if (MediaQuery.sizeOf(context).width >= nixDesktopBreakpoint)
+          MessageHeader(channel: widget.channel),
 
         // Barra de Seleção Múltipla de Mensagens
         if (selectedIds.isNotEmpty)

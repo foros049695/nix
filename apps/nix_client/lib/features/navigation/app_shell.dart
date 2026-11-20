@@ -8,12 +8,13 @@ import '../../core/security/key_vault.dart';
 import '../../core/security/platform_runtime.dart';
 import '../../core/security/sovereign_security_gate.dart';
 import '../../core/security/window_privacy_guard.dart';
-import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../onboarding/sovereign_onboarding_flow.dart';
 import '../design/nix_surfaces.dart';
+import '../design/nix_bilingual_label.dart';
+import '../dialogs/channel_settings_dialog.dart';
 import '../profile/pager_housing.dart';
 import '../calls/call_room_view.dart';
 import '../chat/chat_view.dart';
@@ -30,6 +31,7 @@ import '../publications/publication_room_view.dart';
 import '../media/media_index_view.dart';
 import '../archive/archive_environment_view.dart';
 import 'channels_sidebar.dart';
+import 'floating_workspace_bar.dart';
 import 'spaces_dock.dart';
 import 'workspace_frame.dart';
 
@@ -133,7 +135,7 @@ class AppShell extends StatelessWidget {
       data: sanitizedMq,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isDesktop = constraints.maxWidth >= 820;
+          final isDesktop = constraints.maxWidth >= nixDesktopBreakpoint;
 
           final Widget shellScaffold = isDesktop
               ? NixDesktopWorkspace(
@@ -148,35 +150,17 @@ class AppShell extends StatelessWidget {
                     titleSpacing: 0,
                     title: NixPanelTitle(
                       icon: _getAreaIcon(activeArea, currentChannel),
-                      title: _getAreaTitle(activeArea, nixState.selectedDm, currentChannel),
+                      title: _getAreaTitle(activeArea, currentChannel),
                       subtitle: pagerNetworkLabel(gate),
                     ),
                     actions: [
-                      IconButton(
-                        icon: const Icon(Icons.info_outline_rounded),
-                        tooltip: 'Informações da Conversa',
-                        onPressed: () => nixState.toggleConversationInfoPanel(),
-                      ),
                       IconButton(
                         icon: const Icon(Icons.badge_outlined),
                         tooltip: 'Abrir Pager e perfil',
                         onPressed: () => nixState.openProfileOverlay(),
                       ),
                       if (activeArea == NixActiveArea.spaces)
-                        IconButton(
-                          icon: const Icon(Icons.people_outline_rounded),
-                          tooltip: 'Participantes',
-                          onPressed: () {
-                            showModalBottomSheet(
-                              context: context,
-                              backgroundColor: NixColors.surfaceSidebar,
-                              builder: (_) => const SizedBox(
-                                height: 400,
-                                child: MembersPanel(),
-                              ),
-                            );
-                          },
-                        ),
+                        _MobileChannelMenu(channel: currentChannel),
                     ],
                   ),
                   drawer: Drawer(
@@ -203,38 +187,10 @@ class AppShell extends StatelessWidget {
                     children: [
                       if (nixState.isStrictOffGridMode)
                         _buildStrictOffGridBanner(nixState),
-                      Expanded(
-                        child: Stack(
-                          children: [
-                            _buildActiveStage(activeArea, currentChannel),
-                            if (showInfoPanel)
-                              Positioned(
-                                right: 0,
-                                top: 0,
-                                bottom: 0,
-                                child: ConversationInfoPanel(
-                                  directMessage:
-                                      activeArea == NixActiveArea.homePrivate ? nixState.selectedDm : null,
-                                  channel: activeArea == NixActiveArea.spaces ? currentChannel : null,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
+                      Expanded(child: _buildActiveStage(activeArea, currentChannel)),
                     ],
                   ),
-                  bottomNavigationBar: NavigationBar(
-                          selectedIndex: WorkspaceTab.forArea(activeArea).index,
-                          onDestinationSelected: (idx) => WorkspaceTab.values[idx].open(nixState),
-                          destinations: [
-                            for (final tab in WorkspaceTab.values)
-                              NavigationDestination(
-                                icon: Icon(tab.icon),
-                                selectedIcon: Icon(tab.activeIcon, color: context.onAccentColor),
-                                label: tab.label,
-                              ),
-                          ],
-                        ),
+                  bottomNavigationBar: rawMq.viewInsets.bottom > 0 ? null : FloatingWorkspaceBar(state: nixState),
                 );
 
           return Stack(
@@ -338,10 +294,10 @@ class AppShell extends StatelessWidget {
     }
   }
 
-  String _getAreaTitle(NixActiveArea activeArea, DirectMessageThread? dm, Channel channel) {
+  String _getAreaTitle(NixActiveArea activeArea, Channel channel) {
     switch (activeArea) {
       case NixActiveArea.homePrivate:
-        return dm != null ? dm.peerName : 'Conversas Privadas e Pager';
+        return 'Conversas';
       case NixActiveArea.explore:
         return 'Explorar Comunidades';
       case NixActiveArea.github:
@@ -389,6 +345,34 @@ class AppShell extends StatelessWidget {
         return PublicationRoomView(key: ValueKey(channel.id), channel: channel);
     }
   }
+}
+
+enum _ChannelAction { info, settings, members }
+
+class _MobileChannelMenu extends StatelessWidget {
+  const _MobileChannelMenu({required this.channel});
+
+  final Channel channel;
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<_ChannelAction>(
+        tooltip: 'Opções do canal',
+        onSelected: (action) {
+          switch (action) {
+            case _ChannelAction.info:
+              ConversationInfoPanel.open(context, channel: channel);
+            case _ChannelAction.settings:
+              ChannelSettingsDialog.show(context, channel);
+            case _ChannelAction.members:
+              MembersPanel.show(context);
+          }
+        },
+        itemBuilder: (_) => const [
+          PopupMenuItem(value: _ChannelAction.info, child: Text('Informações da conversa')),
+          PopupMenuItem(value: _ChannelAction.settings, child: Text('Configurações do canal')),
+          PopupMenuItem(value: _ChannelAction.members, child: Text('Participantes')),
+        ],
+      );
 }
 
 class _VaultUnlockPrompt extends StatefulWidget {
@@ -440,6 +424,8 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 620),
         child: PagerHousing(
+          caseColor: widget.nixState.settings.pagerCaseColor,
+          lcdColor: widget.nixState.settings.pagerLcdColor,
           reducedMotion: widget.nixState.settings.reducedMotion,
           minDisplayHeight: 330,
           nextLabel: 'Desbloquear o cofre',
@@ -449,10 +435,10 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('Desbloquear cofre', style: TextStyle(
+                const NixBilingualLabel(label: 'Desbloquear cofre', japanese: '金庫', style: TextStyle(
                   fontFamily: pagerDisplayFont, fontSize: 18, color: pagerInk,
                 )),
-                const Divider(color: Color(0xFF6DA5B3)),
+                const Divider(color: pagerRule),
                 PagerGuide(message: '> Digite sua frase-passe.', reducedMotion: widget.nixState.settings.reducedMotion),
           const SizedBox(height: 16),
           TextField(
@@ -464,7 +450,7 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
               labelText: 'Frase-passe mestra ou PIN de coação',
               errorText: _error,
               filled: true,
-              fillColor: const Color(0xFFD2F3F4),
+              fillColor: Colors.white.withValues(alpha: .38),
               labelStyle: const TextStyle(color: pagerInk),
               errorStyle: const TextStyle(color: Color(0xFF792438)),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -473,7 +459,7 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
           const SizedBox(height: 16),
           ElevatedButton.icon(
             onPressed: _busy ? null : _unlock,
-            style: ElevatedButton.styleFrom(backgroundColor: pagerInk, foregroundColor: pagerLcd),
+            style: ElevatedButton.styleFrom(backgroundColor: pagerInk, foregroundColor: Color(widget.nixState.settings.pagerLcdColor.rgb)),
             icon: _busy
                 ? const SizedBox(
                     width: 16,

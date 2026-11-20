@@ -4,6 +4,7 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_tokens.dart';
 
 const nixDisplayFont = 'PixelifySans';
+const nixDesktopBreakpoint = 820.0;
 
 BoxDecoration nixFrameDecoration(
   BuildContext context, {

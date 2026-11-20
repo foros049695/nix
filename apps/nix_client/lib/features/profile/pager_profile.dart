@@ -9,9 +9,12 @@ import '../../core/security/local_image_helper.dart';
 import '../../core/security/sovereign_security_gate.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import '../design/nix_bilingual_label.dart';
 import 'cultural_showcase.dart';
 import 'nix_user_avatar.dart';
 import 'pager_housing.dart';
+import 'pager_appearance_dialog.dart';
+import 'pager_shortcuts.dart';
 import 'profile_avatar_editor.dart';
 import 'qr_code_painter.dart';
 
@@ -155,6 +158,8 @@ class _PagerProfileState extends State<PagerProfile> {
         state.openSavedMessages();
       case _PagerMenu.preferences:
         _openSettings(state);
+      case _PagerMenu.colors:
+        showPagerAppearance(context);
       case null:
         break;
     }
@@ -183,13 +188,15 @@ class _PagerProfileState extends State<PagerProfile> {
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 790),
                 child: PagerHousing(
+                  caseColor: state.settings.pagerCaseColor,
+                  lcdColor: state.settings.pagerLcdColor,
                   reducedMotion: reduced,
                   onPrevious:
                       _page > 0 ? () => _selectPage(_page - 1, state) : null,
                   onNext:
                       _page < 2 ? () => _selectPage(_page + 1, state) : null,
                   onMenu: () => _showPagerMenu(state),
-                  minDisplayHeight: 320,
+                  minDisplayHeight: 365,
                   screen: LayoutBuilder(
                     builder: (context, constraints) {
                       final narrow = constraints.maxWidth < 350;
@@ -209,7 +216,9 @@ class _PagerProfileState extends State<PagerProfile> {
                           children: [
                             _PagerPanel(
                               title: _pages[0],
+                              japanese: '身分証',
                               page: 1,
+                              footer: const PagerShortcuts(),
                               action: IconButton(
                                 key: const Key('card_id_settings_gear'),
                                 tooltip: 'Abrir Central de Configurações',
@@ -220,6 +229,7 @@ class _PagerProfileState extends State<PagerProfile> {
                             ),
                             _PagerPanel(
                               title: _pages[1],
+                              japanese: '状態',
                               page: 2,
                               child: _status(state, reduced),
                               footer: OutlinedButton(
@@ -400,6 +410,7 @@ class _PagerProfileState extends State<PagerProfile> {
 enum _PagerMenu {
   profile('Editar perfil', Icons.person_outline),
   chats('Abrir mensagens', Icons.chat_bubble_outline),
+  colors('Cores do Pager', Icons.palette_outlined),
   wallpaper('Personalizar contemplação', Icons.wallpaper_outlined),
   preferences('Configurações do Nix', Icons.settings_outlined);
 
@@ -410,6 +421,7 @@ enum _PagerMenu {
 
 class _PagerPanel extends StatelessWidget {
   final String title;
+  final String japanese;
   final int page;
   final Widget? action;
   final Widget? footer;
@@ -417,6 +429,7 @@ class _PagerPanel extends StatelessWidget {
 
   const _PagerPanel(
       {required this.title,
+      required this.japanese,
       required this.page,
       this.action,
       this.footer,
@@ -436,9 +449,9 @@ class _PagerPanel extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: Text(title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    child: NixBilingualLabel(
+                        label: title,
+                        japanese: japanese,
                         style: const TextStyle(
                           fontFamily: 'PixelifySans',
                           fontSize: 20,
@@ -458,7 +471,7 @@ class _PagerPanel extends StatelessWidget {
                   if (action != null) action! else const SizedBox(height: 48),
                 ],
               ),
-              const Divider(color: Color(0xFF68AAB2), height: 1),
+              const Divider(color: pagerRule, height: 1),
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -486,7 +499,7 @@ class _PagerStatusStrip extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFF91CED5),
+        color: const Color(0x2010262D),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Wrap(

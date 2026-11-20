@@ -401,11 +401,18 @@ class MessageBubble extends StatelessWidget {
                                           Icon(Icons.attach_file_rounded,
                                               size: 12, color: accentText),
                                           const SizedBox(width: 4),
-                                          Text(
-                                            att,
-                                            style: TextStyle(
-                                              color: NixColors.textPrimary,
-                                              fontSize: 11,
+                                          Flexible(
+                                            child: Tooltip(
+                                              message: att,
+                                              child: Text(
+                                                att,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: NixColors.textPrimary,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
                                             ),
                                           ),
                                         ],
