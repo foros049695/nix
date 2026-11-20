@@ -39,11 +39,31 @@ As linhas abaixo se referem ao commit de base.
 
 1. Crítica. Nenhum achado confirmado nessa severidade.
 2. Alta. Corrigir A-001, A-002 e A-003.
-3. Média. Corrigir A-004, A-006, A-007, A-008 e A-009. Registrar decisões operacionais de A-005 e A-013.
-4. Baixa. Corrigir A-010 e A-011. Registrar a fronteira proposta para A-012.
+3. Média. Corrigir A-004, A-006, A-007, A-008 e A-009. Corrigir também A-013. Registrar decisão operacional de A-005.
+4. Baixa. Corrigir A-011. Registrar o filtro de CI e a fronteira proposta para A-012.
 
 ## Itens pendentes de decisão ou infraestrutura
 
-- **A-005 e A-013.** A contabilização em PostgreSQL e a conversão de registros existentes pedem migração de dados, teste com PostgreSQL 17 e decisão de operação para cópias de backup.
+- **A-005.** A contabilização durável demanda migração e teste em PostgreSQL 17.
+- **A-010.** O trabalho terminou na `main`, já coberta pelo CI. A ampliação do filtro de branches é uma decisão de fluxo de trabalho.
 - **A-012.** A extração de uma fachada central envolve alterações de ciclo de vida e pressupostos de compatibilidade. Convém separar esse esforço da correção pontual.
-- **Validação externa.** As buscas de padrões se limitam ao snapshot. Uma revisão de histórico com scanner dedicado e consulta de avisos por versão, um teste completo em Tor público com dois aparelhos e a homologação de implantação continuam sendo etapas independentes.
+- **Validação externa.** As buscas de padrões se limitam ao snapshot. Uma revisão de histórico com scanner dedicado, a cobertura de dependências nativas, um teste completo em Tor público com dois aparelhos e a homologação de implantação continuam sendo etapas independentes.
+
+
+## Resultado
+
+Foram registrados **13 achados**. São 0 críticos, 3 altos, 7 médios e 3 baixos.
+**10 foram corrigidos** na `main`. A branch temporária foi apagada localmente após avanço direto da `main`. Os commits existentes foram preservados.
+
+- **A-001, A-002, A-004, A-007 e A-013.** O relay mantém a política de escrita após expiração ou revogação, preserva o estado quando a gravação de permissões falha e limita o TTL antes da conversão. O cliente que lê a caixa recebe apenas os metadados públicos do envelope. O armazenamento de arquivos converte os registros legados em hashes de cota ao abrir e mantém o consumo acumulado. A atualização atua sobre os arquivos ativos. Cópias antigas de backup e credenciais auxiliares que tenham sido compartilhadas com outros escopos exigem revisão do operador.
+- **A-003 e A-006.** Auditar manualmente usa um diretório pessoal temporário para os testes Flutter e um namespace de rede separado para transporte. O ControlPort serializa comandos e omite o conteúdo sensível das falhas.
+- **A-008, A-009 e A-011.** O catálogo preserva as saídas anteriores se a geração ou assinatura falhar. O SBOM é reproduzível e agora inclui o módulo Go. O README descreve o fluxo de negociação por convite.
+- **Pendentes.** A-005, A-010 e A-012, pelos motivos registrados acima. Nas validações do relay, o teste com PostgreSQL vivo ficou saltado por falta de `NIX_TEST_PG_DSN`.
+
+| Verificação final | Resultado |
+|---|---|
+| Relay Go | Build, vet e testes com detector de corridas aprovados. São 20 testes principais aprovados, com subtestes adicionais. |
+| Dart | Os dois módulos passaram na análise e compilação kernel. Criptografia manteve 13 testes aprovados. Transporte passou de 22 para 23. |
+| Flutter | 215 testes aprovados e 3 saltados. Análise manteve 210 informações, sem erros ou avisos. |
+| Builds nativos | As mesmas dependências locais ausentes impediram os builds finais de Linux e Android. O empacotamento final não foi confirmado neste ambiente. |
+| Verificações complementares | Política de automação, matriz de privacidade, teste Python do catálogo e revisão do diff passaram. O SBOM subiu de 90 para 91 componentes. A consulta OSV das 91 entradas do inventário Go e Pub não retornou avisos. |
