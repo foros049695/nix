@@ -15,3 +15,25 @@ Na aba **Novo Artigo**, escolha **Adicionar imagem**. O editor aceita PNG, JPEG 
 O rascunho guarda as imagens junto do texto no cofre. Ao publicar um artigo com imagens, o Nix pede confirmação específica da divulgação. Os bytes e as legendas integram o conteúdo assinado com Ed25519. O leitor só apresenta as imagens de um objeto verificado e não busca recursos externos. Artigos restritos seguem as regras de replicação do Archive.
 
 Cada artigo aceita até três imagens, com até 384 KiB por imagem e 1 MiB no conjunto após preparação. Os testes cobrem rascunho, exclusão, assinatura, adulteração, leitura e sincronização entre dois clientes no ambiente de laboratório. Clientes antigos continuam a ler o texto e precisam da versão atual para exibir as imagens.
+
+
+## Vídeo e reações
+
+Em **Novo artigo**, **Adicionar vídeo** aceita um MP4 local de até 2 MiB.
+A prévia usa os bytes do MP4. A publicação exige confirmação e preserva o
+arquivo original, inclusive possíveis metadados e faixas de áudio. O Archive
+recusa contêiner fragmentado e referências externas de mídia e incorpora os
+bytes ao conteúdo assinado. No Android, o reprodutor nativo usa uma cópia no
+cache do aplicativo. No desktop, o botão abre o reprodutor associado pelo
+sistema após confirmação.
+
+Em artigos verificados, **Reações assinadas** permite escolher, trocar ou
+retirar uma reação por identidade. O contador usa a revisão assinada mais
+recente. Para artigos públicos, a reação usa a mesma malha de réplicas do
+Archive. Reações em artigos restritos ficam locais. A retirada corrige o
+contador ao receber a revisão nova. Réplicas podem manter a revisão anterior.
+
+O teste distribuído usa duas bases independentes e réplicas em laboratório.
+Foram verificados um MP4 H.264 gerado para o ensaio, rejeição de referências a
+mídia externa, recuperação de rascunho, isolamento de conteúdo restrito e
+aplicação de reações entregues fora de ordem.

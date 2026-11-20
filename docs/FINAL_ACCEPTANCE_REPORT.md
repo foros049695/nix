@@ -9,10 +9,10 @@ Foram inspecionadas as capturas do Nix e amostras de quadros de sete vídeos. As
 | A. Correções críticas | [Mensagens](MESSAGING_AND_MEDIA_INTEGRATION.md), [Áudio](AUDIO_DEVICE_DIAGNOSTIC.md) | Convites recíprocos, leitura de QR no Android, relay, avatar e diagnóstico de áudio | Suíte Flutter, teste com dois clientes e relay local | PARTIAL | Câmera, onboarding e conversa por Onion externo e hardware de áudio aguardam homologação. |
 | B. Interface adaptativa | [Android](ANDROID_UI_REMEDIATION.md) | Pager, filtros e navegação compacta no Discovery | Testes Flutter com largura variável | PARTIAL | Matriz completa de resoluções e painéis redimensionáveis ainda em aberto. |
 | C. Texto e mídia | [Mensagens](MESSAGING_AND_MEDIA_INTEGRATION.md) | Seletor, prévia de imagem, falha explícita de anexo ausente e agendamento de texto direto | Testes de timeline e anexos | PARTIAL | Notas de voz, seleção de fotos com prévia e formatação contextual básica entregues. Vídeo inline, stickers e áudio de chamadas continuam pendentes. |
-| D. Comunidades | [Comunidades e enquetes](COMMUNITIES_AND_POLLS.md) | Visibilidade e agrupamento local preservados | Testes de privacidade e pastas | PARTIAL | Enquetes cifradas disponíveis em conversas diretas. Comunidades distribuídas, papéis, tags e enquetes em grupos continuam pendentes. |
-| E. Archive | [Archive](ARCHIVE_EDITOR_VALIDATION.md) | Editor Markdown, revisão visual, moderação reversível e assinatura preservada | Teste de fluxo Archive | PARTIAL | Notas de rodapé e imagens autorizadas entregues. Vídeos e reações estão pendentes. |
+| D. Comunidades | [Comunidades e enquetes](COMMUNITIES_AND_POLLS.md) | Visibilidade e agrupamento local preservados | Testes de privacidade e pastas | PARTIAL | Enquetes cifradas disponíveis em conversas diretas. Enquetes locais de canais foram adicionadas. Sincronização, papéis e tags distribuídos continuam pendentes. |
+| E. Archive | [Archive](ARCHIVE_EDITOR_VALIDATION.md) | Editor Markdown, revisão visual, moderação reversível e assinatura preservada | Teste de fluxo Archive | PARTIAL | Notas de rodapé e imagens autorizadas entregues. MP4 local e reações assinadas entregues. |
 | F. Acervo e música | [Catálogo](MEDIA_PROGRESS_AND_MUSIC.md) | Catálogo local, busca Unicode, progresso cultural e playlist local do Pager no Android | Testes de abertura, busca e integridade | PARTIAL | Playlist do Pager aceita WAV no Linux e Windows. Playlists do acervo, publicação opcional e resenhas formatadas continuam pendentes. |
-| G. Finanças | [Mercado](UNIFIED_P2P_MARKETPLACE.md), [RoboSats](ROBOSATS_INTEGRATION.md) | Mercado e carteira em uma entrada, com análise de integração RoboSats | Testes locais de isolamento e assinatura | PARTIAL | Bitcoin on-chain, Lightning, coordenadores e liquidação Monero real continuam pendentes. |
+| G. Finanças | [Mercado](UNIFIED_P2P_MARKETPLACE.md), [RoboSats](ROBOSATS_INTEGRATION.md) | Mercado e carteira em uma entrada, com análise de integração RoboSats | Testes locais de isolamento e assinatura | PARTIAL | Revisão BIP21/BOLT11 e consultas Onion de teste entregues. Liquidação, coordenadores e ensaios reais continuam pendentes. |
 | H. Windows | [Windows](WINDOWS_DESKTOP_IMPLEMENTATION.md) | Runner, cofre, Tor, audio diagnóstico e pacote piloto | Job Windows x64 | PARTIAL | Aceite em máquina Windows com hardware, instalador e assinatura de código aguardam ambiente. |
 | I. Validação | [Testes](TESTING.md) | Suítes locais, CI e builds piloto | Privacidade, transportes, Flutter e workflow nativo | PARTIAL | Validação externa e jornadas físicas seguem em aberto. |
 
@@ -76,3 +76,28 @@ O editor incorpora PNGs preparados a partir de imagens locais PNG, JPEG e WebP. 
 A reexecução do piloto Android da revisão `cea75b5` passou após a falha anterior no Maven Central. Os jobs Linux e Windows também passaram naquela execução. [Pilotos da rodada anterior](https://github.com/foros049695/nix/actions/runs/44816035341)
 
 A confirmação de divulgação também foi exercitada na interface, primeiro cancelando e verificando que o artigo continuava inédito, depois confirmando e lendo a legenda da imagem assinada. Em uma prova separada, o rascunho foi restaurado com SQLCipher nativo e os bytes e a legenda não apareceram em claro no arquivo do banco. [CI do código](https://github.com/foros049695/nix/actions/runs/44818871475) · [Pilotos da revisão](https://github.com/foros049695/nix/actions/runs/44818872266)
+
+
+## Pilotos públicos e rodada Archive, voz, enquetes e Bitcoin
+
+Os [pilotos públicos](https://github.com/foros049695/nix/releases) fornecem
+downloads de Windows x64, Linux x86-64 e Android ARM64/ARMv7 e os SHA-256.
+
+- Archive incorpora um MP4 assinado e reações com revisões autenticadas.
+  O ensaio em dois clientes confirmou integridade e isolamento de artigos
+  restritos. [Archive](ARCHIVE_EDITOR_VALIDATION.md)
+- Enquetes de canais locais respeitam permissões da sala e persistem no
+  SQLCipher. A reabertura manteve o voto e o encerramento.
+  [Comunidades e enquetes](COMMUNITIES_AND_POLLS.md)
+- O ambiente de voz oferece teste do dispositivo de entrada, preserva a
+  preferência do microfone ao desligar o áudio e mostra a prévia de chat
+  da sala local. O ensaio do aviso foi feito na interface local.
+- Bitcoin on-chain e Lightning têm revisão, QR e cópia de pedidos
+  BIP21/BOLT11. Consultas somente leitura a Bitcoin Core e LND de teste
+  usam o SOCKS Onion, com circuito dedicado e sem persistir credenciais.
+  Foram usados vetores públicos e proxy SOCKS local.
+  [Bitcoin e Lightning](ROBOSATS_INTEGRATION.md)
+
+Continuam abertas as chamadas com áudio e chat em tempo real entre
+dispositivos, as enquetes sincronizadas em comunidades, a homologação
+com nós externos e a liquidação de Bitcoin e Lightning.

@@ -287,8 +287,9 @@ d99cd9c4b1d4ba748fd76831287696d3e83095b235c656c9942588a5a57a2756
 ### Builds do piloto
 
 O workflow manual [Nix pilot builds](.github/workflows/pilot-builds.yml)
-empacota o desktop **Linux x86-64** e APKs Android de teste separados por
-arquitetura. Use `arm64-v8a` em Android 64 bits e `armeabi-v7a` em ARM 32 bits.
+empacota **Windows x64**, **Linux x86-64** e APKs Android de teste separados
+por arquitetura. Os pilotos publicados ficam em [Downloads do Nix](https://github.com/foros049695/nix/releases),
+com os arquivos SHA-256. Use `arm64-v8a` em Android 64 bits e `armeabi-v7a` em ARM 32 bits.
 O APK **Nix Piloto** é compilado em modo release e assinado com a chave de
 depuração do runner. Cada execução do GitHub Actions recebe um identificador
 de pacote próprio, então pode ser instalada ao lado dos pilotos anteriores

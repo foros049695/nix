@@ -45,8 +45,19 @@ jobs:
         run: |
           set -euo pipefail
           tag="pilot-${PILOT_SHA:0:7}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" packages/*/*
+          if release=$(gh release view "$tag" --json assets); then
+            target=$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object.sha')
+            test "$target" = "$PILOT_SHA"
+            for file in packages/*/*; do
+              name=${file##*/}
+              if jq -e --arg name "$name" '.assets | any(.name == $name)' <<< "$release" >/dev/null; then
+                expected=$(sha256sum "$file" | cut -d ' ' -f 1)
+                published=$(gh release download "$tag" --pattern "$name" --output - | sha256sum | cut -d ' ' -f 1)
+                test "$expected" = "$published"
+              else
+                gh release upload "$tag" "$file"
+              fi
+            done
             gh release edit "$tag" --draft=false --prerelease --latest=false
           else
             gh release create "$tag" packages/*/* --target "$PILOT_SHA" \

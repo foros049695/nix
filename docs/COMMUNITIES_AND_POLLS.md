@@ -23,3 +23,17 @@ As enquetes são identificadas nesses chats de dois participantes. A ocultação
 Tópicos, tags, comentários e reações de comentários são gravados no cofre SQLCipher junto às preferências do workspace e restaurados ao desbloquear. O cliente respeita as permissões locais de envio, silenciamento e banimento. Cada tópico começa com a lista de anexos vazia. Esse armazenamento prepara a interface para um futuro transporte de eventos de comunidade.
 
 A integração automatizada abre um cofre real, registra o tópico, reabre a conta e confirma a restauração e o bloqueio de novos comentários. Em ambiente sem biblioteca SQLCipher, o teste informa a limitação. Para tornar a biblioteca obrigatória nesse teste, execute com `NIX_TEST_ENCRYPTED_FORUM=true`.
+
+
+## Enquetes locais de canais
+
+Em um canal de texto, **Enquetes locais** abre o painel da sala. A enquete
+tem pergunta, opções, prazo, voto múltiplo, revoto e resposta correta
+configuráveis. A sala isola a visualização, o voto e o encerramento e respeita
+a permissão de enviar mensagens. O cofre SQLCipher guarda votos e enquetes
+por canal. O ensaio confirmou a recuperação do voto e do encerramento após
+reabrir o cofre e a ausência do texto de controle no arquivo cifrado.
+
+A sincronização de enquetes de grupos entre instalações continua aberta.
+Os espaços e canais locais ainda carecem de convites autenticados de grupo,
+vínculo de membros à época e entrega de eventos aos membros autorizados.
