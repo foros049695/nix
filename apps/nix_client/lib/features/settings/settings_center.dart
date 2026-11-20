@@ -10,7 +10,6 @@ import '../../core/theme/nix_tokens.dart';
 import '../../core/theme/nix_palette.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
-import '../design/nix_bilingual_label.dart';
 import '../dialogs/sovereign_onboarding_dialog.dart';
 import '../profile/pager_appearance_dialog.dart';
 
@@ -253,14 +252,14 @@ class _SettingsCenterState extends State<SettingsCenter> {
   }
 
   static const _categories = [
-    (SettingsCategory.appearance, Icons.palette_outlined, 'Aparência', '外観'),
-    (SettingsCategory.notifications, Icons.notifications_none_rounded, 'Notificações', '通知'),
-    (SettingsCategory.privacy, Icons.lock_outline_rounded, 'Privacidade', '安全'),
-    (SettingsCategory.chats, Icons.chat_bubble_outline_rounded, 'Chats', '会話'),
-    (SettingsCategory.audio, Icons.mic_none_rounded, 'Som e microfone', '音声'),
-    (SettingsCategory.connections, Icons.hub_outlined, 'Conexões', '接続'),
-    (SettingsCategory.devices, Icons.devices_outlined, 'Dispositivos', '端末'),
-    (SettingsCategory.survival, Icons.shield_outlined, 'Sobrevivência', '防護'),
+    (SettingsCategory.appearance, Icons.palette_outlined, 'Aparência'),
+    (SettingsCategory.notifications, Icons.notifications_none_rounded, 'Notificações'),
+    (SettingsCategory.privacy, Icons.lock_outline_rounded, 'Privacidade'),
+    (SettingsCategory.chats, Icons.chat_bubble_outline_rounded, 'Chats'),
+    (SettingsCategory.audio, Icons.mic_none_rounded, 'Som e microfone'),
+    (SettingsCategory.connections, Icons.hub_outlined, 'Conexões'),
+    (SettingsCategory.devices, Icons.devices_outlined, 'Dispositivos'),
+    (SettingsCategory.survival, Icons.shield_outlined, 'Sobrevivência'),
   ];
 
   Widget _buildCompactSettings(NixState state) {
@@ -282,7 +281,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
           leading: backToRoot != null || close != null
               ? BackButton(onPressed: backToRoot ?? close)
               : null,
-          title: NixBilingualLabel(label: item?.$3 ?? 'Configurações do Nix', japanese: item?.$4 ?? '設定'),
+          title: Text(item?.$3 ?? 'Configurações do Nix'),
           actions: [
             if (widget.onClose != null)
               IconButton(onPressed: widget.onClose, tooltip: 'Fechar configurações', icon: const Icon(Icons.close_rounded)),
@@ -296,7 +295,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
                   for (final entry in _categories)
                     ListTile(
                       leading: Icon(entry.$2),
-                      title: NixBilingualLabel(label: entry.$3, japanese: entry.$4),
+                      title: Text(entry.$3),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () {
                         setState(() => _compactCategory = entry.$1);

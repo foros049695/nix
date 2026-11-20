@@ -45,12 +45,6 @@ class ChannelsSidebar extends StatelessWidget {
 
     return Container(
       width: effectiveWidth,
-      decoration: BoxDecoration(
-        color: NixColors.surfaceSidebar,
-        border: Border(
-          right: BorderSide(color: NixColors.surfaceBorder, width: 1),
-        ),
-      ),
       child: Column(
         children: [
           _SpaceHeader(spaceName: space.name, initials: space.initials),

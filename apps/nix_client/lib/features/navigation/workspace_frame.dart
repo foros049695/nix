@@ -5,6 +5,7 @@ import '../../core/theme.dart';
 import '../../state/nix_state.dart';
 import '../chat/conversation_info_panel.dart';
 import '../design/nix_surfaces.dart';
+import '../design/nix_glass.dart';
 import '../home/home_sidebar.dart';
 import '../members/members_panel.dart';
 import '../profile/nix_user_avatar.dart';
@@ -87,7 +88,10 @@ class NixDesktopWorkspace extends StatelessWidget {
         child: Column(
           children: [
             const WindowTitleBar(),
-            _WorkspaceBar(state: state),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 5, 10, 7),
+              child: NixGlass(child: _WorkspaceBar(state: state)),
+            ),
             if (offGridBanner != null) offGridBanner!,
             Expanded(
               child: LayoutBuilder(builder: (context, constraints) {
@@ -100,7 +104,7 @@ class NixDesktopWorkspace extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      NixFrame(child: SpacesDock(width: state.dockWidth)),
+                      NixGlass(child: SpacesDock(width: state.dockWidth)),
                       PanelResizeDivider(
                         key: const Key('dock_resize_divider'),
                         onDeltaDrag: (delta) =>
@@ -110,7 +114,7 @@ class NixDesktopWorkspace extends StatelessWidget {
                             'Redimensionar Pastas (Duplo clique para 78px)',
                       ),
                       if (hasSidebar) ...[
-                        NixFrame(
+                        NixGlass(
                             child: isSpace
                                 ? ChannelsSidebar(width: sidebarWidth)
                                 : HomeSidebar(width: sidebarWidth)),

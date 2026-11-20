@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../design/nix_bilingual_label.dart';
 import '../design/nix_surfaces.dart';
 import '../../core/models/channel.dart';
 import '../../core/theme.dart';
@@ -45,11 +44,11 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
   _SettingsTab? _compactTab;
 
   static const _sections = [
-    (_SettingsTab.identity, Icons.vpn_key_outlined, 'Identidade, Links & QR', '識別'),
-    (_SettingsTab.permissions, Icons.chat_bubble_outline_rounded, 'Permissões de Mensagens', '権限'),
-    (_SettingsTab.contentProtection, Icons.shield_outlined, 'Proteção de Conteúdo', '保護'),
-    (_SettingsTab.admin, Icons.admin_panel_settings_outlined, 'Membros, Admin & Logs', '管理'),
-    (_SettingsTab.security, Icons.security_rounded, 'Limites & Anti-Spam', '制限'),
+    (_SettingsTab.identity, Icons.vpn_key_outlined, 'Identidade, Links & QR'),
+    (_SettingsTab.permissions, Icons.chat_bubble_outline_rounded, 'Permissões de Mensagens'),
+    (_SettingsTab.contentProtection, Icons.shield_outlined, 'Proteção de Conteúdo'),
+    (_SettingsTab.admin, Icons.admin_panel_settings_outlined, 'Membros, Admin & Logs'),
+    (_SettingsTab.security, Icons.security_rounded, 'Limites & Anti-Spam'),
   ];
 
   late TextEditingController _nameController;
@@ -296,7 +295,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
       child: Scaffold(
         appBar: AppBar(
           leading: BackButton(onPressed: current == null ? () => Navigator.of(context).pop() : back),
-          title: NixBilingualLabel(label: section?.$3 ?? '#${widget.channel.name}', japanese: section?.$4 ?? '設定'),
+          title: Text(section?.$3 ?? '#${widget.channel.name}'),
         ),
         body: SafeArea(
           bottom: false,
@@ -307,7 +306,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
                     for (final entry in _sections)
                       ListTile(
                         leading: Icon(entry.$2),
-                        title: NixBilingualLabel(label: entry.$3, japanese: entry.$4),
+                        title: Text(entry.$3),
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: () => setState(() {
                           _compactTab = entry.$1;

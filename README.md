@@ -23,7 +23,8 @@ O **Nix** é um ecossistema modular, auto-hospedável e de código aberto projet
 O cliente usa molduras arredondadas com sombras deslocadas, títulos em pixel
 art e texto de leitura contínua em uma fonte sem serifa. O desktop oferece um
 painel central e colunas redimensionáveis para espaços, conversas e detalhes.
-No mobile, as áreas ficam acessíveis pela barra flutuante e pelo menu lateral.
+No mobile, o cabeçalho, a barra inferior e o menu lateral usam painéis
+translúcidos. As áreas continuam acessíveis pela navegação flutuante.
 As configurações abrem cada seção em tela cheia. O modo de movimento reduzido
 desativa os efeitos de perspectiva e a animação da assistente no Pager.
 
@@ -33,9 +34,13 @@ Roxo**. Também é possível ajustar a superfície e a cor de destaque separadam
 O Pager interativo está no acesso ao app e no perfil. A primeira página reúne
 foto, nome, QR e atalhos para grupos, canais e amigos. Em **Menu do Pager →
 Cores do Pager**, escolha a cor da carcaça e a do visor separadamente. Em
-**Personalizar contemplação**, escolha uma imagem local, com ou sem avatar.
+**Personalizar contemplação**, escolha uma imagem local, com ou sem avatar,
+e ajuste a posição e o tamanho da foto. Também é possível arrastá-la no visor.
 A música exibida pode ser inserida no editor de perfil. O passaporte cultural
-e o acervo ficam abaixo do Pager.
+e o acervo ficam abaixo do Pager. **Buscar no catálogo** preenche a ficha da
+obra a partir do banco local. A estante mostra discos, livros com lombada e
+páginas, e pôsteres. As capas vêm do pacote quando há uma imagem embutida.
+As referências de capa do catálogo inicial geram ilustrações locais.
 
 O [dump principal do MusicBrainz](https://musicbrainz.org/doc/MusicBrainz_Database/Download)
 distribui metadados sob CC0. Um recorte de artistas, álbuns e faixas pode ser

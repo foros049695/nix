@@ -13,6 +13,7 @@ import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../onboarding/sovereign_onboarding_flow.dart';
 import '../design/nix_surfaces.dart';
+import '../design/nix_glass.dart';
 import '../design/nix_bilingual_label.dart';
 import '../dialogs/channel_settings_dialog.dart';
 import '../profile/pager_housing.dart';
@@ -146,7 +147,29 @@ class AppShell extends StatelessWidget {
                 )
               : Scaffold(
                   backgroundColor: NixColors.background,
+                  extendBody: rawMq.viewInsets.bottom == 0,
+                  drawerScrimColor: Colors.transparent,
                   appBar: AppBar(
+                    systemOverlayStyle: SystemUiOverlayStyle(
+                      statusBarColor: Colors.transparent,
+                      systemNavigationBarColor: Colors.transparent,
+                      systemNavigationBarDividerColor: Colors.transparent,
+                      systemNavigationBarContrastEnforced: false,
+                      systemStatusBarContrastEnforced: false,
+                      statusBarIconBrightness: Theme.of(context).brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+                      systemNavigationBarIconBrightness: Theme.of(context).brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+                    ),
+                    backgroundColor: Colors.transparent,
+                    surfaceTintColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    scrolledUnderElevation: 0,
+                    flexibleSpace: const SafeArea(
+                      bottom: false,
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(8, 1, 8, 3),
+                        child: NixGlass(key: Key('floating_mobile_header'), child: SizedBox.expand()),
+                      ),
+                    ),
                     titleSpacing: 0,
                     title: NixPanelTitle(
                       icon: _getAreaIcon(activeArea, currentChannel),
@@ -164,10 +187,13 @@ class AppShell extends StatelessWidget {
                     ],
                   ),
                   drawer: Drawer(
-                    width: constraints.maxWidth < 366 ? constraints.maxWidth : 366,
-                    backgroundColor: NixColors.surfaceSidebar,
+                    width: constraints.maxWidth < 390 ? constraints.maxWidth - 24 : 366,
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    elevation: 0,
                     child: SafeArea(
-                      child: Row(
+                      minimum: const EdgeInsets.fromLTRB(8, 10, 8, 10),
+                      child: NixGlass(child: Row(
                         children: [
                           const SpacesDock(),
                           Expanded(
@@ -180,16 +206,19 @@ class AppShell extends StatelessWidget {
                                 : const ChannelsSidebar(),
                           ),
                         ],
-                      ),
+                      )),
                     ),
                   ),
-                  body: Column(
-                    children: [
-                      if (nixState.isStrictOffGridMode)
-                        _buildStrictOffGridBanner(nixState),
-                      Expanded(child: _buildActiveStage(activeArea, currentChannel)),
-                    ],
-                  ),
+                  body: Builder(builder: (context) => Padding(
+                    padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
+                    child: Column(
+                      children: [
+                        if (nixState.isStrictOffGridMode)
+                          _buildStrictOffGridBanner(nixState),
+                        Expanded(child: _buildActiveStage(activeArea, currentChannel)),
+                      ],
+                    ),
+                  )),
                   bottomNavigationBar: rawMq.viewInsets.bottom > 0 ? null : FloatingWorkspaceBar(state: nixState),
                 );
 

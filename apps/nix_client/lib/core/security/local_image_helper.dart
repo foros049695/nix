@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'file_picker_adapter.dart';
@@ -56,7 +57,29 @@ class LocalImageHelper {
     if (!await file.exists()) return null;
     if (!isSupportedExtension(sourcePath)) return null;
 
-    final raw = await file.readAsBytes();
+    final ext = sourcePath.split('.').last.toLowerCase();
+    return _sanitizeAndStoreBytes(await file.readAsBytes(), ext);
+  }
+
+  static ({Uint8List bytes, String extension})? readCatalogThumbnail(String? reference) {
+    if (reference == null || reference.length > 1400000) return null;
+    final match = RegExp(r'^data:image/(png|jpeg|webp);base64,').firstMatch(reference);
+    if (match == null) return null;
+    try {
+      final bytes = base64Decode(reference.substring(match.end));
+      return (bytes: stripMetadataBytes(bytes), extension: match.group(1)!);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  static Future<String?> storeCatalogThumbnail(String? reference) async {
+    final thumbnail = readCatalogThumbnail(reference);
+    if (thumbnail == null) return null;
+    return _writeCleanImage(thumbnail.bytes, thumbnail.extension);
+  }
+
+  static Future<String?> _sanitizeAndStoreBytes(Uint8List raw, String ext) async {
     final Uint8List cleaned;
     try {
       cleaned = stripMetadataBytes(raw);
@@ -64,12 +87,15 @@ class LocalImageHelper {
       return null;
     }
 
+    return _writeCleanImage(cleaned, ext);
+  }
+
+  static Future<String> _writeCleanImage(Uint8List cleaned, String ext) async {
     final cacheDir = Directory(NixPlatformPaths.resolveDataFile('sanitized_media'));
     await cacheDir.create(recursive: true);
 
-    final ext = sourcePath.split('.').last.toLowerCase();
     final outPath =
-        '${cacheDir.path}/nix_${DateTime.now().millisecondsSinceEpoch}.$ext';
+        '${cacheDir.path}/nix_${DateTime.now().microsecondsSinceEpoch}.$ext';
     await File(outPath).writeAsBytes(cleaned, flush: true);
     return outPath;
   }

@@ -231,7 +231,8 @@ class _PagerProfileState extends State<PagerProfile> {
                               title: _pages[1],
                               japanese: '状態',
                               page: 2,
-                              child: _status(state, reduced),
+                              child: _status(
+                                  state, reduced, constraints.maxWidth >= 460),
                               footer: OutlinedButton(
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: pagerInk,
@@ -379,7 +380,7 @@ class _PagerProfileState extends State<PagerProfile> {
     );
   }
 
-  Widget _status(NixState state, bool reduced) {
+  Widget _status(NixState state, bool reduced, bool wideDisplay) {
     final gate = state.securityGate;
     const instruction = '> Rede, cofre e chaves.\n> Avance para contemplar.';
     return Column(
@@ -388,7 +389,8 @@ class _PagerProfileState extends State<PagerProfile> {
         PagerGuide(
           message: instruction,
           reducedMotion: reduced,
-          portraitSize: 56,
+          portraitSize: wideDisplay ? 148 : 56,
+          centered: wideDisplay,
         ),
         const SizedBox(height: 9),
         _PagerStatusStrip(gate: gate),
@@ -533,15 +535,24 @@ class _PagerStatusStrip extends StatelessWidget {
       );
 }
 
-class _ContemplationScreen extends StatelessWidget {
+class _ContemplationScreen extends StatefulWidget {
   final bool showAvatar;
 
   const _ContemplationScreen({required this.showAvatar});
 
   @override
+  State<_ContemplationScreen> createState() => _ContemplationScreenState();
+}
+
+class _ContemplationScreenState extends State<_ContemplationScreen> {
+  Offset? _dragPosition;
+  int? _dragPointer;
+
+  @override
   Widget build(BuildContext context) {
-    final revision =
-        context.select<NixState, int>((state) => state.pagerWallpaperRevision);
+    final state = context.watch<NixState>();
+    final revision = state.pagerWallpaperRevision;
+    final settings = state.settings;
     return Semantics(
       label: 'Contemplação',
       child: Stack(
@@ -562,14 +573,69 @@ class _ContemplationScreen extends StatelessWidget {
             excludeFromSemantics: true,
             errorBuilder: (_, __, ___) => const SizedBox.shrink(),
           ),
-          if (showAvatar)
-            const Center(
-                child: NixUserAvatar(
-              key: Key('pager_contemplation_avatar'),
-              size: 80,
-              borderColor: Color(0xFFD9CBF4),
-              borderWidth: 2,
-            )),
+          if (widget.showAvatar)
+            LayoutBuilder(builder: (context, viewport) {
+              final diameter =
+                  viewport.biggest.shortestSide * settings.pagerAvatarScale;
+              final position = _dragPosition ??
+                  Offset(settings.pagerAvatarX, settings.pagerAvatarY);
+              const inset = 8.0;
+              return Padding(
+                padding: const EdgeInsets.all(inset),
+                child: Align(
+                  alignment: Alignment(position.dx, position.dy),
+                  child: RawGestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    gestures: {
+                      EagerGestureRecognizer:
+                          GestureRecognizerFactoryWithHandlers<
+                              EagerGestureRecognizer>(
+                        EagerGestureRecognizer.new,
+                        (_) {},
+                      ),
+                    },
+                    child: Listener(
+                      onPointerDown: (event) => _dragPointer ??= event.pointer,
+                      onPointerMove: (event) {
+                        if (event.pointer != _dragPointer) return;
+                        final travelX =
+                            viewport.maxWidth - diameter - inset * 2;
+                        final travelY =
+                            viewport.maxHeight - diameter - inset * 2;
+                        if (travelX <= 0 || travelY <= 0) return;
+                        setState(() => _dragPosition = Offset(
+                              (position.dx + event.delta.dx * 2 / travelX)
+                                  .clamp(-1, 1),
+                              (position.dy + event.delta.dy * 2 / travelY)
+                                  .clamp(-1, 1),
+                            ));
+                      },
+                      onPointerUp: (event) {
+                        if (event.pointer != _dragPointer) return;
+                        _dragPointer = null;
+                        final position = _dragPosition;
+                        if (position == null) return;
+                        state.updateSettings(state.settings.copyWith(
+                            pagerAvatarX: position.dx,
+                            pagerAvatarY: position.dy));
+                        setState(() => _dragPosition = null);
+                      },
+                      onPointerCancel: (event) {
+                        if (event.pointer != _dragPointer) return;
+                        _dragPointer = null;
+                        setState(() => _dragPosition = null);
+                      },
+                      child: NixUserAvatar(
+                        key: const Key('pager_contemplation_avatar'),
+                        size: diameter,
+                        borderColor: const Color(0xFFD9CBF4),
+                        borderWidth: 2,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
         ],
       ),
     );
@@ -639,6 +705,38 @@ class _ContemplationSettingsState extends State<_ContemplationSettings> {
             onChanged: state.updatePagerAvatarVisibility,
             contentPadding: EdgeInsets.zero,
           ),
+          if (!state.settings.hidePagerAvatar) ...[
+            _avatarSlider(
+                'Tamanho da foto',
+                state.settings.pagerAvatarScale,
+                .14,
+                .56,
+                (value) => state.updateSettings(
+                    state.settings.copyWith(pagerAvatarScale: value))),
+            _avatarSlider(
+                'Posição horizontal',
+                state.settings.pagerAvatarX,
+                -1,
+                1,
+                (value) => state.updateSettings(
+                    state.settings.copyWith(pagerAvatarX: value))),
+            _avatarSlider(
+                'Posição vertical',
+                state.settings.pagerAvatarY,
+                -1,
+                1,
+                (value) => state.updateSettings(
+                    state.settings.copyWith(pagerAvatarY: value))),
+            TextButton(
+              onPressed: () => state.updateSettings(state.settings.copyWith(
+                pagerAvatarX: 0,
+                pagerAvatarY: 0,
+                pagerAvatarScale: .28,
+              )),
+              child: const Text('Restaurar posição e tamanho'),
+            ),
+            const Divider(),
+          ],
           Wrap(
             spacing: 8,
             children: [
@@ -663,4 +761,19 @@ class _ContemplationSettingsState extends State<_ContemplationSettings> {
       ],
     );
   }
+
+  Widget _avatarSlider(String label, double value, double min, double max,
+          ValueChanged<double> onChanged) =>
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label),
+          Slider(
+              value: value,
+              min: min,
+              max: max,
+              semanticFormatterCallback: (value) => '${(value * 100).round()}%',
+              onChanged: onChanged),
+        ],
+      );
 }

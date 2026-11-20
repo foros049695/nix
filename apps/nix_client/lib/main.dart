@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'core/security/fail_closed_http_overrides.dart';
 import 'core/security/platform_runtime.dart';
@@ -14,6 +17,9 @@ Future<void> main() async {
   // Instala firewall HTTP fail-closed ANTES de qualquer componente de rede ou UI
   // para impedir qualquer contato direto com a rede doméstica do usuário.
   NixFailClosedHttpOverrides.install();
+  if (Platform.isAndroid) {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
   await NixPlatformPaths.initialize();
   runApp(
     ChangeNotifierProvider(

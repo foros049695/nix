@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/space.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import '../design/nix_glass.dart';
 
 /// Tela Explorar (Discover) — Lista grupos e canais públicos do menos populoso ao mais populoso.
 class ExploreSpacesView extends StatefulWidget {
@@ -40,63 +42,22 @@ class _ExploreSpacesViewState extends State<ExploreSpacesView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Cabeçalho Superior
-          Container(
-            height: 52,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: BoxDecoration(
-              color: NixColors.surfaceSidebar,
-              border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
-            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
             child: Row(
               children: [
-                Icon(Icons.explore_outlined, color: NixColors.textPrimary, size: 20),
-                const SizedBox(width: 10),
-                Text(
-                  'EXPLORAR COMUNIDADES & CANAIS PÚBLICOS',
-                  style: TextStyle(
-                    color: NixColors.textPrimary,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-                const Spacer(),
-                // Ordenação: Menos Populoso -> Mais Populoso (padrão)
-                InkWell(
-                  onTap: () => nixState.setExploreSortAscending(!nixState.exploreSortAscending),
-                  borderRadius: NixTokens.borderSm,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: NixColors.surfaceCard,
-                      borderRadius: NixTokens.borderSm,
-                      border: Border.all(color: NixColors.surfaceBorderStrong),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          nixState.exploreSortAscending
-                              ? Icons.arrow_upward_rounded
-                              : Icons.arrow_downward_rounded,
-                          size: 14,
-                          color: NixColors.textPrimary,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          nixState.exploreSortAscending
-                              ? 'Ordem: Menos Populoso → Mais Populoso'
-                              : 'Ordem: Mais Populoso → Menos Populoso',
-                          style: TextStyle(
-                            color: NixColors.textPrimary,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                Expanded(
+                    child: Text('Comunidades e canais públicos',
+                        style: NixTokens.headingMedium())),
+                IconButton.outlined(
+                  tooltip: nixState.exploreSortAscending
+                      ? 'Menos populosos primeiro'
+                      : 'Mais populosos primeiro',
+                  onPressed: () => nixState
+                      .setExploreSortAscending(!nixState.exploreSortAscending),
+                  icon: Icon(nixState.exploreSortAscending
+                      ? Icons.arrow_upward_rounded
+                      : Icons.arrow_downward_rounded),
                 ),
               ],
             ),
@@ -105,15 +66,11 @@ class _ExploreSpacesViewState extends State<ExploreSpacesView> {
           // Banner Hero Minimalista + Busca em Tempo Real
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
               children: [
-                Container(
+                NixGlass(
+                    child: Padding(
                   padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    gradient: NixTokens.amoledMetalGradient,
-                    borderRadius: NixTokens.borderLg,
-                    border: Border.all(color: NixColors.surfaceBorderStrong),
-                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -129,56 +86,44 @@ class _ExploreSpacesViewState extends State<ExploreSpacesView> {
                       const SizedBox(height: 6),
                       Text(
                         'Listagem priorizando células enxutas (do menos populoso ao mais populoso) para descentralização orgânica.',
-                        style: TextStyle(color: NixColors.textSecondary, fontSize: 13),
+                        style: TextStyle(
+                            color: NixColors.textSecondary, fontSize: 13),
                       ),
                       const SizedBox(height: 16),
                       TextField(
                         onChanged: (v) => nixState.setExploreSearchQuery(v),
-                        style: TextStyle(color: NixColors.textPrimary, fontSize: 13.5),
+                        style: TextStyle(
+                            color: NixColors.textPrimary, fontSize: 13.5),
                         decoration: InputDecoration(
-                          hintText: 'Pesquisar grupos públicos por nome, tema ou tecnologia...',
-                          prefixIcon: Icon(Icons.search_rounded, color: NixColors.textSecondary),
+                          hintText: 'Nome, tema ou tecnologia',
+                          prefixIcon: Icon(Icons.search_rounded,
+                              color: NixColors.textSecondary),
                           fillColor: NixColors.background,
                         ),
                       ),
                     ],
                   ),
-                ),
+                )),
                 const SizedBox(height: 16),
 
-                // Filtro de Categorias
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: _categories.map((cat) {
-                      final selected = _selectedCategory == cat;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: InkWell(
-                          onTap: () => setState(() => _selectedCategory = cat),
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: selected ? NixColors.textPrimary : NixColors.surfaceCard,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: selected ? NixColors.textPrimary : NixColors.surfaceBorder,
-                              ),
-                            ),
-                            child: Text(
-                              cat,
-                              style: TextStyle(
-                                color: selected ? Colors.black : NixColors.textSecondary,
-                                fontSize: 12,
-                                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                              ),
-                            ),
-                          ),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 4,
+                  children: [
+                    for (final category in _categories)
+                      ChoiceChip(
+                        label: Text(category),
+                        selected: category == _selectedCategory,
+                        selectedColor: context.accentColor,
+                        labelStyle: TextStyle(
+                          color: category == _selectedCategory
+                              ? context.onAccentColor
+                              : NixColors.textSecondary,
                         ),
-                      );
-                    }).toList(),
-                  ),
+                        onSelected: (_) =>
+                            setState(() => _selectedCategory = category),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 20),
 
@@ -188,23 +133,23 @@ class _ExploreSpacesViewState extends State<ExploreSpacesView> {
                     final cols = constraints.maxWidth > 900
                         ? 3
                         : (constraints.maxWidth > 560 ? 2 : 1);
-                    return GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: cols,
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
-                        mainAxisExtent: 210,
-                      ),
-                      itemCount: displayedSpaces.length,
-                      itemBuilder: (context, idx) {
-                        final space = displayedSpaces[idx];
-                        return _PublicSpaceCard(
-                          space: space,
-                          onJoin: () => nixState.joinDiscoverableSpace(space),
-                        );
-                      },
+                    final width =
+                        (constraints.maxWidth - (cols - 1) * 16) / cols;
+                    if (displayedSpaces.isEmpty)
+                      return const Text('Nenhuma comunidade encontrada.');
+                    return Wrap(
+                      spacing: 16,
+                      runSpacing: 16,
+                      children: [
+                        for (final space in displayedSpaces)
+                          SizedBox(
+                              width: width,
+                              child: _PublicSpaceCard(
+                                space: space,
+                                onJoin: () =>
+                                    nixState.joinDiscoverableSpace(space),
+                              )),
+                      ],
                     );
                   },
                 ),
@@ -269,7 +214,8 @@ class _PublicSpaceCard extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Icon(Icons.verified_outlined, size: 14, color: NixColors.textPrimary),
+                          Icon(Icons.verified_outlined,
+                              size: 14, color: NixColors.textPrimary),
                           const SizedBox(width: 5),
                           Expanded(
                             child: Text(
@@ -279,7 +225,6 @@ class _PublicSpaceCard extends StatelessWidget {
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.bold,
                               ),
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -287,7 +232,8 @@ class _PublicSpaceCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         space.categoryTag,
-                        style: TextStyle(color: NixColors.textMuted, fontSize: 11),
+                        style:
+                            TextStyle(color: NixColors.textMuted, fontSize: 11),
                       ),
                     ],
                   ),
@@ -295,16 +241,12 @@ class _PublicSpaceCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Expanded(
-              child: Text(
-                space.description,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: NixColors.textSecondary,
-                  fontSize: 12,
-                  height: 1.35,
-                ),
+            Text(
+              space.description,
+              style: TextStyle(
+                color: NixColors.textSecondary,
+                fontSize: 12,
+                height: 1.35,
               ),
             ),
             Divider(height: 16, color: NixColors.surfaceBorder),
@@ -313,7 +255,8 @@ class _PublicSpaceCard extends StatelessWidget {
                 Container(
                   width: 7,
                   height: 7,
-                  decoration: BoxDecoration(color: NixColors.textPrimary, shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                      color: NixColors.textPrimary, shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 5),
                 Expanded(
@@ -324,18 +267,19 @@ class _PublicSpaceCard extends StatelessWidget {
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  'Acessar →',
+                  'Acessar',
                   style: TextStyle(
                     color: NixColors.textPrimary,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+                const SizedBox(width: 4),
+                const Icon(Icons.arrow_forward_rounded, size: 13),
               ],
             ),
           ],

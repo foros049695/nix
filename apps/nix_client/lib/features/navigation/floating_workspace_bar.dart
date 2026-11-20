@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../state/nix_state.dart';
 import '../dialogs/create_space_dialog.dart';
+import '../design/nix_glass.dart';
 import 'workspace_frame.dart';
 
 class FloatingWorkspaceBar extends StatelessWidget {
@@ -24,12 +25,9 @@ class FloatingWorkspaceBar extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                child: Material(
+                child: NixGlass(
                   key: const Key('floating_workspace_tabs'),
-                  elevation: 5,
-                  color: colors.surfaceElevated,
-                  shape: StadiumBorder(
-                      side: BorderSide(color: colors.surfaceBorderStrong)),
+                  radius: 28,
                   child: Padding(
                     padding: const EdgeInsets.all(3),
                     child: Row(
@@ -96,11 +94,8 @@ class FloatingWorkspaceBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 7),
-              Material(
-                elevation: 5,
-                color: colors.surfaceElevated,
-                shape: CircleBorder(
-                    side: BorderSide(color: colors.surfaceBorderStrong)),
+              NixGlass(
+                radius: 28,
                 child: PopupMenuButton<_WorkspaceAction>(
                   key: const Key('workspace_quick_menu'),
                   tooltip: 'Ações rápidas',

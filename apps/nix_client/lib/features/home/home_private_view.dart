@@ -107,22 +107,9 @@ class _HomePrivateViewState extends State<HomePrivateView> {
   Widget _buildStageContent(NixState state, HomeSubTab tab) {
     switch (tab) {
       case HomeSubTab.cardId:
-        return Column(
+        return PagerProfile(
           key: const ValueKey('home_stage_card_id'),
-          children: [
-            _buildTopHeader(
-              icon: Icons.badge_outlined,
-              title: 'Identidade Pública & Passaporte Cultural',
-              subtitle: 'Selecione uma conversa privada à esquerda ou gerencie seu Pager',
-              state: state,
-            ),
-            Expanded(
-              child: PagerProfile(
-                onOpenSettings: () => state.openProfileOverlay(startInSettings: true),
-                showCulturalPassport: true,
-              ),
-            ),
-          ],
+          onOpenSettings: () => state.openProfileOverlay(startInSettings: true),
         );
 
       case HomeSubTab.directChat:

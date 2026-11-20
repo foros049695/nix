@@ -125,8 +125,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('NIX-7E3A-9F01-C45B-289D'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('close_profile_overlay_button')));
+    await tester.tapAt(const Offset(8, 400));
     await tester.pumpAndSettle();
+    expect(state.isProfileOverlayOpen, isFalse);
   });
 
   testWidgets('3. Clean Card ID removes Assistindo & duplicate QR, enforces deterministic fallback and EXIF stripping',

@@ -221,6 +221,7 @@ class PagerGuide extends StatelessWidget {
 
   final Widget? actions;
   final double? portraitSize;
+  final bool centered;
 
   const PagerGuide({
     super.key,
@@ -228,6 +229,7 @@ class PagerGuide extends StatelessWidget {
     this.reducedMotion = false,
     this.actions,
     this.portraitSize,
+    this.centered = false,
   });
 
   @override
@@ -236,48 +238,53 @@ class PagerGuide extends StatelessWidget {
         reducedMotion || MediaQuery.disableAnimationsOf(context);
     return LayoutBuilder(builder: (context, constraints) {
       final size =
-          portraitSize ?? (constraints.maxWidth * .235).clamp(48.0, 108.0);
-      return Row(
+          portraitSize ?? (constraints.maxWidth * .27).clamp(48.0, 142.0);
+      final portrait = _PagerPortrait(size: size, animate: !reducesMotion);
+      final copy = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment:
+            centered ? CrossAxisAlignment.center : CrossAxisAlignment.start,
         children: [
-          _PagerPortrait(size: size, animate: !reducesMotion),
-          SizedBox(width: constraints.maxWidth >= 340 ? 20 : 10),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Semantics(
-                  label: message,
-                  child: ExcludeSemantics(
-                    child: TweenAnimationBuilder<double>(
-                      key: ValueKey(message),
-                      tween: Tween(begin: reducesMotion ? 1 : 0, end: 1),
-                      duration: reducesMotion
-                          ? Duration.zero
-                          : const Duration(milliseconds: 600),
-                      builder: (context, fraction, _) => Stack(
-                        children: [
-                          Opacity(
-                              opacity: 0,
-                              child: Text('${message}_', style: _textStyle)),
-                          Text(
-                            '${message.substring(0, (message.length * fraction).floor())}_',
-                            style: _textStyle,
-                          ),
-                        ],
-                      ),
+          Semantics(
+            label: message,
+            child: ExcludeSemantics(
+              child: TweenAnimationBuilder<double>(
+                key: ValueKey(message),
+                tween: Tween(begin: reducesMotion ? 1 : 0, end: 1),
+                duration: reducesMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 600),
+                builder: (context, fraction, _) => Stack(
+                  children: [
+                    Opacity(
+                        opacity: 0,
+                        child: Text('${message}_',
+                            textAlign: centered ? TextAlign.center : null,
+                            style: _textStyle)),
+                    Text(
+                      '${message.substring(0, (message.length * fraction).floor())}_',
+                      textAlign: centered ? TextAlign.center : null,
+                      style: _textStyle,
                     ),
-                  ),
+                  ],
                 ),
-                if (actions != null) ...[
-                  const SizedBox(height: 7),
-                  actions!,
-                ],
-              ],
+              ),
             ),
           ),
+          if (actions != null) ...[
+            const SizedBox(height: 7),
+            actions!,
+          ],
         ],
       );
+      if (centered) {
+        return Column(children: [portrait, const SizedBox(height: 8), copy]);
+      }
+      return Row(children: [
+        portrait,
+        SizedBox(width: constraints.maxWidth >= 340 ? 20 : 10),
+        Expanded(child: copy),
+      ]);
     });
   }
 

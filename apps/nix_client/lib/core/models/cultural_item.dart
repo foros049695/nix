@@ -39,6 +39,7 @@ class CulturalItem {
   final int toneShade; // 0-255 tom monocromático para arte de capa / selo de vinil
   final bool isFeatured;
   final String? localImagePath;
+  final String? coverMotif;
   final double cropScale;
   final bool isPublicInCardId;
   final String? repositoryUrl;
@@ -57,6 +58,7 @@ class CulturalItem {
     this.toneShade = 42,
     this.isFeatured = false,
     this.localImagePath,
+    this.coverMotif,
     this.cropScale = 1.0,
     this.isPublicInCardId = true,
     this.repositoryUrl,
@@ -79,6 +81,7 @@ class CulturalItem {
     int? toneShade,
     bool? isFeatured,
     String? localImagePath,
+    String? coverMotif,
     bool clearLocalImage = false,
     double? cropScale,
     bool? isPublicInCardId,
@@ -98,6 +101,7 @@ class CulturalItem {
       toneShade: toneShade ?? this.toneShade,
       isFeatured: isFeatured ?? this.isFeatured,
       localImagePath: clearLocalImage ? null : (localImagePath ?? this.localImagePath),
+      coverMotif: coverMotif ?? this.coverMotif,
       cropScale: cropScale ?? this.cropScale,
       isPublicInCardId: isPublicInCardId ?? this.isPublicInCardId,
       repositoryUrl: repositoryUrl ?? this.repositoryUrl,
@@ -119,6 +123,7 @@ class CulturalItem {
       'toneShade': toneShade,
       'isFeatured': isFeatured,
       'localImagePath': localImagePath,
+      'coverMotif': coverMotif,
       'cropScale': cropScale,
       'isPublicInCardId': isPublicInCardId,
       'repositoryUrl': repositoryUrl,
@@ -147,6 +152,7 @@ class CulturalItem {
       toneShade: json['toneShade'] as int? ?? 42,
       isFeatured: json['isFeatured'] as bool? ?? false,
       localImagePath: json['localImagePath'] as String?,
+      coverMotif: json['coverMotif'] as String?,
       cropScale: (json['cropScale'] as num?)?.toDouble() ?? 1.0,
       isPublicInCardId: json['isPublicInCardId'] as bool? ?? true,
       repositoryUrl: json['repositoryUrl'] as String?,
