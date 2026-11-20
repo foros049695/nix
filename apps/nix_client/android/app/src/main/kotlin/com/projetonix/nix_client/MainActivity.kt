@@ -11,6 +11,9 @@ import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
 import android.util.Base64
+import com.google.zxing.client.android.Intents
+import com.journeyapps.barcodescanner.ScanIntentResult
+import com.journeyapps.barcodescanner.ScanOptions
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -32,6 +35,9 @@ class MainActivity : FlutterActivity() {
     private val keyAlias = "nix_vault_kek_v1"
     private val prefsName = "nix_keystore_vault_prefs"
 
+    private val invitationQrRequest = 15204
+    private var invitationQrResult: MethodChannel.Result? = null
+
     private val localMediaRequest = 15201
     private var localMediaResult: MethodChannel.Result? = null
 
@@ -49,6 +55,15 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(messenger, "com.projetonix.nix/audio_diagnostic")
             .setMethodCallHandler(audioDiagnostic::handle)
+
+        MethodChannel(messenger, "com.projetonix.nix/invitation_qr")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "scan") {
+                    result.notImplemented()
+                } else {
+                    scanInvitationQr(result)
+                }
+            }
 
         // 1. Canal AndroidKeyStore TEE / StrongBox (AES-256-GCM)
         MethodChannel(messenger, keystoreChannelName).setMethodCallHandler { call, result ->
@@ -189,8 +204,41 @@ class MainActivity : FlutterActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
+    private fun scanInvitationQr(result: MethodChannel.Result) {
+        if (invitationQrResult != null) {
+            result.error("QR_BUSY", "O leitor já está aberto.", null)
+            return
+        }
+        invitationQrResult = result
+        try {
+            val options = ScanOptions()
+                .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                .setPrompt("Aponte a câmera para o convite do Nix")
+                .setBeepEnabled(false)
+                .setBarcodeImageEnabled(false)
+                .setOrientationLocked(false)
+            startActivityForResult(options.createScanIntent(this), invitationQrRequest)
+        } catch (_: Exception) {
+            invitationQrResult = null
+            result.error("CAMERA_UNAVAILABLE", "Não foi possível abrir a câmera.", null)
+        }
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == invitationQrRequest) {
+            val pending = invitationQrResult ?: return
+            invitationQrResult = null
+            val scan = ScanIntentResult.parseActivityResult(resultCode, data)
+            if (scan.originalIntent?.getBooleanExtra(
+                    Intents.Scan.MISSING_CAMERA_PERMISSION, false
+                ) == true) {
+                pending.error("CAMERA_DENIED", "Autorize o acesso à câmera para ler o convite.", null)
+            } else {
+                pending.success(scan.contents)
+            }
+            return
+        }
         if (requestCode == attachmentRequest) {
             readSelectedAttachments(resultCode, data)
             return
@@ -294,6 +342,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        invitationQrResult?.success(null)
+        invitationQrResult = null
         attachmentResult?.error("ATTACHMENT_INTERRUPTED", "Seleção interrompida.", null)
         attachmentResult = null
         localMediaResult?.error("MEDIA_INTERRUPTED", "Seleção de mídia interrompida.", null)

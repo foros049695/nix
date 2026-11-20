@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/direct_message.dart';
 import '../../core/models/member.dart';
@@ -425,11 +427,52 @@ class _ContactInvitationDialogState extends State<_ContactInvitationDialog> {
       if (mounted) setState(() => _status = error.message);
     } on StateError catch (error) {
       if (mounted) setState(() => _status = error.message);
+    } on PlatformException catch (error) {
+      if (mounted) setState(() => _status = error.message ?? 'Falha ao acessar a câmera.');
     } catch (_) {
       if (mounted) setState(() => _status = 'Falha ao processar o convite.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _scanInvitation() async {
+    final raw = await const MethodChannel('com.projetonix.nix/invitation_qr')
+        .invokeMethod<String>('scan');
+    if (!mounted || raw == null) return;
+    final text = raw.trim();
+    if (text.length > 8192 || !text.startsWith('{')) {
+      throw const FormatException('O QR precisa conter um convite assinado do Nix.');
+    }
+    _invitation.text = text;
+    setState(() => _status = 'Confira o convite e confirme a importação.');
+  }
+
+  Future<void> _showInvitationQr() async {
+    final invitation = await widget.state.exportContactInvitation();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        scrollable: true,
+        title: const Text('Meu convite'),
+        content: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 270),
+            child: QrImageView(
+              data: invitation,
+              backgroundColor: Colors.white,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -451,6 +494,22 @@ class _ContactInvitationDialogState extends State<_ContactInvitationDialog> {
           }),
           icon: const Icon(Icons.copy_rounded),
           label: const Text('Copiar meu convite'),
+        ),
+        Wrap(
+          spacing: 8,
+          children: [
+            TextButton.icon(
+              onPressed: _busy ? null : () => _run(_showInvitationQr),
+              icon: const Icon(Icons.qr_code_rounded),
+              label: const Text('Mostrar meu QR'),
+            ),
+            if (defaultTargetPlatform == TargetPlatform.android)
+              TextButton.icon(
+                onPressed: _busy ? null : () => _run(_scanInvitation),
+                icon: const Icon(Icons.qr_code_scanner_rounded),
+                label: const Text('Ler QR pela câmera'),
+              ),
+          ],
         ),
         const SizedBox(height: 8),
         TextField(

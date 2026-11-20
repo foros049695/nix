@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:nix_client/main.dart';
@@ -99,6 +100,30 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Adicionar Contato Soberano'), findsOneWidget);
+      const scanner = MethodChannel('com.projetonix.nix/invitation_qr');
+      final channels = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      addTearDown(() => channels.setMockMethodCallHandler(scanner, null));
+      String scanned = '{"test": "invalid signature"}';
+      channels.setMockMethodCallHandler(scanner, (call) async {
+        expect(call.method, 'scan');
+        return scanned;
+      });
+      final cameraButton = find.text('Ler QR pela câmera');
+      expect(cameraButton, findsOneWidget);
+      await tester.ensureVisible(cameraButton);
+      await tester.tap(cameraButton);
+      await tester.pumpAndSettle();
+      final input = find.byKey(const Key('add_contact_id_field'));
+      expect(tester.widget<TextField>(input).controller!.text, scanned);
+      expect(find.text('Confira o convite e confirme a importação.'), findsOneWidget);
+      expect(nixState.directMessages, hasLength(1));
+
+      scanned = 'https://example.test/';
+      await tester.tap(cameraButton);
+      await tester.pumpAndSettle();
+      expect(find.text('O QR precisa conter um convite assinado do Nix.'), findsOneWidget);
+      expect(tester.widget<TextField>(input).controller!.text, '{"test": "invalid signature"}');
+
       await tester.enterText(find.byKey(const Key('add_contact_id_field')), 'NIX-4B82-E119-9A00-7F22');
       await tester.enterText(find.byKey(const Key('add_contact_name_field')), 'Alice Soberana');
       await tester.tap(find.byKey(const Key('add_contact_confirm_button')));
