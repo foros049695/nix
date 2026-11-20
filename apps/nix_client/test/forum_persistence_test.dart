@@ -1,3 +1,4 @@
+import 'package:nix_client/core/archive/archive_image.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -36,16 +37,18 @@ void main() {
     );
     state.createSpace(name: 'Comunidade privada', description: '', emoji: 'C', withTopics: true);
     final forum = state.currentChannel;
+    final image = ArchiveImage.fromPng(File('assets/images/nix_logo_128.png').readAsBytesSync());
     expect(state.createForumTag('Pesquisa', '🔎'), isTrue);
     expect(
         state.createForumPost(
           title: 'Assunto exclusivo abc123',
           description: 'Descrição **formatada**.',
           tags: ['Pesquisa'],
+          images: [image],
         ),
         isTrue);
     final post = state.currentForumPosts.single;
-    expect(post.images, isEmpty);
+    expect(post.images.single.image?.bytes, orderedEquals(image.bytes));
     expect(state.addForumComment(post.id, 'Comentário privado xyz987'), isTrue);
     final comment = state.currentForumPosts.single.comments.single;
     state.toggleMessageReaction(comment.id, '👍');
@@ -81,6 +84,7 @@ void main() {
     final stored = restored.currentForumPosts.single;
     expect(stored.id, post.id);
     expect(stored.tags, ['Pesquisa']);
+    expect(stored.images.single.image?.bytes, orderedEquals(image.bytes));
     expect(restored.forumTagsFor(channel.id), {'Pesquisa': '🔎'});
     expect(stored.comments.single.text, 'Comentário privado xyz987');
     expect(stored.comments.single.reactions, {'👍': 1});

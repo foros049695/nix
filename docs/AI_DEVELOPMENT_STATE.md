@@ -11,3 +11,5 @@ Branch autorizada `main` local. Base inicial `36768cf`. Para obter o HEAD e o ú
 Para retomar, leia `AGENTS.md`, este arquivo e `git status --short --branch`. No cliente, use HOME isolado e rode `flutter analyze --no-fatal-infos` e `flutter test`. Na raiz, rode os portões de privacidade e automação.
 
 Explorar passou os 4 testes de `passport_display_regression_test.dart`. O formato de grupo passou 12 testes de fórum SQLCipher e layout móvel, incluindo conversão, desbloqueio e restauração dos tópicos. Próxima etapa: imagens no formulário de tópico.
+
+Imagem de tópico incorporada ao cofre com a sanitização do Archive. O teste SQLCipher confirmou os bytes após alternar o formato e reabrir o cofre. Recorte manual do anexo segue pendente.

@@ -40,6 +40,7 @@ import '../core/messaging/local_group_poll.dart';
 import '../core/messaging/shared_group_poll.dart';
 import '../core/messaging/scheduled_messages.dart';
 import '../core/p2p/monero_ad_verifier.dart';
+import '../core/archive/archive_image.dart';
 import '../core/archive/nix_archive_service.dart';
 import '../core/replication/replication_coordinator.dart';
 import '../core/media/media_catalog_service.dart';
@@ -5887,12 +5888,18 @@ class NixState extends ChangeNotifier {
     required String title,
     required String description,
     required List<String> tags,
+    List<ArchiveImage> images = const [],
   }) {
     final cleanTitle = title.trim();
     final detail = description.trim();
     if (!canWriteForum || cleanTitle.isEmpty || cleanTitle.length > 120 ||
         detail.length > 8000 || tags.length > 8 ||
         tags.any((tag) => !forumTagsFor(_currentChannel.id).containsKey(tag))) return false;
+    try {
+      ArchiveImage.validateLimits(images);
+    } on FormatException {
+      return false;
+    }
     final newPost = ForumPost(
       id: 'post_${DateTime.now().microsecondsSinceEpoch}',
       channelId: _currentChannel.id,
@@ -5902,7 +5909,8 @@ class NixState extends ChangeNotifier {
       createdAt: DateTime.now(),
       tags: List.unmodifiable(tags),
       description: detail,
-      images: const [],
+      images: List.unmodifiable(images.indexed.map((entry) =>
+          ForumImageSpec(label: 'Imagem ${entry.$1 + 1}', subtitle: '', code: '', image: entry.$2))),
       comments: const [],
     );
     _forumPosts.insert(0, newPost);

@@ -1,3 +1,5 @@
+import '../../core/archive/archive_image.dart';
+import '../archive/archive_image_picker.dart';
 import '../chat/chat_inline_format.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -272,6 +274,8 @@ class _ForumChannelViewState extends State<ForumChannelView> {
     var title = '';
     var description = '';
     String? chosenTag;
+    final images = <ArchiveImage>[];
+    var picking = false;
     final tags = state.forumTagsFor(widget.channel.id);
 
     showDialog(
@@ -326,6 +330,36 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                     hintText: 'Inclua peso, dimensões, hash ou observações...',
                   ),
                 ),
+                for (final (index, image) in images.indexed)
+                  ListTile(
+                    leading: Image.memory(image.bytes, width: 58, height: 42, fit: BoxFit.contain),
+                    title: Text('Imagem ${index + 1}'),
+                    trailing: IconButton(
+                      tooltip: 'Remover imagem',
+                      onPressed: picking ? null : () => setModalState(() => images.removeAt(index)),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ),
+                OutlinedButton.icon(
+                  onPressed: picking || images.length >= ArchiveImage.maxImages ? null : () async {
+                    setModalState(() => picking = true);
+                    try {
+                      final image = await ArchiveImagePicker.pick(ctx);
+                      if (image != null && ctx.mounted) {
+                        ArchiveImage.validateLimits([...images, image]);
+                        setModalState(() => images.add(image));
+                      }
+                    } catch (_) {
+                      if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('Imagem inválida ou limite de tamanho excedido.')),
+                      );
+                    } finally {
+                      if (ctx.mounted) setModalState(() => picking = false);
+                    }
+                  },
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: const Text('Adicionar imagem'),
+                ),
               ],
             ),
           ),
@@ -336,15 +370,16 @@ class _ForumChannelViewState extends State<ForumChannelView> {
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: NixColors.textPrimary,
-                foregroundColor: Colors.black,
+                backgroundColor: ctx.accentColor,
+                foregroundColor: ctx.onAccentColor,
               ),
-              onPressed: () {
+              onPressed: picking ? null : () {
                 if (title.trim().isNotEmpty) {
                   final created = state.createForumPost(
                     title: title,
                     description: description,
                     tags: [if (chosenTag != null) chosenTag!],
+                    images: images,
                   );
                   if (created) {
                     Navigator.pop(ctx);
@@ -449,6 +484,8 @@ class _ForumPostCard extends StatelessWidget {
                   itemCount: post.images.take(4).length,
                   itemBuilder: (context, i) {
                     final img = post.images[i];
+                    final photo = img.image;
+                    if (photo != null) return Image.memory(photo.bytes, fit: BoxFit.contain);
                     return Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
@@ -701,6 +738,8 @@ class _SplitThreadPanel extends StatelessWidget {
                   itemCount: post.images.length,
                   itemBuilder: (context, idx) {
                     final img = post.images[idx];
+                    final photo = img.image;
+                    if (photo != null) return Image.memory(photo.bytes, fit: BoxFit.contain);
                     return Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(

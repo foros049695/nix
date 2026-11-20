@@ -1,3 +1,4 @@
+import '../core/archive/archive_image.dart';
 import '../core/database/repositories.dart';
 import '../core/models/forum_post.dart';
 import '../core/models/message.dart';
@@ -23,6 +24,7 @@ class ForumStore {
               'created': post.createdAt.millisecondsSinceEpoch,
               'tags': post.tags,
               'description': post.description,
+              'images': [for (final item in post.images) if (item.image != null) item.image!.toJson()],
               'comments': [
                 for (final comment in post.comments)
                   {
@@ -74,7 +76,9 @@ class ForumStore {
             createdAt: _date(row['created']),
             tags: (row['tags'] as List).cast<String>(),
             description: row['description'] as String,
-            images: const [],
+            images: ArchiveImage.readList(row['images']).indexed.map((entry) =>
+              ForumImageSpec(label: 'Imagem ${entry.$1 + 1}', subtitle: '', code: '',
+                image: entry.$2)).toList(growable: false),
             comments: [
               for (final comment in (row['comments'] as List).whereType<Map>())
                 Message(

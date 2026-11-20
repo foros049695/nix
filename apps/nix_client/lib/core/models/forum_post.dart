@@ -1,14 +1,17 @@
+import '../archive/archive_image.dart';
 import 'message.dart';
 
 class ForumImageSpec {
   final String label;
   final String subtitle;
   final String code;
+  final ArchiveImage? image;
 
   const ForumImageSpec({
     required this.label,
     required this.subtitle,
     required this.code,
+    this.image,
   });
 }
 
