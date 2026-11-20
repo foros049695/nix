@@ -4158,7 +4158,9 @@ class NixState extends ChangeNotifier {
     List<String> conversationIds = const [],
   }) {
     if (!_workspaceFolders.create(name, spaceIds, iconName: iconName,
-        colorValue: colorValue, conversationIds: conversationIds)) return;
+        colorValue: colorValue, conversationIds: conversationIds)) {
+      return;
+    }
     _persistState(workspaceChanged: true);
     notifyListeners();
   }
