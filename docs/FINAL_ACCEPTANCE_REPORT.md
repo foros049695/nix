@@ -16,15 +16,15 @@ Foram inspecionadas as capturas do Nix e amostras de quadros de sete vídeos. As
 | H. Windows | [Windows](WINDOWS_DESKTOP_IMPLEMENTATION.md) | Runner, cofre, Tor, audio diagnóstico e pacote piloto | Job Windows x64 | PARTIAL | Aceite em máquina Windows com hardware, instalador e assinatura de código aguardam ambiente. |
 | I. Validação | [Testes](TESTING.md) | Suítes locais, CI e builds piloto | Privacidade, transportes, Flutter e workflow nativo | PARTIAL | Validação externa e jornadas físicas seguem em aberto. |
 
-A [primeira execução do piloto](https://github.com/foros049695/nix/actions/runs/44796651333) gerou APKs Android, Linux x86_64 e Windows x64. O job Windows compilou o runner, testou o Credential Manager, executou `tor.exe --version` e confirmou a abertura do processo. Esse teste é automatizado e continua separado da homologação em hardware.
+A primeira execução do piloto gerou APKs Android, Linux x86_64 e Windows x64. O job Windows compilou o runner, testou o Credential Manager, executou `tor.exe --version` e confirmou a abertura do processo. Esse teste é automatizado e continua separado da homologação em hardware.
 
 ## Resultado da revisão publicada
 
 A revisão de código `2aa9cd7` passou em 220 testes Flutter locais. Cinco casos foram ignorados na execução Linux, incluindo os dois casos exclusivos do Windows. Os 23 testes do módulo de transporte também passaram. A jornada de mensageria usou dois clientes, relay local e SOCKS5, com recuperação após a reabertura. [CI completo](https://github.com/foros049695/nix/actions/runs/44800654625)
 
-Os APKs ARM64 e ARMv7 e o pacote Linux x86_64 foram produzidos pelo mesmo workflow, com verificação de SHA-256. A validação Android em aparelho, o áudio em hardware e as jornadas com relay externo e carteira de testes permanecem pendentes. [Pacotes piloto](https://github.com/foros049695/nix/actions/runs/44800654122)
+Os APKs ARM64 e ARMv7 e o pacote Linux x86_64 foram produzidos pelo mesmo workflow, com verificação de SHA-256. A validação Android em aparelho, o áudio em hardware e as jornadas com relay externo e carteira de testes permanecem pendentes.
 
-O job Windows x64 compilou o executável, gravou e removeu uma credencial temporária, abriu o catálogo e reabriu um cofre cifrado com a DLL distribuída. Também executou o Tor empacotado e confirmou a abertura do processo do Nix. O ZIP do piloto foi produzido pelo [mesmo workflow](https://github.com/foros049695/nix/actions/runs/44800654122).
+O job Windows x64 compilou o executável, gravou e removeu uma credencial temporária, abriu o catálogo e reabriu um cofre cifrado com a DLL distribuída. Também executou o Tor empacotado e confirmou a abertura do processo do Nix. O ZIP do piloto foi produzido pelo mesmo workflow.
 
 ## Segunda rodada de implementação
 
@@ -36,7 +36,7 @@ O job Windows x64 compilou o executável, gravou e removeu uma credencial tempor
 
 A suíte local do cliente passou com 224 testes e cinco ignorados. Os testes direcionados passaram após reforçar as verificações de decifragem e de permissão. Os jobs de análise e testes do cliente, criptografia, transporte, relay e privacidade passaram na revisão de aplicativo `fafa400`. No PostgreSQL 17 do CI, passaram os testes de concorrência, persistência, expiração e cotas duráveis em duas instâncias. [CI completo](https://github.com/foros049695/nix/actions/runs/44806290027)
 
-Os APKs ARM64 e ARMv7 e o pacote Linux x86_64 tiveram seus SHA-256 verificados. A execução piloto registra a compilação nativa e seus artefatos. [Pacotes piloto de `fafa400`](https://github.com/foros049695/nix/actions/runs/44806291368)
+Os APKs ARM64 e ARMv7 e o pacote Linux x86_64 tiveram seus SHA-256 verificados. A execução piloto registra a compilação nativa e seus artefatos.
 
 Continuam pendentes mídia e gravação em chamadas, comunidades e enquetes distribuídas, Bitcoin e Lightning e a homologação de liquidação externa de Monero. Os ensaios de rede usaram dados e credenciais do ambiente local de testes.
 
@@ -53,7 +53,7 @@ Continuam pendentes mídia e gravação em chamadas, comunidades e enquetes dist
 
 Continuam pendentes chamadas de voz e sua gravação, enquetes e comunidades distribuídas, Bitcoin/Lightning, aceitação física e ensaios por relay Onion externo.
 
-A suíte local passou com 231 testes e cinco ignorados. O CI da revisão `3a94df4` passou no relay, no cliente, nos módulos Dart e nos gates de privacidade. O player Linux iniciou um fluxo WAV real em uma saída virtual PulseAudio por socket local e encerrou o fluxo ao parar. [CI da revisão](https://github.com/foros049695/nix/actions/runs/44811641607) · [Pilotos nativos](https://github.com/foros049695/nix/actions/runs/44811643293)
+A suíte local passou com 231 testes e cinco ignorados. O CI da revisão `3a94df4` passou no relay, no cliente, nos módulos Dart e nos gates de privacidade. O player Linux iniciou um fluxo WAV real em uma saída virtual PulseAudio por socket local e encerrou o fluxo ao parar. [CI da revisão](https://github.com/foros049695/nix/actions/runs/44811641607)
 
 
 ## Enquetes diretas e fotos no compositor
@@ -66,22 +66,21 @@ O fórum local agora salva tópicos, tags, comentários e reações no SQLCipher
 
 A tentativa com a rede Tor real chegou ao handshake e parou em 14% do bootstrap. Os resultados de troca cifrada desta rodada correspondem ao relay de laboratório. O aceite por Onion externo continua pendente.
 
-A revisão `cea75b5` passou em 236 testes locais, com seis ignorados na suíte padrão. O teste do fórum foi executado separadamente com SQLCipher obrigatório. Uma segunda prova conectou dois clientes com SQLCipher ao binário Go real do Nix Relay por SOCKS5 de laboratório. O relay armazenou e confirmou quatro envelopes cifrados durante criação, votos e encerramento. [CI da revisão](https://github.com/foros049695/nix/actions/runs/44816035347) · [Pilotos nativos](https://github.com/foros049695/nix/actions/runs/44816035341)
+A revisão `cea75b5` passou em 236 testes locais, com seis ignorados na suíte padrão. O teste do fórum foi executado separadamente com SQLCipher obrigatório. Uma segunda prova conectou dois clientes com SQLCipher ao binário Go real do Nix Relay por SOCKS5 de laboratório. O relay armazenou e confirmou quatro envelopes cifrados durante criação, votos e encerramento. [CI da revisão](https://github.com/foros049695/nix/actions/runs/44816035347)
 
 
 ## Imagens autorizadas no Archive
 
 O editor incorpora PNGs preparados a partir de imagens locais PNG, JPEG e WebP. A prévia, a legenda e a confirmação explícita de divulgação fazem parte do fluxo de publicação. A assinatura cobre as imagens e o leitor só as apresenta após verificar o objeto. Testes de armazenamento e replicação de laboratório cobrem rascunhos, descarte de metadados, rejeição de conteúdo alterado e sincronização entre dois clientes. [Editor do Archive](ARCHIVE_EDITOR_VALIDATION.md)
 
-A reexecução do piloto Android da revisão `cea75b5` passou após a falha anterior no Maven Central. Os jobs Linux e Windows também passaram naquela execução. [Pilotos da rodada anterior](https://github.com/foros049695/nix/actions/runs/44816035341)
+A reexecução do piloto Android da revisão `cea75b5` passou após a falha anterior no Maven Central. Os jobs Linux e Windows também passaram naquela execução.
 
-A confirmação de divulgação também foi exercitada na interface, primeiro cancelando e verificando que o artigo continuava inédito, depois confirmando e lendo a legenda da imagem assinada. Em uma prova separada, o rascunho foi restaurado com SQLCipher nativo e os bytes e a legenda não apareceram em claro no arquivo do banco. [CI do código](https://github.com/foros049695/nix/actions/runs/44818871475) · [Pilotos da revisão](https://github.com/foros049695/nix/actions/runs/44818872266)
+A confirmação de divulgação também foi exercitada na interface, primeiro cancelando e verificando que o artigo continuava inédito, depois confirmando e lendo a legenda da imagem assinada. Em uma prova separada, o rascunho foi restaurado com SQLCipher nativo e os bytes e a legenda não apareceram em claro no arquivo do banco. [CI do código](https://github.com/foros049695/nix/actions/runs/44818871475)
 
 
-## Pilotos públicos e rodada Archive, voz, enquetes e Bitcoin
+## Rodada Archive, voz, enquetes e Bitcoin
 
-Os [pilotos públicos](https://github.com/foros049695/nix/releases) fornecem
-downloads de Windows x64, Linux x86-64 e Android ARM64/ARMv7 e os SHA-256.
+Pacotes de Windows x64, Linux x86-64 e Android ARM64/ARMv7 e seus SHA-256 são destinados à distribuição privada.
 
 - Archive incorpora um MP4 assinado e reações com revisões autenticadas.
   O ensaio em dois clientes confirmou integridade e isolamento de artigos

@@ -286,14 +286,11 @@ d99cd9c4b1d4ba748fd76831287696d3e83095b235c656c9942588a5a57a2756
 
 ### Builds do piloto
 
-O workflow manual [Nix pilot builds](.github/workflows/pilot-builds.yml)
-empacota **Windows x64**, **Linux x86-64** e APKs Android de teste separados
-por arquitetura. Os pilotos publicados ficam em [Downloads do Nix](https://github.com/foros049695/nix/releases),
-com os arquivos SHA-256. Use `arm64-v8a` em Android 64 bits e `armeabi-v7a` em ARM 32 bits.
-O APK **Nix Piloto** é compilado em modo release e assinado com a chave de
-depuração do runner. Cada execução do GitHub Actions recebe um identificador
-de pacote próprio, então pode ser instalada ao lado dos pilotos anteriores
-com dados separados. No Linux, extraia o tarball e execute `./bundle/nix_client`.
+Compile os pilotos de Windows x64, Linux x86-64 e Android em ambiente privado.
+Use `flutter build windows --release`, `flutter build linux --release` ou
+`flutter build apk --release --split-per-abi` no sistema de destino.
+Entregue os pacotes e os SHA-256 apenas pelo canal privado autorizado.
+Use `arm64-v8a` em Android 64 bits e `armeabi-v7a` em ARM 32 bits.
 
 Para distribuição, passe as chaves públicas oficiais pelo Dart com
 `--dart-define=NIX_RELEASE_PUBLISHER_KEY_HEX=<chave-publica>` e
@@ -376,4 +373,4 @@ O Projeto Nix é distribuído sob os termos da licença **GNU General Public Lic
 
 ## Piloto desktop e mensageria
 
-O cliente oferece convite assinado por texto ou QR, leitura por câmera no Android e configuração de relay Onion pelo cofre. O relógio do compositor permite agendar texto em conversas diretas cifradas. O piloto distribui APKs e bundles nativos. Consulte os passos de [mensageria](docs/MESSAGING_AND_MEDIA_INTEGRATION.md), [Windows](docs/WINDOWS_DESKTOP_IMPLEMENTATION.md) e o [aceite incremental](docs/FINAL_ACCEPTANCE_REPORT.md).
+O cliente oferece convite assinado por texto ou QR, leitura por câmera no Android e configuração de relay Onion pelo cofre. O relógio do compositor permite agendar texto em conversas diretas cifradas. O piloto gera APKs e pacotes nativos em ambiente privado. Consulte os passos de [mensageria](docs/MESSAGING_AND_MEDIA_INTEGRATION.md), [Windows](docs/WINDOWS_DESKTOP_IMPLEMENTATION.md) e o [aceite incremental](docs/FINAL_ACCEPTANCE_REPORT.md).

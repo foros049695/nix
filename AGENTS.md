@@ -103,4 +103,4 @@ Regression probes (`*_probe_test.dart`, `probe_test.go`) reproduce audit finding
 
 ## Validação do piloto nativo
 
-Use o workflow manual `pilot-builds.yml` para gerar bundles. A validação Windows deve exercitar o Credential Manager com uma credencial sintética temporária e validar o executável após o build. O teste de relay pela UI usa duas instâncias e rede isolada para validar convite, outbox, cota e reinício.
+Gere pacotes em ambiente privado. Não publique releases, tags de piloto ou binários em GitHub Actions. A validação Windows deve exercitar o Credential Manager com uma credencial sintética temporária e validar o executável após o build. O teste de relay pela UI usa duas instâncias e rede isolada para validar convite, outbox, cota e reinício.
