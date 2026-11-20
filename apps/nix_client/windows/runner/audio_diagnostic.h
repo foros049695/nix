@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 class AudioDiagnostic {
  public:
@@ -20,13 +21,25 @@ class AudioDiagnostic {
     WAVEHDR header{};
   };
 
+  struct PlaybackBuffer {
+    std::array<std::uint8_t, 24000> bytes{};
+    WAVEHDR header{};
+  };
+
   bool Start();
+  bool ReadSamples(std::vector<std::uint8_t>& pcm);
+  bool PlayCall(const std::vector<std::uint8_t>& pcm);
+  void StopPlayback();
   void Stop();
   void ReadLevel(flutter::MethodResult<flutter::EncodableValue>& result);
 
   flutter::MethodChannel<flutter::EncodableValue> channel_;
   HWAVEIN capture_ = nullptr;
-  std::array<Buffer, 8> buffers_{};
+  HWAVEOUT playback_ = nullptr;
+  bool in_call_ = false;
+  size_t next_input_ = 0;
+  std::array<PlaybackBuffer, 3> playback_buffers_{};
+  std::array<Buffer, 24> buffers_{};
 };
 
 #endif  // RUNNER_AUDIO_DIAGNOSTIC_H_

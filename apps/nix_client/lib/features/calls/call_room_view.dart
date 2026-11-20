@@ -13,6 +13,7 @@ import '../design/nix_surfaces.dart';
 import '../chat/chat_input_bar.dart';
 import '../chat/message_timeline.dart';
 import '../settings/microphone_test_card.dart';
+import 'onion_voice_dialog.dart';
 
 class CallRoomView extends StatefulWidget {
   final Channel channel;
@@ -155,6 +156,21 @@ class _CallRoomViewState extends State<CallRoomView> {
                             fontSize: 12,
                             fontFamily: 'monospace'),
                       ),
+                    ListenableBuilder(
+                      listenable: nixState,
+                      builder: (context, _) => IconButton(
+                        tooltip: 'Chamada privada entre dispositivos',
+                        icon: const Icon(Icons.call_outlined),
+                        onPressed: !nixState.canOpenOnionVoice ? null : () =>
+                            showDialog<void>(
+                              context: context, barrierDismissible: false,
+                              builder: (_) => OnionVoiceDialog(
+                                tor: nixState.tradeTorConnection,
+                                gate: () => nixState.canOpenOnionVoice,
+                              ),
+                            ),
+                      ),
+                    ),
                     IconButton(
                       tooltip: _showTextChat
                           ? 'Fechar chat da sala'

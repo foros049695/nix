@@ -99,6 +99,21 @@ Pacotes de Windows x64, Linux x86-64 e Android ARM64/ARMv7 e seus SHA-256 são d
   carteira externa com fundos sintéticos.
   [Bitcoin e Lightning](ROBOSATS_INTEGRATION.md)
 
-Continuam abertas as chamadas com áudio e chat em tempo real entre
-dispositivos, as enquetes sincronizadas em comunidades, a homologação
-com nós externos e a liquidação de Bitcoin e Lightning.
+## Chamadas entre dispositivos e enquetes compartilhadas
+
+A sala de voz oferece **Chamada privada entre dispositivos**. Um convite
+efêmero conecta dois dispositivos pelo Tor. Áudio e chat passam por um
+serviço Onion dedicado com criptografia autenticada e permanecem em memória.
+O microfone inicia silenciado. Mensagens recebidas exibem um aviso na sala.
+O ensaio usou dois clientes, amostras PCM e um ControlPort e SOCKS5 de
+laboratório. Confirmou troca de áudio e chat, confirmação de mensagens,
+recusa de um terceiro convidado e encerramento ao perder o Tor.
+Rede Tor externa e hardware das três plataformas requerem homologação.
+
+O canal oferece **Enquetes**, com convites a contatos verificados, cédulas
+cifradas e apuração no cofre do autor. O teste em dois clientes comprovou
+entrega de convite, voto e resultado, sem divulgar apuração antes do
+encerramento quando essa opção está ativa. [Enquetes](COMMUNITIES_AND_POLLS.md)
+
+Continuam abertas a homologação com nós externos e a liquidação de Bitcoin
+e Lightning diretamente pelo aplicativo.

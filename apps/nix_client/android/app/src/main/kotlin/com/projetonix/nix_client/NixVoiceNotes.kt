@@ -33,6 +33,8 @@ internal class NixVoiceNotes(private val activity: Activity) {
     private var player: AudioTrack? = null
     private var permissionReply: MethodChannel.Result? = null
     private var captureState = "idle"
+    private var inCallCapture = false
+    private var callTrack: AudioTrack? = null
 
     private val capture = object : Runnable {
         override fun run() {
@@ -63,6 +65,38 @@ internal class NixVoiceNotes(private val activity: Activity) {
         try {
             when (call.method) {
                 "start" -> requestStart(result)
+                "callStart" -> {
+                    check(captureState == "idle")
+                    inCallCapture = true
+                    requestStart(result)
+                }
+                "callRead" -> {
+                    check(inCallCapture)
+                    val limit = 24000
+                    val size = minOf(length, limit)
+                    val frame = pcm.copyOfRange(length - size, length)
+                    pcm.fill(0, 0, length)
+                    length = 0
+                    if (captureState == "full") openRecorder()
+                    result.success(frame)
+                }
+                "callStopInput" -> {
+                    if (inCallCapture) {
+                        permissionReply?.error("VOICE_CANCELLED", "Gravação cancelada.", null)
+                        permissionReply = null
+                        inCallCapture = false
+                        clearRecording()
+                    }
+                    result.success(null)
+                }
+                "callPlay" -> {
+                    playCall(requireNotNull(call.arguments as? ByteArray))
+                    result.success(null)
+                }
+                "callStopOutput" -> {
+                    releaseCallTrack()
+                    result.success(null)
+                }
                 "status" -> {
                     result.success(mapOf("state" to captureState, "samples" to length / 2,
                         "peak" to peak))
@@ -194,6 +228,36 @@ internal class NixVoiceNotes(private val activity: Activity) {
         }
     }
 
+    private fun playCall(bytes: ByteArray) {
+        require(bytes.isNotEmpty() && bytes.size <= 24000 && bytes.size % 2 == 0)
+        val track = callTrack ?: AudioTrack.Builder()
+            .setAudioAttributes(AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            .setAudioFormat(AudioFormat.Builder().setSampleRate(sampleRate)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .setBufferSizeInBytes(maxOf(24000, AudioTrack.getMinBufferSize(
+                sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)))
+            .build().also {
+                callTrack = it
+                it.play()
+            }
+        if (track.write(bytes, 0, bytes.size, AudioTrack.WRITE_NON_BLOCKING) < 0) {
+            releaseCallTrack()
+            error("O áudio da chamada ficou indisponível.")
+        }
+    }
+
+    private fun releaseCallTrack() {
+        callTrack?.let {
+            runCatching { it.stop() }
+            it.release()
+        }
+        callTrack = null
+    }
+
     private fun releaseRecorder() {
         handler.removeCallbacks(capture)
         recorder?.let {
@@ -223,7 +287,9 @@ internal class NixVoiceNotes(private val activity: Activity) {
     fun stopAll() {
         permissionReply?.error("VOICE_CANCELLED", "Gravação cancelada.", null)
         permissionReply = null
+        inCallCapture = false
         clearRecording()
         releasePlayer()
+        releaseCallTrack()
     }
 }

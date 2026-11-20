@@ -34,6 +34,11 @@ a permissão de enviar mensagens. O cofre SQLCipher guarda votos e enquetes
 por canal. O ensaio confirmou a recuperação do voto e do encerramento após
 reabrir o cofre e a ausência do texto de controle no arquivo cifrado.
 
-A sincronização de enquetes de grupos entre instalações continua aberta.
-Os espaços e canais locais ainda carecem de convites autenticados de grupo,
-vínculo de membros à época e entrega de eventos aos membros autorizados.
+Em **Enquetes**, o autor pode convidar contatos com sessão direta verificada.
+O convidado abre **Enquetes compartilhadas** na conversa com o autor
+e envia a cédula cifrada. No canal, **Sincronizar votos** recolhe as cédulas
+dos contatos convidados e envia uma revisão da apuração para cada um.
+O encerramento envia a revisão final. Uma enquete com apuração oculta omite
+os totais e a resposta correta até o encerramento. A apuração é feita no
+cofre do autor, sem divulgar os votos individuais a outros participantes.
+O vínculo dos convites usa a conversa direta e a seleção explícita do autor.
