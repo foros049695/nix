@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as std_crypto;
 import 'package:cryptography/cryptography.dart';
 import 'package:nix_core_crypto/nix_core_crypto.dart';
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/foundation.dart' show compute, listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MethodChannel, rootBundle;
 import '../core/models/space.dart';
@@ -37,6 +37,7 @@ import '../core/security/anti_forensic_shredder.dart';
 import '../core/messaging/sovereign_messenger.dart';
 import '../core/messaging/direct_poll.dart';
 import '../core/messaging/local_group_poll.dart';
+import '../core/messaging/shared_group_poll.dart';
 import '../core/messaging/scheduled_messages.dart';
 import '../core/p2p/monero_ad_verifier.dart';
 import '../core/archive/nix_archive_service.dart';
@@ -124,6 +125,7 @@ class NixState extends ChangeNotifier {
   late Map<String, List<Message>> _messages;
   late Map<String, List<Publication>> _publications;
   late List<ForumPost> _forumPosts;
+  final _sharedGroupPollThreads = <String, SharedGroupPollThread>{};
   final _localGroupPolls = <LocalGroupPoll>[];
   static const _localGroupPollsKey = 'local_group_polls_v1';
   final _directPolls = <String, Map<String, DirectPollState>>{};
@@ -1185,6 +1187,7 @@ class NixState extends ChangeNotifier {
     _forumTags.clear();
     _directPolls.clear();
     _localGroupPolls.clear();
+    _sharedGroupPollThreads.clear();
     _localDeviceId = 'dev_primary';
     _localDatabase = null;
     _sovereignMessenger = null;
@@ -1793,6 +1796,12 @@ class NixState extends ChangeNotifier {
           _directPolls[cid] = await _sovereignMessenger!.directPollsFor(cid, existingPeerId);
         } else {
           _directPolls.remove(cid);
+        }
+        if (isVerified && _sovereignMessenger != null) {
+          _sharedGroupPollThreads[cid] =
+              await _sovereignMessenger!.sharedGroupPollsFor(cid, existingPeerId);
+        } else {
+          _sharedGroupPollThreads.remove(cid);
         }
         final existingPeerMailbox = (sessionMeta?['peerMailbox'] as String?) ??
             (existingIdx != -1 ? _directMessages[existingIdx].peerMailboxId : null) ??
@@ -3586,6 +3595,101 @@ class NixState extends ChangeNotifier {
   Map<String, DirectPollState> directPollsFor(String conversationId) =>
       _directPolls[conversationId] ?? const {};
 
+  List<DirectMessageThread> get groupPollContacts => _directMessages.where(
+    (thread) => thread.hasActiveSession && thread.isVerified && !thread.isSavedMessages,
+  ).toList(growable: false);
+
+  SharedGroupPollThread? sharedGroupPollsFor(String conversationId) =>
+      _sharedGroupPollThreads[conversationId];
+
+  bool get canSyncSharedPolls => canScheduleDirectMessages &&
+      !_isStrictOffGridMode && securityGate.isTorAnonymityReady &&
+      _relayForMessaging?.policy.mode == TransportMode.torFailClosed;
+
+  Future<void> _sendSharedGroupPacket(String conversation, SharedGroupPollPacket packet) async {
+    final messenger = _sovereignMessenger;
+    bool allowed() => canSyncSharedPolls && identical(messenger, _sovereignMessenger) &&
+        groupPollContacts.any((thread) => thread.id == conversation);
+    if (messenger == null || !allowed()) throw StateError('Conexão cifrada indisponível.');
+    await messenger.enqueueSharedGroupPollPacket(
+      conversationId: conversation,
+      senderMailbox: localRelayMailboxId,
+      packet: packet,
+      mayEnqueue: allowed,
+    );
+  }
+
+  Future<void> submitSharedGroupBallot(String conversation, String id, List<int> choices) async {
+    final thread = _sharedGroupPollThreads[conversation];
+    final offer = thread?.received[id];
+    final spec = offer?.spec;
+    final previous = thread?.sentBallots[id]?.revision ?? 0;
+    if (offer == null || spec == null || offer.closed || !spec.accepts(choices) ||
+        (previous > 0 && !spec.allowRevote) ||
+        (spec.durationMinutes != null &&
+         !DateTime.now().isBefore(offer.created!.add(Duration(minutes: spec.durationMinutes!))))) {
+      throw StateError('A enquete não aceita este voto.');
+    }
+    await _sendSharedGroupPacket(conversation,
+        SharedGroupPollPacket.ballot(id, previous + 1, choices));
+    await _refreshDirectThreadsFromDatabase();
+    if (!_disposed) notifyListeners();
+    if (canSyncSharedPolls) await syncWithRelay();
+  }
+
+  Future<void> synchronizeGroupPoll(String channel, String id, {
+    Set<String> invite = const {},
+    bool close = false,
+  }) async {
+    if (!canUseLocalGroupPolls(channel) || !canSyncSharedPolls) {
+      throw StateError('Abra o canal e conecte o relay Onion.');
+    }
+    final result = await syncWithRelay();
+    if (!canUseLocalGroupPolls(channel) || !canSyncSharedPolls ||
+        (result.receivedInbox == 0 && _lastMessagingError?.startsWith('Falha ao ler') == true)) {
+      throw StateError('Não foi possível sincronizar a caixa postal.');
+    }
+    final participants = groupPollContacts.where((thread) =>
+      invite.contains(thread.id) ||
+      _sharedGroupPollThreads[thread.id]?.sent.containsKey(id) == true).toList();
+    if (participants.length > 50) throw StateError('Limite de 50 participantes.');
+    late LocalGroupPoll snapshot;
+    await _changeLocalGroupPoll(channel, id, (value) {
+      if (value.creator != _ownWorkspaceIdentity) throw StateError('Autor da enquete inválido.');
+      var updated = value;
+      for (final peer in participants) {
+        final inbox = _sharedGroupPollThreads[peer.id];
+        if (inbox?.sent.containsKey(id) != true) continue;
+        final ballot = value.spec.allowRevote
+            ? inbox?.receivedBallots[id] : inbox?.firstBallots[id];
+        if (ballot == null || listEquals(ballot.values, updated.votes[peer.peerPublicId])) continue;
+        try {
+          updated = updated.vote(peer.peerPublicId, ballot.values, DateTime.now());
+        } on StateError {
+          // Ignora votos fora das regras, expirados ou já encerrados.
+        }
+      }
+      snapshot = close && !updated.closed ? updated.close(_ownWorkspaceIdentity) : updated;
+      return snapshot;
+    });
+    try {
+      for (final participant in participants) {
+        final thread = await _sovereignMessenger?.sharedGroupPollsFor(
+          participant.id, participant.peerPublicId,
+        );
+        final previous = thread?.sent[id]?.revision ?? 0;
+        await _sendSharedGroupPacket(participant.id,
+            SharedGroupPollPacket.snapshot(snapshot, previous + 1));
+      }
+    } finally {
+      if (!_disposed && _panicWipe == null) {
+        await _refreshDirectThreadsFromDatabase();
+        if (!_disposed) notifyListeners();
+      }
+    }
+    if (canSyncSharedPolls) await syncWithRelay();
+  }
+
   bool canUseDirectPolls(String conversationId) => _canSendInteractiveDirect(conversationId);
 
   bool canSendVoiceNote(String conversationId) => _canSendInteractiveDirect(conversationId);
@@ -4076,6 +4180,10 @@ class NixState extends ChangeNotifier {
     controlPort: _embeddedTor.controlPort,
     cookiePath: '${_embeddedTor.dataDirectory}/control_auth_cookie',
   );
+
+  bool get canOpenOnionVoice => !_disposed && _panicWipe == null &&
+      !_isStrictOffGridMode && securityGate.isTorAnonymityReady &&
+      _currentChannel.type == ChannelType.voice && !_isLocallyBanned(_currentChannel);
 
   bool get canOpenPrivateTradeRoom =>
       !_disposed && _panicWipe == null && !_isStrictOffGridMode &&

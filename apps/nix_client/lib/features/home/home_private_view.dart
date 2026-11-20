@@ -1,3 +1,5 @@
+import '../../core/messaging/shared_group_poll.dart';
+import '../chat/shared_group_poll_sheet.dart';
 import '../../core/messaging/direct_poll.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -615,6 +617,17 @@ class _HomePrivateViewState extends State<HomePrivateView> {
             ),
           ),
 
+        if (!dm.isSavedMessages && dm.hasActiveSession && dm.isVerified)
+          TextButton.icon(
+            onPressed: () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              builder: (_) => SharedGroupPollSheet(conversation: dm.id),
+            ),
+            icon: const Icon(Icons.poll_outlined),
+            label: const Text('Enquetes compartilhadas'),
+          ),
+
         // Lista de Mensagens Cifradas
         Expanded(
           child: ConversationSurface(child: dm.messages.isEmpty
@@ -630,6 +643,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                   key: ValueKey(dm.id),
                   messages: dm.isSavedMessages ? dm.messages : dm.messages.where((message) {
                     final text = message.text;
+                    if (text.startsWith(SharedGroupPollPacket.prefix)) return false;
                     if (!text.startsWith(DirectPollEvent.prefix)) return true;
                     final event = DirectPollEvent.parse(text);
                     return event is! DirectPollVote && event is! DirectPollClose;

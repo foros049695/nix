@@ -11,6 +11,7 @@ import '../security/local_image_helper.dart';
 import '../media/voice_note.dart';
 import 'scheduled_messages.dart';
 import 'direct_poll.dart';
+import 'shared_group_poll.dart';
 
 /// Resultado da importação out-of-band (QR/JSON) de um Card ID soberano.
 enum CardImportStatus {
@@ -857,6 +858,38 @@ class SovereignMessenger {
     );
   });
 
+  Future<void> enqueueSharedGroupPollPacket({
+    required String conversationId,
+    required String senderMailbox,
+    required SharedGroupPollPacket packet,
+    required bool Function() mayEnqueue,
+  }) => _withRatchet(() async {
+    final destination = await _directDestination(conversationId);
+    final metadata = await getSessionMetadata(conversationId);
+    final peer = metadata?['peerPublicId'] as String?;
+    final verified = peer != null &&
+        (await contactRepo.getContact(peer))?['verification'] == 'verified';
+    if (destination == null || !verified || !mayEnqueue()) {
+      throw StateError('A enquete exige uma conversa cifrada com contato verificado.');
+    }
+    final text = packet.encode();
+    if (SharedGroupPollPacket.parse(text) == null) {
+      throw const FormatException('Evento de enquete de grupo inválido.');
+    }
+    await _enqueueDirectMessage(
+      conversationId: conversationId, destinationMailbox: destination,
+      senderMailbox: senderMailbox, text: text, ephemeralTtlSeconds: null,
+      attachments: const [], onFaultStage: null, mayEnqueue: mayEnqueue,
+    );
+  });
+
+  Future<SharedGroupPollThread> sharedGroupPollsFor(String conversationId, String peer) async {
+    final rows = await messageRepo.getProtocolMessages(
+      conversationId, SharedGroupPollPacket.prefix,
+    );
+    return SharedGroupPollThread.project(rows, self: identity.publicId, peer: peer);
+  }
+
   Future<void> enqueueVoiceNote({
     required String conversationId,
     required String senderMailbox,
@@ -1481,7 +1514,16 @@ class SovereignMessenger {
         final text = inner['text'] as String? ?? '';
         final createdAt = (inner['ts'] as num?)?.toInt() ??
             DateTime.now().toUtc().millisecondsSinceEpoch;
-        if (text.startsWith(DirectPollEvent.prefix) &&
+        final groupPoll = text.startsWith(SharedGroupPollPacket.prefix);
+        if (groupPoll &&
+            (contact?['verification'] != 'verified' ||
+                SharedGroupPollPacket.parse(text) == null ||
+                inner['expiresAt'] != null ||
+                (inner['attachments'] is List && (inner['attachments'] as List).isNotEmpty))) {
+          errors.add('Evento de grupo recusado.');
+          continue;
+        }
+        if ((groupPoll || text.startsWith(DirectPollEvent.prefix)) &&
             (stateObj['peerPublicId'] != senderId ||
                 inner['sender'] != senderId ||
                 inner['convId'] != convId ||

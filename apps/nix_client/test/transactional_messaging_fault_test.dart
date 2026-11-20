@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_client/core/database/local_database.dart';
 import 'package:nix_client/core/media/voice_note.dart';
+import 'package:nix_client/core/messaging/local_group_poll.dart';
+import 'package:nix_client/core/messaging/shared_group_poll.dart';
 import 'package:nix_client/core/messaging/direct_poll.dart';
 import 'package:nix_client/core/messaging/sovereign_messenger.dart';
 import 'package:nix_client/core/messaging/scheduled_messages.dart';
@@ -381,6 +383,50 @@ void main() {
       bobDb = await LocalDatabase.open(path: '${tempDir.path}/bob.db', rawCipherKey: bobKey);
       final restarted = SovereignMessenger(database: bobDb, identity: bobId, vaultMasterKey: bobKey);
       expect((await restarted.directPollsFor(conversation, aliceId.publicId))[id]!.counts, [0, 0, 1]);
+    });
+
+    test('Enquete de grupo recebe voto cifrado e entrega resultado do autor', () async {
+      const conversation = 'conv_fault_test';
+      var poll = LocalGroupPoll(
+        id: 'channel-poll-1', channelId: 'local-channel', creator: aliceId.publicId,
+        created: DateTime.now(),
+        spec: DirectPollSpec.create(
+          question: 'Sugestão do grupo', options: ['A', 'B'],
+          hideResults: true, correctOption: 1, allowRevote: true,
+        ),
+      ).vote(aliceId.publicId, [0], DateTime.now());
+      Future<void> send(SovereignMessenger sender, SovereignMessenger receiver,
+          MailboxCredentials from, MailboxCredentials to, SharedGroupPollPacket packet) async {
+        await sender.enqueueSharedGroupPollPacket(
+          conversationId: conversation, senderMailbox: from.mailboxId,
+          packet: packet, mayEnqueue: () => true,
+        );
+        expect((await sender.flushOutbox(relayClient: relayClient)).accepted, 1);
+        final delivery = await receiver.pollAndCommitInbox(creds: to, relayClient: relayClient);
+        expect(delivery.errors, isEmpty);
+        expect(delivery.committed, hasLength(1));
+      }
+      await send(aliceMessenger, bobMessenger, aliceMailbox, bobMailbox,
+          SharedGroupPollPacket.snapshot(poll, 1));
+      final received = (await bobMessenger.sharedGroupPollsFor(conversation, aliceId.publicId))
+          .received[poll.id]!;
+      expect(received.spec!.question, poll.spec.question);
+      expect(received.spec!.correctOption, isNull);
+      expect(received.values, [0, 0]);
+      expect(received.encode(), isNot(contains('local-channel')));
+
+      await send(bobMessenger, aliceMessenger, bobMailbox, aliceMailbox,
+          SharedGroupPollPacket.ballot(poll.id, 1, [1]));
+      final ballot = (await aliceMessenger.sharedGroupPollsFor(conversation, bobId.publicId))
+          .receivedBallots[poll.id]!;
+      poll = poll.vote(bobId.publicId, ballot.values, DateTime.now()).close(aliceId.publicId);
+      await send(aliceMessenger, bobMessenger, aliceMailbox, bobMailbox,
+          SharedGroupPollPacket.snapshot(poll, 2));
+      final finalPoll = (await bobMessenger.sharedGroupPollsFor(conversation, aliceId.publicId))
+          .received[poll.id]!;
+      expect(finalPoll.closed, isTrue);
+      expect(finalPoll.values, [1, 1]);
+      expect(finalPoll.spec!.correctOption, 1);
     });
 
     test('Nota de voz no limite chega cifrada e cabe no envelope PostgreSQL', () async {

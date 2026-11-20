@@ -142,7 +142,7 @@ class _ChatViewState extends State<ChatView> {
             alignment: Alignment.centerRight,
             child: TextButton.icon(
               icon: const Icon(Icons.poll_outlined, size: 18),
-              label: const Text('Enquetes locais'),
+              label: const Text('Enquetes'),
               onPressed: () => showModalBottomSheet<void>(
                 context: context,
                 isScrollControlled: true,

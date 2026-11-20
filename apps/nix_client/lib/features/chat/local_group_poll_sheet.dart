@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/messaging/local_group_poll.dart';
 import '../../state/nix_state.dart';
 import 'direct_poll_widgets.dart';
+import 'shared_group_poll_sheet.dart';
 
 class LocalGroupPollSheet extends StatelessWidget {
   const LocalGroupPollSheet({super.key, required this.channelId});
@@ -23,10 +24,10 @@ class LocalGroupPollSheet extends StatelessWidget {
           shrinkWrap: true,
           padding: const EdgeInsets.all(20),
           children: [
-            Text('Enquetes locais do canal',
+            Text('Enquetes do canal',
                 style: Theme.of(context).textTheme.titleLarge),
             const Text(
-                'As enquetes desta sala ficam no cofre deste dispositivo.'),
+                'Compartilhe com contatos verificados para recolher os votos cifrados.'),
             const SizedBox(height: 10),
             for (final poll in polls.reversed)
               _LocalPollCard(
@@ -151,13 +152,28 @@ class _LocalPollCardState extends State<_LocalPollCard> {
                             poll.channelId, poll.id, selection.toList())),
                     child: const Text('Votar'),
                   ),
+                if (widget.enabled && state.canSyncSharedPolls && actor == poll.creator) ...[
+                  TextButton(
+                    onPressed: _busy || poll.closed ? null : () => _apply(
+                      () => inviteSharedPollContacts(context, poll.channelId, poll.id),
+                    ),
+                    child: const Text('Convidar contatos'),
+                  ),
+                  TextButton(
+                    onPressed: _busy ? null : () => _apply(
+                      () => state.synchronizeGroupPoll(poll.channelId, poll.id),
+                    ),
+                    child: const Text('Sincronizar votos'),
+                  ),
+                ],
                 if (widget.enabled && !poll.closed && actor == poll.creator)
                   TextButton(
                     onPressed: _busy
                         ? null
                         : () => _apply(
-                              () => state.closeLocalGroupPoll(
-                                  poll.channelId, poll.id),
+                              () => state.canSyncSharedPolls
+                                  ? state.synchronizeGroupPoll(poll.channelId, poll.id, close: true)
+                                  : state.closeLocalGroupPoll(poll.channelId, poll.id),
                             ),
                     child: const Text('Encerrar enquete'),
                   ),
