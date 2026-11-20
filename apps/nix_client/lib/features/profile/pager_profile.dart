@@ -196,7 +196,7 @@ class _PagerProfileState extends State<PagerProfile> {
                   onNext:
                       _page < 2 ? () => _selectPage(_page + 1, state) : null,
                   onMenu: () => _showPagerMenu(state),
-                  minDisplayHeight: 365,
+                  minDisplayHeight: 386,
                   screen: LayoutBuilder(
                     builder: (context, constraints) {
                       final narrow = constraints.maxWidth < 350;
