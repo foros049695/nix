@@ -106,14 +106,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           flutter pub get
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          flutter test --no-pub test/windows_credential_storage_test.dart
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           flutter build windows --release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $release = (Resolve-Path 'build/windows/x64/runner/Release').Path
           if (!(Test-Path "$release/nix_client.exe") -or !(Test-Path "$release/sqlite3.dll")) {
             throw 'O bundle está sem o executável do Nix ou a DLL do SQLCipher.'
           }
+          $env:PATH = "$release;$env:PATH"
+          $env:NIX_TEST_WINDOWS_SQLCIPHER = 'true'
+          flutter test --no-pub test/windows_credential_storage_test.dart
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $torVersion = '16.0.1'
           $torAsset = "tor-expert-bundle-windows-x86_64-$torVersion.tar.gz"
           $torHash = '9eed3c3ff1fe43df034ce360196c9ec95472560d77ff55614d0cd5120edea27b'
