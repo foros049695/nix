@@ -1809,6 +1809,8 @@ class NixState extends ChangeNotifier {
         final msgRows = await _messageRepo!.getLatestMessagesForConversation(cid);
         final msgs = <Message>[];
         for (final r in msgRows) {
+          final body = (r['body'] as String?) ?? '';
+          if (body.startsWith(SharedGroupPollPacket.prefix)) continue;
           final msgId = r['id'] as String;
           final rawState = (r['delivery_state'] as String?) ?? 'queued';
           final isMe = (r['author_key'] as String) == myPublicId;
@@ -1831,7 +1833,7 @@ class NixState extends ChangeNotifier {
                   : (conv['title'] as String),
               senderFingerprint: r['author_key'] as String,
               isMe: isMe,
-              text: (r['body'] as String?) ?? '',
+              text: body,
               timestamp: DateTime.fromMillisecondsSinceEpoch(
                 r['created_at'] as int,
                 isUtc: true,
