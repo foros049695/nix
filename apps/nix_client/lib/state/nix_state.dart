@@ -55,6 +55,7 @@ import 'package:nix_transport/nix_transport.dart';
 import '../features/onboarding/sovereign_onboarding_model.dart';
 import 'mock_data.dart';
 import 'nix_preference_store.dart';
+import 'workspace_folder_store.dart';
 
 enum NixActiveArea {
   homePrivate, // Conversas privadas, Mensagens Salvas, Amigos, Solicitações e Card ID
@@ -108,7 +109,9 @@ class AuthorizedPeerCardData {
 
 class NixState extends ChangeNotifier {
   late List<Space> _spaces;
-  late List<SpaceFolder> _folders;
+  final _workspaceFolders = WorkspaceFolderStore();
+  List<SpaceFolder> get _folders => _workspaceFolders.folders;
+  set _folders(List<SpaceFolder> folders) => _workspaceFolders.folders = folders;
   late List<Space> _discoverableSpaces;
   late Space _currentSpace;
   late Channel _currentChannel;
@@ -4144,11 +4147,7 @@ class NixState extends ChangeNotifier {
   }
 
   void toggleFolderExpanded(String folderId) {
-    final idx = _folders.indexWhere((f) => f.id == folderId);
-    if (idx != -1) {
-      _folders[idx] = _folders[idx].copyWith(isExpanded: !_folders[idx].isExpanded);
-      notifyListeners();
-    }
+    if (_workspaceFolders.toggleExpanded(folderId)) notifyListeners();
   }
 
   void createSpaceFolder(
@@ -4158,40 +4157,20 @@ class NixState extends ChangeNotifier {
     int colorValue = 0xFFFFC928,
     List<String> conversationIds = const [],
   }) {
-    if (name.trim().isEmpty) return;
-    if (spaceIds.isEmpty && conversationIds.isEmpty) return;
-
-    final newFolder = SpaceFolder(
-      id: 'folder_${DateTime.now().millisecondsSinceEpoch}',
-      name: name.trim(),
-      iconName: iconName,
-      colorValue: colorValue,
-      spaceIds: spaceIds.toSet().toList(),
-      conversationIds: conversationIds.toSet().toList(),
-      isExpanded: true,
-    );
-    _folders.add(newFolder);
+    if (!_workspaceFolders.create(name, spaceIds, iconName: iconName,
+        colorValue: colorValue, conversationIds: conversationIds)) return;
     _persistState(workspaceChanged: true);
     notifyListeners();
   }
 
-  void updateSpaceFolder(SpaceFolder updatedFolder) {
-    final idx = _folders.indexWhere((f) => f.id == updatedFolder.id);
-    if (idx == -1) return;
-    _folders[idx] = updatedFolder.copyWith(
-      spaceIds: updatedFolder.spaceIds.toSet().toList(),
-      conversationIds: updatedFolder.conversationIds.toSet().toList(),
-    );
+  void updateSpaceFolder(SpaceFolder folder) {
+    if (!_workspaceFolders.replace(folder)) return;
     _persistState(workspaceChanged: true);
     notifyListeners();
   }
 
   void reorderFolders(int oldIndex, int newIndex) {
-    if (oldIndex < 0 || oldIndex >= _folders.length) return;
-    if (newIndex > oldIndex) newIndex--;
-    if (newIndex < 0 || newIndex >= _folders.length) return;
-    final moved = _folders.removeAt(oldIndex);
-    _folders.insert(newIndex, moved);
+    if (!_workspaceFolders.reorder(oldIndex, newIndex)) return;
     _persistState(workspaceChanged: true);
     notifyListeners();
   }
@@ -4211,18 +4190,15 @@ class NixState extends ChangeNotifier {
   }
 
   void _removeFolderMembership(String id) {
-    _folders = _folders.expand((folder) {
-      if (!folder.spaceIds.contains(id) && !folder.conversationIds.contains(id)) {
-        return [folder];
-      }
-      final updated = folder.copyWith(
-        spaceIds: folder.spaceIds.where((entry) => entry != id).toList(),
-        conversationIds: folder.conversationIds.where((entry) => entry != id).toList(),
-      );
-      return [if (folder.id == 'all' || updated.spaceIds.isNotEmpty ||
-          updated.conversationIds.isNotEmpty) updated];
-    }).toList();
-    if (_activeFolderId != 'private' && !_folders.any((folder) => folder.id == _activeFolderId)) _activeFolderId = 'all';
+    _workspaceFolders.removeMembership(id);
+    _resetMissingFolder();
+  }
+
+  void _resetMissingFolder() {
+    if (_activeFolderId != 'private' &&
+        _workspaceFolders.find(_activeFolderId) == null) {
+      _activeFolderId = 'all';
+    }
   }
 
   void ungroupWorkspaceItem(String id) {
@@ -4233,11 +4209,7 @@ class NixState extends ChangeNotifier {
   }
 
   void moveWorkspaceFolder(String id, String targetId) {
-    final from = _folders.indexWhere((folder) => folder.id == id);
-    final to = _folders.indexWhere((folder) => folder.id == targetId);
-    if (from < 0 || to < 0 || from == to) return;
-    final folder = _folders.removeAt(from);
-    _folders.insert(to, folder);
+    if (id == targetId || !_workspaceFolders.move(id, targetId)) return;
     _persistState(workspaceChanged: true);
     notifyListeners();
   }
@@ -4246,22 +4218,16 @@ class NixState extends ChangeNotifier {
 
   void assignItemToFolder(String itemId, String folderId) {
     if (!isWorkspaceItem(itemId)) return;
-    final destination = _folders.where((folder) => folder.id == folderId).firstOrNull;
-    if (destination == null || destination.spaceIds.contains(itemId) || destination.conversationIds.contains(itemId)) return;
-    _removeFolderMembership(itemId);
-    final index = _folders.indexWhere((folder) => folder.id == folderId);
-    final space = _spaces.any((space) => space.id == itemId);
-    _folders[index] = destination.copyWith(
-      spaceIds: [...destination.spaceIds, if (space) itemId],
-      conversationIds: [...destination.conversationIds, if (!space) itemId], isExpanded: true,
-    );
+    final isSpace = _spaces.any((space) => space.id == itemId);
+    if (!_workspaceFolders.assign(itemId, folderId, isSpace: isSpace)) return;
+    _resetMissingFolder();
     _persistState(workspaceChanged: true);
     notifyListeners();
   }
 
   /// Exclui apenas a pasta mantendo intactas todas as conversas e espaços (Seção 4).
   void dissolveFolder(String folderId) {
-    _folders.removeWhere((f) => f.id == folderId);
+    _workspaceFolders.dissolve(folderId);
     if (_activeFolderId == folderId) {
       _activeFolderId = 'all';
     }
