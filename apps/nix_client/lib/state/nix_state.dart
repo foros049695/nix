@@ -35,6 +35,7 @@ import '../core/security/local_image_helper.dart';
 import '../core/security/seed_recovery.dart';
 import '../core/security/anti_forensic_shredder.dart';
 import '../core/messaging/sovereign_messenger.dart';
+import '../core/messaging/scheduled_messages.dart';
 import '../core/p2p/monero_ad_verifier.dart';
 import '../core/archive/nix_archive_service.dart';
 import '../core/replication/replication_coordinator.dart';
@@ -1129,6 +1130,11 @@ class NixState extends ChangeNotifier {
       _torBootstrapSub = null;
       await _embeddedTor.stop();
     } catch (_) {}
+    _scheduledWakeup?.cancel();
+    _scheduledWakeup = null;
+    await _scheduledRun;
+    _hasScheduledMessages = false;
+    _scheduledOutboxNeedsRetry = false;
     await _catalogUpdateManager?.cancelAndWait();
     await _pagerWallpaperChange;
     await flushPreferences();
@@ -1681,6 +1687,7 @@ class NixState extends ChangeNotifier {
     }
 
     _isOnboarded = true;
+    await _restoreScheduledMessages();
     notifyListeners();
   }
 
@@ -3111,6 +3118,125 @@ class NixState extends ChangeNotifier {
     );
     selectDirectMessage(thread);
     return thread;
+  }
+
+  Timer? _scheduledWakeup;
+  Future<void>? _scheduledRun;
+  bool _scheduledForeground = false;
+  bool _hasScheduledMessages = false;
+  bool _scheduledOutboxNeedsRetry = false;
+
+  bool get canScheduleDirectMessages =>
+      !_disposed && _panicWipe == null &&
+      (_localDatabase?.cipherInfo.isEncrypted ?? false) &&
+      _sovereignMessenger != null;
+
+  void setScheduledMessagesForeground(bool foreground) {
+    _scheduledForeground = foreground;
+    if (foreground) {
+      _armScheduledMessages();
+    } else {
+      _scheduledWakeup?.cancel();
+      _scheduledWakeup = null;
+    }
+  }
+
+  Future<void> _restoreScheduledMessages() async {
+    if (!canScheduleDirectMessages) return;
+    try {
+      _hasScheduledMessages =
+          (await _sovereignMessenger!.listScheduledMessages()).isNotEmpty;
+      _scheduledOutboxNeedsRetry =
+          await _sovereignMessenger!.outboxRepo.hasPendingScheduledEnvelopes();
+      _armScheduledMessages();
+    } catch (_) {
+      // Um agendamento ilegível não impede a abertura do cofre.
+    }
+  }
+
+  Future<List<ScheduledMessage>> scheduledMessagesFor(String conversationId) async {
+    if (!canScheduleDirectMessages) return [];
+    final entries = await _sovereignMessenger!.listScheduledMessages();
+    return entries.where((entry) => entry.conversationId == conversationId).toList();
+  }
+
+  Future<void> scheduleDirectMessage({
+    required String conversationId,
+    required String text,
+    required DateTime dueAt,
+    required MessageRecurrence recurrence,
+  }) async {
+    final messenger = _sovereignMessenger;
+    if (!canScheduleDirectMessages || messenger == null) {
+      throw StateError('Desbloqueie o cofre para agendar mensagens.');
+    }
+    await messenger.scheduleDirectMessage(
+      conversationId: conversationId,
+      text: text,
+      dueAt: dueAt,
+      recurrence: recurrence,
+      now: DateTime.now(),
+    );
+    _hasScheduledMessages = true;
+    _armScheduledMessages();
+  }
+
+  Future<bool> cancelScheduledMessage(ScheduledMessage entry) async {
+    if (!canScheduleDirectMessages) {
+      throw StateError('Desbloqueie o cofre para cancelar o agendamento.');
+    }
+    return _sovereignMessenger!.cancelScheduledMessage(entry);
+  }
+
+  void _armScheduledMessages() {
+    if (!_scheduledForeground || !canScheduleDirectMessages ||
+        (!_hasScheduledMessages && !_scheduledOutboxNeedsRetry) ||
+        _scheduledWakeup != null || _scheduledRun != null) return;
+    _scheduledWakeup = Timer(const Duration(seconds: 20), () {
+      _scheduledWakeup = null;
+      _scheduledRun = _dispatchScheduledMessages().whenComplete(() {
+        _scheduledRun = null;
+        _armScheduledMessages();
+      });
+    });
+  }
+
+  Future<void> _dispatchScheduledMessages() async {
+    final messenger = _sovereignMessenger;
+    final relay = _relayForMessaging;
+    bool maySend() => _scheduledForeground && canScheduleDirectMessages &&
+        identical(messenger, _sovereignMessenger) &&
+        !_isStrictOffGridMode && securityGate.isTorAnonymityReady;
+    if (messenger == null || relay == null ||
+        relay.policy.mode != TransportMode.torFailClosed ||
+        !TransportPolicy.isValidOnionV3Host(relay.baseUri.host) || !maySend()) return;
+    try {
+      final credentials = _activeMailboxCredentials ??
+          SovereignMessenger.deriveMailboxCredentials(messenger.identity.publicId);
+      await messenger.enqueueDueScheduledMessages(
+        now: DateTime.now(),
+        senderMailbox: credentials.mailboxId,
+        mayEnqueue: maySend,
+      );
+      _scheduledOutboxNeedsRetry =
+          await messenger.outboxRepo.hasPendingScheduledEnvelopes();
+      if (_scheduledOutboxNeedsRetry && maySend()) {
+        await messenger.flushOutbox(
+          relayClient: relay,
+          quotaToken: credentials.writeQuotaToken.isEmpty
+              ? null : credentials.writeQuotaToken,
+          maySend: maySend,
+        );
+        _scheduledOutboxNeedsRetry = await messenger.outboxRepo.hasPendingScheduledEnvelopes();
+        if (canScheduleDirectMessages && identical(messenger, _sovereignMessenger)) {
+          await _refreshDirectThreadsFromDatabase();
+          if (!_disposed && _panicWipe == null) notifyListeners();
+        }
+      }
+      _hasScheduledMessages = (await messenger.listScheduledMessages()).isNotEmpty;
+    } catch (_) {
+      // Os agendamentos e os envelopes já gravados são preservados para retentativa.
+    }
   }
 
   /// Sincroniza a Outbox pendente e a Inbox do relay cego via [SovereignMessenger],
@@ -5523,6 +5649,7 @@ class NixState extends ChangeNotifier {
     } catch (_) {
       // Continua o fechamento do banco mesmo se a malha falhar.
     }
+    await _scheduledRun;
     try {
       await _localDatabase?.close();
     } catch (_) {
@@ -5541,6 +5668,7 @@ class NixState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _scheduledWakeup?.cancel();
     _calls.dispose();
     _peerHover.dispose();
     _starwireFilters.dispose();

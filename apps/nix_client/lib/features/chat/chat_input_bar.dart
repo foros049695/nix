@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'emoji_catalog.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../../core/messaging/scheduled_messages.dart';
 import '../../core/security/file_picker_adapter.dart';
 import '../../core/security/local_image_helper.dart';
 import '../../core/theme.dart';
@@ -13,12 +14,14 @@ import '../design/nix_surfaces.dart';
 class ChatInputBar extends StatefulWidget {
   final String channelName;
   final bool isDirectMessage;
+  final String? scheduledConversationId;
   final void Function(String text, List<String> attachments)? onSendCustom;
 
   const ChatInputBar({
     super.key,
     required this.channelName,
     this.isDirectMessage = false,
+    this.scheduledConversationId,
     this.onSendCustom,
   });
 
@@ -121,6 +124,55 @@ class _ChatInputBarState extends State<ChatInputBar> {
       _lastLoadedEditId = null;
       setState(() => _showEmojiPicker = false);
       _focusNode.requestFocus();
+    }
+  }
+
+  Future<void> _scheduleDraft(NixState state, String conversationId) async {
+    final text = _controller.text;
+    if (text.trim().isEmpty || _pendingAttachments.isNotEmpty ||
+        state.editingMessage != null || state.replyingToMessage != null ||
+        state.selectedEphemeralTimer != 0) {
+      _scheduleNotice('Para agendar, escreva uma mensagem de texto sem anexos, resposta, edição ou temporizador.');
+      return;
+    }
+    _focusNode.unfocus();
+    final result = await showDialog<({DateTime when, MessageRecurrence recurrence})>(
+      context: context,
+      builder: (_) => const _ScheduleDraftDialog(),
+    );
+    if (result == null || !mounted || widget.scheduledConversationId != conversationId) return;
+    try {
+      await state.scheduleDirectMessage(
+        conversationId: conversationId,
+        text: text,
+        dueAt: result.when,
+        recurrence: result.recurrence,
+      );
+      if (mounted && _controller.text == text) _controller.clear();
+      _scheduleNotice('Mensagem agendada no cofre.');
+    } on FormatException catch (error) {
+      _scheduleNotice(error.message);
+    } catch (_) {
+      _scheduleNotice('Não foi possível salvar o agendamento.');
+    }
+  }
+
+  Future<void> _showScheduled(NixState state, String conversationId) async {
+    try {
+      final entries = await state.scheduledMessagesFor(conversationId);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => _ScheduledMessagesDialog(state: state, entries: entries),
+      );
+    } catch (_) {
+      _scheduleNotice('Não foi possível abrir os agendamentos.');
+    }
+  }
+
+  void _scheduleNotice(String text) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
     }
   }
 
@@ -339,26 +391,23 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                if (!compact) ...[
-                  SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: _EphemeralTimerSelector(
-                      currentTimer: ephemeralTimer,
-                      onChanged: (seconds) =>
-                          nixState.setEphemeralTimer(seconds),
-                    ),
+                SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: _EphemeralTimerSelector(
+                    currentTimer: ephemeralTimer,
+                    onChanged: nixState.setEphemeralTimer,
+                    onSchedule: nixState.canScheduleDirectMessages &&
+                            widget.scheduledConversationId != null
+                        ? () => _scheduleDraft(nixState, widget.scheduledConversationId!)
+                        : null,
+                    onShowSchedules: nixState.canScheduleDirectMessages &&
+                            widget.scheduledConversationId != null
+                        ? () => _showScheduled(nixState, widget.scheduledConversationId!)
+                        : null,
                   ),
-                  const SizedBox(width: 4),
-                ] else
-                  SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: _EphemeralTimerSelector(
-                      currentTimer: ephemeralTimer,
-                      onChanged: nixState.setEphemeralTimer,
-                    ),
-                  ),
+                ),
+                if (!compact) const SizedBox(width: 4),
                 SizedBox(
                   width: 36,
                   height: 36,
@@ -604,10 +653,14 @@ class _ChatInputBarState extends State<ChatInputBar> {
 class _EphemeralTimerSelector extends StatelessWidget {
   final int currentTimer;
   final ValueChanged<int> onChanged;
+  final VoidCallback? onSchedule;
+  final VoidCallback? onShowSchedules;
 
   const _EphemeralTimerSelector({
     required this.currentTimer,
     required this.onChanged,
+    this.onSchedule,
+    this.onShowSchedules,
   });
 
   @override
@@ -615,9 +668,18 @@ class _EphemeralTimerSelector extends StatelessWidget {
     final isTimerActive = currentTimer > 0;
     return PopupMenuButton<int>(
       key: const Key('chat_timer_button'),
-      tooltip: 'Temporizador de Mensagem Efêmera',
+      tooltip: onSchedule == null ? 'Temporizador de Mensagem Efêmera' : 'Temporizador e agendamento',
       initialValue: currentTimer,
-      onSelected: onChanged,
+      onSelected: (value) {
+        switch (value) {
+          case -1:
+            onSchedule?.call();
+          case -2:
+            onShowSchedules?.call();
+          default:
+            onChanged(value);
+        }
+      },
       padding: EdgeInsets.zero,
       color: NixColors.surfaceElevatedHigh,
       shape: RoundedRectangleBorder(
@@ -658,6 +720,11 @@ class _EphemeralTimerSelector extends StatelessWidget {
         ],
       ),
       itemBuilder: (context) => [
+        if (onSchedule != null) ...[
+          const PopupMenuItem(value: -1, child: Text('Agendar este texto')),
+          const PopupMenuItem(value: -2, child: Text('Ver agendamentos')),
+          const PopupMenuDivider(),
+        ],
         PopupMenuItem(
             value: 0,
             child: Text('Desativado (Permanente)',
@@ -690,5 +757,147 @@ class _EphemeralTimerSelector extends StatelessWidget {
     if (seconds < 60) return '${seconds}s';
     if (seconds < 3600) return '${seconds ~/ 60}m';
     return '${seconds ~/ 3600}h';
+  }
+}
+
+
+class _ScheduleDraftDialog extends StatefulWidget {
+  const _ScheduleDraftDialog();
+
+  @override
+  State<_ScheduleDraftDialog> createState() => _ScheduleDraftDialogState();
+}
+
+class _ScheduleDraftDialogState extends State<_ScheduleDraftDialog> {
+  DateTime _when = DateTime.now().add(const Duration(minutes: 5));
+  MessageRecurrence _recurrence = MessageRecurrence.once;
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = MaterialLocalizations.of(context);
+    return AlertDialog(
+      title: const Text('Agendar mensagem'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextButton.icon(
+            icon: const Icon(Icons.calendar_today),
+            label: Text(localizations.formatMediumDate(_when)),
+            onPressed: () async {
+              final now = DateTime.now();
+              final day = await showDatePicker(
+                context: context,
+                initialDate: _when.isBefore(now) ? now : _when,
+                firstDate: now,
+                lastDate: now.add(const Duration(days: 365)),
+              );
+              if (mounted && day != null) {
+                setState(() => _when = DateTime(
+                  day.year, day.month, day.day, _when.hour, _when.minute,
+                ));
+              }
+            },
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.access_time),
+            label: Text(TimeOfDay.fromDateTime(_when).format(context)),
+            onPressed: () async {
+              final time = await showTimePicker(
+                context: context,
+                initialTime: TimeOfDay.fromDateTime(_when),
+              );
+              if (mounted && time != null) {
+                setState(() => _when = DateTime(
+                  _when.year, _when.month, _when.day, time.hour, time.minute,
+                ));
+              }
+            },
+          ),
+          DropdownButton<MessageRecurrence>(
+            value: _recurrence,
+            isExpanded: true,
+            onChanged: (value) => setState(() => _recurrence = value!),
+            items: [
+              for (final recurrence in MessageRecurrence.values)
+                DropdownMenuItem(value: recurrence, child: Text(recurrence.label)),
+            ],
+          ),
+          const Text('O envio requer o Nix aberto, o cofre desbloqueado e o relay Onion disponível.'),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, (when: _when, recurrence: _recurrence)),
+          child: const Text('Agendar'),
+        ),
+      ],
+      scrollable: true,
+    );
+  }
+}
+
+class _ScheduledMessagesDialog extends StatefulWidget {
+  const _ScheduledMessagesDialog({required this.state, required this.entries});
+
+  final NixState state;
+  final List<ScheduledMessage> entries;
+
+  @override
+  State<_ScheduledMessagesDialog> createState() => _ScheduledMessagesDialogState();
+}
+
+class _ScheduledMessagesDialogState extends State<_ScheduledMessagesDialog> {
+  late final _entries = widget.entries.toList();
+  String? _error;
+
+  Future<void> _cancel(ScheduledMessage entry) async {
+    try {
+      final cancelled = await widget.state.cancelScheduledMessage(entry);
+      if (mounted) {
+        setState(() {
+          _entries.remove(entry);
+          _error = cancelled ? null : 'Este agendamento já foi processado ou removido.';
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Não foi possível cancelar o agendamento.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = MaterialLocalizations.of(context);
+    return AlertDialog(
+      title: const Text('Mensagens agendadas'),
+      scrollable: true,
+      content: SizedBox(
+        width: 440,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_error != null) Text(_error!),
+            if (_entries.isEmpty) const Text('Nenhuma mensagem agendada nesta conversa.'),
+            for (final entry in _entries)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(entry.text, maxLines: 2, overflow: TextOverflow.ellipsis),
+                subtitle: Text(
+                  '${localizations.formatShortDate(entry.dueAt.toLocal())} '
+                  '${TimeOfDay.fromDateTime(entry.dueAt.toLocal()).format(context)} · '
+                  '${entry.recurrence.label}',
+                ),
+                trailing: IconButton(
+                  tooltip: 'Cancelar agendamento',
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () => _cancel(entry),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar'))],
+    );
   }
 }

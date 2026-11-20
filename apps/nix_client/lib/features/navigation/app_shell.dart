@@ -39,12 +39,45 @@ import 'spaces_dock.dart';
 import 'workspace_frame.dart';
 import 'workspace_image.dart';
 
-class AppShell extends StatelessWidget {
+class AppShell extends StatefulWidget {
   const AppShell({super.key});
+
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
+  NixState? _nixState;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _nixState?.setScheduledMessagesForeground(state == AppLifecycleState.resumed);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _nixState?.setScheduledMessagesForeground(false);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
+    if (!identical(_nixState, nixState)) {
+      _nixState?.setScheduledMessagesForeground(false);
+      _nixState = nixState;
+      final lifecycle = WidgetsBinding.instance.lifecycleState;
+      nixState.setScheduledMessagesForeground(
+        lifecycle == null || lifecycle == AppLifecycleState.resumed,
+      );
+    }
     final settings = nixState.settings;
     final currentChannel = nixState.currentChannel;
     final activeArea = nixState.activeArea;

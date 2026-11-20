@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_client/core/database/local_database.dart';
 import 'package:nix_client/core/messaging/sovereign_messenger.dart';
+import 'package:nix_client/core/messaging/scheduled_messages.dart';
 import 'package:nix_client/core/models/direct_message.dart';
 import 'package:nix_client/core/models/member.dart';
 import 'package:nix_client/core/security/key_vault.dart';
@@ -322,6 +323,85 @@ void main() {
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);
       }
+    });
+
+    test('Agendamento sobrevive a rollback e é enfileirado e entregue uma vez', () async {
+      final now = DateTime.utc(2026, 11, 20, 12);
+      final due = now.add(const Duration(minutes: 1));
+      await aliceMessenger.scheduleDirectMessage(
+        conversationId: 'conv_fault_test',
+        text: 'entrega cifrada agendada',
+        dueAt: due,
+        recurrence: MessageRecurrence.once,
+        now: now,
+      );
+      await aliceDb.close();
+      aliceDb = await LocalDatabase.open(
+        path: '${tempDir.path}/alice.db',
+        rawCipherKey: aliceMessenger.vaultMasterKey,
+      );
+      final reopenedService = SovereignMessenger(
+        database: aliceDb,
+        identity: aliceId,
+        vaultMasterKey: aliceMessenger.vaultMasterKey,
+        storageRootDir: aliceMessenger.storageRootDir,
+      );
+      Future<int> enqueue(DateTime time, {bool fail = false}) =>
+          reopenedService.enqueueDueScheduledMessages(
+            now: time,
+            senderMailbox: aliceMailbox.mailboxId,
+            onFaultStage: fail ? (stage) {
+              if (stage == MessagingFaultStage.duringOutboxInsert) {
+                throw StateError('falha simulada');
+              }
+            } : null,
+          );
+      expect(await enqueue(now), 0);
+      expect(await reopenedService.listScheduledMessages(), hasLength(1));
+      await expectLater(enqueue(due, fail: true), throwsStateError);
+      expect(await reopenedService.listScheduledMessages(), hasLength(1));
+      expect(await reopenedService.outboxRepo.hasPendingScheduledEnvelopes(), isFalse);
+      final concurrent = await Future.wait([enqueue(due), enqueue(due)]);
+      expect(concurrent.reduce((a, b) => a + b), 1);
+      expect(await reopenedService.listScheduledMessages(), isEmpty);
+      expect(await reopenedService.outboxRepo.hasPendingScheduledEnvelopes(), isTrue);
+
+      final blocked = await reopenedService.flushOutbox(
+        relayClient: relayClient, maySend: () => false,
+      );
+      expect(blocked.accepted, 0);
+      final sends = await Future.wait([
+        reopenedService.flushOutbox(relayClient: relayClient),
+        reopenedService.flushOutbox(relayClient: relayClient),
+      ]);
+      expect(sends.map((result) => result.accepted), [1, 0]);
+      expect(await reopenedService.outboxRepo.hasPendingScheduledEnvelopes(), isFalse);
+      final inbox = await relayClient.fetchEnvelopes(bobMailbox);
+      expect(inbox, hasLength(1));
+    });
+
+    test('Recorrência pula ocorrências vencidas e permite cancelar a próxima', () async {
+      final now = DateTime.utc(2026, 11, 20, 12);
+      final due = now.add(const Duration(minutes: 1));
+      final dispatch = due.add(const Duration(days: 3, hours: 1));
+      await aliceMessenger.scheduleDirectMessage(
+        conversationId: 'conv_fault_test',
+        text: 'lembrete diário',
+        dueAt: due,
+        recurrence: MessageRecurrence.daily,
+        now: now,
+      );
+      expect(await aliceMessenger.enqueueDueScheduledMessages(
+        now: dispatch, senderMailbox: aliceMailbox.mailboxId,
+      ), 1);
+      final next = (await aliceMessenger.listScheduledMessages()).single;
+      expect(next.dueAt, due.add(const Duration(days: 4)));
+      expect(next.revision, 2);
+      await aliceMessenger.cancelScheduledMessage(next);
+      expect(await aliceMessenger.enqueueDueScheduledMessages(
+        now: next.dueAt, senderMailbox: aliceMailbox.mailboxId,
+      ), 0);
+      expect(await aliceMessenger.outboxRepo.getPendingEnvelopes(), hasLength(1));
     });
 
     for (final stage in const [

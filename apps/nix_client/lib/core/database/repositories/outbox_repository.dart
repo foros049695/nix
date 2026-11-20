@@ -52,6 +52,21 @@ class OutboxRepository {
     );
   }
 
+  Future<bool> hasPendingScheduledEnvelopes() async {
+    final rows = await _db.query(
+      'outbox',
+      columns: ['id'],
+      where: 'id >= ? AND id < ? AND transport_state IN (?, ?, ?) '
+          'AND attempts < 20 AND expires_at > ?',
+      whereArgs: [
+        'scheduled_', 'scheduled`', 'queued', 'leased', 'failed',
+        DateTime.now().millisecondsSinceEpoch,
+      ],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
   Future<void> markEnvelopeAccepted(String id, String relayEnvelopeId) async {
     await _db.update(
       'outbox',

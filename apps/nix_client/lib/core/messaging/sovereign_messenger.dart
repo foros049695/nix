@@ -8,6 +8,7 @@ import 'package:nix_transport/nix_transport.dart';
 import '../database/local_database.dart';
 import '../database/repositories.dart';
 import '../security/local_image_helper.dart';
+import 'scheduled_messages.dart';
 
 /// Resultado da importação out-of-band (QR/JSON) de um Card ID soberano.
 enum CardImportStatus {
@@ -758,6 +759,77 @@ class SovereignMessenger {
     return pending;
   }
 
+  late final _scheduled = ScheduledMessages(database.rawDatabase);
+
+  Future<List<ScheduledMessage>> listScheduledMessages() => _scheduled.list();
+
+  Future<bool> cancelScheduledMessage(ScheduledMessage entry) =>
+      _scheduled.cancel(entry);
+
+  Future<ScheduledMessage> scheduleDirectMessage({
+    required String conversationId,
+    required String text,
+    required DateTime dueAt,
+    required MessageRecurrence recurrence,
+    required DateTime now,
+  }) => _withRatchet(() async {
+    if (await _scheduledDestination(conversationId) == null) {
+      throw StateError('A conversa precisa de uma sessão cifrada válida.');
+    }
+    return _scheduled.add(
+      conversationId: conversationId,
+      text: text,
+      dueAt: dueAt,
+      recurrence: recurrence,
+      now: now,
+    );
+  });
+
+  Future<String?> _scheduledDestination(String conversationId) async {
+    final session = await getSessionMetadata(conversationId);
+    final peer = session?['peerPublicId'] as String?;
+    if (peer == null || peer.isEmpty ||
+        (await contactRepo.getContact(peer))?['verification'] == 'changed') {
+      return null;
+    }
+    return (session?['peerMailbox'] as String?) ??
+        deriveMailboxCredentials(peer).mailboxId;
+  }
+
+  Future<int> enqueueDueScheduledMessages({
+    required DateTime now,
+    required String senderMailbox,
+    bool Function()? mayEnqueue,
+    void Function(MessagingFaultStage stage)? onFaultStage,
+  }) async {
+    final pending = await _scheduled.list();
+    var count = 0;
+    for (final entry in pending) {
+      if (entry.dueAt.isAfter(now) || mayEnqueue?.call() == false) break;
+      final enqueued = await _withRatchet(() async {
+        final destination = await _scheduledDestination(entry.conversationId);
+        if (destination == null || mayEnqueue?.call() == false) return false;
+        try {
+          await _enqueueDirectMessage(
+            conversationId: entry.conversationId,
+            destinationMailbox: destination,
+            senderMailbox: senderMailbox,
+            text: entry.text,
+            ephemeralTtlSeconds: null,
+            attachments: const [],
+            onFaultStage: onFaultStage,
+            scheduled: (entry: entry, now: now),
+          );
+          return true;
+        } on ScheduledMessageChanged {
+          return false;
+        }
+      });
+      if (enqueued) count++;
+    }
+    return count;
+  }
+
   /// Cifra via Double Ratchet e persiste `sessions`, `messages`, `message_attachments` e `outbox`
   /// dentro de uma ÚNICA transação SQLite atômica (Fase 4).
   /// Qualquer falha em [onFaultStage] ou erro de banco desfaz todas as gravações sem avançar a sessão.
@@ -787,6 +859,7 @@ class SovereignMessenger {
     required int? ephemeralTtlSeconds,
     required List<AttachmentManifest> attachments,
     required void Function(MessagingFaultStage stage)? onFaultStage,
+    ({ScheduledMessage entry, DateTime now})? scheduled,
   }) async {
     final loaded = await _loadEncryptedSession(conversationId);
     if (loaded == null) {
@@ -804,8 +877,9 @@ class SovereignMessenger {
         : null;
     final msgId =
         'msg_${nowMs}_${_toHex(SecretKeyData.random(length: 4).bytes)}';
+    final outboxPrefix = scheduled == null ? 'out' : 'scheduled';
     final outboxId =
-        'out_${nowMs}_${_toHex(SecretKeyData.random(length: 4).bytes)}';
+        '${outboxPrefix}_${nowMs}_${_toHex(SecretKeyData.random(length: 4).bytes)}';
 
     final innerPayload = jsonEncode({
       'id': msgId,
@@ -861,6 +935,9 @@ class SovereignMessenger {
 
     // Transação atômica: ou grava sessão + mensagem + anexos + outbox juntos, ou faz rollback completo!
     await database.rawDatabase.transaction((txn) async {
+      if (scheduled != null) {
+        await ScheduledMessages.markEnqueued(txn, scheduled.entry, scheduled.now);
+      }
       onFaultStage?.call(MessagingFaultStage.beforeSessionSave);
 
       await txn.rawInsert('''
@@ -932,18 +1009,41 @@ class SovereignMessenger {
     return (messageId: msgId, outboxId: outboxId);
   }
 
+  Future<void> _outboxOperations = Future<void>.value();
+
   /// Drena a Outbox persistente pelo `RelayClient` preservando o mesmo `ciphertext` em retentativas.
   Future<({int accepted, int failed})> flushOutbox({
     required RelayClient relayClient,
     String? quotaToken,
     int retryDelayMs = 2000,
     void Function(MessagingFaultStage stage)? onFaultStage,
+    bool Function()? maySend,
+  }) {
+    final pending = _outboxOperations.then((_) => _flushOutbox(
+      relayClient: relayClient,
+      quotaToken: quotaToken,
+      retryDelayMs: retryDelayMs,
+      onFaultStage: onFaultStage,
+      maySend: maySend,
+    ));
+    _outboxOperations =
+        pending.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return pending;
+  }
+
+  Future<({int accepted, int failed})> _flushOutbox({
+    required RelayClient relayClient,
+    required String? quotaToken,
+    required int retryDelayMs,
+    required void Function(MessagingFaultStage stage)? onFaultStage,
+    required bool Function()? maySend,
   }) async {
     final pending = await outboxRepo.getPendingEnvelopes(limit: 50);
     int accepted = 0;
     int failed = 0;
 
     for (final row in pending) {
+      if (maySend?.call() == false) break;
       final outboxId = row['id'] as String;
       final destMailbox = row['destination_mailbox'] as String;
       final msgId = row['message_id'] as String?;

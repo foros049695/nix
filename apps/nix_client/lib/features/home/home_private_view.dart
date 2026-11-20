@@ -635,6 +635,8 @@ class _HomePrivateViewState extends State<HomePrivateView> {
 
         // Compositor Completo para DMs e Mensagens Salvas (Anexos, Emojis, Áudio, Temporizador)
         ChatInputBar(
+          key: ValueKey(dm.id),
+          scheduledConversationId: dm.hasActiveSession && !dm.isSavedMessages ? dm.id : null,
           channelName: dm.isSavedMessages ? 'Mensagens Salvas' : dm.peerName,
           isDirectMessage: true,
           onSendCustom: (text, attachments) => state.sendDirectMessage(text, attachments: attachments),
