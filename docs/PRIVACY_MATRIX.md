@@ -25,3 +25,7 @@ Cada requisito possui código, guarda fail-closed e vínculo explícito com suí
 | **C-A** | Noncompliance | Account | Panic Wipe anti-forense + PIN de coação + limpeza keyring (documentado limite wear-leveling SSD). | `anti_forensic_shredder_test.dart`, `shredder_confinement_probe_test.dart`, `milestone_b_security_test.dart` | **VALIDADO** |
 | **C-U** | Noncompliance | Usage | Magnet/wallet-RPC clearnet bloqueados se usuário não optar explicitamente por isolamento. | `phases_5_to_9_test.dart` (`MediaCatalogService`, `MoneroIsolationPolicy`) | **VALIDADO** |
 | **C-S** | Noncompliance | Service | Protocolo de resposta a incidentes + GitHub Private Vulnerability Reporting ativo + SBOM. | `SECURITY.md`, `docs/INCIDENT_RESPONSE.md`, `scripts/generate_sbom.sh`, GitHub PVR `enabled=true` | **VALIDADO** |
+
+## Novos caminhos locais
+
+Credenciais de relay no SQLCipher. O diagnóstico de microfone descarta PCM em memória e encerra a captura ao sair. O Windows usa credencial do usuário. Os limites da homologação estão no [aceite incremental](FINAL_ACCEPTANCE_REPORT.md).

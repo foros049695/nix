@@ -30,3 +30,7 @@
 ## 3. Divulgação Responsável de Vulnerabilidades
 
 Caso encontre uma falha de segurança no Nix, envie um relato confidencial pelo **GitHub Private Vulnerability Reporting** (`https://github.com/foros049695/nix/security/advisories/new`, verificado como ativo via API). Não abra issues públicas relatando vulnerabilidades antes da mitigação. Veja `SECURITY.md` e `docs/INCIDENT_RESPONSE.md`.
+
+## Pareamento e credenciais do relay
+
+Convites assinados vinculam o identificador público às chaves, ao material X3DH e à caixa do contato. A verificação de pessoa requer canal independente. As credenciais provisionadas ficam no cofre, e o [fluxo de mensageria](MESSAGING_AND_MEDIA_INTEGRATION.md) usa exclusivamente relay Onion em modo Tor.

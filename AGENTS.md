@@ -100,3 +100,7 @@ Changes that break these are rejected:
 - New external dependencies need an ADR in `docs/adr/` first.
 
 Regression probes (`*_probe_test.dart`, `probe_test.go`) reproduce audit findings such as the CRY01 ratchet corruption, the SOCKS stream re-listen bug, and sensitive derived identity zeroization. Keep them passing, and when you fix an audit finding, add a probe for it.
+
+## Validação do piloto nativo
+
+Use o workflow manual `pilot-builds.yml` para gerar bundles. A validação Windows deve exercitar o Credential Manager com uma credencial sintética temporária e validar o executável após o build. O teste de relay pela UI usa duas instâncias e rede isolada para validar convite, outbox, cota e reinício.

@@ -36,3 +36,7 @@ Cada artigo ou evidência publicado no Nix Archive é transformado em um objeto 
 - Uma refutação referencia explicitamente o `object_id` da publicação original e o `claim_id` específico.
 - Versões corrigidas mantêm a referência canônica `supersedes` ao objeto anterior, preservando o histórico auditável de correções sem censura silenciosa.
 - Votos e avaliações comunitárias são armazenados em camadas de metadados separadas e **não alteram o hash do objeto original**.
+
+## Gerenciar moderação local
+
+Em **Discussões Encadeadas**, use **Gerenciar moderação local** para ver e restaurar autores silenciados ou bloqueados, inclusive quando a discussão estiver vazia. A operação atualiza apenas a filtragem local do Archive.

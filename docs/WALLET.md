@@ -36,3 +36,7 @@ o histórico em memória e encerra a sala ao fechá-la ou após 30 minutos.
 A entrega depende de Tor operacional nos dois dispositivos e do anfitrião online.
 A sala não recebe dados das identidades de mensageria ou da carteira. O método de
 pagamento e os dados que as partes compartilham na negociação podem identificá-las.
+
+## Mercado integrado
+
+O [relatório de mercado](UNIFIED_P2P_MARKETPLACE.md) registra o fluxo Monero existente e o plano de integração do Bitcoin. A negociação depende dos mecanismos de liquidação comprovados e da confirmação explícita dos participantes.

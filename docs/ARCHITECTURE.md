@@ -43,3 +43,7 @@ graph TD
 1. **Seed A (Mensageria) vs Seed B (Monero P2P):** Mnemonic Seed A de 24 palavras (com checksum SHA-256) deriva exclusivamente chaves Ed25519/X25519 da mensageria (`Nix-SeedA-Ed25519-v1` / `X25519-v1`). `MoneroIsolationPolicy` impede reutilização de seed e bloqueia RPC claro não-Tor/não-loopback.
 2. **Nix Archive (`nix.archive.article.v1`):** Artigos e refutações canônicos assinados por Ed25519 com sanitização HTML anti-XSS em tabelas dedicadas (`archive_*`).
 3. **Nix Media / Starwire (`media_items` + FTS5):** Busca offline de catálogo separada de resolução magnet (bloqueada por padrão no modo Tor estrito) e estado de transferência sem acesso à Seed A.
+
+## Convites e diagnóstico nativo
+
+O cliente monta o envio privado por convite recíproco assinado e sessão em SQLCipher. A configuração do relay vive nas preferências do cofre. O [runner Windows](WINDOWS_DESKTOP_IMPLEMENTATION.md) hospeda a interface Flutter e integra cofre do SO e diagnóstico local.

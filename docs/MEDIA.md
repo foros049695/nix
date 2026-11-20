@@ -14,3 +14,7 @@
 - **Sanitização de Metadados:**
   - O download de pôsteres e sinopses ocorre através de proxy Tor quando em perfil privado.
   - O visualizador desativa requisições automáticas a pixels de rastreamento remotos ou links de telemetria embutidos nas descrições.
+
+## Abertura do catálogo embarcado
+
+O catálogo abre no isolate com a mesma resolução nativa de SQLite. A primeira instalação verifica o SHA-256 do pacote local. Consultas FTS5 preservam letras e marcas Unicode. Consulte o [estado da integração musical](MEDIA_PROGRESS_AND_MUSIC.md).

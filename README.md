@@ -370,3 +370,7 @@ os testes do catálogo completo no [registro de implementação](docs/IMPLEMENTA
 ## ⚖️ Licença
 
 O Projeto Nix é distribuído sob os termos da licença **GNU General Public License v3.0 (GPL-3.0)**. Consulte o arquivo [`LICENSE`](LICENSE) para obter o texto completo da licença.
+
+## Piloto desktop e mensageria
+
+O cliente traz convite assinado e configuração de relay Onion pelo cofre. O piloto distribui APKs e bundles nativos. Consulte os passos de [mensageria](docs/MESSAGING_AND_MEDIA_INTEGRATION.md), [Windows](docs/WINDOWS_DESKTOP_IMPLEMENTATION.md) e o [aceite incremental](docs/FINAL_ACCEPTANCE_REPORT.md).

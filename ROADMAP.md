@@ -403,3 +403,7 @@ Com os requisitos locais P0 e P1 implementados e validados em ambiente de desenv
 2. **Validação física Android e RF:** gerar build APK com NDK para comprovar `SQLCipher`, `AndroidKeyStore` TEE, empacotamento do Tor móvel e comunicação física via Bluetooth BLE / LoRa / RNode serial.
 3. **Integrações externas pendentes:** acoplar `monero-wallet-rpc` em testnet/stagenet (Fase 6), replicação distribuída S3/IPFS (Fase 7) e conectores remotos opt-in via Tor (Fase 8).
 4. **Release pública e auditoria:** gerenciar eventuais relatos via Private Vulnerability Reporting, publicar artefatos reproduzíveis assinados com SBOM e submeter a base consolidada a auditoria criptográfica externa independente antes da fase beta pública.
+
+## Aceite incremental do plano mestre
+
+O [relatório de aceite](docs/FINAL_ACCEPTANCE_REPORT.md) registra os marcos A–I e diferencia implementação, teste local e validação de plataforma. Os marcos do plano mestre permanecem abertos onde a jornada completa depende de implementação ou homologação.
