@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nix_client/features/monero_p2p/monero_p2p_view.dart';
 import 'package:provider/provider.dart';
 import 'package:nix_client/core/models/channel.dart';
 import 'package:nix_client/core/models/direct_message.dart';
@@ -640,12 +641,20 @@ void main() {
     tester.view.physicalSize = const Size(680, 700);
     await tester.pumpAndSettle();
 
-    // Controles adaptam-se sem qualquer overflow
     expect(find.text('Comprar XMR'), findsOneWidget);
     expect(find.text('Vender XMR'), findsOneWidget);
-    expect(find.text('Negociar'), findsAtLeastNWidgets(1));
+    final marketScroll = find.descendant(
+      of: find.byType(MoneroP2pView),
+      matching: find.byType(Scrollable),
+    ).first;
+    await tester.scrollUntilVisible(find.text('Negociar').first, 120,
+        scrollable: marketScroll);
+    expect(find.text('Negociar').first.hitTestable(), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('create_monero_order_button')));
+    final create = find.byKey(const Key('create_monero_order_button'));
+    await tester.ensureVisible(create);
+    await tester.pumpAndSettle();
+    await tester.tap(create);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('monero_order_currency')));
     await tester.pumpAndSettle();

@@ -104,7 +104,10 @@ void main() {
       expect(find.text('Atualizações Privadas do Catálogo'), findsOneWidget);
       expect(find.text('Fechar'), findsOneWidget);
       expect(find.text('Esta versão do Nix veio sem um publicador Onion configurado.'), findsOneWidget);
-      final verify = find.widgetWithText(ElevatedButton, 'Verificar Agora');
+      final verify = find.ancestor(
+        of: find.text('Verificar Agora'),
+        matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
+      );
       expect(tester.widget<ElevatedButton>(verify).onPressed, isNull);
 
       // Fecha o diálogo
