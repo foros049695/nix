@@ -54,6 +54,7 @@ import '../features/archive/archive_view_model.dart';
 import 'package:nix_transport/nix_transport.dart';
 import '../features/onboarding/sovereign_onboarding_model.dart';
 import 'mock_data.dart';
+import 'nix_preference_store.dart';
 
 enum NixActiveArea {
   homePrivate, // Conversas privadas, Mensagens Salvas, Amigos, Solicitações e Card ID
@@ -1022,7 +1023,7 @@ class NixState extends ChangeNotifier {
     } catch (_) {}
     await _catalogUpdateManager?.cancelAndWait();
     await _pagerWallpaperChange;
-    await _preferencesWrite;
+    await flushPreferences();
     try {
       await _catalogOpen;
       await _catalogDatabase?.close();
@@ -1455,7 +1456,7 @@ class NixState extends ChangeNotifier {
   /// Recarrega identidade, perfil, contatos, conversas, estado criptográfico e mensagens após reinicialização.
   Future<void> reloadFromDatabase() async {
     await _startupPreferences;
-    await _preferencesWrite;
+    await flushPreferences();
     await _restoreWorkspaceLayout();
     await _restorePersonalPreferences();
     if (_localDatabase == null || _identityRepo == null) return;
@@ -2228,78 +2229,31 @@ class NixState extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// Caminho local de persistência de preferências do cliente (apenas desktop/mobile reais).
-  String get _prefsFilePath {
-    if (Platform.environment['FLUTTER_TEST'] == 'true') return '';
-    return NixPlatformPaths.resolveDataFile('client_prefs_v4.json');
-  }
-
+  final _preferenceStore = NixPreferenceStore();
   Future<void>? _startupPreferences;
-  Future<void> _preferencesWrite = Future<void>.value();
 
-  Future<void> _persistState({bool workspaceChanged = false, bool reportErrors = false}) {
-    final write = _preferencesWrite.then(
-      (_) => _writePreferences(workspaceChanged: workspaceChanged),
-    );
-    _preferencesWrite = write.catchError((Object _) {
-      // Permite nova tentativa nas próximas alterações.
-    });
-    return reportErrors ? write : _preferencesWrite;
-  }
+  Future<void> _persistState(
+      {bool workspaceChanged = false, bool reportErrors = false}) =>
+      _preferenceStore.enqueue(
+        () => _preferenceStore.write(
+          repository: _preferencesRepo,
+          settings: _settings,
+          profile: _userProfile,
+          savedAcervoIds: _savedAcervoIds,
+          spaces: _spaces,
+          folders: _folders,
+          workspaceChanged: workspaceChanged,
+          mayWrite: () => _panicWipe == null,
+        ),
+        reportErrors: reportErrors,
+      );
 
-  Future<void> flushPreferences() => _preferencesWrite;
-
-  static const _personalPreferenceKey = 'personal_preferences_v1';
-  static const _workspacePreferenceKey = 'workspace_layout_v1';
-
-  Future<void> _writePreferences({required bool workspaceChanged}) async {
-    if (_panicWipe != null) return;
-    final repo = _preferencesRepo;
-    if (repo != null) {
-      await repo.setOption(_personalPreferenceKey, {
-        'settings': _settings.toJson(),
-        'avatarPath': _userProfile.customAvatarPath,
-        'avatarCropScale': _userProfile.avatarCropScale,
-        'avatarCropX': _userProfile.avatarCropOffsetX,
-        'avatarCropY': _userProfile.avatarCropOffsetY,
-        'pagerMusic': _userProfile.currentActivity,
-      });
-      if (workspaceChanged) {
-        await repo.setOption(_workspacePreferenceKey, {
-          'spaces': _spaces.where((space) => !space.isDirectMessages)
-              .map((space) => space.toJson()).toList(),
-          'folders': _folders.map((folder) => folder.toJson()).toList(),
-        });
-      }
-    }
-    if (_panicWipe != null) return;
-    try {
-      final path = _prefsFilePath;
-      if (path.isEmpty) return;
-      final file = File(path);
-      await file.parent.create(recursive: true);
-      final data = {
-        'settings': _settings.toBootstrapJson(),
-        'savedAcervoIds': _savedAcervoIds.toList(),
-        'pagerMusic': _userProfile.currentActivity,
-        'culturalItems': _userProfile.culturalItems.map((c) => c.toJson()).toList(),
-      };
-      final pending = File('$path.pending');
-      await pending.writeAsString(jsonEncode(data), flush: true);
-      await pending.rename(file.path);
-    } catch (_) {
-      // Ambiente de testes ou sandbox sem HOME gravável
-    }
-  }
+  Future<void> flushPreferences() => _preferenceStore.flush();
 
   Future<void> loadPersistedState() async {
     try {
-      final path = _prefsFilePath;
-      if (path.isEmpty) return;
-      final file = File(path);
-      if (!await file.exists()) return;
-      final raw = jsonDecode(await file.readAsString());
-      if (raw is Map<String, dynamic>) {
+      final raw = await _preferenceStore.readBootstrap();
+      if (raw != null) {
         if (raw['settings'] is Map<String, dynamic>) {
           _settings = UserSettings.fromJson(raw['settings'] as Map<String, dynamic>);
           NixColors.sync(
@@ -2338,56 +2292,27 @@ class NixState extends ChangeNotifier {
   }
 
   Future<void> _restorePersonalPreferences() async {
-    final raw = await _preferencesRepo?.getOption(_personalPreferenceKey);
-    if (raw is! Map<String, dynamic>) return;
-    if (raw['settings'] case final Map<String, dynamic> options) {
-      _settings = UserSettings.fromJson(options);
-      _calls.restoreMicrophone(_settings.microphoneMuted);
-      NixColors.sync(NixSurfaceScheme.resolve(_settings.themeMode), currentPalette);
+    final restored = await _preferenceStore.readPersonal(_preferencesRepo, _userProfile);
+    if (restored == null) return;
+    if (restored.settings case final settings?) {
+      _settings = settings;
+      _calls.restoreMicrophone(settings.microphoneMuted);
+      NixColors.sync(NixSurfaceScheme.resolve(settings.themeMode), currentPalette);
     }
-    double crop(String field, double fallback, double min, double max) {
-      final value = raw[field];
-      return value is num && value.isFinite ? value.toDouble().clamp(min, max) : fallback;
-    }
-    _userProfile = _userProfile.copyWith(
-      customAvatarPath: raw['avatarPath'] as String?,
-      clearCustomAvatar: raw['avatarPath'] == null,
-      avatarCropScale: crop('avatarCropScale', 1, 1, 2.4),
-      avatarCropOffsetX: crop('avatarCropX', 0, -1, 1),
-      avatarCropOffsetY: crop('avatarCropY', 0, -1, 1),
-      currentActivity: raw['pagerMusic'] as String?,
-    );
+    _userProfile = restored.profile;
   }
 
   Future<void> _restoreWorkspaceLayout() async {
     final repo = _preferencesRepo;
     if (repo == null) return;
     try {
-      // Deixa a migração das pastas antigas para depois da abertura do cofre.
-      var raw = await repo.getOption(_workspacePreferenceKey);
-      if (raw == null && _prefsFilePath.isNotEmpty) {
-        final file = File(_prefsFilePath);
-        if (await file.exists()) {
-          final preferences = jsonDecode(await file.readAsString());
-          if (preferences is Map && preferences['folders'] is List) {
-            raw = {'folders': preferences['folders']};
-          }
-        }
+      final restored = await _preferenceStore.readWorkspace(repo);
+      if (restored.spaces case final spaces? when spaces.isNotEmpty) {
+        _spaces = spaces;
+        _currentSpace = spaces.first;
+        _currentChannel = _currentSpace.channels.first;
       }
-      if (raw is! Map) return;
-      if (raw['spaces'] case final List records) {
-        final spaces = records.whereType<Map<String, dynamic>>()
-            .map(Space.fromJson).where((space) => space.channels.isNotEmpty).toList();
-        if (spaces.isNotEmpty) {
-          _spaces = spaces;
-          _currentSpace = spaces.first;
-          _currentChannel = _currentSpace.channels.first;
-        }
-      }
-      if (raw['folders'] case final List records) {
-        _folders = records.whereType<Map<String, dynamic>>().map(SpaceFolder.fromJson)
-            .where((folder) => folder.id != 'all' && folder.id != 'private').toList();
-      }
+      if (restored.folders case final folders?) _folders = folders;
     } catch (_) {}
   }
 
@@ -5412,7 +5337,7 @@ class NixState extends ChangeNotifier {
   // ChangeNotifier.dispose é síncrono. A limpeza continua sem bloquear a UI;
   // falhas de um serviço não impedem os demais nem deixam o cofre desbloqueado.
   Future<void> _disposeServices() async {
-    await _preferencesWrite;
+    await flushPreferences();
     try {
       _embeddedTor.dispose();
     } catch (_) {
