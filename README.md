@@ -40,7 +40,8 @@ para mudar sua posição ou desative-a para contemplar somente o fundo. Em
 **Editar avatar**, escolha entre moldura circular e quadrada arredondada.
 A música exibida pode ser inserida no editor de perfil. No Android, **Menu
 do Pager → Playlist do Pager** permite adicionar e reproduzir faixas locais
-autorizadas. O passaporte cultural e o acervo ficam abaixo do Pager. **Buscar no catálogo** preenche a ficha da
+autorizadas. A mesma playlist aceita WAV no Windows e no Linux. O passaporte
+cultural e o acervo ficam abaixo do Pager. **Buscar no catálogo** preenche a ficha da
 obra a partir do banco local. A estante mostra discos, livros com lombada e
 páginas, e pôsteres. As capas vêm do pacote quando há uma imagem embutida.
 As referências de capa do catálogo inicial geram ilustrações locais.
