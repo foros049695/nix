@@ -68,6 +68,31 @@ void main() {
   });
 
   group('TorControlClient Protocol', () {
+    test('serializa requisições e omite texto sensível das falhas', () async {
+      final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+      server.listen((socket) async {
+        await for (final line in socket.cast<List<int>>()
+            .transform(utf8.decoder).transform(const LineSplitter())) {
+          if (line.startsWith('AUTHENTICATE')) {
+            socket.write('515 erro fixture-credencial\r\n');
+          } else {
+            final key = line.substring('GETINFO '.length);
+            socket.write('250-$key=$key-value\r\n250 OK\r\n');
+          }
+        }
+        socket.destroy();
+      });
+      final client = await TorControlClient.connect(port: server.port);
+      addTearDown(client.close);
+      await expectLater(client.authenticatePassword('fixture-credencial'),
+        throwsA(isA<StateError>().having((e) => e.message, 'mensagem',
+          allOf(contains('515'), isNot(contains('fixture-credencial'))))));
+      await expectLater(client.authenticatePassword('fixture\ninvalid'), throwsFormatException);
+      expect(await Future.wait([client.getInfo('first'), client.getInfo('second')]),
+        ['first-value', 'second-value']);
+    });
+
     test('authenticates with hex cookie and parses ADD_ONION + GETINFO responses', () async {
       final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
       addTearDown(server.close);

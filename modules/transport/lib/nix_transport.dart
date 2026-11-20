@@ -534,6 +534,7 @@ class TorControlClient {
   Completer<void>? _lineWaiter;
   late final StreamSubscription<Uint8List> _sub;
   bool _closed = false;
+  Future<void> _commandQueue = Future<void>.value();
 
   TorControlClient._(this._socket) {
     _sub = _socket.listen(
@@ -571,13 +572,32 @@ class TorControlClient {
     return TorControlClient._(socket);
   }
 
-  Future<List<String>> _sendCommand(String command, {Duration timeout = const Duration(seconds: 8)}) async {
+  Future<List<String>> _sendCommand(String command) {
+    if (command.contains('\r') || command.contains('\n')) {
+      return Future.error(const FormatException('Comando ControlPort inválido.'));
+    }
+    final request = _commandQueue.then((_) async {
+      if (_closed) {
+        throw const SocketException('Conexão com ControlPort encerrada.');
+      }
+      try {
+        return await _exchangeCommand(command).timeout(const Duration(seconds: 8));
+      } on TimeoutException {
+        // Uma resposta atrasada não pode ser atribuída ao próximo comando.
+        _closed = true;
+        _socket.destroy();
+        throw TimeoutException('ControlPort não respondeu a tempo.');
+      }
+    });
+    _commandQueue = request.then<void>((_) {}, onError: (Object _) {});
+    return request;
+  }
+
+  Future<List<String>> _exchangeCommand(String command) async {
     _socket.write('$command\r\n');
     await _socket.flush();
 
     final lines = <String>[];
-    final deadline = DateTime.now().add(timeout);
-
     while (true) {
       while (_lineBuffer.isNotEmpty) {
         final line = _lineBuffer.removeAt(0);
@@ -585,7 +605,7 @@ class TorControlClient {
         if (line.length >= 4 && line[3] == ' ' && RegExp(r'^\d{3} ').hasMatch(line)) {
           final code = int.parse(line.substring(0, 3));
           if (code >= 400) {
-            throw StateError('Tor ControlPort retornou erro ($code): ${lines.join(' | ')}');
+            throw StateError('Tor ControlPort retornou erro ($code).');
           }
           return lines;
         }
@@ -593,12 +613,8 @@ class TorControlClient {
       if (_closed) {
         throw const SocketException('Conexão com ControlPort encerrada inesperadamente.');
       }
-      final rem = deadline.difference(DateTime.now());
-      if (rem.isNegative) {
-        throw TimeoutException('Timeout aguardando resposta da ControlPort para "$command"');
-      }
       _lineWaiter ??= Completer<void>();
-      await _lineWaiter!.future.timeout(rem);
+      await _lineWaiter!.future;
     }
   }
 
@@ -654,7 +670,7 @@ class TorControlClient {
       }
     }
     if (serviceId == null || serviceId.isEmpty) {
-      throw StateError('ADD_ONION não retornou ServiceID: ${lines.join(' | ')}');
+      throw StateError('ADD_ONION não retornou ServiceID.');
     }
     return (serviceId: serviceId, privateKey: privKey);
   }
@@ -668,6 +684,9 @@ class TorControlClient {
   }
 
   Future<void> close() async {
+    _closed = true;
+    _lineWaiter?.complete();
+    _lineWaiter = null;
     await _sub.cancel();
     await _socket.close();
   }
