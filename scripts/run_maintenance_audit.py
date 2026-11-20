@@ -12,6 +12,7 @@ import sys
 import json
 import time
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 import urllib.request
 
@@ -94,7 +95,7 @@ def run_audit():
     results = []
     
     # 1. Privacy Matrix
-    ok, out, dur = run_cmd("chmod +x scripts/verify_privacy_matrix.sh && ./scripts/verify_privacy_matrix.sh")
+    ok, out, dur = run_cmd("./scripts/verify_privacy_matrix.sh")
     results.append({
         "component": "Privacy Matrix Gate (scripts/verify_privacy_matrix.sh)",
         "success": ok,
@@ -103,15 +104,11 @@ def run_audit():
     })
 
     # 2. nix_relay (Go)
-    go_bin = "/home/gus/development/go/bin"
-    go_path = f"{go_bin}:{os.environ.get('PATH', '')}" if os.path.exists(go_bin) else os.environ.get('PATH', '')
-    import shutil
-    has_go = shutil.which("go", path=go_path) is not None
+    has_go, _, _ = run_cmd("go version 2>/dev/null | grep -q '^go version go'")
     if has_go:
         ok, out, dur = run_cmd(
             "go vet ./... && go test -race ./...",
             cwd=os.path.join(REPO_ROOT, "services", "nix_relay"),
-            env_extra={"PATH": go_path}
         )
         results.append({
             "component": "Nix Relay (services/nix_relay: go vet & test -race)",
@@ -122,18 +119,15 @@ def run_audit():
     else:
         results.append({
             "component": "Nix Relay (services/nix_relay: go vet & test -race)",
-            "success": True,
+            "success": False,
             "duration": "0.00s",
-            "detail": "Ambiente sem Go local (validado via pipeline CI do GitHub Actions com Ubuntu-latest)."
+            "detail": "Toolchain Go indisponível no PATH desta execução."
         })
 
     # 3. core_crypto (Dart)
-    flutter_bin = "/home/gus/development/flutter/bin"
-    flutter_path = f"{flutter_bin}:{go_path}" if os.path.exists(flutter_bin) else go_path
     ok, out, dur = run_cmd(
         "dart analyze && dart test",
         cwd=os.path.join(REPO_ROOT, "modules", "core_crypto"),
-        env_extra={"PATH": flutter_path}
     )
     results.append({
         "component": "Core Crypto (modules/core_crypto: dart analyze & test)",
@@ -144,9 +138,8 @@ def run_audit():
 
     # 4. transport (Dart)
     ok, out, dur = run_cmd(
-        "dart analyze && dart test",
+        "dart analyze && unshare --user --map-root-user --net sh -c 'ip link set lo up && dart test'",
         cwd=os.path.join(REPO_ROOT, "modules", "transport"),
-        env_extra={"PATH": flutter_path}
     )
     results.append({
         "component": "Transport (modules/transport: dart analyze & test)",
@@ -155,12 +148,19 @@ def run_audit():
         "detail": "HTTPS sobre SOCKS5 (Issue #11), isolamento Tor e frames NIXB aprovados." if ok else out.strip()
     })
 
-    # 5. nix_client (Flutter)
-    ok, out, dur = run_cmd(
-        "flutter analyze --no-fatal-infos && flutter test",
-        cwd=os.path.join(REPO_ROOT, "apps", "nix_client"),
-        env_extra={"PATH": flutter_path}
-    )
+    # 5. nix_client (Flutter). O apagamento da conta faz parte desta suíte.
+    with tempfile.TemporaryDirectory(prefix="nix-audit-home-") as test_home:
+        ok, out, dur = run_cmd(
+            "flutter analyze --no-fatal-infos && flutter test",
+            cwd=os.path.join(REPO_ROOT, "apps", "nix_client"),
+            env_extra={
+                "HOME": test_home,
+                "XDG_DATA_HOME": os.path.join(test_home, "data"),
+                "XDG_CONFIG_HOME": os.path.join(test_home, "config"),
+                "XDG_CACHE_HOME": os.path.join(test_home, "cache"),
+                "PUB_CACHE": os.environ.get("PUB_CACHE") or os.path.expanduser("~/.pub-cache"),
+            },
+        )
     results.append({
         "component": "Client Flutter (apps/nix_client: analyze & test)",
         "success": ok,
