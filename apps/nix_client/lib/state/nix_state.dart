@@ -41,6 +41,7 @@ import '../core/archive/nix_archive_service.dart';
 import '../core/replication/replication_coordinator.dart';
 import '../core/media/media_catalog_service.dart';
 import '../core/media/pager_playlist.dart';
+import '../core/media/voice_note.dart';
 import '../core/media/catalog_database.dart';
 import '../core/media/media_index_updater.dart';
 import '../features/calls/call_view_model.dart';
@@ -1134,7 +1135,12 @@ class NixState extends ChangeNotifier {
     _scheduledWakeup?.cancel();
     _scheduledWakeup = null;
     await _scheduledRun;
+    await _voiceSend;
     if (Platform.isAndroid) {
+      try {
+        await const MethodChannel('com.projetonix.nix/voice_notes')
+            .invokeMethod<void>('cancel');
+      } catch (_) {}
       try {
         await const MethodChannel('com.projetonix.nix/pager_audio')
             .invokeMethod<void>('wipe');
@@ -3418,6 +3424,70 @@ class NixState extends ChangeNotifier {
     }
   }
 
+  Future<void>? _voiceSend;
+
+  bool canSendVoiceNote(String conversationId) =>
+      canScheduleDirectMessages && !_isStrictOffGridMode &&
+      _selectedDm?.id == conversationId && _selectedDm?.hasActiveSession == true &&
+      _selectedDm?.isSavedMessages == false &&
+      _editingMessage == null && _replyingToMessage == null;
+
+  Future<VoiceNote?> readMessageVoiceNote(Message message, int index) async {
+    if (_disposed || _panicWipe != null) return null;
+    try {
+      final note = await _sovereignMessenger?.readVoiceNote(message.id, index);
+      if (note != null && (_disposed || _panicWipe != null)) {
+        note.pcm.fillRange(0, note.pcm.length, 0);
+        return null;
+      }
+      return note;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> sendVoiceNote(String conversationId, VoiceNote note) async {
+    final messenger = _sovereignMessenger;
+    bool allowed() => identical(messenger, _sovereignMessenger) &&
+        canSendVoiceNote(conversationId);
+    if (_voiceSend != null || messenger == null || !allowed()) {
+      throw StateError('Abra uma conversa direta com sessão cifrada para enviar áudio.');
+    }
+    final relay = _relayForMessaging;
+    final send = () async {
+      await messenger.enqueueVoiceNote(
+        conversationId: conversationId,
+        senderMailbox: localRelayMailboxId,
+        note: note,
+        ephemeralTtlSeconds: _selectedEphemeralTimer,
+        mayEnqueue: allowed,
+      );
+      try {
+        bool maySend() => allowed() && securityGate.isTorAnonymityReady;
+        if (relay != null && relay.policy.mode == TransportMode.torFailClosed &&
+            TransportPolicy.isValidOnionV3Host(relay.baseUri.host) && maySend()) {
+          final quota = _activeMailboxCredentials?.writeQuotaToken;
+          await messenger.flushOutbox(
+            relayClient: relay, quotaToken: quota?.isNotEmpty == true ? quota : null,
+            maySend: maySend,
+          );
+        }
+        if (!_disposed && _panicWipe == null) {
+          await _refreshDirectThreadsFromDatabase();
+        }
+      } catch (_) {
+        // O envelope já gravado continua disponível para sincronização.
+      }
+      if (!_disposed && _panicWipe == null) notifyListeners();
+    }();
+    _voiceSend = send.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    try {
+      await send;
+    } finally {
+      _voiceSend = null;
+    }
+  }
+
   static String _inferAttachmentMimeType(String path) {
     final lower = path.toLowerCase();
     if (lower.endsWith('.png')) return 'image/png';
@@ -5666,6 +5736,7 @@ class NixState extends ChangeNotifier {
       // Continua o fechamento do banco mesmo se a malha falhar.
     }
     await _scheduledRun;
+    await _voiceSend;
     try {
       await _localDatabase?.close();
     } catch (_) {

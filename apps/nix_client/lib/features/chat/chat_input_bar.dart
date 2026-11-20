@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'voice_note_dialog.dart';
+import 'chat_inline_format.dart';
 import 'emoji_catalog.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -213,6 +216,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
+    final voiceConversation = widget.scheduledConversationId;
+    final canRecordVoice = defaultTargetPlatform == TargetPlatform.android &&
+        voiceConversation != null && nixState.canSendVoiceNote(voiceConversation);
+
     final ephemeralTimer = nixState.selectedEphemeralTimer;
     final enterToSend = nixState.settings.enterToSend;
     final editing = nixState.editingMessage;
@@ -446,6 +453,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     },
                     child: TextField(
                       key: const Key('chat_message_input'),
+                      contextMenuBuilder: buildChatFormatMenu,
                       controller: _controller,
                       focusNode: _focusNode,
                       minLines: 1,
@@ -487,21 +495,25 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                if (!compact) ...[
+                if (!compact || canRecordVoice) ...[
                   SizedBox(
                     width: 36,
                     height: 36,
                     child: IconButton(
                       key: const Key('voice_record_button'),
                       padding: EdgeInsets.zero,
-                      icon: Icon(Icons.mic_none_rounded,
-                          color: NixColors.textSecondary, size: 20),
-                      tooltip: 'Gravar Mensagem de Voz Cifrada',
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text(
-                                  'Nota de voz pronta para gravação E2EE.')),
+                      icon: const Icon(Icons.mic_none_rounded, size: 20),
+                      tooltip: canRecordVoice
+                          ? 'Gravar mensagem de voz'
+                          : 'Voz disponível em conversas diretas cifradas no Android',
+                      onPressed: !canRecordVoice ? null : () {
+                        _focusNode.unfocus();
+                        showDialog<void>(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (_) => VoiceNoteDialog.record(
+                            onSend: (note) => nixState.sendVoiceNote(voiceConversation, note),
+                          ),
                         );
                       },
                     ),

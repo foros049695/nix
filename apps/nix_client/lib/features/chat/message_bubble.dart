@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'conversation_surface.dart';
 import 'message_attachment_tile.dart';
+import 'chat_inline_format.dart';
 import 'reaction_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -363,14 +364,15 @@ class MessageBubble extends StatelessWidget {
                               ),
                             ),
                           ),
-                        Text(
-                          message.text,
-                          style: TextStyle(
-                            color: NixColors.textPrimary,
-                            fontSize: 13.8 * settings.fontScale,
-                            height: 1.38,
+                        if (message.text.isNotEmpty)
+                          ChatInlineText(
+                            message.text,
+                            style: TextStyle(
+                              color: NixColors.textPrimary,
+                              fontSize: 13.8 * settings.fontScale,
+                              height: 1.38,
+                            ),
                           ),
-                        ),
                         if (message.attachments.isNotEmpty) ...[
                           const SizedBox(height: 6),
                           Wrap(

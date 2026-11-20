@@ -758,7 +758,18 @@ void main() {
         epoch: 1,
         text: 'Briefing epoca 1',
       );
+      await expectLater(
+        bobMessenger.acceptGroupSenderKeyDistribution(
+          groupId: groupId,
+          expectedEpoch: 1,
+          senderPublicId: aliceId.publicId,
+          recipientIdentity: bobId,
+          distributionEnvelope: ep1.keyDistributionEnvelopes[bobId.publicId]!,
+        ),
+        throwsStateError,
+      );
       expect(await bobMessenger.decryptGroupMessage(grpMsg1), 'Briefing epoca 1');
+      await expectLater(bobMessenger.decryptGroupMessage(grpMsg1), throwsStateError);
       expect(await carolMessenger.decryptGroupMessage(grpMsg1), 'Briefing epoca 1');
 
       // Remove Carol e rotaciona para Época 2

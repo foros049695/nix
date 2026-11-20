@@ -1,6 +1,9 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
+import '../../core/media/voice_note.dart';
+import 'voice_note_dialog.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/models/message.dart';
@@ -52,6 +55,22 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
   @override
   Widget build(BuildContext context) {
     final scheme = context.nixScheme;
+    if (_name == VoiceNote.fileName && defaultTargetPlatform == TargetPlatform.android) {
+      final state = context.read<NixState>();
+      final message = widget.message;
+      final index = widget.index;
+      return OutlinedButton.icon(
+        icon: const Icon(Icons.play_arrow),
+        label: const Text('Mensagem de voz'),
+        onPressed: () => showDialog<void>(
+          context: context,
+          builder: (_) => VoiceNoteDialog.listen(
+            load: () => state.readMessageVoiceNote(message, index),
+          ),
+        ),
+      );
+    }
+
     return FutureBuilder<Uint8List?>(
       future: _imageBytes,
       builder: (context, snapshot) {

@@ -1,3 +1,4 @@
+import '../chat/chat_inline_format.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/channel.dart';
@@ -313,6 +314,7 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                 const SizedBox(height: 6),
                 TextField(
                   onChanged: (value) => description = value,
+                  contextMenuBuilder: buildChatFormatMenu,
                   maxLines: 3,
                   decoration: const InputDecoration(
                     hintText: 'Inclua peso, dimensões, hash ou observações...',
@@ -664,7 +666,7 @@ class _SplitThreadPanel extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 10),
-                Text(
+                ChatInlineText(
                   post.description,
                   style: TextStyle(
                     color: NixColors.textSecondary,

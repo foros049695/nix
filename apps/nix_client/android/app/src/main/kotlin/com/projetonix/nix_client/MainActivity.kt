@@ -46,6 +46,7 @@ class MainActivity : FlutterActivity() {
     private var attachmentExtensions: Set<String> = emptySet()
 
     private val audioDiagnostic by lazy { NixAudioDiagnostic(this) }
+    private val voiceNotes by lazy { NixVoiceNotes(this) }
     private val pagerAudio by lazy { NixPagerAudio(this) }
     private var bleController: NixBleMeshController? = null
     private var rnodeController: NixRNodeRadioController? = null
@@ -56,6 +57,9 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(messenger, "com.projetonix.nix/audio_diagnostic")
             .setMethodCallHandler(audioDiagnostic::handle)
+
+        MethodChannel(messenger, "com.projetonix.nix/voice_notes")
+            .setMethodCallHandler(voiceNotes::handle)
 
         MethodChannel(messenger, "com.projetonix.nix/pager_audio")
             .setMethodCallHandler(pagerAudio::handle)
@@ -201,6 +205,7 @@ class MainActivity : FlutterActivity() {
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
+        if (voiceNotes.onPermissionResult(requestCode, grantResults)) return
         if (audioDiagnostic.onPermissionResult(requestCode, grantResults)) return
         if (bleController?.onRequestPermissionsResult(requestCode, grantResults) == true) {
             return
@@ -343,6 +348,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onStop() {
         audioDiagnostic.stop()
+        voiceNotes.stopAll()
         pagerAudio.stop()
         super.onStop()
     }

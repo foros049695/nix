@@ -8,6 +8,7 @@ import 'package:nix_transport/nix_transport.dart';
 import '../database/local_database.dart';
 import '../database/repositories.dart';
 import '../security/local_image_helper.dart';
+import '../media/voice_note.dart';
 import 'scheduled_messages.dart';
 
 /// Resultado da importação out-of-band (QR/JSON) de um Card ID soberano.
@@ -692,14 +693,34 @@ class SovereignMessenger {
   }
 
   Future<Uint8List?> readImageAttachment(String messageId, int index) async {
+    final bytes = await _readAttachment(messageId, index,
+      accepts: (name, _) => LocalImageHelper.isSupportedExtension(name),
+      maxSize: 20 * 1024 * 1024,
+    );
+    return bytes == null ? null : LocalImageHelper.stripMetadataBytes(bytes);
+  }
+
+  Future<VoiceNote?> readVoiceNote(String messageId, int index) async {
+    final bytes = await _readAttachment(messageId, index,
+      accepts: (name, mime) => name == VoiceNote.fileName && mime == VoiceNote.mimeType,
+      maxSize: VoiceNote.wavHeaderBytes + VoiceNote.maximumPcmBytes,
+    );
+    return bytes == null ? null : VoiceNote.fromWav(bytes);
+  }
+
+  Future<Uint8List?> _readAttachment(String messageId, int index, {
+    required bool Function(String name, String? mime) accepts,
+    required int maxSize,
+  }) async {
     final attachments = await objectChunkRepo.getAttachmentsForMessage(messageId);
     if (index < 0 || index >= attachments.length) return null;
     final row = attachments[index];
     final name = row['file_name'] as String?;
     final size = row['byte_size'] as int?;
     final path = row['encrypted_path'] as String?;
-    if (name == null || !LocalImageHelper.isSupportedExtension(name) ||
-        size == null || size > 20 * 1024 * 1024 || path == null || !path.endsWith('.manifest')) return null;
+    if (name == null || !accepts(name, row['mime_type'] as String?) ||
+        size == null || size < 0 || size > maxSize ||
+        path == null || !path.endsWith('.manifest')) return null;
     final root = await Directory('$storageRootDir/objects').resolveSymbolicLinks();
     final file = File(path);
     if (!await file.exists()) return null;
@@ -717,9 +738,10 @@ class SovereignMessenger {
       aad: utf8.encode('attachment-manifest:${file.uri.pathSegments.last}'),
     );
     final manifest = AttachmentManifest.fromJson(jsonDecode(utf8.decode(clear)) as Map<String, dynamic>);
-    if (manifest.objectId != row['object_id'] || manifest.byteSize != size) return null;
-    final image = await decryptAndReassembleAttachment(manifest);
-    return LocalImageHelper.stripMetadataBytes(image);
+    if (manifest.objectId != row['object_id'] || manifest.byteSize != size ||
+        !accepts(manifest.fileName, manifest.mimeType)) return null;
+    final bytes = await decryptAndReassembleAttachment(manifest);
+    return bytes.length == size ? bytes : null;
   }
 
   /// Verifica integridade de todos os chunks + SHA-256 global e remonta os bytes originais.
@@ -773,7 +795,7 @@ class SovereignMessenger {
     required MessageRecurrence recurrence,
     required DateTime now,
   }) => _withRatchet(() async {
-    if (await _scheduledDestination(conversationId) == null) {
+    if (await _directDestination(conversationId) == null) {
       throw StateError('A conversa precisa de uma sessão cifrada válida.');
     }
     return _scheduled.add(
@@ -785,7 +807,7 @@ class SovereignMessenger {
     );
   });
 
-  Future<String?> _scheduledDestination(String conversationId) async {
+  Future<String?> _directDestination(String conversationId) async {
     final session = await getSessionMetadata(conversationId);
     final peer = session?['peerPublicId'] as String?;
     if (peer == null || peer.isEmpty ||
@@ -795,6 +817,59 @@ class SovereignMessenger {
     return (session?['peerMailbox'] as String?) ??
         deriveMailboxCredentials(peer).mailboxId;
   }
+
+  Future<void> enqueueVoiceNote({
+    required String conversationId,
+    required String senderMailbox,
+    required VoiceNote note,
+    required bool Function() mayEnqueue,
+    int? ephemeralTtlSeconds,
+  }) => _withRatchet(() async {
+    final destination = await _directDestination(conversationId);
+    if (destination == null || !mayEnqueue()) {
+      throw StateError('A conversa precisa de uma sessão cifrada válida.');
+    }
+    final wav = note.toWav();
+    try {
+      final manifest = await prepareEncryptedAttachment(
+        fileName: VoiceNote.fileName,
+        mimeType: VoiceNote.mimeType,
+        rawBytes: wav,
+        isCancelled: () => !mayEnqueue(),
+      );
+      try {
+        if (!mayEnqueue()) throw StateError('Envio de áudio cancelado.');
+        await _enqueueDirectMessage(
+          conversationId: conversationId,
+          destinationMailbox: destination,
+          senderMailbox: senderMailbox,
+          text: '',
+          ephemeralTtlSeconds: ephemeralTtlSeconds,
+          attachments: [manifest],
+          onFaultStage: null,
+          mayEnqueue: mayEnqueue,
+        );
+      } catch (_) {
+        final objectId = manifest.objectId;
+        final base = '$storageRootDir/objects/$objectId';
+        try {
+          await database.rawDatabase.transaction((txn) async {
+            await txn.delete('object_chunks', where: 'object_id = ?', whereArgs: [objectId]);
+            await txn.delete('objects', where: 'id = ?', whereArgs: [objectId]);
+          });
+          await cleanupTemporaryStagingFiles([
+            '$base.manifest',
+            for (var index = 0; index < manifest.chunkHashesHex.length; index++) '$base.$index.chk',
+          ]);
+        } catch (_) {
+          // A limpeza do cofre também remove arquivos cifrados órfãos.
+        }
+        rethrow;
+      }
+    } finally {
+      wav.fillRange(0, wav.length, 0);
+    }
+  });
 
   Future<int> enqueueDueScheduledMessages({
     required DateTime now,
@@ -807,7 +882,7 @@ class SovereignMessenger {
     for (final entry in pending) {
       if (entry.dueAt.isAfter(now) || mayEnqueue?.call() == false) break;
       final enqueued = await _withRatchet(() async {
-        final destination = await _scheduledDestination(entry.conversationId);
+        final destination = await _directDestination(entry.conversationId);
         if (destination == null || mayEnqueue?.call() == false) return false;
         try {
           await _enqueueDirectMessage(
@@ -860,6 +935,7 @@ class SovereignMessenger {
     required List<AttachmentManifest> attachments,
     required void Function(MessagingFaultStage stage)? onFaultStage,
     ({ScheduledMessage entry, DateTime now})? scheduled,
+    bool Function()? mayEnqueue,
   }) async {
     final loaded = await _loadEncryptedSession(conversationId);
     if (loaded == null) {
@@ -935,6 +1011,7 @@ class SovereignMessenger {
 
     // Transação atômica: ou grava sessão + mensagem + anexos + outbox juntos, ou faz rollback completo!
     await database.rawDatabase.transaction((txn) async {
+      if (mayEnqueue?.call() == false) throw StateError('Envio cancelado.');
       if (scheduled != null) {
         await ScheduledMessages.markEnqueued(txn, scheduled.entry, scheduled.now);
       }
@@ -1556,8 +1633,12 @@ class SovereignMessenger {
     required List<({String publicId, SimplePublicKey x25519PublicKey})>
         activeMembers,
     String? removeMemberPublicId,
-  }) async {
+  }) => _withRatchet(() async {
     final existing = await conversationRepo.getConversation(groupId);
+    if (existing != null && (existing['kind'] != 'group' ||
+        existing['owner_identity_id'] != identity.publicId)) {
+      throw StateError('Só o proprietário pode rotacionar a época do grupo.');
+    }
     final newEpoch = existing == null ? 1 : ((existing['epoch'] as int) + 1);
 
     if (existing == null) {
@@ -1603,6 +1684,7 @@ class SovereignMessenger {
       epoch: newEpoch,
       chainKey: senderKey,
       messageNo: 0,
+      authorHex: identity.ed25519PublicHex,
     );
 
     // Embrulha a nova Sender Key com ECDH efêmero X25519 individualmente apenas para membros restantes
@@ -1624,16 +1706,22 @@ class SovereignMessenger {
         })),
         aad: utf8.encode('nix-group-sk:$groupId:$newEpoch'),
       );
-      distribution[member.publicId] = Uint8List.fromList(
-        utf8.encode(jsonEncode({
-          'ephemHex': _toHex(ephemPub.bytes),
-          'sealedB64': base64Encode(sealed.encode()),
-        })),
-      );
+      final ephemHex = _toHex(ephemPub.bytes);
+      final sealedB64 = base64Encode(sealed.encode());
+      final signature = await identity.sign(_groupSignatureData('key', [
+        groupId, newEpoch, identity.publicId, member.publicId, ephemHex, sealedB64,
+      ]));
+      distribution[member.publicId] = Uint8List.fromList(utf8.encode(jsonEncode({
+        'ephemHex': ephemHex,
+        'sealedB64': sealedB64,
+        'edHex': identity.ed25519PublicHex,
+        'xHex': identity.x25519PublicHex,
+        'signature': base64Encode(signature),
+      })));
     }
 
     return (epoch: newEpoch, keyDistributionEnvelopes: distribution);
-  }
+  });
 
   /// Recebe e instala localmente a Sender Key de um remetente para o epoch específico.
   Future<void> acceptGroupSenderKeyDistribution({
@@ -1642,11 +1730,43 @@ class SovereignMessenger {
     required String senderPublicId,
     required NixIdentity recipientIdentity,
     required Uint8List distributionEnvelope,
-  }) async {
+  }) => _withRatchet(() async {
+    if (distributionEnvelope.length > 4096 || expectedEpoch < 1 ||
+        recipientIdentity.publicId != identity.publicId) {
+      throw const FormatException('Distribuição de grupo inválida.');
+    }
     final map =
         jsonDecode(utf8.decode(distributionEnvelope)) as Map<String, dynamic>;
+    final edHex = map['edHex'] as String;
+    final xHex = map['xHex'] as String;
+    final ephemHex = map['ephemHex'] as String;
+    final sealedB64 = map['sealedB64'] as String;
+    final ed = _fromHex(edHex);
+    final x = _fromHex(xHex);
+    final signature = base64Decode(map['signature'] as String);
+    if (ed.length != 32 || x.length != 32 || signature.length != 64) {
+      throw const FormatException('Identidade de grupo inválida.');
+    }
+    final fingerprint = _toHex(std_crypto.sha256.convert([...ed, ...x])
+        .bytes.take(8).toList()).toUpperCase();
+    final derivedId = 'NIX-${fingerprint.substring(0, 4)}-${fingerprint.substring(4, 8)}'
+        '-${fingerprint.substring(8, 12)}-${fingerprint.substring(12, 16)}';
+    if (derivedId != senderPublicId || !await NixIdentity.verify(
+      message: _groupSignatureData('key', [
+        groupId, expectedEpoch, senderPublicId, identity.publicId, ephemHex, sealedB64,
+      ]),
+      signatureBytes: signature,
+      ed25519PublicKey: SimplePublicKey(ed, type: KeyPairType.ed25519),
+    )) {
+      throw StateError('Assinatura inválida na distribuição de grupo.');
+    }
+    if (await _loadGroupSenderKey(
+      groupId: groupId, senderPublicId: senderPublicId, epoch: expectedEpoch,
+    ) != null) {
+      throw StateError('A Sender Key desta época já foi instalada.');
+    }
     final ephemPub = SimplePublicKey(
-      _fromHex(map['ephemHex'] as String),
+      _fromHex(ephemHex),
       type: KeyPairType.x25519,
     );
     final shared = await _x25519.sharedSecretKey(
@@ -1655,19 +1775,27 @@ class SovereignMessenger {
     );
     final clear = await SealedEnvelope.open(
       key: shared,
-      payload: SealedPayload.decode(base64Decode(map['sealedB64'] as String)),
+      payload: SealedPayload.decode(base64Decode(sealedB64)),
       aad: utf8.encode('nix-group-sk:$groupId:$expectedEpoch'),
     );
     final payload = jsonDecode(utf8.decode(clear)) as Map<String, dynamic>;
     final chainKey = base64Decode(payload['chainKeyB64'] as String);
+    if (payload['groupId'] != groupId || payload['epoch'] != expectedEpoch ||
+        payload['sender'] != senderPublicId || chainKey.length != 32) {
+      throw const FormatException('A Sender Key não corresponde à distribuição.');
+    }
     await _saveGroupSenderKey(
       groupId: groupId,
       senderPublicId: senderPublicId,
       epoch: expectedEpoch,
       chainKey: Uint8List.fromList(chainKey),
       messageNo: 0,
+      authorHex: edHex,
     );
-  }
+  });
+
+  static List<int> _groupSignatureData(String kind, List<Object> data) =>
+      utf8.encode(jsonEncode(['nix-group-v2', kind, ...data]));
 
   Future<void> _saveGroupSenderKey({
     required String groupId,
@@ -1675,6 +1803,7 @@ class SovereignMessenger {
     required int epoch,
     required Uint8List chainKey,
     required int messageNo,
+    required String authorHex,
   }) async {
     final wrapKey = await _deriveSessionWrapKey();
     final id = 'grp:${groupId}_ep${epoch}_$senderPublicId';
@@ -1683,6 +1812,7 @@ class SovereignMessenger {
       plaintext: utf8.encode(jsonEncode({
         'chainKeyB64': base64Encode(chainKey),
         'msgNo': messageNo,
+        'authorHex': authorHex,
       })),
       aad: utf8.encode(id),
     );
@@ -1694,7 +1824,7 @@ class SovereignMessenger {
     );
   }
 
-  Future<(Uint8List, int)?> _loadGroupSenderKey({
+  Future<(Uint8List, int, String?)?> _loadGroupSenderKey({
     required String groupId,
     required String senderPublicId,
     required int epoch,
@@ -1711,14 +1841,18 @@ class SovereignMessenger {
       aad: utf8.encode(id),
     );
     final map = jsonDecode(utf8.decode(clear)) as Map<String, dynamic>;
-    return (base64Decode(map['chainKeyB64'] as String), map['msgNo'] as int);
+    return (base64Decode(map['chainKeyB64'] as String), map['msgNo'] as int,
+        map['authorHex'] as String?);
   }
 
   Future<Uint8List> encryptGroupMessage({
     required String groupId,
     required int epoch,
     required String text,
-  }) async {
+  }) => _withRatchet(() async {
+    if (utf8.encode(text).length > 16000) {
+      throw const FormatException('A mensagem de grupo deve ter até 16 KB.');
+    }
     final loaded = await _loadGroupSenderKey(
       groupId: groupId,
       senderPublicId: identity.publicId,
@@ -1734,29 +1868,39 @@ class SovereignMessenger {
     final nextChainMac =
         await _hmacSha256.calculateMac([0x02], secretKey: SecretKey(chainKey));
 
+    final sealed = await SealedEnvelope.seal(
+      key: SecretKey(msgKeyMac.bytes),
+      plaintext: utf8.encode(text),
+      aad: utf8.encode('nix-grp-msg:$groupId:$epoch:$msgNo'),
+    );
+    final sealedB64 = base64Encode(sealed.encode());
+    final signature = await identity.sign(_groupSignatureData('message', [
+      groupId, epoch, identity.publicId, msgNo, sealedB64,
+    ]));
     await _saveGroupSenderKey(
       groupId: groupId,
       senderPublicId: identity.publicId,
       epoch: epoch,
       chainKey: Uint8List.fromList(nextChainMac.bytes),
       messageNo: msgNo + 1,
+      authorHex: identity.ed25519PublicHex,
     );
 
-    final sealed = await SealedEnvelope.seal(
-      key: SecretKey(msgKeyMac.bytes),
-      plaintext: utf8.encode(text),
-      aad: utf8.encode('nix-grp-msg:$groupId:$epoch:$msgNo'),
-    );
     return Uint8List.fromList(utf8.encode(jsonEncode({
       'groupId': groupId,
       'epoch': epoch,
       'sender': identity.publicId,
       'msgNo': msgNo,
-      'sealedB64': base64Encode(sealed.encode()),
+      'sealedB64': sealedB64,
+      'signature': base64Encode(signature),
     })));
-  }
+  });
 
-  Future<String> decryptGroupMessage(Uint8List groupEnvelopeBytes) async {
+  Future<String> decryptGroupMessage(Uint8List groupEnvelopeBytes) =>
+      _withRatchet(() async {
+    if (groupEnvelopeBytes.length > 32000) {
+      throw const FormatException('Envelope de grupo muito grande.');
+    }
     final map =
         jsonDecode(utf8.decode(groupEnvelopeBytes)) as Map<String, dynamic>;
     final groupId = map['groupId'] as String;
@@ -1773,8 +1917,21 @@ class SovereignMessenger {
         'Sem autorização criptográfica (Sender Key ausente para época $epoch).',
       );
     }
+    final author = loaded.$3;
+    final sealedB64 = map['sealedB64'] as String;
+    final rawSignature = map['signature'];
+    if (author == null || rawSignature is! String || !await NixIdentity.verify(
+      message: _groupSignatureData('message', [groupId, epoch, senderId, targetNo, sealedB64]),
+      signatureBytes: base64Decode(rawSignature),
+      ed25519PublicKey: SimplePublicKey(_fromHex(author), type: KeyPairType.ed25519),
+    )) {
+      throw StateError('Assinatura inválida na mensagem de grupo.');
+    }
     var chainKey = loaded.$1;
     var currentNo = loaded.$2;
+    if (targetNo - currentNo > 256) {
+      throw StateError('Índice de mensagem de grupo fora da janela.');
+    }
     if (targetNo < currentNo) {
       throw StateError('Mensagem de grupo duplicada ou com índice retroativo.');
     }
@@ -1791,19 +1948,21 @@ class SovereignMessenger {
 
     final clear = await SealedEnvelope.open(
       key: SecretKey(msgKeyMac.bytes),
-      payload: SealedPayload.decode(base64Decode(map['sealedB64'] as String)),
+      payload: SealedPayload.decode(base64Decode(sealedB64)),
       aad: utf8.encode('nix-grp-msg:$groupId:$epoch:$targetNo'),
     );
 
+    final text = utf8.decode(clear);
     await _saveGroupSenderKey(
       groupId: groupId,
       senderPublicId: senderId,
       epoch: epoch,
       chainKey: Uint8List.fromList(nextChainMac.bytes),
       messageNo: targetNo + 1,
+      authorHex: author,
     );
-    return utf8.decode(clear);
-  }
+    return text;
+  });
 
   static String _toHex(List<int> bytes) {
     final buf = StringBuffer();

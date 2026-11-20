@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_client/core/database/local_database.dart';
+import 'package:nix_client/core/media/voice_note.dart';
 import 'package:nix_client/core/messaging/sovereign_messenger.dart';
 import 'package:nix_client/core/messaging/scheduled_messages.dart';
 import 'package:nix_client/core/models/direct_message.dart';
@@ -323,6 +324,34 @@ void main() {
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);
       }
+    });
+
+    test('Nota de voz no limite chega cifrada e cabe no envelope PostgreSQL', () async {
+      final pcm = Uint8List(VoiceNote.maximumPcmBytes);
+      pcm.setRange(2, 6, [3, 40, 95, 60]);
+      final voice = VoiceNote.fromPcm(pcm);
+      Future<void> enqueue(bool allowed) => aliceMessenger.enqueueVoiceNote(
+        conversationId: 'conv_fault_test',
+        senderMailbox: aliceMailbox.mailboxId,
+        note: voice,
+        mayEnqueue: () => allowed,
+      );
+      await expectLater(enqueue(false), throwsStateError);
+      expect(await aliceMessenger.outboxRepo.getPendingEnvelopes(), isEmpty);
+      await enqueue(true);
+      final wire = (await aliceMessenger.outboxRepo.getPendingEnvelopes()).single;
+      expect((wire['ciphertext'] as List<int>).length, lessThan(1024 * 1024));
+      expect((await aliceMessenger.flushOutbox(relayClient: relayClient)).accepted, 1);
+      final inbox = await bobMessenger.pollAndCommitInbox(
+        creds: bobMailbox, relayClient: relayClient,
+      );
+      expect(inbox.errors, isEmpty);
+      final message = inbox.committed.single;
+      expect(message.text, isEmpty);
+      expect(message.attachments.single.mimeType, VoiceNote.mimeType);
+      final recovered = await bobMessenger.readVoiceNote(message.messageId, 0);
+      expect(recovered!.durationMs, 12000);
+      expect(recovered.pcm, orderedEquals(pcm));
     });
 
     test('Agendamento sobrevive a rollback e é enfileirado e entregue uma vez', () async {
