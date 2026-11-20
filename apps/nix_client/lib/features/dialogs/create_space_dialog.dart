@@ -14,6 +14,7 @@ class CreateSpaceDialog extends StatefulWidget {
 
 class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
   String? _imagePath;
+  bool _withTopics = false;
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
   String _selectedEmoji = 'i:shield';
@@ -38,6 +39,16 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              DropdownButtonFormField<bool>(
+                value: _withTopics,
+                decoration: const InputDecoration(labelText: 'Formato do grupo'),
+                items: const [
+                  DropdownMenuItem(value: false, child: Text('Grupo convencional')),
+                  DropdownMenuItem(value: true, child: Text('Grupo com tópicos')),
+                ],
+                onChanged: (value) => setState(() => _withTopics = value ?? false),
+              ),
+              const SizedBox(height: 12),
               Text(
                 'ÍCONE DO ESPAÇO',
                 style: TextStyle(
@@ -108,6 +119,7 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
             if (_nameController.text.trim().isNotEmpty) {
               nixState.createSpace(
                 customImagePath: _imagePath,
+                withTopics: _withTopics,
                 name: _nameController.text.trim(),
                 description: _descController.text.trim(),
                 emoji: _selectedEmoji,

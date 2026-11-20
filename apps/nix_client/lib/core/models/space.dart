@@ -71,6 +71,10 @@ class Space {
   final String initials;
   final String description;
   final bool isDirectMessages;
+  final bool usesGroupFormat;
+
+  bool get isSingleChat => usesGroupFormat && channels.length == 1 &&
+      channels.single.type == ChannelType.text;
   final String? iconEmoji;
   final String? customImagePath;
   final String? ownerFingerprint;
@@ -89,6 +93,7 @@ class Space {
     required this.initials,
     required this.description,
     this.isDirectMessages = false,
+    this.usesGroupFormat = false,
     this.iconEmoji,
     this.customImagePath,
     this.ownerFingerprint,
@@ -110,6 +115,7 @@ class Space {
         'iconEmoji': iconEmoji,
         'customImagePath': customImagePath,
         'ownerFingerprint': ownerFingerprint,
+        'usesGroupFormat': usesGroupFormat,
         'isPublic': isPublic,
         'isPinned': isPinned,
         'isMuted': isMuted,
@@ -127,6 +133,7 @@ class Space {
       iconEmoji: data['iconEmoji'] as String?,
       customImagePath: data['customImagePath'] as String?,
       ownerFingerprint: data['ownerFingerprint'] as String?,
+      usesGroupFormat: data['usesGroupFormat'] == true,
       isPublic: data['isPublic'] == true,
       isPinned: data['isPinned'] == true,
       isMuted: data['isMuted'] == true,
@@ -166,6 +173,7 @@ class Space {
       customImagePath:
           clearCustomImage ? null : customImagePath ?? this.customImagePath,
       ownerFingerprint: ownerFingerprint,
+      usesGroupFormat: usesGroupFormat,
       channels: channels ?? this.channels,
       unreadCount: unreadCount ?? this.unreadCount,
       memberCount: memberCount ?? this.memberCount,

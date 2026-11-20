@@ -73,7 +73,8 @@ class NixDesktopWorkspace extends StatelessWidget {
   Widget build(BuildContext context) {
     final area = state.activeArea;
     final isSpace = area == NixActiveArea.spaces;
-    final hasSidebar = area != NixActiveArea.explore;
+    final hasSidebar = area != NixActiveArea.explore &&
+        !(isSpace && state.currentSpace.isSingleChat);
     final panel = showInfoPanel
         ? ConversationInfoPanel(
             directMessage: isSpace ? null : state.selectedDm,

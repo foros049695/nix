@@ -2432,7 +2432,7 @@ class NixState extends ChangeNotifier {
       _localGroupPolls
         ..clear()
         ..addAll(stored.map(LocalGroupPoll.parse).nonNulls.where(
-          (poll) => _findChannel(poll.channelId)?.type == ChannelType.text,
+          (poll) => _findChannel(poll.channelId) != null,
         ));
     } catch (_) {
       // Preferências auxiliares não bloqueiam a abertura do cofre.
@@ -2507,7 +2507,7 @@ class NixState extends ChangeNotifier {
     try {
       final snapshot = await store.load();
       if (_disposed || _panicWipe != null) return;
-      bool existingForum(String id) => _findChannel(id)?.type == ChannelType.forum;
+      bool existingForum(String id) => _findChannel(id) != null;
       _forumPosts = snapshot.posts.where((post) => existingForum(post.channelId)).toList();
       _forumTags
         ..clear()
@@ -5392,15 +5392,29 @@ class NixState extends ChangeNotifier {
         channel.spaceId == 'local_space' && channel.id == 'general_saved';
   }
 
+  bool canChangeGroupFormat(String channelId) {
+    final channel = _findChannel(channelId);
+    if (channel == null || !canManageChannelSettings(channelId)) return false;
+    final group = _spaces.where((space) => space.id == channel.spaceId).firstOrNull;
+    return group?.usesGroupFormat == true && group?.channels.length == 1 &&
+        (channel.type == ChannelType.text || channel.type == ChannelType.forum);
+  }
+
   Future<bool> updateChannelSettings(Channel updatedChannel) async {
     final previous = _findChannel(updatedChannel.id);
     if (previous == null || previous.spaceId != updatedChannel.spaceId ||
         !canManageChannelSettings(updatedChannel.id)) return false;
 
+    if (previous.type != updatedChannel.type &&
+        (!canChangeGroupFormat(previous.id) ||
+            (updatedChannel.type != ChannelType.text && updatedChannel.type != ChannelType.forum))) {
+      return false;
+    }
     final mayChangeImage = canEditChannelImage(previous);
     final updated = previous.copyWith(
       name: updatedChannel.name,
       topic: updatedChannel.topic,
+      type: updatedChannel.type,
       description: updatedChannel.description,
       permissions: updatedChannel.permissions,
       customImagePath: mayChangeImage ? updatedChannel.customImagePath : null,
@@ -5976,6 +5990,7 @@ class NixState extends ChangeNotifier {
     required String category,
     String? customImagePath,
   }) {
+    if (_currentSpace.isSingleChat) return;
     final cleanName = name.replaceAll(' ', '-').toLowerCase();
     final newChannel = Channel(
       id: 'ch_${DateTime.now().millisecondsSinceEpoch}',
@@ -6007,6 +6022,7 @@ class NixState extends ChangeNotifier {
     required String description,
     required String emoji,
     String? customImagePath,
+    bool? withTopics,
   }) {
     final initials = name
         .trim()
@@ -6022,6 +6038,7 @@ class NixState extends ChangeNotifier {
       initials: initials.isNotEmpty ? initials : 'NX',
       description: description,
       isPublic: false,
+      usesGroupFormat: withTopics != null,
       iconEmoji: emoji.isNotEmpty ? emoji : 'NX',
       customImagePath: customImagePath,
       ownerFingerprint: _ownWorkspaceIdentity,
@@ -6031,7 +6048,7 @@ class NixState extends ChangeNotifier {
           spaceId: spaceId,
           name: 'geral',
           topic: 'Tópico principal deste espaço.',
-          type: ChannelType.text,
+          type: withTopics == true ? ChannelType.forum : ChannelType.text,
           category: 'COMUNIDADE',
           ownerFingerprint: _ownWorkspaceIdentity,
         ),

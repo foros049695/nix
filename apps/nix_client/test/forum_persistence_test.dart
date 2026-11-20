@@ -34,12 +34,7 @@ void main() {
       identity: await NixIdentity.generate(),
       displayName: 'Autora local',
     );
-    state.createSpace(name: 'Comunidade privada', description: '', emoji: 'C');
-    state.createChannel(
-        name: 'Fórum',
-        type: ChannelType.forum,
-        topic: '',
-        category: 'COMUNIDADE');
+    state.createSpace(name: 'Comunidade privada', description: '', emoji: 'C', withTopics: true);
     final forum = state.currentChannel;
     expect(state.createForumTag('Pesquisa', '🔎'), isTrue);
     expect(
@@ -58,6 +53,7 @@ void main() {
 
     expect(
         await state.updateChannelSettings(forum.copyWith(
+          type: ChannelType.text,
           permissions: forum.permissions.copyWith(allowMessages: false),
         )),
         isTrue);
@@ -79,6 +75,9 @@ void main() {
         .expand((space) => space.channels)
         .singleWhere((channel) => channel.id == forum.id);
     restored.selectChannel(channel);
+    expect(restored.currentSpace.isSingleChat, isTrue);
+    expect(restored.currentForumPosts, isEmpty);
+    expect(await restored.updateChannelSettings(channel.copyWith(type: ChannelType.forum)), isTrue);
     final stored = restored.currentForumPosts.single;
     expect(stored.id, post.id);
     expect(stored.tags, ['Pesquisa']);

@@ -55,6 +55,7 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
   late TextEditingController _topicController;
   late TextEditingController _descController;
   bool _saving = false;
+  late bool _topics = widget.channel.type == ChannelType.forum;
 
   late ChannelPermissions _perms;
   late List<String> _admins;
@@ -114,6 +115,8 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
     final updated = widget.channel.copyWith(
       name: _nameController.text.trim(),
       topic: _topicController.text.trim(),
+      type: state.canChangeGroupFormat(widget.channel.id)
+          ? (_topics ? ChannelType.forum : ChannelType.text) : widget.channel.type,
       description: _descController.text.trim(),
       permissions: _perms,
       customImagePath: state.canEditChannelImage(widget.channel) ? _imagePath : widget.channel.customImagePath,
@@ -434,6 +437,14 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
         _buildTextField('Descrição Detalhada', _descController, maxLines: 3),
         const SizedBox(height: 20),
 
+        if (context.read<NixState>().canChangeGroupFormat(widget.channel.id))
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Grupo com tópicos'),
+            subtitle: const Text('O histórico de cada formato fica disponível ao reativá-lo.'),
+            value: _topics,
+            onChanged: _saving ? null : (value) => setState(() => _topics = value),
+          ),
         _buildSectionTitle('ACESSO E VISIBILIDADE'),
         const SizedBox(height: 12),
         _buildSwitchTile(
