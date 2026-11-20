@@ -132,9 +132,11 @@ class _PagerProfileState extends State<PagerProfile> {
   }
 
   Future<void> _showPagerMenu(NixState state) async {
-    final playlist = defaultTargetPlatform == TargetPlatform.android
-        ? state.pagerPlaylist
-        : null;
+    final playlist = switch (defaultTargetPlatform) {
+      TargetPlatform.android || TargetPlatform.linux || TargetPlatform.windows =>
+        state.pagerPlaylist,
+      _ => null,
+    };
     final action = await showDialog<_PagerMenu>(
       context: context,
       builder: (context) => SimpleDialog(

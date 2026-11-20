@@ -64,6 +64,20 @@ void main() {
     }
   });
 
+  test('playlist desktop aceita WAV absoluto e recusa origens remotas', () {
+    const local = {'uri': 'file:///tmp/faixa.wav', 'name': 'Faixa'};
+    expect(PagerTrack.fromMap(local).uri, local['uri']);
+    for (final url in [
+      'file://servidor/pasta/faixa.wav',
+      'file:////servidor/pasta/faixa.wav',
+      'file:///tmp/faixa.mp3',
+      'https://example.test/faixa.wav',
+    ]) {
+      expect(() => PagerTrack.fromMap({...local, 'uri': url}),
+          throwsFormatException);
+    }
+  });
+
   testWidgets(
       'playlist aciona o player apenas por comando e persiste alterações',
       (tester) async {

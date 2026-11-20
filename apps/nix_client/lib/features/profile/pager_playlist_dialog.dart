@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'desktop_pager_audio.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/media/pager_playlist.dart';
@@ -15,7 +17,12 @@ class PagerPlaylistDialog extends StatefulWidget {
   State<PagerPlaylistDialog> createState() => _PagerPlaylistDialogState();
 }
 
-class _PagerPlaylistDialogState extends State<PagerPlaylistDialog> {
+class _PagerPlaylistDialogState extends State<PagerPlaylistDialog>
+    with WidgetsBindingObserver {
+  late final _desktop = switch (defaultTargetPlatform) {
+    TargetPlatform.linux || TargetPlatform.windows => DesktopPagerAudio(),
+    _ => null,
+  };
   List<PagerTrack> _tracks = [];
   String? _playing;
   String? _error;
@@ -26,6 +33,7 @@ class _PagerPlaylistDialogState extends State<PagerPlaylistDialog> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_load());
   }
 
@@ -37,13 +45,27 @@ class _PagerPlaylistDialogState extends State<PagerPlaylistDialog> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(_stopQuietly());
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _statusTimer?.cancel();
     unawaited(_stopQuietly());
     super.dispose();
   }
 
   Future<void> _stopQuietly() async {
+    final desktop = _desktop;
+    if (desktop != null) {
+      desktop.stop();
+      return;
+    }
     try {
       await PagerPlaylistDialog.channel.invokeMethod<void>('stop');
     } catch (_) {
@@ -60,18 +82,29 @@ class _PagerPlaylistDialogState extends State<PagerPlaylistDialog> {
       await action();
     } on PlatformException catch (error) {
       _error = error.message ?? 'O Android não conseguiu acessar o áudio.';
+    } on FormatException catch (error) {
+      _error = error.message;
+    } on StateError catch (error) {
+      _error = error.message;
     } catch (_) {
-      _error = 'Não foi possível atualizar a playlist do Pager.';
+      _error = 'Não foi possível acessar a playlist ou o áudio do sistema.';
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _add() async {
-    final picked = await PagerPlaylistDialog.channel
-        .invokeMapMethod<Object?, Object?>('pick');
-    if (picked == null) return;
-    final track = PagerTrack.fromMap(picked);
+    final desktop = _desktop;
+    PagerTrack? selected;
+    if (desktop != null) {
+      selected = await desktop.pick();
+    } else {
+      final picked = await PagerPlaylistDialog.channel
+          .invokeMapMethod<Object?, Object?>('pick');
+      selected = picked == null ? null : PagerTrack.fromMap(picked);
+    }
+    final track = selected;
+    if (track == null) return;
     if (_tracks.any((value) => value.uri == track.uri)) {
       _error = 'Esta faixa já está na playlist.';
       return;
@@ -79,8 +112,7 @@ class _PagerPlaylistDialogState extends State<PagerPlaylistDialog> {
     try {
       await _save([..._tracks, track]);
     } catch (_) {
-      await PagerPlaylistDialog.channel
-          .invokeMethod<void>('release', {'uri': track.uri});
+      await _release(track);
       rethrow;
     }
   }
@@ -96,33 +128,48 @@ class _PagerPlaylistDialogState extends State<PagerPlaylistDialog> {
     await _save(next);
   }
 
+  Future<void> _release(PagerTrack track) async {
+    final desktop = _desktop;
+    if (desktop != null) {
+      if (desktop.playing == track.uri) desktop.stop();
+    } else {
+      await PagerPlaylistDialog.channel
+          .invokeMethod<void>('release', {'uri': track.uri});
+    }
+  }
+
   Future<void> _remove(PagerTrack track) async {
     await _save(_tracks.where((value) => value.uri != track.uri).toList());
+    await _release(track);
     if (_playing == track.uri) _playing = null;
-    await PagerPlaylistDialog.channel
-        .invokeMethod<void>('release', {'uri': track.uri});
   }
 
   Future<void> _toggle(PagerTrack track) async {
     if (_playing == track.uri) {
-      await PagerPlaylistDialog.channel.invokeMethod<void>('stop');
+      await _stopQuietly();
       _playing = null;
       return;
     }
     _playing = null;
-    await PagerPlaylistDialog.channel
-        .invokeMethod<void>('play', {'uri': track.uri});
+    final desktop = _desktop;
+    if (desktop != null) {
+      await desktop.play(track);
+    } else {
+      await PagerPlaylistDialog.channel
+          .invokeMethod<void>('play', {'uri': track.uri});
+    }
     if (!mounted) {
       await _stopQuietly();
       return;
     }
-    _playing = track.uri;
+    _playing = desktop != null ? desktop.playing : track.uri;
     _statusTimer ??= Timer.periodic(const Duration(seconds: 1), (_) async {
       final trackAtPoll = _playing;
       if (!mounted || _busy || trackAtPoll == null) return;
       try {
-        final uri =
-            await PagerPlaylistDialog.channel.invokeMethod<String>('playing');
+        final uri = desktop != null
+            ? desktop.playing
+            : await PagerPlaylistDialog.channel.invokeMethod<String>('playing');
         if (mounted &&
             !_busy &&
             _playing == trackAtPoll &&
@@ -150,8 +197,9 @@ class _PagerPlaylistDialogState extends State<PagerPlaylistDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                  'Faixas locais. A reprodução só começa ao tocar em Reproduzir.'),
+              Text(_desktop != null
+                  ? 'Arquivos WAV locais. A reprodução começa ao tocar em Reproduzir.'
+                  : 'Faixas locais. A reprodução começa ao tocar em Reproduzir.'),
               if (_busy) const LinearProgressIndicator(),
               if (_loaded && _tracks.isEmpty)
                 const Padding(

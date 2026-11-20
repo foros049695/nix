@@ -16,12 +16,19 @@ class PagerTrack {
       throw const FormatException('Faixa local inválida.');
     }
     final uri = Uri.tryParse(rawUri);
-    if (uri == null ||
-        uri.scheme != 'content' ||
-        !const {
+    final localAndroid = uri?.scheme == 'content' &&
+        const {
           'com.android.externalstorage.documents',
           'com.android.providers.media.documents',
-        }.contains(uri.authority)) {
+        }.contains(uri?.authority);
+    final localDesktop = uri?.scheme == 'file' &&
+        uri!.authority.isEmpty &&
+        uri.path.startsWith('/') &&
+        !uri.path.startsWith('//') &&
+        !uri.hasQuery &&
+        !uri.hasFragment &&
+        uri.path.toLowerCase().endsWith('.wav');
+    if (uri == null || (!localAndroid && !localDesktop)) {
       throw const FormatException('Escolha uma faixa no armazenamento local.');
     }
     return PagerTrack(
