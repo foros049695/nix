@@ -222,6 +222,14 @@ class _PagerProfileState extends State<PagerProfile> {
                               title: _pages[1],
                               page: 2,
                               child: _status(state, reduced),
+                              footer: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: pagerInk,
+                                  side: const BorderSide(color: pagerInk),
+                                ),
+                                onPressed: () => _selectPage(2, state),
+                                child: const Text('Abrir contemplação'),
+                              ),
                             ),
                             _ContemplationScreen(
                                 showAvatar: !state.settings.hidePagerAvatar),
@@ -384,15 +392,6 @@ class _PagerProfileState extends State<PagerProfile> {
         if (!gate.isStrictOffGridMode && gate.isBootstrapping)
           Text('Inicialização Tor: ${gate.torBootstrapPercent}%',
               style: const TextStyle(fontSize: 13)),
-        const SizedBox(height: 9),
-        OutlinedButton(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: pagerInk,
-            side: const BorderSide(color: pagerInk),
-          ),
-          onPressed: () => _selectPage(2, state),
-          child: const Text('Abrir contemplação'),
-        ),
       ],
     );
   }
@@ -413,12 +412,14 @@ class _PagerPanel extends StatelessWidget {
   final String title;
   final int page;
   final Widget? action;
+  final Widget? footer;
   final Widget child;
 
   const _PagerPanel(
       {required this.title,
       required this.page,
       this.action,
+      this.footer,
       required this.child});
 
   @override
@@ -464,6 +465,7 @@ class _PagerPanel extends StatelessWidget {
                   child: child,
                 ),
               ),
+              if (footer != null) footer!,
             ],
           ),
         ),

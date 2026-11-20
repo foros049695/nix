@@ -72,7 +72,8 @@ void main() {
     expect(find.text('Status'), findsOneWidget);
     expect(find.text('Sem rede'), findsOneWidget);
     expect(find.text('Cofre local: bloqueado'), findsOneWidget);
-    final contemplation = find.widgetWithText(OutlinedButton, 'Abrir contemplação');
+    final contemplation =
+        find.widgetWithText(OutlinedButton, 'Abrir contemplação');
     expect(contemplation.hitTestable(), findsOneWidget);
     expect(
       tester.getBottomRight(contemplation).dy,
