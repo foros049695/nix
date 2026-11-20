@@ -212,8 +212,8 @@ class NixBleMeshController(
             .addServiceUuid(ParcelUuid(SERVICE_UUID))
             .build()
 
-        // ScanResponse (<= 31B): prefixo do Card ID público (máx 14 bytes UTF-8)
-        val cardBytes = localCardId.take(14).toByteArray(StandardCharsets.UTF_8)
+        // ScanResponse (<= 31B): prefixo do Card ID público (máx 13 bytes em um anúncio legado)
+        val cardBytes = localCardId.toByteArray(StandardCharsets.UTF_8).take(13).toByteArray()
         val scanResp = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
             .addServiceData(ParcelUuid(SERVICE_UUID), cardBytes)

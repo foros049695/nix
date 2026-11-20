@@ -71,6 +71,21 @@ func TestRelayHTTPStoreFetchAckAndHealthz(t *testing.T) {
 		t.Fatalf("expected 401 on unauthenticated fetch, got %d", unauthGetRes.StatusCode)
 	}
 
+	// Nenhuma credencial pode ser criada por uma leitura inicial.
+	unprovisionedReq, _ := http.NewRequest(http.MethodGet, srv.URL+"/v1/mailboxes/mbox_test_1/envelopes", nil)
+	unprovisionedReq.Header.Set("Authorization", "Bearer my_secret_token_123")
+	unprovisioned, err := http.DefaultClient.Do(unprovisionedReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unprovisioned.Body.Close()
+	if unprovisioned.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 without provisioned capability, got %d", unprovisioned.StatusCode)
+	}
+	if err := store.ProvisionCapability("mbox_test_1", "my_secret_token_123", buffer.ScopeReadAck, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+
 	// 4. Fetch GET autenticado com capability token
 	authGetReq, _ := http.NewRequest(http.MethodGet, srv.URL+"/v1/mailboxes/mbox_test_1/envelopes", nil)
 	authGetReq.Header.Set("Authorization", "Bearer my_secret_token_123")

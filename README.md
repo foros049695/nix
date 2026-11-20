@@ -259,6 +259,37 @@ artefato histórico. [Relatório de validação Android](docs/ANDROID_VALIDATION
 d99cd9c4b1d4ba748fd76831287696d3e83095b235c656c9942588a5a57a2756
 ```
 
+### Builds do piloto
+
+O workflow manual [Nix pilot builds](.github/workflows/pilot-builds.yml)
+empacota o desktop **Linux x86-64** e um **APK Android de teste**. No Linux,
+extraia o tarball e execute `./bundle/nix_client`. O APK usa a assinatura
+de depuração do runner e serve para instalações de teste.
+
+Para distribuição, passe as chaves públicas oficiais pelo Dart com
+`--dart-define=NIX_RELEASE_PUBLISHER_KEY_HEX=<chave-publica>` e
+`--dart-define=NIX_CATALOG_PUBLISHER_KEY_HEX=<chave-publica>`. A partir da
+raiz do repositório, após `flutter pub get` no cliente:
+
+```bash
+dart --packages=apps/nix_client/.dart_tool/package_config.json \
+  scripts/sign_release.dart apps/nix_client/build/app/outputs/flutter-apk/app-release.apk \
+  <versão> <arquivo-privado-com-seed-ed25519-hex>
+```
+
+O cliente usa o manifesto `app-release.apk.sig.json` junto ao APK. Mantenha
+a seed Ed25519 e a keystore de distribuição fora do repositório.
+
+Para ensaiar BLE sem VPS, use dois Android em modo avião com Bluetooth
+reativado. Em ambos, habilite o modo off-grid e a malha BLE, troque os
+Card IDs assinados e envie mensagens de texto entre os contatos.
+A interface oferece retentativa e preserva a confirmação como pendente.
+
+O relay exige provisionamento explícito de `read_ack` pelo administrador
+local. Antes de atualizar instalações antigas, provisione credenciais
+aleatórias e configure-as no cliente. O relay rejeita o formato legado dos
+tokens de leitura derivados do identificador público.
+
 ### 3. Testes e verificações
 
 A partir da raiz do repositório:

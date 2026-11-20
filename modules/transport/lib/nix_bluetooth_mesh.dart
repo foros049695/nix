@@ -325,6 +325,8 @@ class BluetoothMeshManager {
     required String recipientCardId,
     required Uint8List payload,
     String? targetDeviceAddress,
+    String? deliveryId,
+    int? expiresAtMs,
   }) async {
     if (!_isMeshEnabled) return 0;
     final targets = targetDeviceAddress != null
@@ -340,10 +342,10 @@ class BluetoothMeshManager {
         remotePeer: peer,
       );
       final packet = session.createEnvelopeTransfer(
-        deliveryId: 'btp_${DateTime.now().millisecondsSinceEpoch}',
+        deliveryId: deliveryId ?? 'btp_${DateTime.now().millisecondsSinceEpoch}',
         destinationMailbox: recipientCardId,
         ciphertext: payload,
-        expiresAt: DateTime.now()
+        expiresAt: expiresAtMs ?? DateTime.now()
             .toUtc()
             .add(const Duration(days: 7))
             .millisecondsSinceEpoch,

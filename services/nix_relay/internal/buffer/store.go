@@ -22,6 +22,7 @@ var (
 	ErrPayloadTooLarge  = errors.New("payload excede limite máximo permitido")
 	ErrQuotaExceeded    = errors.New("cota máxima em trânsito excedida para o token")
 	ErrCriticalPressure = errors.New("relay sob pressão crítica de disco: mídias grandes bloqueadas")
+	legacyReadToken     = regexp.MustCompile(`^read_[0-9a-f]{64}$`)
 	validMailboxRegex   = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,128}$`)
 )
 
@@ -540,7 +541,7 @@ func (s *BlindMailboxStore) HasExplicitScope(mailboxID string, scope CapabilityS
 
 // ValidateCapability valida hash SHA-256, revogação, expiração e escopo do token (Marco P0-4 / SEC01).
 func (s *BlindMailboxStore) ValidateCapability(mailboxID, token string, scope CapabilityScope) bool {
-	if token == "" || mailboxID == "" {
+	if token == "" || mailboxID == "" || legacyReadToken.MatchString(token) {
 		return false
 	}
 	s.mu.Lock()
@@ -564,18 +565,7 @@ func (s *BlindMailboxStore) ValidateCapability(mailboxID, token string, scope Ca
 		return false
 	}
 
-	// Compatibilidade TOFU restrita ao escopo read_ack na primeira autenticação caso nenhuma capability tenha sido pré-provisionada.
-	if scope != ScopeReadAck {
-		return false
-	}
-	s.capabilities[mailboxID] = []capabilityRecord{{
-		MailboxID:     mailboxID,
-		Scope:         ScopeReadAck,
-		TokenHashHex:  tokenHash,
-		ExpiresAtUnix: time.Now().UTC().Add(30 * 24 * time.Hour).Unix(),
-	}}
-	_ = s.persistCapabilitiesLocked()
-	return true
+	return false
 }
 
 func subtleConstantTimeCompare(a, b string) bool {

@@ -47,16 +47,14 @@ android {
             def keyAliasVal = System.getenv("NIX_KEY_ALIAS") ?: keystoreProperties['keyAlias']
             def keyPass = System.getenv("NIX_KEY_PASSWORD") ?: keystoreProperties['keyPassword']
 
-            if (storePath != null && (file(storePath).exists() || rootProject.file(storePath).exists())) {
-                storeFile file(storePath).exists() ? file(storePath) : rootProject.file(storePath)
-                storePassword storePass
-                keyAlias keyAliasVal
-                keyPassword keyPass
-            } else if (file('release-keystore.jks').exists()) {
-                storeFile file('release-keystore.jks')
-                storePassword storePass ?: 'nix-release-pass'
-                keyAlias keyAliasVal ?: 'nix-release-key'
-                keyPassword keyPass ?: 'nix-release-pass'
+            if (storePath && storePass && keyAliasVal && keyPass) {
+                def keyFile = file(storePath).exists() ? file(storePath) : rootProject.file(storePath)
+                if (keyFile.isFile()) {
+                    storeFile keyFile
+                    storePassword storePass
+                    keyAlias keyAliasVal
+                    keyPassword keyPass
+                }
             }
         }
     }
@@ -71,6 +69,16 @@ android {
             }
             minifyEnabled false
             shrinkResources false
+        }
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name in ['validateSigningRelease', 'packageRelease', 'packageReleaseBundle']) {
+        task.doFirst {
+            if (android.signingConfigs.release.storeFile == null) {
+                throw new GradleException("Configure a keystore release usando key.properties ou NIX_KEYSTORE_PATH, NIX_KEYSTORE_PASSWORD, NIX_KEY_ALIAS e NIX_KEY_PASSWORD.")
+            }
         }
     }
 }

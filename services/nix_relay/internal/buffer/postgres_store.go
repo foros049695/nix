@@ -399,7 +399,7 @@ func (s *PostgresMailboxStore) HasExplicitScope(mailboxID string, scope Capabili
 }
 
 func (s *PostgresMailboxStore) ValidateCapability(mailboxID, token string, scope CapabilityScope) bool {
-	if mailboxID == "" || token == "" {
+	if mailboxID == "" || token == "" || legacyReadToken.MatchString(token) {
 		return false
 	}
 	boxHex := canonicalMailboxHex(mailboxID)
@@ -414,23 +414,7 @@ func (s *PostgresMailboxStore) ValidateCapability(mailboxID, token string, scope
 		   AND expires_at > clock_timestamp() AND (scope = $3 OR scope = 'admin')`,
 		boxHex, hashTokenBytes(token), string(scope),
 	).Scan(&count)
-	if err == nil && count > 0 {
-		return true
-	}
-	// Nenhuma capability ainda cadastrada para read_ack? TOFU apenas para read_ack em desenvolvimento/testes
-	if scope == ScopeReadAck {
-		var anyCap int
-		err2 := s.db.QueryRowContext(
-			ctx,
-			`SELECT count(*) FROM nix.capabilities WHERE mailbox_id = $1`,
-			boxHex,
-		).Scan(&anyCap)
-		if err2 == nil && anyCap == 0 {
-			_ = s.ProvisionCapability(mailboxID, token, ScopeReadAck, 30*24*time.Hour)
-			return true
-		}
-	}
-	return false
+	return err == nil && count > 0
 }
 
 func (s *PostgresMailboxStore) Metrics() StoreMetrics {

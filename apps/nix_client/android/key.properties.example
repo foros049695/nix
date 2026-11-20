@@ -2,7 +2,7 @@
 # Copie este arquivo para 'key.properties' e preencha com as credenciais da sua Keystore protegida.
 # NUNCA comite o arquivo 'key.properties' ou o arquivo '*.jks' no controle de versão.
 
-storePassword=nix-release-pass
-keyPassword=nix-release-pass
+storePassword=
+keyPassword=
 keyAlias=nix-release-key
 storeFile=release-keystore.jks

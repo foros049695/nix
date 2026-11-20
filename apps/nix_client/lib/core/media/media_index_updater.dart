@@ -269,6 +269,14 @@ class SignedCatalogManifest {
     List<int> artifactBytes,
     CatalogPublisherKeyring keyring,
   ) async {
+    if (!await verifyManifest(keyring) || artifactBytes.length != byteSize) {
+      return false;
+    }
+    return std_crypto.sha256.convert(artifactBytes).toString() ==
+        sha256Hex.toLowerCase();
+  }
+
+  Future<bool> verifyManifest(CatalogPublisherKeyring keyring) async {
     final signerLower = signerEd25519Hex.toLowerCase();
 
     // 1. Rejeição de chaves revogadas
@@ -281,13 +289,35 @@ class SignedCatalogManifest {
     // 2. Rejeição de chave de teste pública em produção
     if ((keyring.isProductionMode || isProduction) &&
         signerLower == CatalogPublisherKeyring.fixtureTestPublisherKeyHex.toLowerCase() &&
-        !keyring.allowTestFixtureKey) {
+        (keyring.isProductionMode || !keyring.allowTestFixtureKey)) {
       throw const CatalogTestKeyRejectedException(
         '[Segurança P0] Chave de teste exclusiva para fixtures rejeitada em ambiente de produção.',
       );
     }
 
-    // 3. Validação de confiança e rotação
+    // 3. Verificação de assinatura Ed25519
+    final msg = canonicalDigestBytes(
+      version: version,
+      artifactName: artifactName,
+      sha256Hex: sha256Hex,
+      byteSize: byteSize,
+      issuedAtUnix: issuedAtUnix,
+      entryCount: entryCount,
+    );
+
+    final ed = Ed25519();
+    final sigBytes = hexToBytes(signatureHex);
+    final signerPubBytes = hexToBytes(signerLower);
+    final valid = await ed.verify(
+      msg,
+      signature: Signature(
+        sigBytes,
+        publicKey: SimplePublicKey(signerPubBytes, type: KeyPairType.ed25519),
+      ),
+    );
+    if (!valid) return false;
+
+    // 4. Validação de confiança e rotação
     bool trusted = keyring.isKeyTrusted(signerLower);
     if (!trusted &&
         previousSignerEd25519Hex != null &&
@@ -308,39 +338,7 @@ class SignedCatalogManifest {
         '[Segurança] O publicador ($signerLower) não consta no anel de chaves confiáveis.',
       );
     }
-
-    // 4. Verificação de tamanho
-    if (artifactBytes.length != byteSize) {
-      return false;
-    }
-
-    // 5. Verificação de integridade SHA-256
-    final actualSha =
-        std_crypto.sha256.convert(artifactBytes).toString().toLowerCase();
-    if (actualSha != sha256Hex.toLowerCase()) {
-      return false;
-    }
-
-    // 6. Verificação de assinatura Ed25519
-    final msg = canonicalDigestBytes(
-      version: version,
-      artifactName: artifactName,
-      sha256Hex: actualSha,
-      byteSize: byteSize,
-      issuedAtUnix: issuedAtUnix,
-      entryCount: entryCount,
-    );
-
-    final ed = Ed25519();
-    final sigBytes = hexToBytes(signatureHex);
-    final signerPubBytes = hexToBytes(signerLower);
-    return ed.verify(
-      msg,
-      signature: Signature(
-        sigBytes,
-        publicKey: SimplePublicKey(signerPubBytes, type: KeyPairType.ed25519),
-      ),
-    );
+    return true;
   }
 
   Map<String, dynamic> toJson() => {
@@ -614,8 +612,13 @@ class CatalogUpdateManager {
     String? historyFilePath,
   })  : keyring = keyring ??
             CatalogPublisherKeyring(
-              trustedKeysHex: {CatalogPublisherKeyring.fixtureTestPublisherKeyHex},
-              allowTestFixtureKey: true,
+              trustedKeysHex: {
+                if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(
+                  const String.fromEnvironment('NIX_CATALOG_PUBLISHER_KEY_HEX'),
+                ))
+                  const String.fromEnvironment('NIX_CATALOG_PUBLISHER_KEY_HEX'),
+              },
+              isProductionMode: true,
             ),
         transportPolicy = transportPolicy ?? const TransportPolicy(),
         targetDbPath = targetDbPath ?? CatalogDatabase.getDefaultCatalogPath(),
@@ -673,24 +676,8 @@ class CatalogUpdateManager {
           jsonDecode(utf8.decode(manifestBytes)) as Map<String, dynamic>;
       final manifest = SignedCatalogManifest.fromJson(manifestJson);
 
-      // Validação antecipada do publicador
-      final signerLower = manifest.signerEd25519Hex.toLowerCase();
-      if (keyring.isKeyRevoked(signerLower)) {
-        throw CatalogKeyRevokedException(
-          'Chave do publicador ($signerLower) foi revogada.',
-        );
-      }
-      if ((keyring.isProductionMode || manifest.isProduction) &&
-          signerLower == CatalogPublisherKeyring.fixtureTestPublisherKeyHex.toLowerCase() &&
-          !keyring.allowTestFixtureKey) {
-        throw const CatalogTestKeyRejectedException(
-          'Chave de teste rejeitada em ambiente de produção.',
-        );
-      }
-      if (!keyring.isKeyTrusted(signerLower)) {
-        throw CatalogUntrustedSignerException(
-          'Publicador ($signerLower) não consta no anel de chaves confiáveis.',
-        );
+      if (!await manifest.verifyManifest(keyring)) {
+        throw const FormatException('Assinatura do manifesto de catálogo inválida.');
       }
 
       final currentVersion = await getInstalledVersion();

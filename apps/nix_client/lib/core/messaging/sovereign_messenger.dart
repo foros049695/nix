@@ -899,7 +899,124 @@ class SovereignMessenger {
     String preKeyId = 'spk_active_1',
     bool simulateCrashBeforeAck = false,
   }) async {
-    final envelopes = await relayClient.fetchEnvelopes(creds);
+    return _commitInbox(
+      mailboxId: creds.mailboxId,
+      envelopes: await relayClient.fetchEnvelopes(creds),
+      preKeyId: preKeyId,
+      acknowledge: simulateCrashBeforeAck
+          ? null
+          : (ids) => relayClient.acknowledge(creds, ids),
+    );
+  }
+
+  static List<int> _nearbyAad(
+    String mailboxId,
+    String deliveryId,
+    int expiresAtMs,
+  ) => utf8.encode('nix-nearby-v1:$mailboxId:$deliveryId:$expiresAtMs');
+
+  /// Cifra também os metadados do envelope Ratchet para a chave do contato.
+  Future<Uint8List> sealNearbyDelivery({
+    required String peerPublicId,
+    required String mailboxId,
+    required String deliveryId,
+    required Uint8List wireBytes,
+    required int expiresAtMs,
+  }) async {
+    final contact = await contactRepo.getContact(peerPublicId);
+    if (contact == null || contact['verification'] == 'changed') {
+      throw StateError('O contato BLE requer um Card ID válido.');
+    }
+    final ephemeral = await _x25519.newKeyPair();
+    final shared = await _x25519.sharedSecretKey(
+      keyPair: ephemeral,
+      remotePublicKey: SimplePublicKey(
+        contact['x_public'] as List<int>,
+        type: KeyPairType.x25519,
+      ),
+    );
+    final aad = _nearbyAad(mailboxId, deliveryId, expiresAtMs);
+    final key = await _hkdf.deriveKey(secretKey: shared, info: aad);
+    final signature = await identity.sign([...aad, ...wireBytes]);
+    final sealed = await SealedEnvelope.seal(
+      key: key,
+      plaintext: [...signature, ...wireBytes],
+      aad: aad,
+    );
+    final publicKey = await ephemeral.extractPublicKey();
+    return Uint8List.fromList([...publicKey.bytes, ...sealed.encode()]);
+  }
+
+  Future<PollCommitResult> commitNearbyDelivery({
+    required String mailboxId,
+    required String deliveryId,
+    required Uint8List ciphertext,
+    required int expiresAtMs,
+    String preKeyId = 'spk_active_1',
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (expiresAtMs <= now ||
+        ciphertext.length <= 32 ||
+        ciphertext.length > 34 * 1024) {
+      throw const FormatException('Envelope BLE expirado ou incompleto.');
+    }
+    final aad = _nearbyAad(mailboxId, deliveryId, expiresAtMs);
+    final shared = await _x25519.sharedSecretKey(
+      keyPair: identity.x25519KeyPair,
+      remotePublicKey: SimplePublicKey(
+        ciphertext.sublist(0, 32),
+        type: KeyPairType.x25519,
+      ),
+    );
+    final key = await _hkdf.deriveKey(secretKey: shared, info: aad);
+    final signedWire = await SealedEnvelope.open(
+      key: key,
+      payload: SealedPayload.decode(ciphertext.sublist(32)),
+      aad: aad,
+    );
+    if (signedWire.length <= 64) {
+      throw const FormatException('Assinatura BLE incompleta.');
+    }
+    final wire = signedWire.sublist(64);
+    final header = jsonDecode(utf8.decode(wire)) as Map<String, dynamic>;
+    final contact = await contactRepo.getContact(header['sender'] as String);
+    if (contact == null || contact['verification'] == 'changed') {
+      throw const FormatException('Remetente BLE sem Card ID válido.');
+    }
+    final valid = await Ed25519().verify(
+      [...aad, ...wire],
+      signature: Signature(
+        signedWire.sublist(0, 64),
+        publicKey: SimplePublicKey(
+          contact['ed_public'] as List<int>,
+          type: KeyPairType.ed25519,
+        ),
+      ),
+    );
+    if (!valid) throw const FormatException('Assinatura BLE inválida.');
+
+    return _commitInbox(
+      mailboxId: mailboxId,
+      preKeyId: preKeyId,
+      nearbyOnly: true,
+      envelopes: [
+        RelayEnvelope(
+          id: deliveryId,
+          payloadBase64: base64Encode(wire),
+          createdAtUnix: now ~/ 1000,
+          expiresAtUnix: expiresAtMs ~/ 1000,
+        ),
+      ],
+    );
+  }
+
+  Future<PollCommitResult> _commitInbox({
+    required String mailboxId,
+    required List<RelayEnvelope> envelopes,
+    required String preKeyId,
+    Future<int> Function(List<String>)? acknowledge,
+    bool nearbyOnly = false,
+  }) async {
     final committed = <CommittedInboundMessage>[];
     final ackIds = <String>[];
     final errors = <String>[];
@@ -907,7 +1024,7 @@ class SovereignMessenger {
 
     for (final env in envelopes) {
       // 1. Deduplicação: se já commitamos este envelope antes (ex: queda pré-ACK), apenas re-confirma no relay
-      if (await outboxRepo.isDuplicateEnvelope(creds.mailboxId, env.id)) {
+      if (await outboxRepo.isDuplicateEnvelope(mailboxId, env.id)) {
         skippedDuplicates++;
         ackIds.add(env.id);
         continue;
@@ -937,7 +1054,7 @@ class SovereignMessenger {
             final payloadHash =
                 Uint8List.fromList(std_crypto.sha256.convert(rawBytes).bytes);
             await outboxRepo.recordDeduplication(
-              mailboxId: creds.mailboxId,
+              mailboxId: mailboxId,
               deliveryId: env.id,
               payloadHash: payloadHash,
               expiresAt: nowMs + const Duration(days: 7).inMilliseconds,
@@ -950,6 +1067,10 @@ class SovereignMessenger {
 
         // Valida que remetente não sofreu alteração silenciosa de chave
         final contact = await contactRepo.getContact(senderId);
+        if (nearbyOnly && contact == null) {
+          errors.add('Envelope BLE de contato sem Card ID importado.');
+          continue;
+        }
         if (contact != null && contact['verification'] == 'changed') {
           errors.add('Bloqueado envelope de $senderId: chave marcada como alterada.');
           continue;
@@ -964,6 +1085,10 @@ class SovereignMessenger {
         if (existing != null) {
           loadedSessionRow = existing.$1;
           stateObj = existing.$2;
+          if (nearbyOnly && stateObj['peerPublicId'] != senderId) {
+            errors.add('Remetente BLE não corresponde à sessão.');
+            continue;
+          }
           ratchet = await DoubleRatchet.importState(
             Map<String, dynamic>.from(stateObj['ratchet'] as Map),
           );
@@ -1023,6 +1148,15 @@ class SovereignMessenger {
         final createdAt = (inner['ts'] as num?)?.toInt() ??
             DateTime.now().toUtc().millisecondsSinceEpoch;
         final expiresAt = (inner['expiresAt'] as num?)?.toInt();
+        if (nearbyOnly &&
+            (inner['sender'] != senderId ||
+                inner['convId'] != convId ||
+                inner['id'] != wireMsgId ||
+                (expiresAt != null &&
+                    expiresAt <= DateTime.now().millisecondsSinceEpoch))) {
+          errors.add('Envelope BLE expirado ou incompatível com a sessão.');
+          continue;
+        }
 
         final parsedAttachments = <AttachmentManifest>[];
         if (inner['attachments'] is List) {
@@ -1138,7 +1272,7 @@ class SovereignMessenger {
               mailbox_id, delivery_id, payload_hash, committed_at, expires_at
             ) VALUES (?, ?, ?, ?, ?);
           ''', [
-            creds.mailboxId,
+            mailboxId,
             env.id,
             payloadHash,
             nowMs,
@@ -1161,8 +1295,8 @@ class SovereignMessenger {
     }
 
     int ackedCount = 0;
-    if (!simulateCrashBeforeAck && ackIds.isNotEmpty) {
-      ackedCount = await relayClient.acknowledge(creds, ackIds);
+    if (acknowledge != null && ackIds.isNotEmpty) {
+      ackedCount = await acknowledge(ackIds);
     }
 
     return PollCommitResult(

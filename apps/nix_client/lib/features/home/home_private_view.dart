@@ -515,7 +515,9 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    dm.statusText,
+                    dm.hasActiveSession && state.isStrictOffGridMode
+                        ? 'Sessão E2EE · Bluetooth direto'
+                        : dm.statusText,
                     style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -528,9 +530,15 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                       size: 17,
                       color: NixColors.textSecondary,
                     ),
-                    tooltip: 'Sincronizar Outbox / Inbox via Relay',
+                    tooltip: state.isStrictOffGridMode
+                        ? 'Retentar envio por Bluetooth'
+                        : 'Sincronizar Outbox / Inbox via Relay',
                     onPressed: () async {
-                      await state.syncWithRelay();
+                      if (state.isStrictOffGridMode) {
+                        await state.retryNearbyMessages();
+                      } else {
+                        await state.syncWithRelay();
+                      }
                     },
                   ),
                 IconButton(
@@ -573,7 +581,13 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                   ),
                 ),
                 TextButton(
-                  onPressed: () => state.syncWithRelay(),
+                  onPressed: () async {
+                    if (state.isStrictOffGridMode) {
+                      await state.retryNearbyMessages();
+                    } else {
+                      await state.syncWithRelay();
+                    }
+                  },
                   child: const Text('Retentar Outbox', style: TextStyle(fontSize: 11)),
                 ),
                 IconButton(

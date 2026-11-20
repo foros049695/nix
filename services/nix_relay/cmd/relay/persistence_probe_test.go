@@ -32,6 +32,9 @@ func TestAuditPersistenceHTTPStatus(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if err := store.ProvisionCapability("mbox", "test-capability", buffer.ScopeReadAck, time.Hour); err != nil {
+				t.Fatal(err)
+			}
 			if err := os.Chmod(cfg.DataDir, 0500); err != nil {
 				t.Fatal(err)
 			}

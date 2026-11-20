@@ -187,11 +187,10 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
           manifest = SignedReleaseManifest.fromJson(
             jsonDecode(await sigFile.readAsString()) as Map<String, dynamic>,
           );
-          final trustedKey = widget.trustedPublisherKey ??
-              SimplePublicKey(
-                _hexToBytes(manifest.signerEd25519Hex),
-                type: KeyPairType.ed25519,
-              );
+          final trustedKey = widget.trustedPublisherKey ?? _configuredPublisherKey();
+          if (trustedKey == null) {
+            throw StateError('Chave pública de distribuição não configurada.');
+          }
           verified = await manifest.verifyArtifactBytes(
             bytes,
             trustedReleaseKey: trustedKey,
@@ -266,13 +265,13 @@ class _ShareAppOfflineDialogState extends State<ShareAppOfflineDialog> {
     }
   }
 
-  static Uint8List _hexToBytes(String hex) {
-    final clean = hex.trim();
-    final out = Uint8List(clean.length ~/ 2);
-    for (var i = 0; i < out.length; i++) {
-      out[i] = int.parse(clean.substring(i * 2, i * 2 + 2), radix: 16);
-    }
-    return out;
+  static SimplePublicKey? _configuredPublisherKey() {
+    const hex = String.fromEnvironment('NIX_RELEASE_PUBLISHER_KEY_HEX');
+    if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(hex)) return null;
+    return SimplePublicKey(
+      List.generate(32, (i) => int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16)),
+      type: KeyPairType.ed25519,
+    );
   }
 
   Future<String> _resolveLocalIp() async {

@@ -1,28 +1,42 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:crypto/crypto.dart' as std_crypto;
 
-/// Ferramenta CLI para calcular digest SHA-256 canônico e validar estrutura de manifesto offline (Fase 9).
+import 'package:cryptography/cryptography.dart';
+import 'package:nix_core_crypto/nix_core_crypto.dart';
+
 Future<void> main(List<String> args) async {
-  if (args.isEmpty) {
-    stderr.writeln('Uso: dart run scripts/sign_release.dart <arquivo_artefato> [versao]');
-    exit(64);
+  if (args.length != 3) {
+    stderr.writeln(
+      'Uso: sign_release.dart <artefato> <versão> <arquivo-seed-ed25519-hex>',
+    );
+    exitCode = 64;
+    return;
   }
-  final file = File(args[0]);
-  if (!await file.exists()) {
-    stderr.writeln('Artefato não encontrado: ${file.path}');
-    exit(66);
+
+  final artifact = File(args[0]);
+  final seedHex = (await File(args[2]).readAsString()).trim();
+  if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(seedHex)) {
+    stderr.writeln('O arquivo de chave deve conter uma seed Ed25519 hexadecimal de 32 bytes.');
+    exitCode = 65;
+    return;
   }
-  final version = args.length > 1 ? args[1] : '0.4.0';
-  final bytes = await file.readAsBytes();
-  final digest = std_crypto.sha256.convert(bytes).toString();
-  final metadata = {
-    'schema': 'nix.release.digest.v1',
-    'version': version,
-    'artifact': file.uri.pathSegments.last,
-    'bytes': bytes.length,
-    'sha256': digest,
-    'generatedAtUtc': DateTime.now().toUtc().toIso8601String(),
-  };
-  stdout.writeln(const JsonEncoder.withIndent('  ').convert(metadata));
+  final signer = await NixIdentity.fromSeeds(
+    ed25519Seed: List.generate(
+      32,
+      (index) => int.parse(seedHex.substring(index * 2, index * 2 + 2), radix: 16),
+    ),
+    x25519PrivateBytes: SecretKeyData.random(length: 32).bytes,
+  );
+  final manifest = await SignedReleaseManifest.signArtifact(
+    signer: signer,
+    version: args[1],
+    artifactName: artifact.uri.pathSegments.last,
+    artifactBytes: await artifact.readAsBytes(),
+  );
+  final output = File('${artifact.path}.sig.json');
+  await output.writeAsString(
+    '${const JsonEncoder.withIndent('  ').convert(manifest.toJson())}\n',
+    flush: true,
+  );
+  stdout.writeln(output.path);
 }

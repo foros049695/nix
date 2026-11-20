@@ -594,6 +594,14 @@ class NixState extends ChangeNotifier {
     required RelayClient relayClient,
     MailboxCredentials? mailboxCredentials,
   }) {
+    if (Platform.environment['FLUTTER_TEST'] != 'true' &&
+        (mailboxCredentials == null ||
+            mailboxCredentials.readToken.isEmpty ||
+            RegExp(r'^read_[0-9a-f]{64}$').hasMatch(mailboxCredentials.readToken))) {
+      throw ArgumentError(
+        'Configure uma credencial de leitura provisionada pelo operador do relay.',
+      );
+    }
     _activeRelayClient = relayClient;
     if (mailboxCredentials != null) {
       _activeMailboxCredentials = mailboxCredentials;
@@ -628,7 +636,7 @@ class NixState extends ChangeNotifier {
   BleHardwareStatus? _bleHardwareStatus;
   List<RNodeHardwareDevice> _detectedRNodeDevices = const [];
   StreamSubscription<BluetoothProximityPeer>? _blePeerSub;
-  StreamSubscription<Map<String, dynamic>>? _bleRxSub;
+  StreamSubscription<void>? _bleRxSub;
 
   void _appendHardwareRadioLog(HardwareRadioLogEntry entry) {
     _hardwareRadioLogs.insert(0, entry);
@@ -1934,11 +1942,36 @@ class NixState extends ChangeNotifier {
       if (!_disposed) notifyListeners();
     });
     _bleRxSub?.cancel();
-    _bleRxSub = _bluetoothMesh.onEnvelopeReceived.listen((env) async {
+    _bleRxSub = _bluetoothMesh.onEnvelopeReceived.asyncMap<void>((env) async {
       if (_disposed) return;
       final fromAddr = (env['fromAddress'] as String?) ?? 'ble_peer';
       final rawCt = env['ciphertext'] as Uint8List?;
       if (rawCt == null) return;
+      final deliveryId = env['deliveryId'] as String;
+      if (deliveryId.startsWith('out_')) {
+        final messenger = _sovereignMessenger;
+        if (!_isStrictOffGridMode || messenger == null) return;
+        final mailbox = (_activeMailboxCredentials ??
+                SovereignMessenger.deriveMailboxCredentials(
+                  messenger.identity.publicId,
+                ))
+            .mailboxId;
+        if (env['destinationMailbox'] != mailbox) return;
+        try {
+          final result = await messenger.commitNearbyDelivery(
+            mailboxId: mailbox,
+            deliveryId: deliveryId,
+            ciphertext: rawCt,
+            expiresAtMs: env['expiresAt'] as int,
+          );
+          if (_disposed || result.committed.isEmpty) return;
+          await _refreshDirectThreadsFromDatabase();
+          if (!_disposed) notifyListeners();
+        } catch (_) {
+          // Captura de rádio não autenticada nunca entra no histórico.
+        }
+        return;
+      }
       String summary = 'Envelope NIXB (${rawCt.length}B) recebido de $fromAddr';
       try {
         final decoded = jsonDecode(utf8.decode(rawCt));
@@ -1969,7 +2002,7 @@ class NixState extends ChangeNotifier {
         direction: 'RX',
         summary: summary,
       ));
-    });
+    }).listen(null);
   }
 
   static List<int> _hexToBytes(String hex) {
@@ -2856,6 +2889,94 @@ class NixState extends ChangeNotifier {
     );
   }
 
+  Future<bool> _transmitNearbyEnvelope(
+    SovereignMessenger messenger,
+    DirectMessageThread thread,
+    Map<String, dynamic> row,
+  ) async {
+    if (!_isStrictOffGridMode || !_bluetoothMesh.isMeshEnabled || _disposed) {
+      return false;
+    }
+    final cardId = thread.peerPublicId;
+    final targets = _bluetoothMesh.activePeers.where((peer) {
+      final advertisedId = peer.peerPublicCardId;
+      return advertisedId.length == 13 && cardId.startsWith(advertisedId);
+    }).toList();
+    if (targets.length != 1) return false;
+
+    final wireBytes = row['ciphertext'] as Uint8List;
+    final mailbox = row['destination_mailbox'] as String;
+    final deliveryId = row['id'] as String;
+    final expiresAtMs = row['expires_at'] as int;
+    if (wireBytes.length > 32768 ||
+        expiresAtMs <= DateTime.now().millisecondsSinceEpoch) {
+      return false;
+    }
+    final packet = await messenger.sealNearbyDelivery(
+      peerPublicId: cardId,
+      mailboxId: mailbox,
+      deliveryId: deliveryId,
+      wireBytes: wireBytes,
+      expiresAtMs: expiresAtMs,
+    );
+    if (!_isStrictOffGridMode || _disposed) return false;
+    return await _bluetoothMesh.broadcastEnvelope(
+          recipientCardId: mailbox,
+          payload: packet,
+          targetDeviceAddress: targets.single.deviceAddress,
+          deliveryId: deliveryId,
+          expiresAtMs: expiresAtMs,
+        ) >
+        0;
+  }
+
+  /// Retenta mensagens de texto da conversa selecionada sem usar o relay.
+  Future<void> retryNearbyMessages() async {
+    final thread = _selectedDm;
+    final messenger = _sovereignMessenger;
+    final db = _localDatabase;
+    if (!_isStrictOffGridMode ||
+        thread == null ||
+        thread.isSavedMessages ||
+        messenger == null ||
+        db == null) {
+      return;
+    }
+    final rows = await db.rawDatabase.rawQuery(
+      """
+      SELECT o.id, o.destination_mailbox, o.ciphertext, o.expires_at
+      FROM outbox o
+      JOIN messages m ON m.id = o.message_id
+      WHERE m.conversation_id = ? AND o.session_id IS NOT NULL
+        AND o.transport_state IN ('queued', 'failed') AND o.expires_at > ?
+        AND (m.expires_at IS NULL OR m.expires_at > ?)
+        AND NOT EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)
+      ORDER BY m.created_at, o.id
+      LIMIT 20
+      """,
+      [
+        thread.id,
+        DateTime.now().millisecondsSinceEpoch,
+        DateTime.now().millisecondsSinceEpoch,
+      ],
+    );
+    var written = 0;
+    for (final row in rows) {
+      try {
+        if (await _transmitNearbyEnvelope(messenger, thread, row)) written++;
+      } catch (_) {
+        // O envelope original continua disponível na outbox cifrada.
+      }
+    }
+    if (_disposed || !_isStrictOffGridMode) return;
+    _lastMessagingError = rows.isEmpty
+        ? null
+        : written > 0
+            ? '$written mensagem(ns) transmitida(s) por Bluetooth. Confirmação pendente.'
+            : 'Nenhuma mensagem transmitida. Verifique se o contato está próximo e com Bluetooth ativo.';
+    notifyListeners();
+  }
+
   static String _inferAttachmentMimeType(String path) {
     final lower = path.toLowerCase();
     if (lower.endsWith('.png')) return 'image/png';
@@ -2919,6 +3040,14 @@ class NixState extends ChangeNotifier {
           cleanBody: cleanBody,
         );
       }
+      notifyListeners();
+      return;
+    }
+
+    if (_isStrictOffGridMode &&
+        (attachments.isNotEmpty || utf8.encode(cleanBody).length > 8192)) {
+      _lastMessagingError =
+          'Bluetooth direto aceita texto de até 8 KiB. Remova anexos ou reduza a mensagem.';
       notifyListeners();
       return;
     }
@@ -3001,18 +3130,21 @@ class NixState extends ChangeNotifier {
         String? currentDeliveryError;
 
         if (_isStrictOffGridMode) {
-          currentDeliveryState = 'queued';
-          if (_bluetoothMesh.isMeshEnabled) {
-            final sentBle = await _bluetoothMesh.broadcastEnvelope(
-              recipientCardId: thread.peerPublicId,
-              payload: Uint8List.fromList(utf8.encode(cleanBody)),
+          currentDeliveryError =
+              'Na fila local. A entrega por Bluetooth ainda não foi confirmada.';
+          try {
+            final rows = await _localDatabase!.rawDatabase.query(
+              'outbox',
+              columns: ['id', 'destination_mailbox', 'ciphertext', 'expires_at'],
+              where: 'id = ?',
+              whereArgs: [enqueued.outboxId],
             );
-            currentDeliveryError = sentBle > 0
-                ? null
-                : 'Modo Off-Grid: salvo na Outbox cifrada (nenhum par BLE em alcance; Wi-Fi bloqueado).';
-          } else {
-            currentDeliveryError =
-                'Modo Off-Grid: rede Wi-Fi bloqueada. Ative BLE Mesh ou conecte Rádio LoRa para entregar.';
+            if (await _transmitNearbyEnvelope(messenger, thread, rows.single)) {
+              currentDeliveryError =
+                  'Transmitida por Bluetooth. Confirmação do contato pendente.';
+            }
+          } catch (_) {
+            // O envelope original continua disponível na outbox cifrada.
           }
         } else if (_activeRelayClient != null) {
           final flushRes = await messenger.flushOutbox(

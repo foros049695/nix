@@ -143,11 +143,12 @@ void main() {
         entryCount: 25,
       );
 
+      var servedManifest = {...manifestV2.toJson(), 'version': 3};
       final server = await HttpServer.bind('127.0.0.1', 0);
       server.listen((req) {
         if (req.uri.path.endsWith('manifest.json')) {
           req.response.headers.contentType = ContentType.json;
-          req.response.write(jsonEncode(manifestV2.toJson()));
+          req.response.write(jsonEncode(servedManifest));
           req.response.close();
         } else if (req.uri.path.endsWith('.db')) {
           req.response.headers.contentType = ContentType.binary;
@@ -163,6 +164,14 @@ void main() {
         historyFilePath: historyPath,
         transportPolicy: const TransportPolicy(mode: TransportMode.loopbackTest),
       );
+
+      final manifestUri =
+          Uri.parse('http://127.0.0.1:${server.port}/manifest.json');
+      await expectLater(
+        mgr.checkForUpdate(manifestUri: manifestUri),
+        throwsA(isA<FormatException>()),
+      );
+      servedManifest = manifestV2.toJson();
 
       // Consulta atualização
       final detected = await mgr.checkForUpdate(

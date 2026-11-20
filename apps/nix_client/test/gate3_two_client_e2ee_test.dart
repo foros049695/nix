@@ -548,6 +548,67 @@ void main() {
       expect(aliceSwept, 1);
       expect(bobSwept, 1);
 
+      // O mesmo envelope da outbox chega ao banco por BLE, sem relay.
+      final nearby = await aliceMessenger.enqueueDirectMessage(
+        conversationId: convId,
+        destinationMailbox: bobCreds.mailboxId,
+        senderMailbox: aliceCreds.mailboxId,
+        text: 'Mensagem de proximidade',
+      );
+      final rows = await aliceMessenger.outboxRepo.getPendingEnvelopes();
+      final row = rows.singleWhere((r) => r['id'] == nearby.outboxId);
+      final expiry = row['expires_at'] as int;
+      final sealed = await aliceMessenger.sealNearbyDelivery(
+        peerPublicId: bobId.publicId,
+        mailboxId: bobCreds.mailboxId,
+        deliveryId: nearby.outboxId,
+        wireBytes: row['ciphertext'] as Uint8List,
+        expiresAtMs: expiry,
+      );
+      expect(
+        utf8.decode(sealed, allowMalformed: true),
+        isNot(contains(aliceId.publicId)),
+      );
+      final senderMesh = BluetoothMeshManager(localCardId: aliceId.publicId);
+      final receiverMesh = BluetoothMeshManager(localCardId: bobId.publicId);
+      addTearDown(senderMesh.dispose);
+      addTearDown(receiverMesh.dispose);
+      senderMesh.setMeshEnabled(true);
+      receiverMesh.setMeshEnabled(true);
+      senderMesh.registerDiscoveredPeer(
+        deviceAddress: 'bob',
+        peerCardId: bobId.publicId,
+        rssi: -42,
+      );
+      senderMesh.onTransmitPacket = (_, bytes) async {
+        receiverMesh.handleIncomingPacket('alice', bytes);
+        return true;
+      };
+      final frameFuture = receiverMesh.onEnvelopeReceived.first;
+      expect(
+        await senderMesh.broadcastEnvelope(
+          recipientCardId: bobCreds.mailboxId,
+          payload: sealed,
+          targetDeviceAddress: 'bob',
+          deliveryId: nearby.outboxId,
+          expiresAtMs: expiry,
+        ),
+        1,
+      );
+      final frame = await frameFuture;
+      Future<PollCommitResult> commitFrame(int expiresAtMs) =>
+          bobMessenger.commitNearbyDelivery(
+            mailboxId: frame['destinationMailbox'] as String,
+            deliveryId: frame['deliveryId'] as String,
+            ciphertext: frame['ciphertext'] as Uint8List,
+            expiresAtMs: expiresAtMs,
+          );
+      await expectLater(commitFrame(expiry + 1), throwsA(isA<Exception>()));
+      final receivedNearby = await commitFrame(frame['expiresAt'] as int);
+      expect(receivedNearby.errors, isEmpty);
+      expect(receivedNearby.committed.single.text, 'Mensagem de proximidade');
+      expect((await commitFrame(expiry)).skippedDuplicateCount, 1);
+
       // 8. Grupos E2EE Sender Keys + Rotação de Época ao remover membro
       final carolVault = KeyVault(osKeyStorage: InMemoryOsKeyStorage());
       final carolKey = await carolVault.initialize(
