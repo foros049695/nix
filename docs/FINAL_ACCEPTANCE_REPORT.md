@@ -52,3 +52,5 @@ Continuam pendentes mídia e gravação em chamadas, comunidades e enquetes dist
 | Sender Keys experimentais | Teste com três identidades cobre distribuição assinada, duplicatas e exclusão após rotação. A interface de comunidades e enquetes distribuídas depende da integração com o transporte de grupos. |
 
 Continuam pendentes chamadas de voz e sua gravação, enquetes e comunidades distribuídas, Bitcoin/Lightning, aceitação física e ensaios por relay Onion externo.
+
+A suíte local passou com 231 testes e cinco ignorados. O CI da revisão `3a94df4` passou no relay, no cliente, nos módulos Dart e nos gates de privacidade. O player Linux iniciou um fluxo WAV real em uma saída virtual PulseAudio por socket local e encerrou o fluxo ao parar. [CI da revisão](https://github.com/foros049695/nix/actions/runs/44811641607) · [Pilotos nativos](https://github.com/foros049695/nix/actions/runs/44811643293)
