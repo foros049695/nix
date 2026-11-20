@@ -37,6 +37,7 @@ class OnionVoiceLink {
   RelayClient? _http;
   String? _connectedGuest;
   Uint8List _outAudio = Uint8List(0);
+  DateTime? _outAudioAt;
   String? _outText;
   int _outTextId = 0;
   int _receivedTextId = 0;
@@ -147,6 +148,7 @@ class OnionVoiceLink {
       return;
     _outAudio.fillRange(0, _outAudio.length, 0);
     _outAudio = Uint8List.fromList(bytes);
+    _outAudioAt = DateTime.now();
   }
 
   void sendText(String text) {
@@ -201,7 +203,11 @@ class OnionVoiceLink {
   List<Object?> _outgoing(String guest, int seq) {
     final audio = _outAudio;
     _outAudio = Uint8List(0);
-    final encoded = base64Encode(audio);
+    final stamp = _outAudioAt;
+    _outAudioAt = null;
+    final fresh = stamp != null &&
+        DateTime.now().difference(stamp) < const Duration(milliseconds: 900);
+    final encoded = fresh ? base64Encode(audio) : '';
     audio.fillRange(0, audio.length, 0);
     return [
       guest,
@@ -248,6 +254,7 @@ class OnionVoiceLink {
 
   Future<void> _serve(HttpRequest request) async {
     final response = request.response;
+    response.statusCode = HttpStatus.notFound;
     try {
       if (!available ||
           request.method != 'POST' ||
@@ -271,17 +278,17 @@ class OnionVoiceLink {
       final outgoing = _outgoing(payload.guest, ++_tx);
       final reply = await _seal(outgoing, 'host', sealed.nonce);
       if (!available) throw const FormatException();
+      response.statusCode = HttpStatus.ok;
       response.headers.contentType = ContentType.binary;
       response.contentLength = reply.length;
       response.write(reply);
-      await response.close();
-      return;
     } catch (_) {
-      response.statusCode = HttpStatus.notFound;
+      // A resposta padrão é 404. Um socket interrompido encerra só este quadro.
+    } finally {
+      try {
+        await response.close();
+      } catch (_) {}
     }
-    try {
-      await response.close();
-    } catch (_) {}
   }
 
   void close() {
