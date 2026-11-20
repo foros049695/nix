@@ -2,16 +2,19 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'cultural_catalog_picker.dart';
 import 'desktop_pager_audio.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/media/pager_playlist.dart';
 
 class PagerPlaylistDialog extends StatefulWidget {
-  const PagerPlaylistDialog({super.key, required this.playlist});
+  const PagerPlaylistDialog(
+      {super.key, required this.playlist, this.enableCatalog = false});
 
   static const channel = MethodChannel('com.projetonix.nix/pager_audio');
   final PagerPlaylist playlist;
+  final bool enableCatalog;
 
   @override
   State<PagerPlaylistDialog> createState() => _PagerPlaylistDialogState();
@@ -94,6 +97,34 @@ class _PagerPlaylistDialogState extends State<PagerPlaylistDialog>
   }
 
   Future<void> _add() async {
+    String? name;
+    if (widget.enableCatalog) {
+      final useCatalog = await showDialog<bool>(
+          context: context,
+          builder: (context) => SimpleDialog(
+                title: const Text('Adicionar faixa'),
+                children: [
+                  SimpleDialogOption(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Escolher no Music Index local'),
+                  ),
+                  SimpleDialogOption(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Escolher apenas arquivo de áudio'),
+                  ),
+                ],
+              ));
+      if (!mounted || useCatalog == null) return;
+      if (useCatalog) {
+        final work = await pickCulturalCatalogWork(context,
+            playlist: _tracks.map((track) => track.name).toList());
+        if (!mounted || work == null) return;
+        final label = [work.title, culturalItemFromCatalog(work).creatorOrYear]
+            .where((value) => value.isNotEmpty)
+            .join(' · ');
+        name = String.fromCharCodes(label.runes.take(80));
+      }
+    }
     final desktop = _desktop;
     PagerTrack? selected;
     if (desktop != null) {
@@ -103,7 +134,9 @@ class _PagerPlaylistDialogState extends State<PagerPlaylistDialog>
           .invokeMapMethod<Object?, Object?>('pick');
       selected = picked == null ? null : PagerTrack.fromMap(picked);
     }
-    final track = selected;
+    final track = name == null || selected == null
+        ? selected
+        : PagerTrack(uri: selected.uri, name: name);
     if (track == null) return;
     if (_tracks.any((value) => value.uri == track.uri)) {
       _error = 'Esta faixa já está na playlist.';

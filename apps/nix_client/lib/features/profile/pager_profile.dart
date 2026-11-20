@@ -164,7 +164,7 @@ class _PagerProfileState extends State<PagerProfile> {
         if (activePlaylist != null) {
           await showDialog<void>(
             context: context,
-            builder: (_) => PagerPlaylistDialog(playlist: activePlaylist),
+            builder: (_) => PagerPlaylistDialog(playlist: activePlaylist, enableCatalog: true),
           );
         }
       case _PagerMenu.wallpaper:
