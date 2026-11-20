@@ -5,6 +5,11 @@ plugins {
 }
 
 def isPilotBuild = System.getenv("NIX_ANDROID_PILOT") == "true"
+def pilotRunId = System.getenv("GITHUB_RUN_ID") ?: ""
+def pilotRunAttempt = System.getenv("GITHUB_RUN_ATTEMPT") ?: "1"
+def pilotApplicationIdSuffix = (pilotRunId ==~ /[0-9]+/) && (pilotRunAttempt ==~ /[0-9]+/)
+        ? ".pilot.r${pilotRunId}_${pilotRunAttempt}"
+        : ".pilot"
 def keystoreProperties = new Properties()
 def keystorePropertiesFile = rootProject.file('key.properties')
 if (keystorePropertiesFile.exists()) {
@@ -31,6 +36,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["nixAppLabel"] = isPilotBuild ? "Nix Piloto" : "Projeto Nix"
     }
 
     packagingOptions {
@@ -64,7 +70,8 @@ android {
         release {
             // Configuração protegida de release: rejeita debug keystore para distribuição
             if (isPilotBuild) {
-                applicationIdSuffix ".pilot"
+                // O runner gera um certificado de teste diferente a cada execução.
+                applicationIdSuffix pilotApplicationIdSuffix
                 signingConfig signingConfigs.debug
             } else if (signingConfigs.release.storeFile != null && signingConfigs.release.storeFile.exists()) {
                 signingConfig signingConfigs.release
