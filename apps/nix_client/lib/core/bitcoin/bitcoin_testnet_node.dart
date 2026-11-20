@@ -19,7 +19,11 @@ class BitcoinTestnetNode {
 
   final BitcoinOnionQuery _query;
 
-  factory BitcoinTestnetNode.onion(String endpoint, {required int socksPort}) {
+  factory BitcoinTestnetNode.onion(
+    String endpoint, {
+    required int socksPort,
+    bool Function()? mayConnect,
+  }) {
     final uri = Uri.tryParse(endpoint.trim());
     if (uri == null ||
         !const {'http', 'https'}.contains(uri.scheme) ||
@@ -35,7 +39,25 @@ class BitcoinTestnetNode {
       baseUri: uri,
       policy: TransportPolicy(socksPort: socksPort),
     );
-    return BitcoinTestnetNode._(client.requestOnionJson);
+    return BitcoinTestnetNode._(({
+      required path,
+      required circuitIsolation,
+      body,
+      basicAuthorization,
+      macaroon,
+    }) {
+      if (mayConnect?.call() == false) {
+        throw const TransportBlockedException(
+            'O Tor do Nix deixou de estar disponível.');
+      }
+      return client.requestOnionJson(
+        path: path,
+        circuitIsolation: circuitIsolation,
+        body: body,
+        basicAuthorization: basicAuthorization,
+        macaroon: macaroon,
+      );
+    });
   }
 
   BitcoinTestnetNode.withQuery(BitcoinOnionQuery query) : this._(query);
@@ -118,14 +140,16 @@ class BitcoinTestnetNode {
     final timestamp = int.tryParse(result['timestamp']?.toString() ?? '');
     final expiry = int.tryParse(result['expiry']?.toString() ?? '');
     final hash = result['payment_hash'];
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     if (amount == null ||
         amount < BigInt.zero ||
         amount != (request.milliSatoshis ?? BigInt.zero) ||
         timestamp == null ||
         timestamp < 0 ||
+        timestamp > now + 300 ||
         expiry == null ||
         expiry <= 0 ||
-        expiry <= DateTime.now().millisecondsSinceEpoch ~/ 1000 - timestamp ||
+        expiry <= now - timestamp ||
         hash is! String ||
         !RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(hash)) {
       throw const FormatException('A fatura não confere com o nó ou expirou.');

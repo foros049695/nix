@@ -115,11 +115,12 @@ class _BitcoinPaymentViewState extends State<BitcoinPaymentView> {
     setState(() => _checking = true);
     String result;
     try {
-      if (!state.securityGate.isTorAnonymityReady) {
+      if (!state.canOpenPrivateTradeRoom) {
         throw const FormatException('A consulta exige o Tor pronto no Nix.');
       }
       final node = BitcoinTestnetNode.onion(endpoint,
-          socksPort: state.tradeTorConnection.socksPort);
+          socksPort: state.tradeTorConnection.socksPort,
+          mayConnect: () => state.canOpenPrivateTradeRoom);
       if (invoice == null) {
         final status =
             await node.checkBitcoinCore(user: user, password: secret);

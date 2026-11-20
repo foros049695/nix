@@ -19,10 +19,10 @@ class MoneroFinanceView extends StatelessWidget {
         initialIndex: showWallet ? 1 : 0,
         child: const Column(
           children: [
-            TabBar(isScrollable: true, tabs: [
+            TabBar(labelPadding: EdgeInsets.symmetric(horizontal: 4), tabs: [
               Tab(text: 'Mercado'),
-              Tab(text: 'Carteira e histórico'),
-              Tab(text: 'Bitcoin / Lightning'),
+              Tab(child: Text('Carteira e histórico', textAlign: TextAlign.center)),
+              Tab(child: Text('Bitcoin / Lightning', textAlign: TextAlign.center)),
             ]),
             Expanded(
               child: TabBarView(
