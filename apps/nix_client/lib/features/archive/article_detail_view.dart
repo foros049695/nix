@@ -9,6 +9,7 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import 'archive_moderation_dialog.dart';
+import 'archive_document.dart';
 
 /// Visualizador Completo e Interativo de Artigo do Nix Archive (Fase 19 / Etapa 2).
 class ArticleDetailView extends StatefulWidget {
@@ -292,12 +293,6 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
     final createdAt = obj['created_at'] as int? ?? 0;
     final dateStr = DateTime.fromMillisecondsSinceEpoch(createdAt).toLocal().toString().split('.')[0];
 
-    // Limpa tags html simples para exibição limpa
-    final cleanBody = bodyHtml
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '');
-
     return Scaffold(
       backgroundColor: NixColors.background,
       appBar: AppBar(
@@ -401,14 +396,10 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  SelectableText(
-                    cleanBody.isNotEmpty ? cleanBody : 'Sem conteúdo textual registrado.',
-                    style: TextStyle(
-                      color: NixColors.textPrimary,
-                      fontSize: 14.5,
-                      height: 1.5,
-                    ),
-                  ),
+                  if (bodyHtml.isEmpty)
+                    const Text('Sem conteúdo textual registrado.')
+                  else
+                    ArchiveDocument(source: bodyHtml),
 
                   const Divider(height: 32),
 

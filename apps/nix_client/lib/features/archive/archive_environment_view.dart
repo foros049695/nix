@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/archive/archive_verification_status.dart';
+import '../../core/archive/archive_markdown.dart';
 import '../../core/archive/nix_archive_service.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
@@ -10,6 +11,7 @@ import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
 import 'article_detail_view.dart';
+import 'archive_document.dart';
 
 /// Ambiente Exclusivo Nix Archive — Publicações Canônicas, Rascunhos e Discussões (Fase 19 / Etapa 2).
 class NixArchiveEnvironmentView extends StatefulWidget {
@@ -34,6 +36,10 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
   final TextEditingController _categoryCtrl = TextEditingController(text: 'Tecnologia');
   final TextEditingController _contentCtrl = TextEditingController();
   final TextEditingController _claimsCtrl = TextEditingController();
+  final UndoHistoryController _undo = UndoHistoryController();
+  final FocusNode _editorFocus = FocusNode();
+  Future<void> _draftWrites = Future<void>.value();
+  Future<void> Function()? _pendingDraft;
   String? _activeDraftId;
   bool _isPreviewMode = false;
   bool _isPublishing = false;
@@ -68,7 +74,9 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
 
   @override
   void dispose() {
-    _autoSaveDebouncer?.cancel();
+    unawaited(_flushAutoSave());
+    _undo.dispose();
+    _editorFocus.dispose();
     _tabController.dispose();
     _titleCtrl.dispose();
     _categoryCtrl.dispose();
@@ -138,26 +146,101 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
 
   void _scheduleAutoSave() {
     _autoSaveDebouncer?.cancel();
+    final service = _nixState.archiveService;
+    final title = _titleCtrl.text.trim();
+    final content = _contentCtrl.text;
+    if (service == null || (_activeDraftId == null && title.isEmpty && content.trim().isEmpty)) {
+      return;
+    }
+    final id = _activeDraftId ??= 'draft_${DateTime.now().microsecondsSinceEpoch}';
+    final category = _categoryCtrl.text.trim();
+    _pendingDraft = () => service.saveDraft(
+      id: id,
+      title: title.isEmpty ? 'Sem título' : title,
+      category: category,
+      markdownContent: content,
+    );
     _autoSaveDebouncer = Timer(const Duration(milliseconds: 600), () {
-      _saveDraftAuto();
+      unawaited(_flushAutoSave().then((_) {
+        if (mounted) unawaited(_loadDrafts());
+      }));
     });
   }
 
-  Future<void> _saveDraftAuto() async {
-    if (_titleCtrl.text.trim().isEmpty && _contentCtrl.text.trim().isEmpty) {
-      return;
-    }
-    final draftId = _activeDraftId ?? 'draft_${DateTime.now().millisecondsSinceEpoch}';
-    _activeDraftId = draftId;
-
-    await _archiveService.saveDraft(
-      id: draftId,
-      title: _titleCtrl.text.trim().isNotEmpty ? _titleCtrl.text.trim() : 'Sem título',
-      category: _categoryCtrl.text.trim(),
-      markdownContent: _contentCtrl.text,
-    );
-    await _loadDrafts();
+  Future<void> _flushAutoSave() {
+    _autoSaveDebouncer?.cancel();
+    final pending = _pendingDraft;
+    if (pending == null) return _draftWrites;
+    _pendingDraft = null;
+    return _draftWrites = _draftWrites.then((_) => pending()).catchError((Object _) {
+      if (mounted) setState(() => _publishFeedback = 'Falha ao gravar o rascunho no cofre.');
+    });
   }
+
+  void _applyFormatting(String prefix, [String suffix = '', String fallback = '']) {
+    final value = _contentCtrl.value;
+    final selection = value.selection.isValid
+        ? value.selection
+        : TextSelection.collapsed(offset: value.text.length);
+    final selected = selection.isCollapsed
+        ? fallback
+        : value.text.substring(selection.start, selection.end);
+    _contentCtrl.value = value.copyWith(
+      text: value.text.replaceRange(
+        selection.start, selection.end, '$prefix$selected$suffix',
+      ),
+      selection: TextSelection(
+        baseOffset: selection.start + prefix.length,
+        extentOffset: selection.start + prefix.length + selected.length,
+      ),
+      composing: TextRange.empty,
+    );
+    _editorFocus.requestFocus();
+    _scheduleAutoSave();
+  }
+
+  Widget _formatAction(String label, IconData icon, VoidCallback action) =>
+      IconButton(tooltip: label, icon: Icon(icon, size: 19), onPressed: action);
+
+  Widget _buildFormattingToolbar() => Wrap(
+    spacing: 2,
+    children: [
+      ValueListenableBuilder<UndoHistoryValue>(
+        valueListenable: _undo,
+        builder: (_, history, __) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(tooltip: 'Desfazer', icon: const Icon(Icons.undo),
+              onPressed: history.canUndo ? () { _undo.undo(); _scheduleAutoSave(); } : null),
+            IconButton(tooltip: 'Refazer', icon: const Icon(Icons.redo),
+              onPressed: history.canRedo ? () { _undo.redo(); _scheduleAutoSave(); } : null),
+          ],
+        ),
+      ),
+      PopupMenuButton<int>(
+        tooltip: 'Nível do título',
+        icon: const Icon(Icons.title_rounded, size: 19),
+        itemBuilder: (_) => [
+          for (final level in [1, 2, 3])
+            PopupMenuItem(value: level, child: Text('Título H$level')),
+        ],
+        onSelected: (level) => _applyFormatting('${'#' * level} ', '', 'Título'),
+      ),
+      _formatAction('Negrito', Icons.format_bold, () => _applyFormatting('**', '**', 'texto')),
+      _formatAction('Itálico', Icons.format_italic, () => _applyFormatting('*', '*', 'texto')),
+      _formatAction('Sublinhado', Icons.format_underline, () => _applyFormatting('<u>', '</u>', 'texto')),
+      _formatAction('Tachado', Icons.format_strikethrough, () => _applyFormatting('~~', '~~', 'texto')),
+      _formatAction('Código inline', Icons.code, () => _applyFormatting('`', '`', 'código')),
+      _formatAction('Bloco de código', Icons.data_object,
+          () => _applyFormatting('\n```\n', '\n```\n', 'código')),
+      _formatAction('Citação', Icons.format_quote, () => _applyFormatting('> ', '', 'citação')),
+      _formatAction('Lista', Icons.format_list_bulleted, () => _applyFormatting('- ', '', 'item')),
+      _formatAction('Lista de tarefas', Icons.checklist, () => _applyFormatting('- [ ] ', '', 'tarefa')),
+      _formatAction('Link', Icons.link, () => _applyFormatting('[', '](https://)', 'rótulo')),
+      _formatAction('Tabela', Icons.table_chart_outlined,
+          () => _applyFormatting('\n| Coluna | Coluna |\n| --- | --- |\n| ', ' | Valor |\n', 'Valor')),
+    ],
+  );
 
   Future<void> _publishArticle() async {
     final title = _titleCtrl.text.trim();
@@ -178,8 +261,11 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
     }
 
     setState(() => _isPublishing = true);
+    final draftId = _activeDraftId;
 
     try {
+      await _flushAutoSave();
+      if (!mounted) return;
       final claimsLines = _claimsCtrl.text
           .split('\n')
           .map((l) => l.trim())
@@ -193,15 +279,13 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
       final hash = await _archiveService.publishArticle(
         author: identity,
         title: title,
-        rawHtmlBody: '<p>${body.replaceAll('\n', '<br>')}</p>',
+        rawHtmlBody: compileArchiveMarkdown(body),
         claims: claims,
       );
 
-      if (_activeDraftId != null) {
-        await _archiveService.deleteDraft(_activeDraftId!);
-        _activeDraftId = null;
-      }
-
+      if (draftId != null) await _archiveService.deleteDraft(draftId);
+      if (!mounted) return;
+      _activeDraftId = null;
       _titleCtrl.clear();
       _contentCtrl.clear();
       _claimsCtrl.clear();
@@ -232,7 +316,9 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
     }
   }
 
-  void _loadDraftIntoEditor(Map<String, dynamic> draft) {
+  Future<void> _loadDraftIntoEditor(Map<String, dynamic> draft) async {
+    await _flushAutoSave();
+    if (!mounted) return;
     setState(() {
       _activeDraftId = draft['id'] as String;
       _titleCtrl.text = draft['title'] as String? ?? '';
@@ -333,88 +419,6 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
         );
       }
     }
-  }
-
-  Widget _buildMarkdownPreview(String text) {
-    if (text.trim().isEmpty) {
-      return Text(
-        'Nenhum conteúdo para pré-visualização.',
-        style: TextStyle(color: NixColors.textSecondary, fontStyle: FontStyle.italic),
-      );
-    }
-
-    final lines = text.split('\n');
-    final widgets = <Widget>[];
-
-    for (final line in lines) {
-      final trimmed = line.trim();
-      if (trimmed.startsWith('# ')) {
-        widgets.add(Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 4),
-          child: Text(
-            trimmed.substring(2),
-            style: const TextStyle(color: Colors.amber, fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-        ));
-      } else if (trimmed.startsWith('## ')) {
-        widgets.add(Padding(
-          padding: const EdgeInsets.only(top: 6, bottom: 3),
-          child: Text(
-            trimmed.substring(3),
-            style: TextStyle(color: NixColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-        ));
-      } else if (trimmed.startsWith('### ')) {
-        widgets.add(Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 2),
-          child: Text(
-            trimmed.substring(4),
-            style: TextStyle(color: NixColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600),
-          ),
-        ));
-      } else if (trimmed.startsWith('> ')) {
-        widgets.add(Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: NixColors.background,
-            border: const Border(left: BorderSide(color: Colors.amber, width: 3)),
-          ),
-          child: Text(
-            trimmed.substring(2),
-            style: TextStyle(color: NixColors.textSecondary, fontStyle: FontStyle.italic, fontSize: 12.5),
-          ),
-        ));
-      } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-        widgets.add(Padding(
-          padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('• ', style: TextStyle(color: Colors.amber, fontSize: 14)),
-              Expanded(
-                child: Text(
-                  trimmed.substring(2),
-                  style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
-                ),
-              ),
-            ],
-          ),
-        ));
-      } else if (trimmed.isNotEmpty) {
-        widgets.add(Padding(
-          padding: const EdgeInsets.symmetric(vertical: 3),
-          child: Text(
-            trimmed,
-            style: TextStyle(color: NixColors.textPrimary, fontSize: 13, height: 1.4),
-          ),
-        ));
-      } else {
-        widgets.add(const SizedBox(height: 6));
-      }
-    }
-
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: widgets);
   }
 
   @override
@@ -729,6 +733,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
           const SizedBox(height: 12),
           TextField(
             controller: _titleCtrl,
+            enabled: !_isPublishing,
             style: TextStyle(color: NixColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
             decoration: InputDecoration(
               labelText: 'Título do Artigo',
@@ -742,6 +747,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
           const SizedBox(height: 10),
           TextField(
             controller: _categoryCtrl,
+            enabled: !_isPublishing,
             style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
             decoration: InputDecoration(
               labelText: 'Categoria / Tema',
@@ -775,13 +781,22 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
                     ),
                   ),
                   const Divider(height: 20),
-                  _buildMarkdownPreview(_contentCtrl.text),
+                  if (_contentCtrl.text.trim().isEmpty)
+                    const Text('Escreva um texto para ver a prévia.')
+                  else
+                    ArchiveDocument(source: compileArchiveMarkdown(_contentCtrl.text)),
                 ],
               ),
             ),
           ] else ...[
+            _buildFormattingToolbar(),
+            const SizedBox(height: 8),
             TextField(
               controller: _contentCtrl,
+              focusNode: _editorFocus,
+              undoController: _undo,
+              enabled: !_isPublishing,
+              maxLength: 65536,
               maxLines: 8,
               style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
               decoration: InputDecoration(

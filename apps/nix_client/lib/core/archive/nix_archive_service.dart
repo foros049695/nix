@@ -20,6 +20,8 @@ class NixArchiveService {
     'i',
     'em',
     'strong',
+    's',
+    'del',
     'u',
     'code',
     'pre',
@@ -33,6 +35,12 @@ class NixArchiveService {
     'h4',
     'a',
     'span',
+    'table',
+    'thead',
+    'tbody',
+    'tr',
+    'th',
+    'td',
     'hr',
   };
 

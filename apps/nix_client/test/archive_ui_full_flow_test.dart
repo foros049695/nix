@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:nix_client/core/archive/archive_markdown.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:nix_client/core/archive/nix_archive_service.dart';
@@ -47,6 +48,36 @@ void main() {
 
     tearDown(() async {
       await localDb.close();
+    });
+
+    test('Markdown preserva formatação permitida e bloqueia mídia remota', () {
+      final safe = compileArchiveMarkdown("""
+## Meu título
+
+**Forte**, *ênfase*, <u>sublinhado</u> e ~~tachado~~.
+
+- [ ] Ler depois
+
+| Faixa | Nota |
+| --- | --- |
+| Álbum | 10 |
+
+[Site](https://example.org/x)
+[Inseguro](javascript:alert(1))
+![Remota](https://example.org/capa.png)
+<script>alert('injetado')</script>
+""");
+      expect(safe, contains('<h2>Meu título</h2>'));
+      expect(safe, contains('<strong>Forte</strong>'));
+      expect(safe, contains('<em>ênfase</em>'));
+      expect(safe, contains('<u>sublinhado</u>'));
+      expect(safe, contains('<del>tachado</del>'));
+      expect(safe, contains('☐ Ler depois'));
+      expect(safe, contains('<table>'));
+      expect(safe, contains('href="https://example.org/x"'));
+      expect(safe, isNot(contains('href="javascript:')));
+      expect(safe, isNot(contains('capa.png')));
+      expect(safe, isNot(contains('injetado')));
     });
 
     testWidgets('ArticleDetailView renderiza metadados reais, corpo, alegações e badge Ed25519', (tester) async {
