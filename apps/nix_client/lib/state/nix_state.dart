@@ -7,7 +7,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:nix_core_crypto/nix_core_crypto.dart';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show MethodChannel, rootBundle;
 import '../core/models/space.dart';
 import '../core/models/channel.dart';
 import '../core/models/message.dart';
@@ -40,6 +40,7 @@ import '../core/p2p/monero_ad_verifier.dart';
 import '../core/archive/nix_archive_service.dart';
 import '../core/replication/replication_coordinator.dart';
 import '../core/media/media_catalog_service.dart';
+import '../core/media/pager_playlist.dart';
 import '../core/media/catalog_database.dart';
 import '../core/media/media_index_updater.dart';
 import '../features/calls/call_view_model.dart';
@@ -1133,6 +1134,14 @@ class NixState extends ChangeNotifier {
     _scheduledWakeup?.cancel();
     _scheduledWakeup = null;
     await _scheduledRun;
+    if (Platform.isAndroid) {
+      try {
+        await const MethodChannel('com.projetonix.nix/pager_audio')
+            .invokeMethod<void>('wipe');
+      } catch (_) {
+        // Um erro no player não impede a destruição do cofre.
+      }
+    }
     _hasScheduledMessages = false;
     _scheduledOutboxNeedsRetry = false;
     await _catalogUpdateManager?.cancelAndWait();
@@ -4039,6 +4048,13 @@ class NixState extends ChangeNotifier {
   }
 
   // ================= ATUALIZAÇÃO DO PERFIL & PASSAPORTE CULTURAL =================
+
+  PagerPlaylist? get pagerPlaylist {
+    final repository = _preferencesRepo;
+    if (_disposed || _panicWipe != null || repository == null ||
+        _localDatabase?.cipherInfo.isEncrypted != true) return null;
+    return PagerPlaylist(repository);
+  }
 
   void updateProfile({
     String? displayName,

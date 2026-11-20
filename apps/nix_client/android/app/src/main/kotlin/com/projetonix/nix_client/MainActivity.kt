@@ -46,6 +46,7 @@ class MainActivity : FlutterActivity() {
     private var attachmentExtensions: Set<String> = emptySet()
 
     private val audioDiagnostic by lazy { NixAudioDiagnostic(this) }
+    private val pagerAudio by lazy { NixPagerAudio(this) }
     private var bleController: NixBleMeshController? = null
     private var rnodeController: NixRNodeRadioController? = null
 
@@ -55,6 +56,9 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(messenger, "com.projetonix.nix/audio_diagnostic")
             .setMethodCallHandler(audioDiagnostic::handle)
+
+        MethodChannel(messenger, "com.projetonix.nix/pager_audio")
+            .setMethodCallHandler(pagerAudio::handle)
 
         MethodChannel(messenger, "com.projetonix.nix/invitation_qr")
             .setMethodCallHandler { call, result ->
@@ -226,6 +230,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (pagerAudio.onActivityResult(requestCode, resultCode, data)) return
         if (requestCode == invitationQrRequest) {
             val pending = invitationQrResult ?: return
             invitationQrResult = null
@@ -338,10 +343,12 @@ class MainActivity : FlutterActivity() {
 
     override fun onStop() {
         audioDiagnostic.stop()
+        pagerAudio.stop()
         super.onStop()
     }
 
     override fun onDestroy() {
+        pagerAudio.destroy()
         invitationQrResult?.success(null)
         invitationQrResult = null
         attachmentResult?.error("ATTACHMENT_INTERRUPTED", "Seleção interrompida.", null)

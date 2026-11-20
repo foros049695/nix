@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ import '../design/nix_bilingual_label.dart';
 import 'cultural_showcase.dart';
 import 'nix_user_avatar.dart';
 import 'pager_housing.dart';
+import 'pager_playlist_dialog.dart';
 import 'pager_wallpaper_layer.dart';
 import 'pager_appearance_dialog.dart';
 import 'pager_shortcuts.dart';
@@ -130,20 +132,24 @@ class _PagerProfileState extends State<PagerProfile> {
   }
 
   Future<void> _showPagerMenu(NixState state) async {
+    final playlist = defaultTargetPlatform == TargetPlatform.android
+        ? state.pagerPlaylist
+        : null;
     final action = await showDialog<_PagerMenu>(
       context: context,
       builder: (context) => SimpleDialog(
         title: const Text('Menu do Pager'),
         children: [
           for (final action in _PagerMenu.values)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, action),
-              child: ListTile(
-                leading: Icon(action.icon),
-                title: Text(action.label),
-                contentPadding: EdgeInsets.zero,
+            if (action != _PagerMenu.playlist || playlist != null)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, action),
+                child: ListTile(
+                  leading: Icon(action.icon),
+                  title: Text(action.label),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
-            ),
         ],
       ),
     );
@@ -151,6 +157,14 @@ class _PagerProfileState extends State<PagerProfile> {
     switch (action) {
       case _PagerMenu.profile:
         _showProfileEditor(state);
+      case _PagerMenu.playlist:
+        final activePlaylist = state.pagerPlaylist;
+        if (activePlaylist != null) {
+          await showDialog<void>(
+            context: context,
+            builder: (_) => PagerPlaylistDialog(playlist: activePlaylist),
+          );
+        }
       case _PagerMenu.wallpaper:
         _selectPage(2, state);
         _showContemplationSettings();
@@ -425,6 +439,7 @@ class _PagerProfileState extends State<PagerProfile> {
 
 enum _PagerMenu {
   profile('Editar perfil', Icons.person_outline),
+  playlist('Playlist do Pager', Icons.queue_music),
   chats('Abrir mensagens', Icons.chat_bubble_outline),
   colors('Cores do Pager', Icons.palette_outlined),
   wallpaper('Personalizar contemplação', Icons.wallpaper_outlined),
