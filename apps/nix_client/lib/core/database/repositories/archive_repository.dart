@@ -188,6 +188,13 @@ class ArchiveRepository {
     ''');
 
     await _db.execute('''
+      CREATE TABLE IF NOT EXISTS archive_draft_images (
+        draft_id TEXT PRIMARY KEY REFERENCES archive_drafts(id) ON DELETE CASCADE,
+        images_json TEXT NOT NULL
+      );
+    ''');
+
+    await _db.execute('''
       CREATE TABLE IF NOT EXISTS archive_comments (
         hash TEXT PRIMARY KEY,
         target_object_hash TEXT NOT NULL,
@@ -217,22 +224,40 @@ class ArchiveRepository {
     required String category,
     required String markdownContent,
     List<String> tags = const [],
+    List<Map<String, Object>>? images,
   }) async {
     await ensureDiscussionTables();
     final now = DateTime.now().toUtc().millisecondsSinceEpoch;
-    await _db.insert(
-      'archive_drafts',
-      {
-        'id': id,
-        'title': title,
-        'category': category,
-        'markdown_content': markdownContent,
-        'tags_json': jsonEncode(tags),
-        'created_at': now,
-        'updated_at': now,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
+    final fields = {
+      'title': title,
+      'category': category,
+      'markdown_content': markdownContent,
+      'tags_json': jsonEncode(tags),
+      'updated_at': now,
+    };
+    final encodedImages = images == null ? null : jsonEncode(images);
+    await _db.transaction((txn) async {
+      final updated = await txn.update(
+        'archive_drafts', fields, where: 'id = ?', whereArgs: [id],
+      );
+      if (updated == 0) {
+        await txn.insert('archive_drafts', {'id': id, 'created_at': now, ...fields});
+      }
+      if (encodedImages != null) {
+        await txn.insert('archive_draft_images', {
+          'draft_id': id,
+          'images_json': encodedImages,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
+  }
+
+  Future<Object?> getDraftImages(String id) async {
+    await ensureDiscussionTables();
+    final rows = await _db.query('archive_draft_images',
+      columns: ['images_json'], where: 'draft_id = ?', whereArgs: [id], limit: 1,
     );
+    return rows.isEmpty ? null : jsonDecode(rows.single['images_json'] as String);
   }
 
   Future<Map<String, dynamic>?> getDraft(String id) async {

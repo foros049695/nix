@@ -5,6 +5,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:nix_core_crypto/nix_core_crypto.dart';
 import '../database/repositories.dart';
 import '../replication/replication_coordinator.dart';
+import 'archive_image.dart';
 
 /// Serviço oficial de publicação imutável Nix Archive v1 (`nix.archive.article.v1`, Fase 7 / Fase 9).
 /// Realiza canonicalização determinística, hash SHA-256 content-addressed, assinatura Ed25519,
@@ -336,10 +337,13 @@ class NixArchiveService {
     required String title,
     required String rawHtmlBody,
     List<({String claimId, String text})> claims = const [],
+    List<ArchiveImage> images = const [],
     String? supersedesHash,
     String visibility = 'public',
     int? createdAtMs,
   }) async {
+    final embedded = List<ArchiveImage>.of(images);
+    ArchiveImage.validateLimits(embedded);
     if (visibility == 'public' && supersedesHash != null &&
         (await archiveRepo.getObject(supersedesHash))?['visibility'] == 'restricted') {
       visibility = 'restricted';
@@ -351,6 +355,7 @@ class NixArchiveService {
       'schema': articleSchemaV1,
       'title': title.trim(),
       'bodyHtml': cleanHtml,
+      if (embedded.isNotEmpty) 'images': embedded.map((image) => image.toJson()).toList(),
       'authorEd25519': author.ed25519PublicHex,
       'visibility': visibility,
       'createdAt': now,
@@ -480,6 +485,20 @@ class NixArchiveService {
   Future<bool> verifyStoredObject(String objectHash) async {
     final row = await archiveRepo.getObject(objectHash);
     if (row == null) return false;
+    return _verifyObjectRow(objectHash, row);
+  }
+
+  Future<List<ArchiveImage>> readVerifiedArticleImages(String objectHash) async {
+    final row = await archiveRepo.getObject(objectHash);
+    if (row == null || row['kind'] != 'article' ||
+        !await _verifyObjectRow(objectHash, row)) return const [];
+    final bytes = row['canonical_bytes'] as List<int>;
+    final payload = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    if (payload['schema'] != articleSchemaV1) return const [];
+    return ArchiveImage.readList(payload['images']);
+  }
+
+  Future<bool> _verifyObjectRow(String objectHash, Map<String, dynamic> row) async {
     final bytes = row['canonical_bytes'] as List<int>;
     final authorPub = row['author_public'] as List<int>;
     final sig = row['signature'] as List<int>;
@@ -689,15 +708,21 @@ class NixArchiveService {
     required String category,
     required String markdownContent,
     List<String> tags = const [],
+    List<ArchiveImage>? images,
   }) {
+    if (images != null) ArchiveImage.validateLimits(images);
     return archiveRepo.saveDraft(
       id: id,
       title: title,
       category: category,
       markdownContent: markdownContent,
       tags: tags,
+      images: images?.map((image) => image.toJson()).toList(),
     );
   }
+
+  Future<List<ArchiveImage>> readDraftImages(String id) async =>
+      ArchiveImage.readList(await archiveRepo.getDraftImages(id));
 
   Future<Map<String, dynamic>?> getDraft(String id) =>
       archiveRepo.getDraft(id);
@@ -805,6 +830,12 @@ class NixArchiveService {
 
     // 6. Ingestão segura no Archive local com estado verificado
     final schema = canonicalObj['schema'] as String? ?? '';
+    if (canonicalObj.containsKey('images')) {
+      if (schema != articleSchemaV1) {
+        throw const FormatException('Imagens só são admitidas em artigos.');
+      }
+      ArchiveImage.readList(canonicalObj['images']);
+    }
     final createdAt = (canonicalObj['createdAt'] as int?) ??
         int.tryParse(metadata['created_at'] ?? '') ??
         DateTime.now().toUtc().millisecondsSinceEpoch;

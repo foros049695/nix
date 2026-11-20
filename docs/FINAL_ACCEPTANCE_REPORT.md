@@ -10,7 +10,7 @@ Foram inspecionadas as capturas do Nix e amostras de quadros de sete vídeos. As
 | B. Interface adaptativa | [Android](ANDROID_UI_REMEDIATION.md) | Pager, filtros e navegação compacta no Discovery | Testes Flutter com largura variável | PARTIAL | Matriz completa de resoluções e painéis redimensionáveis ainda em aberto. |
 | C. Texto e mídia | [Mensagens](MESSAGING_AND_MEDIA_INTEGRATION.md) | Seletor, prévia de imagem, falha explícita de anexo ausente e agendamento de texto direto | Testes de timeline e anexos | PARTIAL | Notas de voz, seleção de fotos com prévia e formatação contextual básica entregues. Vídeo inline, stickers e áudio de chamadas continuam pendentes. |
 | D. Comunidades | [Comunidades e enquetes](COMMUNITIES_AND_POLLS.md) | Visibilidade e agrupamento local preservados | Testes de privacidade e pastas | PARTIAL | Enquetes cifradas disponíveis em conversas diretas. Comunidades distribuídas, papéis, tags e enquetes em grupos continuam pendentes. |
-| E. Archive | [Archive](ARCHIVE_EDITOR_VALIDATION.md) | Editor Markdown, revisão visual, moderação reversível e assinatura preservada | Teste de fluxo Archive | PARTIAL | Notas de rodapé preservadas. Mídias autorizadas e reações estão pendentes. |
+| E. Archive | [Archive](ARCHIVE_EDITOR_VALIDATION.md) | Editor Markdown, revisão visual, moderação reversível e assinatura preservada | Teste de fluxo Archive | PARTIAL | Notas de rodapé e imagens autorizadas entregues. Vídeos e reações estão pendentes. |
 | F. Acervo e música | [Catálogo](MEDIA_PROGRESS_AND_MUSIC.md) | Catálogo local, busca Unicode, progresso cultural e playlist local do Pager no Android | Testes de abertura, busca e integridade | PARTIAL | Playlist do Pager aceita WAV no Linux e Windows. Playlists do acervo, publicação opcional e resenhas formatadas continuam pendentes. |
 | G. Finanças | [Mercado](UNIFIED_P2P_MARKETPLACE.md), [RoboSats](ROBOSATS_INTEGRATION.md) | Mercado e carteira em uma entrada, com análise de integração RoboSats | Testes locais de isolamento e assinatura | PARTIAL | Bitcoin on-chain, Lightning, coordenadores e liquidação Monero real continuam pendentes. |
 | H. Windows | [Windows](WINDOWS_DESKTOP_IMPLEMENTATION.md) | Runner, cofre, Tor, audio diagnóstico e pacote piloto | Job Windows x64 | PARTIAL | Aceite em máquina Windows com hardware, instalador e assinatura de código aguardam ambiente. |
@@ -67,3 +67,10 @@ O fórum local agora salva tópicos, tags, comentários e reações no SQLCipher
 A tentativa com a rede Tor real chegou ao handshake e parou em 14% do bootstrap. Os resultados de troca cifrada desta rodada correspondem ao relay de laboratório. O aceite por Onion externo continua pendente.
 
 A revisão `cea75b5` passou em 236 testes locais, com seis ignorados na suíte padrão. O teste do fórum foi executado separadamente com SQLCipher obrigatório. Uma segunda prova conectou dois clientes com SQLCipher ao binário Go real do Nix Relay por SOCKS5 de laboratório. O relay armazenou e confirmou quatro envelopes cifrados durante criação, votos e encerramento. [CI da revisão](https://github.com/foros049695/nix/actions/runs/44816035347) · [Pilotos nativos](https://github.com/foros049695/nix/actions/runs/44816035341)
+
+
+## Imagens autorizadas no Archive
+
+O editor incorpora PNGs preparados a partir de imagens locais PNG, JPEG e WebP. A prévia, a legenda e a confirmação explícita de divulgação fazem parte do fluxo de publicação. A assinatura cobre as imagens e o leitor só as apresenta após verificar o objeto. Testes de armazenamento e replicação de laboratório cobrem rascunhos, descarte de metadados, rejeição de conteúdo alterado e sincronização entre dois clientes. [Editor do Archive](ARCHIVE_EDITOR_VALIDATION.md)
+
+A reexecução do piloto Android da revisão `cea75b5` passou após a falha anterior no Maven Central. Os jobs Linux e Windows também passaram naquela execução. [Pilotos da rodada anterior](https://github.com/foros049695/nix/actions/runs/44816035341)

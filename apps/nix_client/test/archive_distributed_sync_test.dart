@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_client/core/archive/nix_archive_service.dart';
+import 'package:nix_client/core/archive/archive_image.dart';
 import 'package:nix_client/core/database/local_database.dart';
 import 'package:nix_client/core/database/repositories/archive_repository.dart';
 import 'package:nix_client/core/replication/replication_coordinator.dart';
@@ -79,6 +80,28 @@ void main() {
       if (tempDir.existsSync()) {
         tempDir.deleteSync(recursive: true);
       }
+    });
+
+    test('sincroniza imagens incorporadas como parte do artigo assinado', () async {
+      final image = ArchiveImage.fromPng(
+        File('assets/images/nix_logo_128.png').readAsBytesSync(), caption: 'Logotipo de teste',
+      );
+      final hash = await clientAService.publishArticle(
+        author: clientAIdentity, title: 'Com imagem',
+        rawHtmlBody: '<p>Conteúdo.</p>', images: [image],
+      );
+      expect(await clientBService.syncObjectFromNetwork(hash), isTrue);
+      final loaded = (await clientBService.readVerifiedArticleImages(hash)).single;
+      expect(loaded.caption, image.caption);
+      expect(loaded.bytes, orderedEquals(image.bytes));
+
+      final privateHash = await clientAService.publishArticle(
+        author: clientAIdentity, title: 'Imagem privada',
+        rawHtmlBody: '<p>Conteúdo restrito.</p>', images: [image],
+        visibility: 'restricted',
+      );
+      expect(await clientBService.syncObjectFromNetwork(privateHash), isFalse);
+      expect(await clientBRepo.getObject(privateHash), isNull);
     });
 
     test('1. Artigo publicado por Client A replica na malha e é sincronizado e verificado por Client B', () async {

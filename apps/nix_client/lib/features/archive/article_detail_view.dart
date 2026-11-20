@@ -1,3 +1,5 @@
+import '../../core/archive/archive_image.dart';
+import 'archive_image_picker.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -36,6 +38,7 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
   final Map<String, ArchiveCryptoVerificationStatus> _commentCryptoCache = {};
 
   bool _isLoading = true;
+  List<ArchiveImage> _images = const [];
   String? _replyingToCommentHash;
   String? _quotingText;
 
@@ -71,6 +74,14 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
           : ArchiveCryptoVerificationStatus.invalidSignature;
     } catch (_) {
       _cryptoStatus = ArchiveCryptoVerificationStatus.verificationError;
+    }
+
+    try {
+      if (_cryptoStatus == ArchiveCryptoVerificationStatus.verified) {
+        _images = await _archiveService.readVerifiedArticleImages(_objectHash);
+      }
+    } catch (_) {
+      _images = const [];
     }
 
     try {
@@ -400,6 +411,12 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
                     const Text('Sem conteúdo textual registrado.')
                   else
                     ArchiveDocument(source: bodyHtml),
+                  for (final (index, image) in _images.indexed)
+                    ArchiveImageView(
+                      key: ValueKey('archive_verified_image_$index'),
+                      image: image,
+                      index: index,
+                    ),
 
                   const Divider(height: 32),
 

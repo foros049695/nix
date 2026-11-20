@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/archive/archive_verification_status.dart';
 import '../../core/archive/archive_markdown.dart';
+import '../../core/archive/archive_image.dart';
+import 'archive_image_picker.dart';
 import '../../core/archive/nix_archive_service.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
@@ -43,6 +45,9 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
   String? _activeDraftId;
   bool _isPreviewMode = false;
   bool _isPublishing = false;
+  bool _isPickingImage = false;
+  int _editorGeneration = 0;
+  List<ArchiveImage> _images = const [];
   String? _publishFeedback;
   Timer? _autoSaveDebouncer;
 
@@ -149,16 +154,18 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
     final service = _nixState.archiveService;
     final title = _titleCtrl.text.trim();
     final content = _contentCtrl.text;
-    if (service == null || (_activeDraftId == null && title.isEmpty && content.trim().isEmpty)) {
+    if (service == null || (_activeDraftId == null && title.isEmpty && content.trim().isEmpty && _images.isEmpty)) {
       return;
     }
     final id = _activeDraftId ??= 'draft_${DateTime.now().microsecondsSinceEpoch}';
     final category = _categoryCtrl.text.trim();
+    final images = _images;
     _pendingDraft = () => service.saveDraft(
       id: id,
       title: title.isEmpty ? 'Sem título' : title,
       category: category,
       markdownContent: content,
+      images: images,
     );
     _autoSaveDebouncer = Timer(const Duration(milliseconds: 600), () {
       unawaited(_flushAutoSave().then((_) {
@@ -242,9 +249,85 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
     ],
   );
 
+  Future<void> _attachImage() async {
+    if (_isPublishing || _isPickingImage || _images.length >= ArchiveImage.maxImages) return;
+    final generation = _editorGeneration;
+    setState(() => _isPickingImage = true);
+    try {
+      final image = await ArchiveImagePicker.pick(context);
+      if (!mounted || image == null || generation != _editorGeneration) return;
+      var caption = '';
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: const Text('Adicionar imagem ao rascunho'),
+          scrollable: true,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ArchiveImageView(image: image, index: _images.length),
+              TextField(
+                maxLength: ArchiveImage.maxCaptionLength,
+                decoration: const InputDecoration(labelText: 'Legenda ou descrição opcional'),
+                onChanged: (value) => caption = value,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancelar')),
+            FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Adicionar')),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true || generation != _editorGeneration) return;
+      final updated = [..._images, ArchiveImage.fromPng(image.bytes, caption: caption)];
+      ArchiveImage.validateLimits(updated);
+      setState(() => _images = updated);
+      _scheduleAutoSave();
+    } catch (error) {
+      if (mounted) {
+        final note = error is FormatException ? error.message : 'Não foi possível preparar a imagem.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(note)));
+      }
+    } finally {
+      if (mounted) setState(() => _isPickingImage = false);
+    }
+  }
+
+  Widget _buildArticleImages() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      for (final (index, image) in _images.indexed)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: ArchiveImageView(image: image, index: index)),
+            if (!_isPreviewMode)
+              IconButton(
+                tooltip: 'Remover imagem ${index + 1}',
+                icon: const Icon(Icons.close),
+                onPressed: _isPublishing || _isPickingImage ? null : () {
+                  setState(() => _images = [..._images]..removeAt(index));
+                  _scheduleAutoSave();
+                },
+              ),
+          ],
+        ),
+      if (!_isPreviewMode)
+        OutlinedButton.icon(
+          onPressed: _isPublishing || _isPickingImage ||
+              _images.length >= ArchiveImage.maxImages ? null : _attachImage,
+          icon: const Icon(Icons.add_photo_alternate_outlined),
+          label: const Text('Adicionar imagem'),
+        ),
+    ],
+  );
+
   Future<void> _publishArticle() async {
+    if (_isPickingImage || _isPublishing) return;
     final title = _titleCtrl.text.trim();
     final body = _contentCtrl.text.trim();
+    final images = _images;
     if (title.isEmpty || body.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Título e conteúdo são obrigatórios.')),
@@ -264,6 +347,25 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
     final draftId = _activeDraftId;
 
     try {
+      if (images.isNotEmpty) {
+        final authorized = await showDialog<bool>(
+          context: context,
+          builder: (dialog) => AlertDialog(
+            title: const Text('Publicar as imagens?'),
+            content: const Text('As imagens farão parte do artigo público assinado '
+                'e poderão circular junto com ele. Publique apenas imagens que você pode divulgar.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancelar')),
+              FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Publicar imagens')),
+            ],
+          ),
+        );
+        if (!mounted) return;
+        if (authorized != true) {
+          setState(() => _isPublishing = false);
+          return;
+        }
+      }
       await _flushAutoSave();
       if (!mounted) return;
       final claimsLines = _claimsCtrl.text
@@ -281,11 +383,14 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
         title: title,
         rawHtmlBody: compileArchiveMarkdown(body),
         claims: claims,
+        images: images,
       );
 
       if (draftId != null) await _archiveService.deleteDraft(draftId);
       if (!mounted) return;
       _activeDraftId = null;
+      _editorGeneration++;
+      _images = const [];
       _titleCtrl.clear();
       _contentCtrl.clear();
       _claimsCtrl.clear();
@@ -317,15 +422,45 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
   }
 
   Future<void> _loadDraftIntoEditor(Map<String, dynamic> draft) async {
+    if (_isPublishing || _isPickingImage) return;
     await _flushAutoSave();
     if (!mounted) return;
-    setState(() {
-      _activeDraftId = draft['id'] as String;
-      _titleCtrl.text = draft['title'] as String? ?? '';
-      _categoryCtrl.text = draft['category'] as String? ?? 'Tecnologia';
-      _contentCtrl.text = draft['markdown_content'] as String? ?? '';
-      _tabController.animateTo(2);
-    });
+    final id = draft['id'] as String;
+    try {
+      final generation = ++_editorGeneration;
+      final latest = await _archiveService.getDraft(id);
+      final images = await _archiveService.readDraftImages(id);
+      if (!mounted || latest == null || generation != _editorGeneration) return;
+      setState(() {
+        _images = images;
+        _activeDraftId = id;
+        _titleCtrl.text = latest['title'] as String? ?? '';
+        _categoryCtrl.text = latest['category'] as String? ?? 'Tecnologia';
+        _contentCtrl.text = latest['markdown_content'] as String? ?? '';
+        _tabController.animateTo(2);
+      });
+    } catch (_) {
+      if (mounted) setState(() => _publishFeedback = 'Falha ao abrir o rascunho.');
+    }
+  }
+
+  Future<void> _deleteDraft(String id) async {
+    if (_isPublishing || _isPickingImage) return;
+    _editorGeneration++;
+    await _flushAutoSave();
+    if (!mounted) return;
+    await _archiveService.deleteDraft(id);
+    if (!mounted) return;
+    if (_activeDraftId == id) {
+      setState(() {
+        _activeDraftId = null;
+        _images = const [];
+        _titleCtrl.clear();
+        _contentCtrl.clear();
+        _claimsCtrl.clear();
+      });
+    }
+    await _loadDrafts();
   }
 
   void _openArticleDetail(Map<String, dynamic> article) {
@@ -682,10 +817,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
                 IconButton(
                   icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
                   tooltip: 'Excluir Rascunho',
-                  onPressed: () async {
-                    await _archiveService.deleteDraft(id);
-                    await _loadDrafts();
-                  },
+                  onPressed: () => _deleteDraft(id),
                 ),
               ],
             ),
@@ -810,6 +942,8 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
             ),
           ],
           const SizedBox(height: 10),
+          _buildArticleImages(),
+          const SizedBox(height: 10),
           TextField(
             controller: _claimsCtrl,
             maxLines: 2,
@@ -845,7 +979,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: NixTokens.borderSm),
                   ),
-                  onPressed: _isPublishing ? null : _publishArticle,
+                  onPressed: _isPublishing || _isPickingImage ? null : _publishArticle,
                 ),
               ),
             ],
