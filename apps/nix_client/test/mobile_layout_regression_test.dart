@@ -146,6 +146,10 @@ void main() {
     state.selectHomeSubTab(HomeSubTab.transactions);
     await tester.pumpAndSettle();
     expect(find.text('Carteira externa desconectada'), findsOneWidget);
+    expect(state.activeArea, NixActiveArea.moneroP2p);
+    await tester.tap(find.text('Mercado'));
+    await tester.pumpAndSettle();
+    expect(find.text('Carteira externa desconectada'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

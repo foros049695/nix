@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../monero_p2p/monero_finance_view.dart';
 import '../../core/models/direct_message.dart';
 import '../../core/models/member.dart';
 import '../../core/theme.dart';
@@ -121,7 +122,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
         return _buildRequestsStage(state);
 
       case HomeSubTab.transactions:
-        return _buildTransactionsStage(state);
+        return const MoneroWalletView();
 
       case HomeSubTab.updates:
         return _buildUpdatesStage(state);
@@ -637,111 +638,6 @@ class _HomePrivateViewState extends State<HomePrivateView> {
           channelName: dm.isSavedMessages ? 'Mensagens Salvas' : dm.peerName,
           isDirectMessage: true,
           onSendCustom: (text, attachments) => state.sendDirectMessage(text, attachments: attachments),
-        ),
-      ],
-    );
-  }
-
-  // ================= ABA TRANSAÇÕES (XMR) =================
-  Widget _buildTransactionsStage(NixState state) {
-    return Column(
-      key: const ValueKey('home_stage_transactions'),
-      children: [
-        _buildTopHeader(
-          icon: Icons.account_balance_wallet_outlined,
-          title: 'Nix Wallet · Transações Monero (XMR)',
-          subtitle: 'Processo isolado Seed B · Zero vinculação com a identidade de mensageria',
-          state: state,
-        ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(24),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: NixColors.surfaceCard,
-                  borderRadius: NixTokens.borderMd,
-                  border: Border.all(color: NixColors.surfaceBorderStrong),
-                ),
-                child: Wrap(
-                  spacing: 16,
-                  runSpacing: 10,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('SALDO DESBLOQUEADO (SEED B ISOLADA)',
-                            style: TextStyle(
-                                color: NixColors.textMuted,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1.0)),
-                        const SizedBox(height: 6),
-                        Text(state.moneroWalletBalanceLabel,
-                            style: TextStyle(
-                                color: NixColors.textPrimary,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                                fontFamily: 'monospace')),
-                      ],
-                    ),
-                    Text(state.moneroWalletStatusLabel,
-                        style: TextStyle(fontSize: 12, color: NixColors.textSecondary)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text('HISTÓRICO DE LIQUIDAÇÕES LOCAL', style: NixTokens.labelUppercase()),
-              const SizedBox(height: 10),
-              ...state.transactions.map((tx) => Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: NixColors.surfaceCard,
-                      borderRadius: NixTokens.borderSm,
-                      border: Border.all(color: NixColors.surfaceBorder),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          tx.isIncoming
-                              ? Icons.call_received_rounded
-                              : Icons.call_made_rounded,
-                          color: NixColors.textPrimary,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(tx.title,
-                                  style: TextStyle(
-                                      color: NixColors.textPrimary,
-                                      fontSize: 13.5,
-                                      fontWeight: FontWeight.w600)),
-                              const SizedBox(height: 2),
-                              Text('${tx.subaddressPreview} · ${tx.confirmations} confirmações',
-                                  style: TextStyle(
-                                      color: NixColors.textMuted, fontSize: 11)),
-                            ],
-                          ),
-                        ),
-                        Text(
-                          tx.amountXmr,
-                          style: TextStyle(
-                            color: NixColors.textPrimary,
-                            fontWeight: FontWeight.bold,
-                            fontFamily: 'monospace',
-                            fontSize: 13.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )),
-            ],
-          ),
         ),
       ],
     );

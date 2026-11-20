@@ -34,8 +34,11 @@ class MoneroP2pView extends StatelessWidget {
 
         return Container(
           color: NixColors.background,
-          child: Column(
-            children: [
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Column(
+                  children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: Align(
@@ -186,7 +189,10 @@ class MoneroP2pView extends StatelessWidget {
                 child: Column(
                   children: [
                     if (isNarrow) ...[
-                      Row(
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Container(
                             decoration: BoxDecoration(
@@ -211,8 +217,8 @@ class MoneroP2pView extends StatelessWidget {
                               ],
                             ),
                           ),
-                          const SizedBox(width: 10),
                           Container(
+                            width: 132,
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
                               color: NixColors.surfaceCard,
@@ -221,6 +227,7 @@ class MoneroP2pView extends StatelessWidget {
                             ),
                             child: DropdownButtonHideUnderline(
                               child: DropdownButton<String>(
+                                isExpanded: true,
                                 value: nixState.moneroSelectedFiat,
                                 dropdownColor: NixColors.surfaceElevatedHigh,
                                 style: TextStyle(
@@ -347,38 +354,41 @@ class MoneroP2pView extends StatelessWidget {
                 ),
               ),
 
-              // Lista de Ofertas ou Estado Vazio
-              Expanded(
-                child: orders.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.search_off_rounded, size: 40, color: NixColors.textMuted),
-                            const SizedBox(height: 10),
-                            Text(
-                              'Nenhuma oferta encontrada para os filtros selecionados.',
-                              style: TextStyle(color: NixColors.textSecondary, fontSize: 13),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.all(20),
-                        physics: const BouncingScrollPhysics(),
-                        itemCount: orders.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (context, idx) {
-                          final order = orders[idx];
-                          final valid = nixState.verifyMoneroOrder(order);
-                          return _MoneroOrderCard(
-                            order: order,
-                            isCryptographicallyValid: valid,
-                            onTrade: valid ? () => PrivateTradeRoomView.open(context, nixState) : null,
-                          );
-                        },
-                      ),
+                  ],
+                ),
               ),
+              if (orders.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'Nenhuma oferta encontrada para os filtros selecionados.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: NixColors.textSecondary),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.all(20),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final order = orders[index];
+                      final valid = nixState.verifyMoneroOrder(order);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _MoneroOrderCard(
+                          order: order,
+                          isCryptographicallyValid: valid,
+                          onTrade: valid ? () => PrivateTradeRoomView.open(context, nixState) : null,
+                        ),
+                      );
+                    }, childCount: orders.length),
+                  ),
+                ),
             ],
           ),
         );
@@ -784,10 +794,11 @@ class _MoneroOrderCard extends StatelessWidget {
                     Divider(height: 1, color: NixColors.surfaceBorder),
                     const SizedBox(height: 10),
 
-                    // Bottom Row: Price/Limits on left, Method/Button on right
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.end,
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.end,
+                      spacing: 10,
+                      runSpacing: 10,
                       children: [
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,

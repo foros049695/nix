@@ -174,14 +174,6 @@ class HomeSidebar extends StatelessWidget {
                 ),
                 _navTile(
                   context,
-                  icon: Icons.account_balance_wallet_outlined,
-                  label: 'Transações (XMR)',
-                  isSelected: nixState.activeArea == NixActiveArea.homePrivate &&
-                      activeTab == HomeSubTab.transactions,
-                  onTap: () => nixState.selectHomeSubTab(HomeSubTab.transactions),
-                ),
-                _navTile(
-                  context,
                   icon: Icons.bolt_outlined,
                   label: 'Atualizações',
                   isSelected: nixState.activeArea == NixActiveArea.homePrivate &&

@@ -2828,7 +2828,11 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void openMoneroP2pArea() {
+  bool _financeShowWallet = false;
+  bool get financeShowWallet => _financeShowWallet;
+
+  void openMoneroP2pArea({bool showWallet = false}) {
+    _financeShowWallet = showWallet;
     _activeArea = NixActiveArea.moneroP2p;
     notifyListeners();
   }
@@ -2848,6 +2852,10 @@ class NixState extends ChangeNotifier {
   void selectHomeSubTab(HomeSubTab tab) {
     if (tab == HomeSubTab.moneroP2p) {
       openMoneroP2pArea();
+      return;
+    }
+    if (tab == HomeSubTab.transactions) {
+      openMoneroP2pArea(showWallet: true);
       return;
     }
     if (tab == HomeSubTab.githubDiscovery) {

@@ -28,7 +28,7 @@ import '../forum/forum_channel_view.dart';
 import '../home/home_private_view.dart';
 import '../home/home_sidebar.dart';
 import '../members/members_panel.dart';
-import '../monero_p2p/monero_p2p_view.dart';
+import '../monero_p2p/monero_finance_view.dart';
 import '../profile/profile_overlay.dart';
 import '../publications/publication_room_view.dart';
 import '../media/media_index_view.dart';
@@ -144,7 +144,7 @@ class AppShell extends StatelessWidget {
           final Widget shellScaffold = isDesktop
               ? NixDesktopWorkspace(
                   state: nixState,
-                  stage: _buildActiveStage(activeArea, currentChannel),
+                  stage: _buildActiveStage(nixState, activeArea, currentChannel),
                   showInfoPanel: showInfoPanel,
                   offGridBanner: nixState.isStrictOffGridMode ? _buildStrictOffGridBanner(nixState) : null,
                 )
@@ -228,7 +228,7 @@ class AppShell extends StatelessWidget {
                       children: [
                         if (nixState.isStrictOffGridMode)
                           _buildStrictOffGridBanner(nixState),
-                        Expanded(child: _buildActiveStage(activeArea, currentChannel)),
+                        Expanded(child: _buildActiveStage(nixState, activeArea, currentChannel)),
                       ],
                     ),
                   )),
@@ -355,7 +355,7 @@ class AppShell extends StatelessWidget {
     }
   }
 
-  Widget _buildActiveStage(NixActiveArea activeArea, Channel channel) {
+  Widget _buildActiveStage(NixState state, NixActiveArea activeArea, Channel channel) {
     if (activeArea == NixActiveArea.homePrivate) {
       return const HomePrivateView();
     }
@@ -366,7 +366,7 @@ class AppShell extends StatelessWidget {
       return const GithubDiscoveryView();
     }
     if (activeArea == NixActiveArea.moneroP2p) {
-      return const MoneroP2pView();
+      return MoneroFinanceView(showWallet: state.financeShowWallet);
     }
     if (activeArea == NixActiveArea.mediaIndex) {
       return const NixMediaIndexView();
