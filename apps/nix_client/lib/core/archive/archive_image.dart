@@ -4,8 +4,7 @@ import 'dart:typed_data';
 /// Imagem autocontida do Archive. Nenhum nome de arquivo, caminho ou URL faz
 /// parte da publicação, e apenas os chunks de pixels permitidos são mantidos.
 class ArchiveImage {
-  ArchiveImage._(Uint8List bytes, this.caption)
-      : bytes = bytes.asUnmodifiableView();
+  ArchiveImage._(this._bytes, this.caption);
 
   static const maxImages = 3;
   static const maxImageBytes = 384 * 1024;
@@ -15,7 +14,8 @@ class ArchiveImage {
   static const _magic = [137, 80, 78, 71, 13, 10, 26, 10];
   static const _allowedChunks = {'IHDR', 'PLTE', 'tRNS', 'IDAT', 'IEND'};
 
-  final Uint8List bytes;
+  final Uint8List _bytes;
+  Uint8List get bytes => Uint8List.fromList(_bytes);
   final String caption;
 
   factory ArchiveImage.fromPng(Uint8List bytes, {String caption = ''}) {
@@ -80,7 +80,7 @@ class ArchiveImage {
   }
 
   Map<String, Object> toJson() => {
-        'png': base64Encode(bytes),
+        'png': base64Encode(_bytes),
         'caption': caption,
       };
 
@@ -101,7 +101,7 @@ class ArchiveImage {
       final bytes = base64Decode(encoded);
       final caption = entry['caption'] as String;
       final image = ArchiveImage.fromPng(bytes, caption: caption);
-      if (image.bytes.length != bytes.length || image.caption != caption) {
+      if (image._bytes.length != bytes.length || image.caption != caption) {
         throw const FormatException(
             'A imagem contém dados além da representação canônica.');
       }
@@ -113,7 +113,7 @@ class ArchiveImage {
 
   static void validateLimits(List<ArchiveImage> images) {
     if (images.length > maxImages ||
-        images.fold<int>(0, (total, item) => total + item.bytes.length) >
+        images.fold<int>(0, (total, item) => total + item._bytes.length) >
             maxTotalBytes) {
       throw const FormatException(
           'Use até três imagens, com até 1 MiB no total.');
