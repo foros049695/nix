@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'conversation_surface.dart';
+import 'message_attachment_tile.dart';
+import 'reaction_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/member.dart';
@@ -15,7 +17,10 @@ class MessageBubble extends StatelessWidget {
 
   const MessageBubble({super.key, required this.message});
 
-  static const List<String> _quickEmojis = ['⚡', '🛡️', '🔥', '👁️', '✓', '💿', '❤️'];
+  Future<void> _react(BuildContext context, NixState state) async {
+    final emoji = await showReactionPicker(context);
+    if (context.mounted && emoji != null) state.toggleMessageReaction(message.id, emoji);
+  }
 
   Member _resolveMember(NixState state) {
     return state.members.firstWhere(
@@ -48,25 +53,7 @@ class MessageBubble extends StatelessWidget {
         side: BorderSide(color: accent.withValues(alpha: 0.35)),
       ),
       items: [
-        PopupMenuItem<String>(
-          enabled: false,
-          child: Wrap(
-            spacing: 6,
-            children: _quickEmojis.map((e) {
-              return InkWell(
-                onTap: () {
-                  nixState.toggleMessageReaction(message.id, e);
-                  Navigator.of(context).pop();
-                },
-                borderRadius: BorderRadius.circular(4),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  child: Text(e, style: const TextStyle(fontSize: 18, fontFamilyFallback: ['NixEmoji'])),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
+        const PopupMenuItem<String>(value: 'react', child: Text('Reagir com emoji')),
         const PopupMenuDivider(height: 1),
         PopupMenuItem<String>(
           value: 'reply',
@@ -168,7 +155,9 @@ class MessageBubble extends StatelessWidget {
       ],
     ).then((value) {
       if (!context.mounted || value == null) return;
-      if (value == 'reply') {
+      if (value == 'react') {
+        _react(context, nixState);
+      } else if (value == 'reply') {
         nixState.startReplyTo(message);
       } else if (value == 'edit') {
         nixState.startEditMessage(message);
@@ -387,38 +376,10 @@ class MessageBubble extends StatelessWidget {
                           Wrap(
                             spacing: 6,
                             runSpacing: 4,
-                            children: message.attachments
-                                .map((att) => Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: NixColors.surfaceElevated,
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: NixColors.surfaceBorderStrong),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(Icons.attach_file_rounded,
-                                              size: 12, color: accentText),
-                                          const SizedBox(width: 4),
-                                          Flexible(
-                                            child: Tooltip(
-                                              message: att,
-                                              child: Text(
-                                                att,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  color: NixColors.textPrimary,
-                                                  fontSize: 11,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ))
-                                .toList(),
+                            children: [
+                              for (var i = 0; i < message.attachments.length; i++)
+                                MessageAttachmentTile(key: ValueKey('${message.id}:$i'), message: message, index: i),
+                            ],
                           ),
                         ],
                         if (message.deliveryError != null &&
@@ -475,38 +436,13 @@ class MessageBubble extends StatelessWidget {
                               _buildDeliveryStateIcon(accentText),
                             ],
                             const SizedBox(width: 6),
-                            PopupMenuButton<String>(
-                              tooltip: 'Reagir com Emoji',
+                            IconButton(
+                              tooltip: 'Adicionar reação',
+                              visualDensity: VisualDensity.compact,
                               padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              color: NixColors.surfaceCard,
-                              onSelected: (emoji) =>
-                                  nixState.toggleMessageReaction(message.id, emoji),
-                              itemBuilder: (_) => [
-                                PopupMenuItem<String>(
-                                  enabled: false,
-                                  child: Wrap(
-                                    spacing: 8,
-                                    children: _quickEmojis
-                                        .map((e) => InkWell(
-                                              onTap: () {
-                                                nixState.toggleMessageReaction(message.id, e);
-                                                Navigator.pop(context);
-                                              },
-                                              child: Padding(
-                                                padding: const EdgeInsets.all(4),
-                                                child: Text(e, style: const TextStyle(fontSize: 18, fontFamilyFallback: ['NixEmoji'])),
-                                              ),
-                                            ))
-                                        .toList(),
-                                  ),
-                                ),
-                              ],
-                              child: Icon(
-                                Icons.add_reaction_outlined,
-                                size: 13,
-                                color: NixColors.textMuted,
-                              ),
+                              constraints: const BoxConstraints(minHeight: 28, minWidth: 28),
+                              onPressed: () => _react(context, nixState),
+                              icon: Icon(Icons.add_reaction_outlined, size: 15, color: NixColors.textMuted),
                             ),
                           ],
                         ),

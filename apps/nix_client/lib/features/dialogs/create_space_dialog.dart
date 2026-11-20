@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../navigation/workspace_image.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
 import 'nix_symbol_picker.dart';
@@ -12,6 +13,7 @@ class CreateSpaceDialog extends StatefulWidget {
 }
 
 class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
+  String? _imagePath;
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
   String _selectedEmoji = 'i:shield';
@@ -55,6 +57,8 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
                 icon: NixSymbol(_selectedEmoji),
                 label: const Text('Escolher ícone ou emoji'),
               ),
+              const SizedBox(height: 12),
+              WorkspaceImageField(path: _imagePath, onChanged: (path) => setState(() => _imagePath = path)),
               const SizedBox(height: 16),
               Text(
                 'NOME DO ESPAÇO',
@@ -103,6 +107,7 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
           onPressed: () {
             if (_nameController.text.trim().isNotEmpty) {
               nixState.createSpace(
+                customImagePath: _imagePath,
                 name: _nameController.text.trim(),
                 description: _descController.text.trim(),
                 emoji: _selectedEmoji,

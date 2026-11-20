@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import '../theme/nix_colors.dart';
 
 enum ChannelType {
-  text,         // Sala de texto padrão
-  forum,        // Área de tópicos interativos (cards com imagens + chat em split-view)
-  voice,        // Sala de voz / call E2EE
-  publication,  // Sala do Nix Archive (artigos canônicos e evidências)
+  text, // Sala de texto padrão
+  forum, // Área de tópicos interativos (cards com imagens + chat em split-view)
+  voice, // Sala de voz / call E2EE
+  publication, // Sala do Nix Archive (artigos canônicos e evidências)
   announcement, // Canal de comunicados
 }
 
@@ -62,6 +62,99 @@ class ChannelPermissions {
     this.maxFileSizeMb = 50,
   });
 
+  Map<String, Object?> toJson() => {
+        'allowMessages': allowMessages,
+        'allowImages': allowImages,
+        'allowFiles': allowFiles,
+        'allowVideos': allowVideos,
+        'allowAudio': allowAudio,
+        'allowLinks': allowLinks,
+        'allowForwarding': allowForwarding,
+        'allowReactions': allowReactions,
+        'allowEditing': allowEditing,
+        'allowDeletion': allowDeletion,
+        'restrictExport': restrictExport,
+        'restrictMediaSaving': restrictMediaSaving,
+        'protectPreviews': protectPreviews,
+        'requestScreenshotProtection': requestScreenshotProtection,
+        'ephemeralRetentionMinutes': ephemeralRetentionMinutes,
+        'isPublic': isPublic,
+        'requireApproval': requireApproval,
+        'memberLimit': memberLimit,
+        'inviteExpiryDays': inviteExpiryDays,
+        'slowModeSeconds': slowModeSeconds,
+        'maxFileSizeMb': maxFileSizeMb,
+      };
+
+  factory ChannelPermissions.fromJson(Map<String, dynamic> data) {
+    const defaults = ChannelPermissions();
+    return ChannelPermissions(
+      allowMessages: data['allowMessages'] is bool
+          ? data['allowMessages'] as bool
+          : defaults.allowMessages,
+      allowImages: data['allowImages'] is bool
+          ? data['allowImages'] as bool
+          : defaults.allowImages,
+      allowFiles: data['allowFiles'] is bool
+          ? data['allowFiles'] as bool
+          : defaults.allowFiles,
+      allowVideos: data['allowVideos'] is bool
+          ? data['allowVideos'] as bool
+          : defaults.allowVideos,
+      allowAudio: data['allowAudio'] is bool
+          ? data['allowAudio'] as bool
+          : defaults.allowAudio,
+      allowLinks: data['allowLinks'] is bool
+          ? data['allowLinks'] as bool
+          : defaults.allowLinks,
+      allowForwarding: data['allowForwarding'] is bool
+          ? data['allowForwarding'] as bool
+          : defaults.allowForwarding,
+      allowReactions: data['allowReactions'] is bool
+          ? data['allowReactions'] as bool
+          : defaults.allowReactions,
+      allowEditing: data['allowEditing'] is bool
+          ? data['allowEditing'] as bool
+          : defaults.allowEditing,
+      allowDeletion: data['allowDeletion'] is bool
+          ? data['allowDeletion'] as bool
+          : defaults.allowDeletion,
+      restrictExport: data['restrictExport'] is bool
+          ? data['restrictExport'] as bool
+          : defaults.restrictExport,
+      restrictMediaSaving: data['restrictMediaSaving'] is bool
+          ? data['restrictMediaSaving'] as bool
+          : defaults.restrictMediaSaving,
+      protectPreviews: data['protectPreviews'] is bool
+          ? data['protectPreviews'] as bool
+          : defaults.protectPreviews,
+      requestScreenshotProtection: data['requestScreenshotProtection'] is bool
+          ? data['requestScreenshotProtection'] as bool
+          : defaults.requestScreenshotProtection,
+      ephemeralRetentionMinutes: data['ephemeralRetentionMinutes'] is int
+          ? data['ephemeralRetentionMinutes'] as int
+          : defaults.ephemeralRetentionMinutes,
+      isPublic: data['isPublic'] is bool
+          ? data['isPublic'] as bool
+          : defaults.isPublic,
+      requireApproval: data['requireApproval'] is bool
+          ? data['requireApproval'] as bool
+          : defaults.requireApproval,
+      memberLimit: data['memberLimit'] is int
+          ? data['memberLimit'] as int
+          : defaults.memberLimit,
+      inviteExpiryDays: data['inviteExpiryDays'] is int
+          ? data['inviteExpiryDays'] as int
+          : defaults.inviteExpiryDays,
+      slowModeSeconds: data['slowModeSeconds'] is int
+          ? data['slowModeSeconds'] as int
+          : defaults.slowModeSeconds,
+      maxFileSizeMb: data['maxFileSizeMb'] is int
+          ? data['maxFileSizeMb'] as int
+          : defaults.maxFileSizeMb,
+    );
+  }
+
   ChannelPermissions copyWith({
     bool? allowMessages,
     bool? allowImages,
@@ -99,8 +192,10 @@ class ChannelPermissions {
       restrictExport: restrictExport ?? this.restrictExport,
       restrictMediaSaving: restrictMediaSaving ?? this.restrictMediaSaving,
       protectPreviews: protectPreviews ?? this.protectPreviews,
-      requestScreenshotProtection: requestScreenshotProtection ?? this.requestScreenshotProtection,
-      ephemeralRetentionMinutes: ephemeralRetentionMinutes ?? this.ephemeralRetentionMinutes,
+      requestScreenshotProtection:
+          requestScreenshotProtection ?? this.requestScreenshotProtection,
+      ephemeralRetentionMinutes:
+          ephemeralRetentionMinutes ?? this.ephemeralRetentionMinutes,
       isPublic: isPublic ?? this.isPublic,
       requireApproval: requireApproval ?? this.requireApproval,
       memberLimit: memberLimit ?? this.memberLimit,
@@ -177,6 +272,57 @@ class Channel {
   // Ícones monocromáticos consistentes
   Color get iconColor => NixColors.iconSecondary;
 
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'spaceId': spaceId,
+        'name': name,
+        'topic': topic,
+        'description': description,
+        'category': category,
+        'ownerFingerprint': ownerFingerprint,
+        'customImagePath': customImagePath,
+        'inviteCode': inviteCode,
+        'isEncrypted': isEncrypted,
+        'isPinned': isPinned,
+        'isMuted': isMuted,
+        'admins': admins,
+        'moderators': moderators,
+        'mutedMembers': mutedMembers,
+        'bannedMembers': bannedMembers,
+        'auditLogs': auditLogs,
+        'type': type.name,
+        'permissions': permissions.toJson(),
+      };
+
+  factory Channel.fromJson(Map<String, dynamic> data,
+      {required String spaceId}) {
+    List<String> ids(String key) =>
+        (data[key] as List?)?.whereType<String>().toList() ?? [];
+    return Channel(
+      id: data['id'] as String,
+      spaceId: spaceId,
+      name: data['name'] as String,
+      topic: data['topic'] as String? ?? '',
+      description: data['description'] as String? ?? '',
+      category: data['category'] as String? ?? 'COMUNIDADE',
+      ownerFingerprint: data['ownerFingerprint'] as String? ?? '',
+      customImagePath: data['customImagePath'] as String?,
+      inviteCode: data['inviteCode'] as String?,
+      type: ChannelType.values.firstWhere((type) => type.name == data['type'],
+          orElse: () => ChannelType.text),
+      isEncrypted: data['isEncrypted'] != false,
+      isPinned: data['isPinned'] == true,
+      isMuted: data['isMuted'] == true,
+      admins: ids('admins'),
+      moderators: ids('moderators'),
+      mutedMembers: ids('mutedMembers'),
+      bannedMembers: ids('bannedMembers'),
+      auditLogs: ids('auditLogs'),
+      permissions: ChannelPermissions.fromJson(
+          data['permissions'] as Map<String, dynamic>? ?? {}),
+    );
+  }
+
   Channel copyWith({
     String? name,
     String? topic,
@@ -188,6 +334,7 @@ class Channel {
     bool? isMuted,
     String? category,
     String? customImagePath,
+    bool clearCustomImage = false,
     String? inviteCode,
     ChannelPermissions? permissions,
     List<String>? admins,
@@ -208,7 +355,8 @@ class Channel {
       isPinned: isPinned ?? this.isPinned,
       isMuted: isMuted ?? this.isMuted,
       category: category ?? this.category,
-      customImagePath: customImagePath ?? this.customImagePath,
+      customImagePath:
+          clearCustomImage ? null : customImagePath ?? this.customImagePath,
       inviteCode: inviteCode ?? this.inviteCode,
       permissions: permissions ?? this.permissions,
       ownerFingerprint: ownerFingerprint,

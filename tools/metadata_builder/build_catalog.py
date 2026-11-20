@@ -375,7 +375,7 @@ def create_catalog_database(db_path: str, records: List[Dict[str, Any]], version
     cur.execute("""
       CREATE TABLE catalog_works (
         id TEXT PRIMARY KEY,
-        kind TEXT NOT NULL CHECK(kind IN ('movie','film','series','anime','manga','book')),
+        kind TEXT NOT NULL CHECK(kind IN ('movie','film','series','anime','manga','book','album','track')),
         title TEXT NOT NULL,
         original_title TEXT,
         creators TEXT,
@@ -780,6 +780,8 @@ def main():
     parser.add_argument("--aod-path", default="tools/metadata_builder/cache/anime-offline-database-minified.json", help="Caminho do JSON minificado do AOD")
     parser.add_argument("--report", default="docs/MEDIA_CATALOG_REPORT.md", help="Caminho do relatório de qualidade a ser gerado")
 
+    parser.add_argument("--musicbrainz-tsv", help="Exportação TSV de um dump local do MusicBrainz")
+
     args = parser.parse_args()
 
     # Seleção de modo de ingestão
@@ -803,6 +805,10 @@ def main():
         # Modo seed / fixture padrão
         print("[Nix Metadata Builder] Modo Seed Ativado (25 obras canônicas verificadas)...")
         records = SAMPLE_SEED_RECORDS
+
+    if args.musicbrainz_tsv:
+        from importers.musicbrainz_importer import import_musicbrainz_tsv
+        records = [*records, *import_musicbrainz_tsv(args.musicbrainz_tsv)]
 
     key_path = args.key
     if not key_path and not args.production and not args.key_env and not os.environ.get("NIX_CATALOG_SIGNING_KEY"):

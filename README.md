@@ -34,20 +34,39 @@ Roxo**. Também é possível ajustar a superfície e a cor de destaque separadam
 O Pager interativo está no acesso ao app e no perfil. A primeira página reúne
 foto, nome, QR e atalhos para grupos, canais e amigos. Em **Menu do Pager →
 Cores do Pager**, escolha a cor da carcaça e a do visor separadamente. Em
-**Personalizar contemplação**, escolha uma imagem local, com ou sem avatar,
-e ajuste a posição e o tamanho da foto. Também é possível arrastá-la no visor.
+**Personalizar contemplação**, escolha uma imagem local ou GIF, ative o fundo em
+todas as telas e ajuste o desfoque e o escurecimento. Arraste a foto no visor
+para mudar sua posição ou desative-a para contemplar somente o fundo. Em
+**Editar avatar**, escolha entre moldura circular e quadrada arredondada.
 A música exibida pode ser inserida no editor de perfil. O passaporte cultural
 e o acervo ficam abaixo do Pager. **Buscar no catálogo** preenche a ficha da
 obra a partir do banco local. A estante mostra discos, livros com lombada e
 páginas, e pôsteres. As capas vêm do pacote quando há uma imagem embutida.
 As referências de capa do catálogo inicial geram ilustrações locais.
 
-O [dump principal do MusicBrainz](https://musicbrainz.org/doc/MusicBrainz_Database/Download)
-distribui metadados sob CC0. Um recorte de artistas, álbuns e faixas pode ser
-gerado fora do app e adicionado ao catálogo SQLite/FTS5 por meio dos pacotes
-assinados do Nix. Isso exige suporte a tipos musicais no esquema de catálogo.
-As consultas podem permanecer no dispositivo, sem reconhecimento de áudio,
-conta externa ou envio de histórico de busca.
+A busca musical usa metadados CC0 do MusicBrainz. Em **Acervo → Buscar no
+catálogo**, pesquise por título, artista ou álbum e adicione o resultado ao
+passaporte. O **Nix Media Index** também oferece filtros para álbuns e faixas.
+O recorte inicial é distribuído com o app. A busca, as ilustrações e a ficha
+funcionam offline, sem consulta a API ou envio de histórico. A base não
+distribui gravações ou capas comerciais.
+[Dump principal do MusicBrainz](https://musicbrainz.org/doc/MusicBrainz_Database/Download)
+
+Para ampliar o catálogo, restaure o dump principal do MusicBrainz no PostgreSQL
+local e use a exportação abaixo. O importador pode ser incluído no fluxo de
+publicação de um pacote assinado do Nix.
+
+```sh
+psql -q -d musicbrainz -f tools/metadata_builder/importers/musicbrainz_export.sql > /tmp/nix-musicbrainz.tsv
+python3 tools/metadata_builder/build_catalog.py --seed \
+  --musicbrainz-tsv /tmp/nix-musicbrainz.tsv \
+  --out-db /tmp/nix-catalog.db --out-manifest /tmp/nix-catalog.json --report ""
+```
+
+O exportador seleciona álbuns e gravações do dump central. Para publicar com a
+chave já provisionada, acrescente `--production`, `--version` com uma versão
+superior à publicada e o parâmetro de assinatura usado pelo projeto.
+
 
 ---
 

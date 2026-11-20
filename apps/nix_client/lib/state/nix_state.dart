@@ -555,7 +555,7 @@ class NixState extends ChangeNotifier {
   }
 
   Future<void> _openCatalog() async {
-    final db = await CatalogDatabase.open();
+    var db = await CatalogDatabase.open();
     if (_disposed || _panicWipe != null) {
       await db.close();
       return;
@@ -572,9 +572,9 @@ class NixState extends ChangeNotifier {
         await db.close();
         await temporary.rename(file.path);
         if (_disposed || _panicWipe != null) return;
-        setCatalogDatabase(await CatalogDatabase.open(path: file.path));
-        return;
+        db = await CatalogDatabase.open(path: file.path);
       }
+      await db.installBundledMusic();
       setCatalogDatabase(db);
     } catch (_) {
       try {
@@ -1024,6 +1024,7 @@ class NixState extends ChangeNotifier {
     } catch (_) {}
     await _catalogUpdateManager?.cancelAndWait();
     await _pagerWallpaperChange;
+    await _preferencesWrite;
     try {
       await _catalogOpen;
       await _catalogDatabase?.close();
@@ -1456,6 +1457,7 @@ class NixState extends ChangeNotifier {
 
   /// Recarrega identidade, perfil, contatos, conversas, estado criptográfico e mensagens após reinicialização.
   Future<void> reloadFromDatabase() async {
+    await _restoreWorkspaceLayout();
     if (_localDatabase == null || _identityRepo == null) return;
 
     // 1. Varre mensagens efêmeras expiradas antes de montar o estado em memória
@@ -1763,7 +1765,7 @@ class NixState extends ChangeNotifier {
       'sender': _userProfile.publicId,
       'text': text.trim(),
       'ts': now.millisecondsSinceEpoch,
-      'attachments': attachments,
+      'attachments': attachments.map(LocalImageHelper.getFileName).toList(),
     });
     final clearBytes = utf8.encode(clearJson);
 
@@ -2227,7 +2229,27 @@ class NixState extends ChangeNotifier {
     return NixPlatformPaths.resolveDataFile('client_prefs_v4.json');
   }
 
-  Future<void> _persistState() async {
+  Future<void> _preferencesWrite = Future<void>.value();
+
+  Future<void> _persistState({bool workspaceChanged = false}) =>
+      _preferencesWrite = _preferencesWrite.then((_) => _writePreferences(
+        workspaceChanged: workspaceChanged,
+      ));
+
+  static const _workspacePreferenceKey = 'workspace_layout_v1';
+
+  Future<void> _writePreferences({required bool workspaceChanged}) async {
+    if (_panicWipe != null) return;
+    if (workspaceChanged) {
+      try {
+        await _preferencesRepo?.setOption(_workspacePreferenceKey, {
+          'spaces': _spaces.where((space) => !space.isDirectMessages)
+              .map((space) => space.toJson()).toList(),
+          'folders': _folders.map((folder) => folder.toJson()).toList(),
+        });
+      } catch (_) {}
+    }
+    if (_panicWipe != null) return;
     try {
       final path = _prefsFilePath;
       if (path.isEmpty) return;
@@ -2238,18 +2260,10 @@ class NixState extends ChangeNotifier {
         'savedAcervoIds': _savedAcervoIds.toList(),
         'pagerMusic': _userProfile.currentActivity,
         'culturalItems': _userProfile.culturalItems.map((c) => c.toJson()).toList(),
-        'folders': _folders
-            .map((f) => {
-                  'id': f.id,
-                  'name': f.name,
-                  'iconName': f.iconName,
-                  'colorValue': f.colorValue,
-                  'spaceIds': f.spaceIds,
-                  'conversationIds': f.conversationIds,
-                })
-            .toList(),
       };
-      await file.writeAsString(jsonEncode(data), flush: true);
+      final pending = File('$path.pending');
+      await pending.writeAsString(jsonEncode(data), flush: true);
+      await pending.rename(file.path);
     } catch (_) {
       // Ambiente de testes ou sandbox sem HOME gravável
     }
@@ -2286,6 +2300,38 @@ class NixState extends ChangeNotifier {
           _userProfile = _userProfile.copyWith(culturalItems: loadedItems);
         }
         notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _restoreWorkspaceLayout() async {
+    final repo = _preferencesRepo;
+    if (repo == null) return;
+    try {
+      // Deixa a migração das pastas antigas para depois da abertura do cofre.
+      var raw = await repo.getOption(_workspacePreferenceKey);
+      if (raw == null && _prefsFilePath.isNotEmpty) {
+        final file = File(_prefsFilePath);
+        if (await file.exists()) {
+          final preferences = jsonDecode(await file.readAsString());
+          if (preferences is Map && preferences['folders'] is List) {
+            raw = {'folders': preferences['folders']};
+          }
+        }
+      }
+      if (raw is! Map) return;
+      if (raw['spaces'] case final List records) {
+        final spaces = records.whereType<Map<String, dynamic>>()
+            .map(Space.fromJson).where((space) => space.channels.isNotEmpty).toList();
+        if (spaces.isNotEmpty) {
+          _spaces = spaces;
+          _currentSpace = spaces.first;
+          _currentChannel = _currentSpace.channels.first;
+        }
+      }
+      if (raw['folders'] case final List records) {
+        _folders = records.whereType<Map<String, dynamic>>().map(SpaceFolder.fromJson)
+            .where((folder) => folder.id != 'all' && folder.id != 'private').toList();
       }
     } catch (_) {}
   }
@@ -2534,6 +2580,12 @@ class NixState extends ChangeNotifier {
     return list;
   }
 
+  List<Channel> channelsInActiveFolder(Space space) {
+    final folder = _folders.where((folder) => folder.id == _activeFolderId).firstOrNull;
+    if (folder == null || _activeFolderId == 'all' || folder.spaceIds.contains(space.id)) return space.channels;
+    return space.channels.where((channel) => folder.conversationIds.contains(channel.id)).toList();
+  }
+
   List<Space> get visibleSpacesForFolder {
     if (_activeFolderId == 'private') return const [];
     final q = _conversationSearchQuery.trim().toLowerCase();
@@ -2541,8 +2593,7 @@ class NixState extends ChangeNotifier {
     if (_activeFolderId != 'all') {
       final fIdx = _folders.indexWhere((f) => f.id == _activeFolderId);
       if (fIdx != -1) {
-        final ids = _folders[fIdx].spaceIds;
-        base = base.where((s) => ids.contains(s.id));
+        base = base.where((space) => channelsInActiveFolder(space).isNotEmpty);
       }
     }
     return base.where((s) {
@@ -2699,17 +2750,13 @@ class NixState extends ChangeNotifier {
     if (folderId == 'private') {
       _activeArea = NixActiveArea.homePrivate;
     } else if (folderId != 'all') {
-      final fIdx = _folders.indexWhere((f) => f.id == folderId);
-      if (fIdx != -1 && _folders[fIdx].spaceIds.isNotEmpty) {
-        final targetSpaceId = _folders[fIdx].spaceIds.first;
-        final sIdx = _spaces.indexWhere((s) => s.id == targetSpaceId);
-        if (sIdx != -1) {
-          _currentSpace = _spaces[sIdx];
-          if (_currentSpace.channels.isNotEmpty) {
-            _currentChannel = _currentSpace.channels.first;
-          }
-          _activeArea = NixActiveArea.spaces;
-        }
+      final target = _spaces.where((space) => channelsInActiveFolder(space).isNotEmpty).firstOrNull;
+      if (target != null) {
+        _currentSpace = target;
+        _currentChannel = channelsInActiveFolder(target).first;
+        _activeArea = NixActiveArea.spaces;
+      } else {
+        _activeArea = NixActiveArea.homePrivate;
       }
     }
     notifyListeners();
@@ -3044,11 +3091,29 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<Uint8List?> readMessageImage(Message message, int index) async {
+    if (_disposed || _panicWipe != null || index < 0 || index >= message.attachments.length) return null;
+    try {
+      final reference = message.attachments[index];
+      if (!LocalImageHelper.isSupportedExtension(reference)) return null;
+      if (message.isMe && File(reference).isAbsolute) {
+        final file = File(reference);
+        if (await file.exists() && await file.length() <= 20 * 1024 * 1024) {
+          return LocalImageHelper.stripMetadataBytes(await file.readAsBytes());
+        }
+      }
+      return await _sovereignMessenger?.readImageAttachment(message.id, index);
+    } catch (_) {
+      return null;
+    }
+  }
+
   static String _inferAttachmentMimeType(String path) {
     final lower = path.toLowerCase();
     if (lower.endsWith('.png')) return 'image/png';
     if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
     if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
     if (lower.endsWith('.pdf')) return 'application/pdf';
     return 'application/octet-stream';
   }
@@ -3160,7 +3225,7 @@ class NixState extends ChangeNotifier {
           final f = File(att);
           if (f.existsSync()) {
             final rawBytes = await f.readAsBytes();
-            final fileName = f.uri.pathSegments.last;
+            final fileName = LocalImageHelper.getFileName(att);
             final manifest = await messenger.prepareEncryptedAttachment(
               fileName: fileName,
               mimeType: _inferAttachmentMimeType(fileName),
@@ -3169,7 +3234,7 @@ class NixState extends ChangeNotifier {
             preparedManifests.add(manifest);
             displayAttachmentNames.add(manifest.fileName);
           } else {
-            displayAttachmentNames.add(att);
+            displayAttachmentNames.add(LocalImageHelper.getFileName(att));
           }
         }
 
@@ -3385,6 +3450,18 @@ class NixState extends ChangeNotifier {
         createdAt: nowMs,
         expiresAt: expiresAt,
       );
+      final messenger = _sovereignMessenger;
+      if (thread.isSavedMessages && messenger != null) {
+        for (final (ordinal, reference) in message.attachments.indexed) {
+          final file = File(reference);
+          if (!file.isAbsolute || !await file.exists()) continue;
+          final name = LocalImageHelper.getFileName(reference);
+          final manifest = await messenger.prepareEncryptedAttachment(fileName: name,
+            mimeType: _inferAttachmentMimeType(name), rawBytes: await file.readAsBytes());
+          await messenger.objectChunkRepo.linkAttachment(messageId: message.id,
+            objectId: manifest.objectId, fileName: name, ordinal: ordinal);
+        }
+      }
     } catch (e) {
       debugPrint('[NixState] Aviso ao persistir mensagem no banco local: $e');
     }
@@ -4079,13 +4156,14 @@ class NixState extends ChangeNotifier {
   void selectSpace(Space space) {
     _activeArea = NixActiveArea.spaces;
     _clearTransientMessageModes();
+    if (channelsInActiveFolder(space).isEmpty) _activeFolderId = 'all';
     if (_currentSpace.id == space.id) {
       notifyListeners();
       return;
     }
     _currentSpace = space;
     if (space.channels.isNotEmpty) {
-      _currentChannel = space.channels.first;
+      _currentChannel = (channelsInActiveFolder(space).firstOrNull ?? space.channels.first);
     }
     notifyListeners();
   }
@@ -4118,7 +4196,7 @@ class NixState extends ChangeNotifier {
       isExpanded: true,
     );
     _folders.add(newFolder);
-    _persistState();
+    _persistState(workspaceChanged: true);
     notifyListeners();
   }
 
@@ -4129,7 +4207,7 @@ class NixState extends ChangeNotifier {
       spaceIds: updatedFolder.spaceIds.toSet().toList(),
       conversationIds: updatedFolder.conversationIds.toSet().toList(),
     );
-    _persistState();
+    _persistState(workspaceChanged: true);
     notifyListeners();
   }
 
@@ -4139,66 +4217,71 @@ class NixState extends ChangeNotifier {
     if (newIndex < 0 || newIndex >= _folders.length) return;
     final moved = _folders.removeAt(oldIndex);
     _folders.insert(newIndex, moved);
-    _persistState();
+    _persistState(workspaceChanged: true);
     notifyListeners();
   }
 
-  /// Arrastar um espaço sobre outro para agrupá-los em uma nova pasta.
+  bool isWorkspaceItem(String id) => _spaces.any((space) => space.id == id || space.channels.any((channel) => channel.id == id)) ||
+      _directMessages.any((thread) => thread.id == id && !thread.isSavedMessages);
+
   void combineSpacesIntoFolder(String sourceSpaceId, String targetSpaceId, [String? folderName]) {
-    if (sourceSpaceId == targetSpaceId) return;
+    if (sourceSpaceId == targetSpaceId || !isWorkspaceItem(sourceSpaceId) || !isWorkspaceItem(targetSpaceId)) return;
+    final ids = [targetSpaceId, sourceSpaceId];
+    final spaces = ids.where((id) => _spaces.any((space) => space.id == id)).toList();
+    final names = ids.map((id) => _spaces.where((space) => space.id == id).firstOrNull?.initials ??
+        _spaces.expand((space) => space.channels).where((channel) => channel.id == id).firstOrNull?.name ?? 'Chat');
+    for (final id in ids) { _removeFolderMembership(id); }
+    createSpaceFolder(folderName ?? names.join(' & '), spaces,
+      conversationIds: ids.where((id) => !spaces.contains(id)).toList());
+  }
 
-    _folders = _folders
-        .map((f) => f.copyWith(
-              spaceIds: f.spaceIds
-                  .where((id) => id != sourceSpaceId && id != targetSpaceId)
-                  .toList(),
-            ))
-        .where((f) => f.spaceIds.isNotEmpty || f.conversationIds.isNotEmpty)
-        .toList();
+  void _removeFolderMembership(String id) {
+    _folders = _folders.expand((folder) {
+      if (!folder.spaceIds.contains(id) && !folder.conversationIds.contains(id)) {
+        return [folder];
+      }
+      final updated = folder.copyWith(
+        spaceIds: folder.spaceIds.where((entry) => entry != id).toList(),
+        conversationIds: folder.conversationIds.where((entry) => entry != id).toList(),
+      );
+      return [if (folder.id == 'all' || updated.spaceIds.isNotEmpty ||
+          updated.conversationIds.isNotEmpty) updated];
+    }).toList();
+    if (_activeFolderId != 'private' && !_folders.any((folder) => folder.id == _activeFolderId)) _activeFolderId = 'all';
+  }
 
-    final sourceSpace = _spaces.firstWhere((s) => s.id == sourceSpaceId, orElse: () => _spaces.first);
-    final targetSpace = _spaces.firstWhere((s) => s.id == targetSpaceId, orElse: () => _spaces.first);
-    final defaultName = folderName ?? '${targetSpace.initials} & ${sourceSpace.initials}';
-
-    _folders.add(SpaceFolder(
-      id: 'folder_${DateTime.now().millisecondsSinceEpoch}',
-      name: defaultName,
-      spaceIds: [targetSpaceId, sourceSpaceId],
-      isExpanded: true,
-    ));
-    _persistState();
+  void ungroupWorkspaceItem(String id) {
+    if (!isWorkspaceItem(id)) return;
+    _removeFolderMembership(id);
+    _persistState(workspaceChanged: true);
     notifyListeners();
   }
 
-  /// Arrastar um espaço para dentro de uma pasta existente (sem duplicatas).
-  void addSpaceToFolder(String spaceId, String folderId) {
-    final fIdx = _folders.indexWhere((f) => f.id == folderId);
-    if (fIdx == -1) return;
-    if (_folders[fIdx].spaceIds.contains(spaceId)) return;
-
-    final updatedList = List<String>.from(_folders[fIdx].spaceIds)..add(spaceId);
-    _folders[fIdx] = _folders[fIdx].copyWith(spaceIds: updatedList, isExpanded: true);
-    _persistState();
+  void moveWorkspaceFolder(String id, String targetId) {
+    final from = _folders.indexWhere((folder) => folder.id == id);
+    final to = _folders.indexWhere((folder) => folder.id == targetId);
+    if (from < 0 || to < 0 || from == to) return;
+    final folder = _folders.removeAt(from);
+    _folders.insert(to, folder);
+    _persistState(workspaceChanged: true);
     notifyListeners();
   }
 
-  /// Arrastar uma conversa privada, grupo ou canal para uma pasta.
+  void addSpaceToFolder(String spaceId, String folderId) => assignItemToFolder(spaceId, folderId);
+
   void assignItemToFolder(String itemId, String folderId) {
-    final fIdx = _folders.indexWhere((f) => f.id == folderId);
-    if (fIdx == -1) return;
-
-    if (_spaces.any((s) => s.id == itemId)) {
-      addSpaceToFolder(itemId, folderId);
-      return;
-    }
-
-    final currentConvs = _folders[fIdx].conversationIds;
-    if (!currentConvs.contains(itemId)) {
-      final updatedConvs = List<String>.from(currentConvs)..add(itemId);
-      _folders[fIdx] = _folders[fIdx].copyWith(conversationIds: updatedConvs, isExpanded: true);
-      _persistState();
-      notifyListeners();
-    }
+    if (!isWorkspaceItem(itemId)) return;
+    final destination = _folders.where((folder) => folder.id == folderId).firstOrNull;
+    if (destination == null || destination.spaceIds.contains(itemId) || destination.conversationIds.contains(itemId)) return;
+    _removeFolderMembership(itemId);
+    final index = _folders.indexWhere((folder) => folder.id == folderId);
+    final space = _spaces.any((space) => space.id == itemId);
+    _folders[index] = destination.copyWith(
+      spaceIds: [...destination.spaceIds, if (space) itemId],
+      conversationIds: [...destination.conversationIds, if (!space) itemId], isExpanded: true,
+    );
+    _persistState(workspaceChanged: true);
+    notifyListeners();
   }
 
   /// Exclui apenas a pasta mantendo intactas todas as conversas e espaços (Seção 4).
@@ -4207,7 +4290,7 @@ class NixState extends ChangeNotifier {
     if (_activeFolderId == folderId) {
       _activeFolderId = 'all';
     }
-    _persistState();
+    _persistState(workspaceChanged: true);
     notifyListeners();
   }
 
@@ -4240,6 +4323,7 @@ class NixState extends ChangeNotifier {
       ],
     );
     _spaces.add(newSpace);
+    _persistState(workspaceChanged: true);
     selectSpace(newSpace);
   }
 
@@ -4256,6 +4340,9 @@ class NixState extends ChangeNotifier {
       }).toList();
       _spaces[sIdx] = _spaces[sIdx].copyWith(channels: chans);
       _currentSpace = _spaces[sIdx];
+      if (!channelsInActiveFolder(_currentSpace).any((entry) => entry.id == channel.id)) {
+        _activeFolderId = 'all';
+      }
     }
     if (channel.type == ChannelType.forum) {
       final posts = currentForumPosts;
@@ -4634,7 +4721,8 @@ class NixState extends ChangeNotifier {
         if (_currentChannel.id == updatedChannel.id) {
           _currentChannel = updatedChannel;
         }
-        notifyListeners();
+        _persistState();
+    notifyListeners();
         return;
       }
     }
@@ -5092,11 +5180,36 @@ class NixState extends ChangeNotifier {
 
   // ================= CRIAÇÃO DE CANAIS & ESPAÇOS =================
 
+  bool canEditSpaceImage(Space space) => space.ownerFingerprint == _ownWorkspaceIdentity ||
+      (space.ownerFingerprint == null && space.id == 'local_space');
+
+  bool canEditChannelImage(Channel channel) => channel.ownerFingerprint == _ownWorkspaceIdentity ||
+      (channel.spaceId == 'local_space' && channel.id == 'general_saved');
+
+  String get _ownWorkspaceIdentity => _userProfile.publicId.isNotEmpty ? _userProfile.publicId : _securityContext.myFingerprint;
+
+  void editSpaceImage(String spaceId, String? path) {
+    final idx = _spaces.indexWhere((space) => space.id == spaceId);
+    if (idx < 0 || !canEditSpaceImage(_spaces[idx])) return;
+    final updated = _spaces[idx].copyWith(customImagePath: path, clearCustomImage: path == null);
+    _spaces[idx] = updated;
+    if (_currentSpace.id == spaceId) _currentSpace = updated;
+    _persistState(workspaceChanged: true);
+    notifyListeners();
+  }
+
+  void editChannelImage(String channelId, String? path) {
+    final channel = _spaces.expand((space) => space.channels).where((channel) => channel.id == channelId).firstOrNull;
+    if (channel == null || !canEditChannelImage(channel)) return;
+    updateChannelSettings(channel.copyWith(customImagePath: path, clearCustomImage: path == null));
+  }
+
   void createChannel({
     required String name,
     required ChannelType type,
     required String topic,
     required String category,
+    String? customImagePath,
   }) {
     final cleanName = name.replaceAll(' ', '-').toLowerCase();
     final newChannel = Channel(
@@ -5106,9 +5219,8 @@ class NixState extends ChangeNotifier {
       topic: topic.isNotEmpty ? topic : 'Novo tópico de discussão segura.',
       type: type,
       category: category,
-      ownerFingerprint: _userProfile.publicId.isNotEmpty
-          ? _userProfile.publicId
-          : _securityContext.myFingerprint,
+      ownerFingerprint: _ownWorkspaceIdentity,
+      customImagePath: customImagePath,
     );
 
     final updatedChannels = List<Channel>.from(_currentSpace.channels)..add(newChannel);
@@ -5121,6 +5233,7 @@ class NixState extends ChangeNotifier {
       _currentChannel = newChannel;
     }
 
+    _persistState(workspaceChanged: true);
     notifyListeners();
   }
 
@@ -5128,6 +5241,7 @@ class NixState extends ChangeNotifier {
     required String name,
     required String description,
     required String emoji,
+    String? customImagePath,
   }) {
     final initials = name
         .trim()
@@ -5143,6 +5257,8 @@ class NixState extends ChangeNotifier {
       initials: initials.isNotEmpty ? initials : 'NX',
       description: description,
       iconEmoji: emoji.isNotEmpty ? emoji : 'NX',
+      customImagePath: customImagePath,
+      ownerFingerprint: _ownWorkspaceIdentity,
       channels: [
         Channel(
           id: 'ch_geral_${DateTime.now().millisecondsSinceEpoch}',
@@ -5151,6 +5267,7 @@ class NixState extends ChangeNotifier {
           topic: 'Tópico principal deste espaço.',
           type: ChannelType.text,
           category: 'COMUNIDADE',
+          ownerFingerprint: _ownWorkspaceIdentity,
         ),
       ],
     );
@@ -5160,6 +5277,7 @@ class NixState extends ChangeNotifier {
     _currentSpace = newSpace;
     _currentChannel = newSpace.channels.first;
     _activeArea = NixActiveArea.spaces;
+    _persistState(workspaceChanged: true);
     notifyListeners();
   }
 

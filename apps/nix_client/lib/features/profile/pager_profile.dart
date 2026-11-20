@@ -13,6 +13,7 @@ import '../design/nix_bilingual_label.dart';
 import 'cultural_showcase.dart';
 import 'nix_user_avatar.dart';
 import 'pager_housing.dart';
+import 'pager_wallpaper_layer.dart';
 import 'pager_appearance_dialog.dart';
 import 'pager_shortcuts.dart';
 import 'profile_avatar_editor.dart';
@@ -188,6 +189,9 @@ class _PagerProfileState extends State<PagerProfile> {
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 790),
                 child: PagerHousing(
+          wallpaper: state.settings.pagerWallpaperAcrossPages
+              ? PagerWallpaperLayer(state: state, readable: true)
+              : null,
                   caseColor: state.settings.pagerCaseColor,
                   lcdColor: state.settings.pagerLcdColor,
                   reducedMotion: reduced,
@@ -556,7 +560,6 @@ class _ContemplationScreenState extends State<_ContemplationScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<NixState>();
-    final revision = state.pagerWallpaperRevision;
     final settings = state.settings;
     return Semantics(
       label: 'Contemplação',
@@ -571,13 +574,7 @@ class _ContemplationScreenState extends State<_ContemplationScreen> {
               colors: [Color(0xFF0E212A), Color(0xFF46335D), Color(0xFF221935)],
             ),
           )),
-          Image(
-            key: ValueKey(revision),
-            image: NixState.pagerWallpaperImage,
-            fit: BoxFit.cover,
-            excludeFromSemantics: true,
-            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-          ),
+          PagerWallpaperLayer(state: state),
           if (widget.showAvatar)
             LayoutBuilder(builder: (context, viewport) {
               final diameter =
@@ -742,6 +739,16 @@ class _ContemplationSettingsState extends State<_ContemplationSettings> {
             ),
             const Divider(),
           ],
+          SwitchListTile(
+            title: const Text('Fundo em todas as telas do Pager'),
+            value: state.settings.pagerWallpaperAcrossPages,
+            onChanged: (value) => state.updateSettings(state.settings.copyWith(pagerWallpaperAcrossPages: value)),
+            contentPadding: EdgeInsets.zero,
+          ),
+          _avatarSlider('Desfoque do fundo', state.settings.pagerWallpaperBlur / 18, 0, 1,
+              (value) => state.updateSettings(state.settings.copyWith(pagerWallpaperBlur: value * 18))),
+          _avatarSlider('Sombra do fundo', state.settings.pagerWallpaperShade, 0, .75,
+              (value) => state.updateSettings(state.settings.copyWith(pagerWallpaperShade: value))),
           Wrap(
             spacing: 8,
             children: [

@@ -3,10 +3,12 @@ import 'channel.dart';
 class SpaceFolder {
   final String id;
   final String name;
-  final String iconName; // 'folder', 'shield', 'code', 'chat', 'star', 'lock', 'bookmark'
+  final String
+      iconName; // 'folder', 'shield', 'code', 'chat', 'star', 'lock', 'bookmark'
   final int colorValue;
   final List<String> spaceIds;
-  final List<String> conversationIds; // Suporta DMs, grupos e canais arrastados para a pasta
+  final List<String>
+      conversationIds; // Suporta DMs, grupos e canais arrastados para a pasta
   final bool isExpanded;
 
   const SpaceFolder({
@@ -18,6 +20,29 @@ class SpaceFolder {
     this.conversationIds = const [],
     this.isExpanded = false,
   });
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'name': name,
+        'iconName': iconName,
+        'colorValue': colorValue,
+        'spaceIds': spaceIds,
+        'conversationIds': conversationIds,
+        'isExpanded': isExpanded,
+      };
+
+  factory SpaceFolder.fromJson(Map<String, dynamic> data) => SpaceFolder(
+        id: data['id'] as String,
+        name: data['name'] as String,
+        iconName: data['iconName'] as String? ?? 'folder',
+        colorValue: data['colorValue'] as int? ?? 0xFFFFC928,
+        spaceIds:
+            (data['spaceIds'] as List?)?.whereType<String>().toList() ?? [],
+        conversationIds:
+            (data['conversationIds'] as List?)?.whereType<String>().toList() ??
+                [],
+        isExpanded: data['isExpanded'] == true,
+      );
 
   SpaceFolder copyWith({
     String? id,
@@ -47,6 +72,8 @@ class Space {
   final String description;
   final bool isDirectMessages;
   final String? iconEmoji;
+  final String? customImagePath;
+  final String? ownerFingerprint;
   final List<Channel> channels;
   final int unreadCount;
   final int memberCount;
@@ -63,6 +90,8 @@ class Space {
     required this.description,
     this.isDirectMessages = false,
     this.iconEmoji,
+    this.customImagePath,
+    this.ownerFingerprint,
     required this.channels,
     this.unreadCount = 0,
     this.memberCount = 12,
@@ -73,6 +102,42 @@ class Space {
     this.categoryTag = 'Comunidade',
   });
 
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'name': name,
+        'initials': initials,
+        'description': description,
+        'iconEmoji': iconEmoji,
+        'customImagePath': customImagePath,
+        'ownerFingerprint': ownerFingerprint,
+        'isPublic': isPublic,
+        'isPinned': isPinned,
+        'isMuted': isMuted,
+        'categoryTag': categoryTag,
+        'channels': channels.map((channel) => channel.toJson()).toList(),
+      };
+
+  factory Space.fromJson(Map<String, dynamic> data) {
+    final id = data['id'] as String;
+    return Space(
+      id: id,
+      name: data['name'] as String,
+      initials: data['initials'] as String? ?? 'NX',
+      description: data['description'] as String? ?? '',
+      iconEmoji: data['iconEmoji'] as String?,
+      customImagePath: data['customImagePath'] as String?,
+      ownerFingerprint: data['ownerFingerprint'] as String?,
+      isPublic: data['isPublic'] == true,
+      isPinned: data['isPinned'] == true,
+      isMuted: data['isMuted'] == true,
+      categoryTag: data['categoryTag'] as String? ?? 'Comunidade',
+      channels: (data['channels'] as List? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map((channel) => Channel.fromJson(channel, spaceId: id))
+          .toList(),
+    );
+  }
+
   Space copyWith({
     String? id,
     String? name,
@@ -80,6 +145,8 @@ class Space {
     String? description,
     bool? isDirectMessages,
     String? iconEmoji,
+    String? customImagePath,
+    bool clearCustomImage = false,
     List<Channel>? channels,
     int? unreadCount,
     int? memberCount,
@@ -96,6 +163,9 @@ class Space {
       description: description ?? this.description,
       isDirectMessages: isDirectMessages ?? this.isDirectMessages,
       iconEmoji: iconEmoji ?? this.iconEmoji,
+      customImagePath:
+          clearCustomImage ? null : customImagePath ?? this.customImagePath,
+      ownerFingerprint: ownerFingerprint,
       channels: channels ?? this.channels,
       unreadCount: unreadCount ?? this.unreadCount,
       memberCount: memberCount ?? this.memberCount,

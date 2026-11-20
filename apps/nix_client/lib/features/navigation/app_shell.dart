@@ -8,6 +8,7 @@ import '../../core/security/key_vault.dart';
 import '../../core/security/platform_runtime.dart';
 import '../../core/security/sovereign_security_gate.dart';
 import '../../core/security/window_privacy_guard.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
@@ -17,6 +18,7 @@ import '../design/nix_glass.dart';
 import '../design/nix_bilingual_label.dart';
 import '../dialogs/channel_settings_dialog.dart';
 import '../profile/pager_housing.dart';
+import '../profile/pager_wallpaper_layer.dart';
 import '../calls/call_room_view.dart';
 import '../chat/chat_view.dart';
 import '../chat/conversation_info_panel.dart';
@@ -35,6 +37,7 @@ import 'channels_sidebar.dart';
 import 'floating_workspace_bar.dart';
 import 'spaces_dock.dart';
 import 'workspace_frame.dart';
+import 'workspace_image.dart';
 
 class AppShell extends StatelessWidget {
   const AppShell({super.key});
@@ -173,6 +176,12 @@ class AppShell extends StatelessWidget {
                     titleSpacing: 0,
                     title: NixPanelTitle(
                       icon: _getAreaIcon(activeArea, currentChannel),
+                      leading: activeArea == NixActiveArea.spaces && currentChannel.customImagePath != null
+                          ? WorkspaceImage(
+                              path: currentChannel.customImagePath, size: 36,
+                              fallback: Icon(currentChannel.icon, color: context.accentTextColor),
+                            )
+                          : null,
                       title: _getAreaTitle(activeArea, currentChannel),
                       subtitle: pagerNetworkLabel(gate),
                     ),
@@ -453,6 +462,9 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 620),
         child: PagerHousing(
+          wallpaper: widget.nixState.settings.pagerWallpaperAcrossPages
+              ? PagerWallpaperLayer(state: widget.nixState, readable: true)
+              : null,
           caseColor: widget.nixState.settings.pagerCaseColor,
           lcdColor: widget.nixState.settings.pagerLcdColor,
           reducedMotion: widget.nixState.settings.reducedMotion,

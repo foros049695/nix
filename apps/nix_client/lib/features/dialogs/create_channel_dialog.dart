@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../navigation/workspace_image.dart';
 import '../../core/models/channel.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
@@ -15,6 +16,7 @@ class CreateChannelDialog extends StatefulWidget {
 }
 
 class _CreateChannelDialogState extends State<CreateChannelDialog> {
+  String? _imagePath;
   final _nameController = TextEditingController();
   final _topicController = TextEditingController();
   ChannelType _selectedType = ChannelType.text;
@@ -79,6 +81,8 @@ class _CreateChannelDialogState extends State<CreateChannelDialog> {
                 icon: Icons.menu_book_outlined,
                 categoryDefault: 'NIX ARCHIVE',
               ),
+              const SizedBox(height: 12),
+              WorkspaceImageField(path: _imagePath, onChanged: (path) => setState(() => _imagePath = path)),
               const SizedBox(height: 16),
               Text('NOME DA SALA', style: NixTokens.labelUppercase()),
               const SizedBox(height: 6),
@@ -119,6 +123,7 @@ class _CreateChannelDialogState extends State<CreateChannelDialog> {
           onPressed: () {
             if (_nameController.text.trim().isNotEmpty) {
               nixState.createChannel(
+                customImagePath: _imagePath,
                 name: _nameController.text.trim(),
                 type: _selectedType,
                 topic: _topicController.text.trim(),

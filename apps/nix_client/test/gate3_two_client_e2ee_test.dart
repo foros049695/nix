@@ -475,6 +475,16 @@ void main() {
       expect(cleanAscii, isNot(contains('RealSecretGPSLocation')));
       expect(cleanAscii, isNot(contains('23.5505S')));
 
+      final receivedId = crashPoll.committed.first.messageId;
+      final preview = await bobMessenger.readImageAttachment(receivedId, 0);
+      expect(preview, orderedEquals(reassembledPng));
+      final attachmentRow = (await bobMessenger.objectChunkRepo
+              .getAttachmentsForMessage(receivedId))
+          .single;
+      final sealedManifest = await File(attachmentRow['encrypted_path'] as String).readAsBytes();
+      expect(String.fromCharCodes(sealedManifest.take(5)), 'NXAM1');
+      expect(utf8.decode(sealedManifest, allowMalformed: true), isNot(contains('objectKey')));
+
       // Replay / nova consulta pós-queda: DB já tem inbox_dedup, não duplica e agora faz ACK
       final recoveryPoll = await bobMessenger.pollAndCommitInbox(
         creds: bobCreds,

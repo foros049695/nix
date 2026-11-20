@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../profile/pager_housing.dart';
+import '../profile/pager_wallpaper_layer.dart';
 import '../design/nix_bilingual_label.dart';
 import '../design/nix_surfaces.dart';
 import 'package:flutter/services.dart';
@@ -671,14 +672,28 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       OnboardingStep.profileSetup => '> Escolha seu nome e avatar.',
       OnboardingStep.ready => '> Pronto. Entre no Nix.',
     };
+    final wallpaper = settings.pagerWallpaperAcrossPages
+        ? PagerWallpaperLayer(state: widget.nixState, readable: true)
+        : null;
     if (!first) {
       return NixFrame(
         background: lcd,
-        padding: const EdgeInsets.all(9),
-        child: PagerGuide(
-          message: description,
-          portraitSize: 46,
-          reducedMotion: widget.nixState.settings.reducedMotion,
+        padding: EdgeInsets.zero,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(11),
+          child: Stack(
+            children: [
+              if (wallpaper != null) Positioned.fill(child: wallpaper),
+              Padding(
+                padding: const EdgeInsets.all(9),
+                child: PagerGuide(
+                  message: description,
+                  portraitSize: 46,
+                  reducedMotion: settings.reducedMotion,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -686,6 +701,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 570),
         child: PagerHousing(
+          wallpaper: wallpaper,
           caseColor: settings.pagerCaseColor,
           lcdColor: settings.pagerLcdColor,
           reducedMotion: widget.nixState.settings.reducedMotion,

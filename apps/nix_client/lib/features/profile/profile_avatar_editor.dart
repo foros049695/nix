@@ -51,6 +51,15 @@ void showProfileAvatarEditor(BuildContext context, NixState state) {
                         TextStyle(color: NixColors.textSecondary, fontSize: 12),
                   ),
                   const SizedBox(height: 14),
+                  SwitchListTile(
+                    title: const Text('Moldura quadrada arredondada'),
+                    value: state.settings.roundedSquareAvatar,
+                    onChanged: (value) {
+                      state.updateSettings(state.settings.copyWith(roundedSquareAvatar: value));
+                      setModalState(() {});
+                    },
+                    contentPadding: EdgeInsets.zero,
+                  ),
                   _avatarOptionTile(
                     ctx: ctx,
                     state: state,

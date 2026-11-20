@@ -42,6 +42,8 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
     (label: 'Animes', kind: 'anime', icon: Icons.animation_rounded),
     (label: 'Mangás', kind: 'manga', icon: Icons.menu_book_rounded),
     (label: 'Livros', kind: 'book', icon: Icons.auto_stories_rounded),
+    (label: 'Álbuns', kind: 'album', icon: Icons.album_outlined),
+    (label: 'Faixas', kind: 'track', icon: Icons.music_note_outlined),
   ];
 
   @override
@@ -665,6 +667,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                               manifest: manifest,
                               packageUri: manifestUri.resolve(package),
                             );
+                            await newDb.installBundledMusic();
                             nixState.setCatalogDatabase(newDb);
                             currentVer = await updateManager.getInstalledVersion();
                             history = await updateManager.getVersionHistory();
@@ -902,6 +905,8 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
       'anime' => Icons.animation_rounded,
       'manga' => Icons.menu_book_rounded,
       'book' => Icons.auto_stories_rounded,
+      'album' => Icons.album_outlined,
+      'track' => Icons.music_note_outlined,
       _ => Icons.bookmark_outline_rounded,
     };
 
@@ -911,6 +916,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
       'anime' => Colors.pinkAccent,
       'manga' => Colors.orangeAccent,
       'book' => Colors.greenAccent,
+      'album' || 'track' => Colors.cyanAccent,
       _ => Colors.amber,
     };
 

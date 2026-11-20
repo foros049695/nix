@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme.dart';
@@ -5,6 +7,7 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_palette.dart';
 import '../../core/models/channel.dart';
 import '../../core/models/member.dart';
+import '../../core/models/message.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
 import '../chat/chat_input_bar.dart';
@@ -21,7 +24,62 @@ class CallRoomView extends StatefulWidget {
 
 class _CallRoomViewState extends State<CallRoomView> {
   bool _showTextChat = false;
+  NixState? _state;
+  String? _lastMessageId;
+  Message? _toast;
+  Timer? _toastTimer;
   Channel get channel => widget.channel;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final state = context.read<NixState>();
+    if (identical(_state, state)) return;
+    _state?.removeListener(_observeMessages);
+    _state = state;
+    _lastMessageId = state.messagesForChannel(channel.id).lastOrNull?.id;
+    state.addListener(_observeMessages);
+  }
+
+  @override
+  void didUpdateWidget(CallRoomView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.channel.id != channel.id) {
+      _toastTimer?.cancel();
+      _toast = null;
+      _showTextChat = false;
+      _lastMessageId = _state?.messagesForChannel(channel.id).lastOrNull?.id;
+    }
+  }
+
+  @override
+  void dispose() {
+    _state?.removeListener(_observeMessages);
+    _toastTimer?.cancel();
+    super.dispose();
+  }
+
+  void _observeMessages() {
+    final state = _state!;
+    final last = state.messagesForChannel(channel.id).lastOrNull;
+    if (last?.id == _lastMessageId) return;
+    _lastMessageId = last?.id;
+    if (last == null || _showTextChat || !state.callState.isConnected ||
+        state.callState.activeChannelId != channel.id || !state.settings.messageNotifications) return;
+    _toastTimer?.cancel();
+    setState(() => _toast = last);
+    _toastTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted) setState(() => _toast = null);
+    });
+  }
+
+  void _toggleChat() {
+    _toastTimer?.cancel();
+    setState(() {
+      _toast = null;
+      _showTextChat = !_showTextChat;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +139,7 @@ class _CallRoomViewState extends State<CallRoomView> {
                               color: NixColors.accentTor.withOpacity(0.3)),
                         ),
                         child: Text(
-                          'TOR ONION E2EE · ZERO IP LEAK',
+                          'SALA LOCAL',
                           style: TextStyle(
                               color: NixColors.accentTor,
                               fontSize: 10,
@@ -100,8 +158,7 @@ class _CallRoomViewState extends State<CallRoomView> {
                       tooltip: _showTextChat
                           ? 'Fechar chat da sala'
                           : 'Abrir chat da sala',
-                      onPressed: () =>
-                          setState(() => _showTextChat = !_showTextChat),
+                      onPressed: _toggleChat,
                       icon: const Icon(Icons.chat_outlined),
                     ),
                   ],
@@ -114,7 +171,26 @@ class _CallRoomViewState extends State<CallRoomView> {
                   color: NixColors.background,
                   padding: const EdgeInsets.all(24),
                   child: isCurrentCallActive
-                      ? _buildActiveCallGrid(call.participants, call.isMuted)
+                      ? Stack(fit: StackFit.expand, children: [
+                          _buildActiveCallGrid(call.participants, call.isMuted),
+                          if (_toast case final toast?)
+                            Align(alignment: Alignment.topCenter, child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 430),
+                              child: Material(
+                                color: NixColors.surfaceElevatedHigh,
+                                borderRadius: BorderRadius.circular(12), elevation: 4,
+                                child: Semantics(liveRegion: true, child: ListTile(
+                                  key: const Key('call_chat_popup'), leading: const Icon(Icons.chat_outlined),
+                                  title: Text(toast.senderName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                  subtitle: Text(toast.text.isEmpty ? 'Enviou um anexo' : toast.text,
+                                    maxLines: 2, overflow: TextOverflow.ellipsis),
+                                  onTap: _toggleChat,
+                                  trailing: IconButton(tooltip: 'Dispensar mensagem', icon: const Icon(Icons.close),
+                                    onPressed: () => setState(() => _toast = null)),
+                                )),
+                              ),
+                            )),
+                        ])
                       : _buildJoinCallPrompt(context, nixState),
                 ),
               ),
@@ -135,7 +211,7 @@ class _CallRoomViewState extends State<CallRoomView> {
           trailing: IconButton(
             tooltip: 'Fechar chat da sala',
             icon: const Icon(Icons.close),
-            onPressed: () => setState(() => _showTextChat = false),
+            onPressed: _toggleChat,
           ),
         ),
         const Divider(height: 1),
@@ -306,7 +382,7 @@ class _CallRoomViewState extends State<CallRoomView> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Comunicação por áudio cifrada de ponta a ponta.\nNenhum dado é gravado no relay.',
+            'Prévia local da sala de voz e do chat.',
             textAlign: TextAlign.center,
             style: TextStyle(color: NixColors.textMuted, fontSize: 13),
           ),
@@ -342,8 +418,11 @@ class _CallRoomViewState extends State<CallRoomView> {
         border:
             Border(top: BorderSide(color: NixColors.surfaceBorder, width: 1)),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
         children: [
           // Mutar
           _ControlIconButton(
@@ -354,7 +433,6 @@ class _CallRoomViewState extends State<CallRoomView> {
                 call.isMuted ? NixColors.accentDanger : NixColors.textPrimary,
             onTap: () => nixState.toggleMute(),
           ),
-          const SizedBox(width: 16),
           // Ensordecer
           _ControlIconButton(
             icon: call.isDeafened ? Icons.headset_off : Icons.headset,
@@ -365,7 +443,6 @@ class _CallRoomViewState extends State<CallRoomView> {
                 : NixColors.textPrimary,
             onTap: () => nixState.toggleDeafen(),
           ),
-          const SizedBox(width: 24),
           // Desconectar
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(

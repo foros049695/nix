@@ -58,18 +58,20 @@ class NixPanelTitle extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? subtitle;
+  final Widget? leading;
 
   const NixPanelTitle({
     super.key,
     required this.icon,
     required this.title,
     this.subtitle,
+    this.leading,
   });
 
   @override
   Widget build(BuildContext context) => Row(
         children: [
-          Container(
+          leading ?? Container(
             decoration: nixFrameDecoration(context,
                 background: context.surfaceActiveColor, raised: false),
             padding: const EdgeInsets.all(8),

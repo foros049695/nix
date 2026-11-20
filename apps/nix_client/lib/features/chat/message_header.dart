@@ -6,6 +6,9 @@ import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
 import '../dialogs/channel_settings_dialog.dart';
 import '../design/nix_surfaces.dart';
+import '../navigation/workspace_image.dart';
+import '../members/members_panel.dart';
+import 'conversation_info_panel.dart';
 
 class MessageHeader extends StatelessWidget {
   final Channel channel;
@@ -18,9 +21,19 @@ class MessageHeader extends StatelessWidget {
     final accent = context.accentColor;
     final accentText = context.accentTextColor;
 
+    void openInfo() => ConversationInfoPanel.open(context, channel: channel);
+
+    void openMembers() {
+      if (MediaQuery.sizeOf(context).width < nixDesktopBreakpoint) {
+        MembersPanel.show(context);
+      } else {
+        nixState.toggleMembersPanel();
+      }
+    }
+
     return InkWell(
       key: const Key('message_header_bar'),
-      onTap: () => nixState.toggleConversationInfoPanel(),
+      onTap: openInfo,
       child: Container(
         height: 52,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -36,6 +49,10 @@ class MessageHeader extends StatelessWidget {
                 Expanded(
                   child: NixPanelTitle(
                     icon: channel.icon,
+                    leading: channel.customImagePath == null ? null : WorkspaceImage(
+                      path: channel.customImagePath, size: 36,
+                      fallback: Icon(channel.icon, color: accentText),
+                    ),
                     title: channel.name,
                     subtitle: compact || channel.topic.isEmpty ? null : channel.topic,
                   ),
@@ -72,7 +89,7 @@ class MessageHeader extends StatelessWidget {
                     color: nixState.isConversationInfoOpen ? accentText : NixColors.textSecondary,
                   ),
                   tooltip: 'Informações & Mídia Compartilhada',
-                  onPressed: () => nixState.toggleConversationInfoPanel(),
+                  onPressed: openInfo,
                 ),
                 IconButton(
                   key: const Key('channel_settings_button'),
@@ -98,7 +115,7 @@ class MessageHeader extends StatelessWidget {
                     color: nixState.isMembersPanelOpen ? accentText : NixColors.textSecondary,
                   ),
                   tooltip: 'Lista de Membros e Chaves',
-                  onPressed: () => nixState.toggleMembersPanel(),
+                  onPressed: openMembers,
                 ),
               ],
             );

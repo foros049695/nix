@@ -608,8 +608,8 @@ class SovereignMessenger {
         chunkCiphertextsBase64: chunksB64,
         chunkHashesHex: chunkHashes,
       );
-      await File(manifestPath).writeAsString(jsonEncode(manifest.toJson()), flush: true);
       writtenPaths.add(manifestPath);
+      await _writeAttachmentManifest(File(manifestPath), manifest);
       return manifest;
     } catch (_) {
       await cleanupTemporaryStagingFiles(writtenPaths);
@@ -635,6 +635,49 @@ class SovereignMessenger {
       }
     }
     return deleted;
+  }
+
+  Future<void> _writeAttachmentManifest(File file, AttachmentManifest manifest) async {
+    final sealed = await SealedEnvelope.seal(
+      key: await _deriveSessionWrapKey(),
+      plaintext: utf8.encode(jsonEncode(manifest.toJson())),
+      aad: utf8.encode('attachment-manifest:${file.uri.pathSegments.last}'),
+    );
+    final bytes = BytesBuilder(copy: false)
+      ..add(ascii.encode('NXAM1'))
+      ..add(sealed.encode());
+    await file.writeAsBytes(bytes.takeBytes(), flush: true);
+  }
+
+  Future<Uint8List?> readImageAttachment(String messageId, int index) async {
+    final attachments = await objectChunkRepo.getAttachmentsForMessage(messageId);
+    if (index < 0 || index >= attachments.length) return null;
+    final row = attachments[index];
+    final name = row['file_name'] as String?;
+    final size = row['byte_size'] as int?;
+    final path = row['encrypted_path'] as String?;
+    if (name == null || !LocalImageHelper.isSupportedExtension(name) ||
+        size == null || size > 20 * 1024 * 1024 || path == null || !path.endsWith('.manifest')) return null;
+    final root = await Directory('$storageRootDir/objects').resolveSymbolicLinks();
+    final file = File(path);
+    if (!await file.exists()) return null;
+    final resolved = await file.resolveSymbolicLinks();
+    if (!resolved.startsWith('$root${Platform.pathSeparator}') ||
+        await file.length() > 32 * 1024 * 1024) return null;
+    final stored = await file.readAsBytes();
+    if (stored.isEmpty) return null;
+    // Versões anteriores gravavam o manifesto local em JSON.
+    final legacy = stored.first == 0x7B;
+    if (!legacy && (stored.length <= 5 || String.fromCharCodes(stored.take(5)) != 'NXAM1')) return null;
+    final clear = legacy ? stored : await SealedEnvelope.open(
+      key: await _deriveSessionWrapKey(),
+      payload: SealedPayload.decode(stored.sublist(5)),
+      aad: utf8.encode('attachment-manifest:${file.uri.pathSegments.last}'),
+    );
+    final manifest = AttachmentManifest.fromJson(jsonDecode(utf8.decode(clear)) as Map<String, dynamic>);
+    if (manifest.objectId != row['object_id'] || manifest.byteSize != size) return null;
+    final image = await decryptAndReassembleAttachment(manifest);
+    return LocalImageHelper.stripMetadataBytes(image);
   }
 
   /// Verifica integridade de todos os chunks + SHA-256 global e remonta os bytes originais.
@@ -1188,6 +1231,17 @@ class SovereignMessenger {
         final nextRev =
             (loadedSessionRow?['revision'] as int? ?? 0) + 1;
 
+        final storedManifests = <String>[];
+        try {
+          if (parsedAttachments.isNotEmpty) {
+            final directory = await Directory('$storageRootDir/objects').create(recursive: true);
+            for (final manifest in parsedAttachments) {
+              final name = _toHex(SecretKeyData.random(length: 16).bytes);
+              final file = File('${directory.path}/received_$name.manifest');
+              storedManifests.add(file.path);
+              await _writeAttachmentManifest(file, manifest);
+            }
+          }
         // 3. COMMIT-BEFORE-ACK: conversa, sessão, mensagem e inbox_dedup na mesma transação!
         await database.rawDatabase.transaction((txn) async {
           final convExists = await txn.query(
@@ -1252,7 +1306,7 @@ class SovereignMessenger {
               att.mimeType,
               att.byteSize,
               'object_inline:${att.objectId}',
-              '$storageRootDir/objects/${att.objectId}_${msgId}_$i.manifest',
+              storedManifests[i],
               nowMs,
             ]);
             await txn.rawInsert('''
@@ -1279,6 +1333,11 @@ class SovereignMessenger {
             nowMs + const Duration(days: 7).inMilliseconds,
           ]);
         });
+
+        } catch (_) {
+          await cleanupTemporaryStagingFiles(storedManifests);
+          rethrow;
+        }
 
         committed.add(CommittedInboundMessage(
           messageId: msgId,

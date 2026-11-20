@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_bilingual_label.dart';
 import '../dialogs/nix_symbol_picker.dart';
+import '../navigation/workspace_image.dart';
 import 'pager_housing.dart';
 
 class PagerShortcuts extends StatefulWidget {
@@ -83,15 +84,14 @@ class _PagerShortcutsState extends State<PagerShortcuts> {
           _Shortcut(
             groups[i].name,
             'Grupo',
-            NixSymbol(groups[i].iconEmoji ?? groups[i].initials,
-                size: 15, color: pagerInk),
+            WorkspaceImage(path: groups[i].customImagePath, size: 30, fallback: NixSymbol(groups[i].iconEmoji ?? groups[i].initials, size: 15, color: pagerInk)),
             () => open(() => state.selectSpace(groups[i])),
           ),
         if (i < channels.length)
           _Shortcut(
             channels[i].name,
             'Canal',
-            Icon(channels[i].icon, size: 18, color: pagerInk),
+            WorkspaceImage(path: channels[i].customImagePath, size: 30, fallback: Icon(channels[i].icon, size: 18, color: pagerInk)),
             () => open(() => state.selectChannel(channels[i])),
           ),
         if (i < friends.length)

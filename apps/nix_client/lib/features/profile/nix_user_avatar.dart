@@ -36,11 +36,14 @@ class NixUserAvatar extends StatelessWidget {
     final profile = nixState.userProfile;
     final effectiveBorderColor = borderColor ?? NixColors.surfaceBorderStrong;
 
+    final square = nixState.settings.roundedSquareAvatar;
+    final corners = BorderRadius.circular(size * (square ? .24 : .5));
     Widget avatarCore = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
+        shape: square ? BoxShape.rectangle : BoxShape.circle,
+        borderRadius: square ? corners : null,
         color: NixColors.surfaceCard,
         border: showBorder
             ? Border.all(color: effectiveBorderColor, width: borderWidth)
@@ -76,7 +79,7 @@ class NixUserAvatar extends StatelessWidget {
     if (onTap != null) {
       return InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(size / 2),
+        borderRadius: corners,
         child: avatarCore,
       );
     }
@@ -101,7 +104,9 @@ class NixUserAvatar extends StatelessWidget {
     if (style == 'monogram') {
       final name = profile.effectiveDisplayName;
       final initials = name.isNotEmpty
-          ? (name.length >= 2 ? name.substring(0, 2).toUpperCase() : name.toUpperCase())
+          ? (name.length >= 2
+              ? name.substring(0, 2).toUpperCase()
+              : name.toUpperCase())
           : 'NX';
       return Center(
         child: Text(

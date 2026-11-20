@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../database/local_database.dart';
 import '../security/platform_runtime.dart';
@@ -7,7 +8,7 @@ import '../security/platform_runtime.dart';
 /// Obra do catálogo cultural offline do Nix.
 class CatalogWork {
   final String id;
-  final String kind; // 'movie', 'series', 'anime', 'manga', 'book'
+  final String kind;
   final String title;
   final String? originalTitle;
   final String? creators;
@@ -111,15 +112,16 @@ class CatalogDatabase {
     final db = await dbFactory.openDatabase(
       resolvedPath,
       options: OpenDatabaseOptions(
-        version: readOnly ? null : 1,
+        version: readOnly ? null : 2,
         readOnly: readOnly,
         // A consulta do manifesto possui e fecha um handle separado do índice aberto na UI.
         singleInstance: false,
         onCreate: readOnly
             ? null
             : (db, version) async {
-                await _createSchema(db);
+                await _upgradeSchema(db);
               },
+        onUpgrade: readOnly ? null : (db, _, __) => _upgradeSchema(db),
       ),
     );
 
@@ -129,6 +131,53 @@ class CatalogDatabase {
     }
 
     return CatalogDatabase._(db, resolvedPath);
+  }
+
+  static Future<void> _upgradeSchema(DatabaseExecutor db) async {
+    final tables = await db.rawQuery(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'catalog_works'",
+    );
+    final definition = tables.firstOrNull?['sql'] as String?;
+    if (definition == null || definition.contains("'album'")) {
+      await _createSchema(db);
+      return;
+    }
+    for (final suffix in ['ai', 'ad', 'au']) {
+      await db.execute('DROP TRIGGER IF EXISTS trg_catalog_works_$suffix');
+    }
+    for (final suffix in ['kind', 'year', 'kind_year']) {
+      await db.execute('DROP INDEX IF EXISTS idx_catalog_works_$suffix');
+    }
+    await db.execute('DROP TABLE IF EXISTS catalog_search');
+    await db.execute('ALTER TABLE catalog_works RENAME TO catalog_works_v1');
+    await _createSchema(db);
+    await db.execute('''
+      INSERT INTO catalog_works
+        (id, kind, title, original_title, creators, genres, release_year, summary,
+         cover_thumb, external_ids_json, updated_at)
+      SELECT id, kind, title, original_title, creators, genres, release_year, summary,
+             cover_thumb, external_ids_json, updated_at
+      FROM catalog_works_v1
+    ''');
+    await db.execute('DROP TABLE catalog_works_v1');
+  }
+
+  Future<void> installBundledMusic() async {
+    const version = '1';
+    const versionKey = 'bundled_musicbrainz_version';
+    if (await getMeta(versionKey) == version) return;
+    final raw = await rootBundle.loadString('assets/catalog/musicbrainz_seed.json');
+    final works = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+    await _db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final work in works) {
+        batch.insert('catalog_works', CatalogWork.fromRow(work).toMap(),
+          conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+      batch.insert('catalog_meta', {'key': versionKey, 'value': version},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+      await batch.commit(noResult: true);
+    });
   }
 
   static Future<void> _createSchema(DatabaseExecutor db) async {
@@ -142,7 +191,7 @@ class CatalogDatabase {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS catalog_works (
         id TEXT PRIMARY KEY,
-        kind TEXT NOT NULL CHECK(kind IN ('movie','film','series','anime','manga','book')),
+        kind TEXT NOT NULL CHECK(kind IN ('movie','film','series','anime','manga','book','album','track')),
         title TEXT NOT NULL,
         original_title TEXT,
         creators TEXT,

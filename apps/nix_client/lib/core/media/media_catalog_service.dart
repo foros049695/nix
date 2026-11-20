@@ -127,7 +127,7 @@ class MediaCatalogService {
     int? rating,
     String? privateNotes,
   }) async {
-    final normalizedKind = (work.kind == 'movie') ? 'film' : work.kind;
+    final normalizedKind = work.kind == 'movie' ? 'film' : work.kind;
     await mediaRepo.upsertMediaItem(
       id: work.id,
       kind: normalizedKind,

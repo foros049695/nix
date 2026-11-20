@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../design/nix_surfaces.dart';
+import '../navigation/workspace_image.dart';
 import '../../core/models/channel.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
@@ -42,6 +43,7 @@ class ChannelSettingsDialog extends StatefulWidget {
 class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
   _SettingsTab _activeTab = _SettingsTab.identity;
   _SettingsTab? _compactTab;
+  late String? _imagePath = widget.channel.customImagePath;
 
   static const _sections = [
     (_SettingsTab.identity, Icons.vpn_key_outlined, 'Identidade, Links & QR'),
@@ -98,6 +100,8 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
       topic: _topicController.text.trim(),
       description: _descController.text.trim(),
       permissions: _perms,
+      customImagePath: state.canEditChannelImage(widget.channel) ? _imagePath : widget.channel.customImagePath,
+      clearCustomImage: state.canEditChannelImage(widget.channel) && _imagePath == null,
       admins: _admins,
       moderators: _moderators,
       mutedMembers: _mutedMembers,
@@ -392,6 +396,10 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
   Widget _buildIdentityTab(Color accent) {
     return ListView(
       children: [
+        if (context.read<NixState>().canEditChannelImage(widget.channel)) ...[
+          WorkspaceImageField(path: _imagePath, onChanged: (path) => setState(() => _imagePath = path)),
+          const SizedBox(height: 12),
+        ],
         _buildSectionTitle('IDENTIDADE DO CANAL'),
         const SizedBox(height: 12),
         _buildTextField('Nome do Canal', _nameController, prefixText: '# '),

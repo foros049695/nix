@@ -125,6 +125,10 @@ class UserSettings {
   final bool blockRemoteEmbeds;
   final bool reducedMotion;
   final bool hidePagerAvatar;
+  final bool roundedSquareAvatar;
+  final double pagerWallpaperShade;
+  final double pagerWallpaperBlur;
+  final bool pagerWallpaperAcrossPages;
   final double pagerAvatarX;
   final double pagerAvatarY;
   final double pagerAvatarScale;
@@ -226,6 +230,10 @@ class UserSettings {
     this.blockRemoteEmbeds = true,
     this.reducedMotion = false,
     this.hidePagerAvatar = false,
+    this.roundedSquareAvatar = false,
+    this.pagerWallpaperShade = 0,
+    this.pagerWallpaperBlur = 0,
+    this.pagerWallpaperAcrossPages = false,
     this.pagerAvatarX = 0,
     this.pagerAvatarY = 0,
     this.pagerAvatarScale = .28,
@@ -286,6 +294,10 @@ class UserSettings {
     bool? blockRemoteEmbeds,
     bool? reducedMotion,
     bool? hidePagerAvatar,
+    bool? roundedSquareAvatar,
+    double? pagerWallpaperShade,
+    double? pagerWallpaperBlur,
+    bool? pagerWallpaperAcrossPages,
     double? pagerAvatarX,
     double? pagerAvatarY,
     double? pagerAvatarScale,
@@ -345,6 +357,10 @@ class UserSettings {
       blockRemoteEmbeds: blockRemoteEmbeds ?? this.blockRemoteEmbeds,
       reducedMotion: reducedMotion ?? this.reducedMotion,
       hidePagerAvatar: hidePagerAvatar ?? this.hidePagerAvatar,
+      roundedSquareAvatar: roundedSquareAvatar ?? this.roundedSquareAvatar,
+      pagerWallpaperShade: pagerWallpaperShade ?? this.pagerWallpaperShade,
+      pagerWallpaperBlur: pagerWallpaperBlur ?? this.pagerWallpaperBlur,
+      pagerWallpaperAcrossPages: pagerWallpaperAcrossPages ?? this.pagerWallpaperAcrossPages,
       pagerAvatarX: pagerAvatarX ?? this.pagerAvatarX,
       pagerAvatarY: pagerAvatarY ?? this.pagerAvatarY,
       pagerAvatarScale: pagerAvatarScale ?? this.pagerAvatarScale,
@@ -375,6 +391,10 @@ class UserSettings {
         'quantizeViewportDimensions': quantizeViewportDimensions,
         'reducedMotion': reducedMotion,
         'hidePagerAvatar': hidePagerAvatar,
+        'roundedSquareAvatar': roundedSquareAvatar,
+        'pagerWallpaperShade': pagerWallpaperShade,
+        'pagerWallpaperBlur': pagerWallpaperBlur,
+        'pagerWallpaperAcrossPages': pagerWallpaperAcrossPages,
         'pagerAvatarX': pagerAvatarX,
         'pagerAvatarY': pagerAvatarY,
         'pagerAvatarScale': pagerAvatarScale,
@@ -425,6 +445,10 @@ class UserSettings {
       quantizeViewportDimensions: (json['quantizeViewportDimensions'] as bool?) ?? false,
       reducedMotion: (json['reducedMotion'] as bool?) ?? false,
       hidePagerAvatar: (json['hidePagerAvatar'] as bool?) ?? false,
+      roundedSquareAvatar: json['roundedSquareAvatar'] == true,
+      pagerWallpaperShade: readAvatarValue(json['pagerWallpaperShade'], 0, 0, .75),
+      pagerWallpaperBlur: readAvatarValue(json['pagerWallpaperBlur'], 0, 0, 18),
+      pagerWallpaperAcrossPages: json['pagerWallpaperAcrossPages'] == true,
       pagerAvatarX: readAvatarValue(json['pagerAvatarX'], 0, -1, 1),
       pagerAvatarY: readAvatarValue(json['pagerAvatarY'], 0, -1, 1),
       pagerAvatarScale: readAvatarValue(json['pagerAvatarScale'], .28, .14, .56),

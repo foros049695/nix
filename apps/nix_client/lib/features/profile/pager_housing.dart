@@ -42,6 +42,7 @@ String pagerNetworkLabel(SovereignSecurityGateStatus status) {
 class PagerHousing extends StatefulWidget {
   final bool reducedMotion;
   final Widget screen;
+  final Widget? wallpaper;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
   final VoidCallback? onMenu;
@@ -54,6 +55,7 @@ class PagerHousing extends StatefulWidget {
     super.key,
     required this.reducedMotion,
     required this.screen,
+    this.wallpaper,
     this.onPrevious,
     this.onNext,
     this.onMenu,
@@ -139,7 +141,10 @@ class _PagerHousingState extends State<PagerHousing> {
                         color: Color(widget.lcdColor.rgb),
                         child: Material(
                           type: MaterialType.transparency,
-                          child: widget.screen,
+                          child: widget.wallpaper == null ? widget.screen : Stack(
+                            fit: StackFit.expand,
+                            children: [widget.wallpaper!, widget.screen],
+                          ),
                         ),
                       ),
                     ),

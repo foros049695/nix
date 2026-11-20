@@ -10,6 +10,8 @@ import '../dialogs/manage_folders_dialog.dart';
 import '../dialogs/nix_symbol_picker.dart';
 import '../offline/share_app_offline_dialog.dart';
 import '../profile/nix_user_avatar.dart';
+import 'workspace_drag_source.dart';
+import 'workspace_image.dart';
 
 /// Área 1 — Barra vertical compacta de Pastas & Organização (Estilo Telegram Desktop).
 class SpacesDock extends StatelessWidget {
@@ -21,13 +23,16 @@ class SpacesDock extends StatelessWidget {
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
     final effectiveWidth = width ?? nixState.dockWidth;
-    final folders = nixState.folders;
+    final folders =
+        nixState.folders.where((f) => f.id != 'all' && f.id != 'private');
     final folderedIds = folders.expand((f) => f.spaceIds).toSet();
     final standaloneSpaces =
         nixState.spaces.where((s) => !folderedIds.contains(s.id)).toList();
 
-    final totalUnreadSpaces = nixState.spaces.fold<int>(0, (sum, s) => sum + s.unreadCount);
-    final totalUnreadDms = nixState.directMessages.fold<int>(0, (sum, d) => sum + d.unreadCount);
+    final totalUnreadSpaces =
+        nixState.spaces.fold<int>(0, (sum, s) => sum + s.unreadCount);
+    final totalUnreadDms =
+        nixState.directMessages.fold<int>(0, (sum, d) => sum + d.unreadCount);
     final allUnread = totalUnreadSpaces + totalUnreadDms;
 
     return Container(
@@ -44,19 +49,43 @@ class SpacesDock extends StatelessWidget {
           const SizedBox(height: 10),
 
           // 2. Pasta "Todas" (All Chats)
-          _TelegramFolderTab(
-            key: const Key('folder_tab_all'),
-            icon: Icons.forum_rounded,
-            label: 'Todas',
-            unreadCount: allUnread,
-            isSelected: nixState.activeFolderId == 'all' &&
-                nixState.activeArea == NixActiveArea.spaces,
-            onTap: () {
-              nixState.selectFolder('all');
-              if (nixState.spaces.isNotEmpty) {
-                nixState.selectSpace(nixState.currentSpace);
+          DragTarget<String>(
+            onWillAcceptWithDetails: (details) =>
+                details.data.startsWith('folder:') ||
+                nixState.isWorkspaceItem(details.data),
+            onAcceptWithDetails: (details) {
+              final id = details.data;
+              if (id.startsWith('folder:')) {
+                nixState.dissolveFolder(id.substring(7));
+              } else {
+                nixState.ungroupWorkspaceItem(id);
               }
             },
+            builder: (context, candidates, _) => DecoratedBox(
+              decoration: BoxDecoration(
+                color: candidates.isEmpty
+                    ? null
+                    : context.accentColor.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Tooltip(
+                message: 'Solte aqui para desagrupar',
+                child: _TelegramFolderTab(
+                  key: const Key('folder_tab_all'),
+                  icon: Icons.forum_rounded,
+                  label: 'Todas',
+                  unreadCount: allUnread,
+                  isSelected: nixState.activeFolderId == 'all' &&
+                      nixState.activeArea == NixActiveArea.spaces,
+                  onTap: () {
+                    nixState.selectFolder('all');
+                    if (nixState.spaces.isNotEmpty) {
+                      nixState.selectSpace(nixState.currentSpace);
+                    }
+                  },
+                ),
+              ),
+            ),
           ),
 
           // 3. Pasta "Privadas" (Conversas Diretas, Mensagens Salvas, Amigos, Solicitações, Card ID)
@@ -89,17 +118,19 @@ class SpacesDock extends StatelessWidget {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: DragTarget<String>(
-                      onWillAcceptWithDetails: (details) =>
-                          !folder.spaceIds.contains(details.data) &&
-                          !folder.conversationIds.contains(details.data),
+                      onWillAcceptWithDetails: (details) => details.data
+                              .startsWith('folder:')
+                          ? details.data != 'folder:${folder.id}'
+                          : nixState.isWorkspaceItem(details.data) &&
+                              !folder.spaceIds.contains(details.data) &&
+                              !folder.conversationIds.contains(details.data),
                       onAcceptWithDetails: (details) {
-                        nixState.assignItemToFolder(details.data, folder.id);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Adicionado à pasta "${folder.name}".'),
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
+                        if (details.data.startsWith('folder:')) {
+                          nixState.moveWorkspaceFolder(
+                              details.data.substring(7), folder.id);
+                        } else {
+                          nixState.assignItemToFolder(details.data, folder.id);
+                        }
                       },
                       builder: (context, candidateData, rejectedData) {
                         final isHoveredDrop = candidateData.isNotEmpty;
@@ -108,18 +139,24 @@ class SpacesDock extends StatelessWidget {
                           decoration: isHoveredDrop
                               ? BoxDecoration(
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: context.accentColor, width: 1.8),
-                                  color: context.accentColor.withValues(alpha: 0.14),
+                                  border: Border.all(
+                                      color: context.accentColor, width: 1.8),
+                                  color: context.accentColor
+                                      .withValues(alpha: 0.14),
                                 )
                               : null,
-                          child: _TelegramFolderTab(
-                            key: Key('folder_tab_${folder.id}'),
-                            icon: folderIconFromName(folder.iconName),
+                          child: WorkspaceDragSource(
+                            id: 'folder:${folder.id}',
                             label: folder.name,
-                            customDotColor: folderColor,
-                            unreadCount: folderUnread,
-                            isSelected: isSelected,
-                            onTap: () => nixState.selectFolder(folder.id),
+                            child: _TelegramFolderTab(
+                              key: Key('folder_tab_${folder.id}'),
+                              icon: folderIconFromName(folder.iconName),
+                              label: folder.name,
+                              customDotColor: folderColor,
+                              unreadCount: folderUnread,
+                              isSelected: isSelected,
+                              onTap: () => nixState.selectFolder(folder.id),
+                            ),
                           ),
                         );
                       },
@@ -130,68 +167,45 @@ class SpacesDock extends StatelessWidget {
                 // Espaços avulsos (podem ser arrastados entre si para formar pastas)
                 if (standaloneSpaces.isNotEmpty) ...[
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                     child: Divider(color: NixColors.surfaceBorder, height: 1),
                   ),
                   ...standaloneSpaces.map((space) {
-                    final isSelected = nixState.activeArea == NixActiveArea.spaces &&
-                        space.id == nixState.currentSpace.id;
+                    final isSelected =
+                        nixState.activeArea == NixActiveArea.spaces &&
+                            space.id == nixState.currentSpace.id;
 
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 6),
                       child: DragTarget<String>(
                         onWillAcceptWithDetails: (details) =>
                             details.data != space.id &&
-                            nixState.spaces.any((s) => s.id == details.data),
+                            nixState.isWorkspaceItem(details.data),
                         onAcceptWithDetails: (details) {
-                          nixState.combineSpacesIntoFolder(details.data, space.id);
+                          nixState.combineSpacesIntoFolder(
+                              details.data, space.id);
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Nova pasta criada por agrupamento.'),
+                              content:
+                                  Text('Nova pasta criada por agrupamento.'),
                               duration: Duration(seconds: 2),
                             ),
                           );
                         },
                         builder: (context, candidateData, rejectedData) {
                           final isHoveredDrop = candidateData.isNotEmpty;
-                          return Draggable<String>(
-                            data: space.id,
-                            feedback: Material(
-                              color: Colors.transparent,
-                              child: Container(
-                                width: 46,
-                                height: 46,
-                                decoration: BoxDecoration(
-                                  color: context.accentColor,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: NixColors.textPrimary, width: 1.5),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    space.initials,
-                                    style: TextStyle(
-                                      color: context.onAccentColor,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            childWhenDragging: Opacity(
-                              opacity: 0.3,
-                              child: _SpaceCompactTile(
-                                space: space,
-                                isSelected: isSelected,
-                                onTap: () {},
-                              ),
-                            ),
+                          return WorkspaceDragSource(
+                            id: space.id,
+                            label: space.name,
                             child: AnimatedContainer(
                               duration: NixTokens.motionFast,
                               decoration: isHoveredDrop
                                   ? BoxDecoration(
                                       borderRadius: BorderRadius.circular(14),
-                                      border: Border.all(color: context.accentColor, width: 1.8),
+                                      border: Border.all(
+                                          color: context.accentColor,
+                                          width: 1.8),
                                     )
                                   : null,
                               child: _SpaceCompactTile(
@@ -297,7 +311,8 @@ class _NixBrandProfileTrigger extends StatefulWidget {
   });
 
   @override
-  State<_NixBrandProfileTrigger> createState() => _NixBrandProfileTriggerState();
+  State<_NixBrandProfileTrigger> createState() =>
+      _NixBrandProfileTriggerState();
 }
 
 class _NixBrandProfileTriggerState extends State<_NixBrandProfileTrigger> {
@@ -323,7 +338,9 @@ class _NixBrandProfileTriggerState extends State<_NixBrandProfileTrigger> {
               color: NixColors.surfaceCard,
               shape: BoxShape.circle,
               border: Border.all(
-                color: widget.isOverlayOpen || _hovered ? accent : NixColors.surfaceBorderStrong,
+                color: widget.isOverlayOpen || _hovered
+                    ? accent
+                    : NixColors.surfaceBorderStrong,
                 width: widget.isOverlayOpen || _hovered ? 1.8 : 1.1,
               ),
               boxShadow: widget.isOverlayOpen || _hovered
@@ -391,7 +408,9 @@ class _TelegramFolderTabState extends State<_TelegramFolderTab> {
             decoration: BoxDecoration(
               color: widget.isSelected
                   ? accent.withValues(alpha: 0.16)
-                  : (_hovered ? NixColors.surfaceCardHover : Colors.transparent),
+                  : (_hovered
+                      ? NixColors.surfaceCardHover
+                      : Colors.transparent),
               borderRadius: BorderRadius.circular(10),
               border: widget.isSelected
                   ? Border.all(color: accent.withValues(alpha: 0.5), width: 1.0)
@@ -420,7 +439,9 @@ class _TelegramFolderTabState extends State<_TelegramFolderTab> {
                         Icon(
                           widget.icon,
                           size: 20,
-                          color: widget.isSelected ? accentText : NixColors.iconSecondary,
+                          color: widget.isSelected
+                              ? accentText
+                              : NixColors.iconSecondary,
                         ),
                       ],
                     ),
@@ -431,9 +452,13 @@ class _TelegramFolderTabState extends State<_TelegramFolderTab> {
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: widget.isSelected ? accentText : NixColors.textSecondary,
+                        color: widget.isSelected
+                            ? accentText
+                            : NixColors.textSecondary,
                         fontSize: 10,
-                        fontWeight: widget.isSelected ? FontWeight.w700 : FontWeight.w500,
+                        fontWeight: widget.isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
                       ),
                     ),
                   ],
@@ -443,16 +468,24 @@ class _TelegramFolderTabState extends State<_TelegramFolderTab> {
                     right: 4,
                     top: -2,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1),
                       decoration: BoxDecoration(
-                        color: widget.isSelected ? accent : NixColors.surfaceElevatedHigh,
+                        color: widget.isSelected
+                            ? accent
+                            : NixColors.surfaceElevatedHigh,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: NixColors.surfaceDock, width: 1.2),
+                        border: Border.all(
+                            color: NixColors.surfaceDock, width: 1.2),
                       ),
                       child: Text(
-                        widget.unreadCount > 99 ? '99+' : '${widget.unreadCount}',
+                        widget.unreadCount > 99
+                            ? '99+'
+                            : '${widget.unreadCount}',
                         style: TextStyle(
-                          color: widget.isSelected ? context.onAccentColor : NixColors.textPrimary,
+                          color: widget.isSelected
+                              ? context.onAccentColor
+                              : NixColors.textPrimary,
                           fontSize: 9,
                           fontWeight: FontWeight.w800,
                         ),
@@ -502,10 +535,16 @@ class _SpaceCompactTile extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               Center(
-                child: NixSymbol(
-                  space.iconEmoji ?? space.initials,
-                  color: isSelected ? context.onAccentColor : NixColors.textPrimary,
-                  size: 17,
+                child: WorkspaceImage(
+                  path: space.customImagePath,
+                  size: 36,
+                  fallback: NixSymbol(
+                    space.iconEmoji ?? space.initials,
+                    color: isSelected
+                        ? context.onAccentColor
+                        : NixColors.textPrimary,
+                    size: 17,
+                  ),
                 ),
               ),
               if (space.unreadCount > 0)
@@ -513,11 +552,13 @@ class _SpaceCompactTile extends StatelessWidget {
                   right: -4,
                   bottom: -3,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                     decoration: BoxDecoration(
                       color: accent,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: NixColors.surfaceDock, width: 1.5),
+                      border:
+                          Border.all(color: NixColors.surfaceDock, width: 1.5),
                     ),
                     child: Text(
                       '${space.unreadCount}',
@@ -566,9 +607,13 @@ class _DockCompactAction extends StatelessWidget {
           margin: const EdgeInsets.symmetric(horizontal: 8),
           padding: const EdgeInsets.symmetric(vertical: 5),
           decoration: BoxDecoration(
-            color: isSelected ? accent.withValues(alpha: 0.16) : Colors.transparent,
+            color: isSelected
+                ? accent.withValues(alpha: 0.16)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
-            border: isSelected ? Border.all(color: accent.withValues(alpha: 0.45)) : null,
+            border: isSelected
+                ? Border.all(color: accent.withValues(alpha: 0.45))
+                : null,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,

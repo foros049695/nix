@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'emoji_catalog.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/security/file_picker_adapter.dart';
@@ -38,117 +39,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
   String _emojiSearchQuery = '';
   String? _lastLoadedEditId;
   final List<String> _recentEmojis = ['⚡', '🛡️', '🔒', '🔥', '💿', '🤝'];
-
-  static const Map<String, List<String>> _categorizedEmojis = {
-    'Sorrisos': [
-      '😀',
-      '😃',
-      '😄',
-      '😁',
-      '😆',
-      '😅',
-      '🤣',
-      '😂',
-      '🥹',
-      '☺️',
-      '😊',
-      '😇',
-      '🙂',
-      '🙃',
-      '😉',
-      '😌',
-      '😍',
-      '🥰',
-      '😘',
-      '😋',
-      '😛',
-      '😜',
-      '🤪',
-      '🤨',
-      '🧐',
-      '🤓',
-      '😎',
-      '🤩',
-      '🥳',
-      '😏',
-    ],
-    'Gestos': [
-      '👍',
-      '👎',
-      '👊',
-      '✊',
-      '🤛',
-      '🤜',
-      '👏',
-      '🙌',
-      '👐',
-      '🤲',
-      '🤝',
-      '🙏',
-      '✌️',
-      '🤞',
-      '🤟',
-      '🤘',
-      '🤙',
-      '👈',
-      '👉',
-      '👋',
-    ],
-    'Segurança & Símbolos': [
-      '🔒',
-      '🔓',
-      '🛡️',
-      '⚔️',
-      '⚡',
-      '👁️',
-      '🔑',
-      '🗝️',
-      '⚙️',
-      '🪙',
-      '📡',
-      '📶',
-      '🧭',
-      '🎯',
-      '⏳',
-      '⌛',
-      '📌',
-      '💡',
-      '🔍',
-      '🔎',
-      '💬',
-      '💭',
-      '🏴‍☠️',
-      '✓',
-      '❌',
-      '⚠️',
-      '🛑',
-      '🚩',
-      '💠',
-      '✨',
-    ],
-    'Cultura & Objetos': [
-      '💿',
-      '📼',
-      '📻',
-      '🎬',
-      '📚',
-      '📖',
-      '🎧',
-      '🎤',
-      '🎹',
-      '🎮',
-      '🕹️',
-      '💻',
-      '🖥️',
-      '📱',
-      '🛰️',
-      '🚀',
-      '🛸',
-      '☕',
-      '🍵',
-      '🍕',
-    ],
-  };
 
   static const Map<String, String> _emojiKeywords = {
     '😀': 'sorriso feliz alegre smile',
@@ -255,7 +145,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
   List<String> get _currentDisplayEmojis {
     final q = _emojiSearchQuery.trim().toLowerCase();
     if (q.isNotEmpty) {
-      final all = _categorizedEmojis.values.expand((e) => e).toSet().toList();
+      final all = nixEmojiCategories.values.expand((e) => e).toSet().toList();
       final matches = all.where((e) {
         final kw = _emojiKeywords[e] ?? '';
         return kw.contains(q) || e == q;
@@ -265,7 +155,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     if (_selectedEmojiCategory == 'Recentes') {
       return _recentEmojis;
     }
-    return _categorizedEmojis[_selectedEmojiCategory] ?? [];
+    return nixEmojiCategories[_selectedEmojiCategory] ?? [];
   }
 
   @override
@@ -314,14 +204,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                           children: [
                             _categoryChip(
                                 context, 'Recentes', Icons.history_rounded),
-                            _categoryChip(
-                                context, 'Sorrisos', Icons.mood_rounded),
-                            _categoryChip(
-                                context, 'Gestos', Icons.pan_tool_outlined),
-                            _categoryChip(context, 'Segurança & Símbolos',
-                                Icons.shield_outlined),
-                            _categoryChip(context, 'Cultura & Objetos',
-                                Icons.album_outlined),
+                            for (final category in nixEmojiCategories.keys)
+                              _categoryChip(context, category, Icons.emoji_emotions_outlined),
                           ],
                         ),
                       ),

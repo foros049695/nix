@@ -33,7 +33,8 @@ class LocalImageHelper {
 
   /// Retorna o nome base do arquivo
   static String getFileName(String path) {
-    return path.split(Platform.pathSeparator).last;
+    final parts = path.replaceAll('\\', '/').split('/').where((part) => part.isNotEmpty);
+    return (parts.lastOrNull ?? 'Anexo').replaceAll(RegExp(r'[\x00-\x1f\x7f]'), '');
   }
 
   /// Invoca seletor portável multiplataforma para qualquer anexo (imagens, áudio, vídeos, documentos).
