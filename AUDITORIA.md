@@ -67,3 +67,7 @@ Foram registrados **13 achados**. São 0 críticos, 3 altos, 7 médios e 3 baixo
 | Flutter | 215 testes aprovados e 3 saltados. Análise manteve 210 informações, sem erros ou avisos. |
 | Builds nativos | As mesmas dependências locais ausentes impediram os builds finais de Linux e Android. O empacotamento final não foi confirmado neste ambiente. |
 | Verificações complementares | Política de automação, matriz de privacidade, teste Python do catálogo e revisão do diff passaram. O SBOM subiu de 90 para 91 componentes. A consulta OSV das 91 entradas do inventário Go e Pub não retornou avisos. |
+
+O envio de `main` falhou por ausência de credenciais Git para HTTPS.
+O comando retornou `fatal: could not read Username for 'https://github.com': terminal prompts disabled`.
+Os commits ficaram na `main` local, prontos para envio.
