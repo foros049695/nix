@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"math"
 	"os"
 	"sync"
 	"testing"
@@ -236,5 +237,20 @@ func TestCapabilityPersistenceRollsBack(t *testing.T) {
 	if store.ValidateCapability("restricted", "test-novo", ScopeWrite) ||
 		!store.ValidateCapability("restricted", "test-original", ScopeWrite) {
 		t.Fatal("uma alteração com falha mudou a autorização em memória")
+	}
+}
+
+func TestRequestedTTLIsCappedBeforeOverflow(t *testing.T) {
+	store, err := NewBlindMailboxStore("", time.Hour, 1024, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1700000000, 0)
+	env, err := store.Store("ttl-box", "YQ==", math.MaxInt64, "", StateNormal, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.ExpiresAt != now.Add(time.Hour).Unix() {
+		t.Fatalf("TTL incorreto: %d", env.ExpiresAt)
 	}
 }

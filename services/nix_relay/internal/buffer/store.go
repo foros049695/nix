@@ -145,7 +145,7 @@ func (s *BlindMailboxStore) Store(
 	}
 
 	ttl := s.baseTTL
-	if requestedTTLSeconds > 0 && time.Duration(requestedTTLSeconds)*time.Second < ttl {
+	if requestedTTLSeconds > 0 && requestedTTLSeconds <= int64(ttl/time.Second) {
 		ttl = time.Duration(requestedTTLSeconds) * time.Second
 	}
 	if capDur := MaxTTLForState(prunerState, s.baseTTL); capDur < ttl {
