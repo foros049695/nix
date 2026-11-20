@@ -71,3 +71,11 @@ Foram registrados **13 achados**. São 0 críticos, 3 altos, 7 médios e 3 baixo
 O envio de `main` falhou por ausência de credenciais Git para HTTPS.
 O comando retornou `fatal: could not read Username for 'https://github.com': terminal prompts disabled`.
 Os commits ficaram na `main` local, prontos para envio.
+
+## Acompanhamento das pendências
+
+- **A-005 resolvido.** A migração `relay_002_durable_quota.sql` associa o hash do token aos novos envelopes. O banco aplica a cota na mesma transação da inserção. O consumo considera apenas envelopes pendentes e válidos, inclusive ao usar mais de uma instância. A migração preserva os envelopes legados e seus limites globais e por mailbox.
+- **A-010 resolvido.** O CI inclui `chore/**` nos pushes e disponibiliza um PostgreSQL 17 para os testes de integração do relay. As alterações desta auditoria continuam na `main`.
+- **A-012 resolvido no escopo identificado.** A persistência de preferências e a organização de pastas foram extraídas em componentes independentes. O `NixState` continua responsável pela navegação, notificações e coordenação do ciclo de vida. As interfaces públicas e os formatos de armazenamento foram preservados.
+
+O relay passou em build, vet e testes com detector de corridas contra um PostgreSQL 17.12 real. Foram verificadas a concorrência entre duas instâncias, a abertura de uma nova instância, a liberação por ACK e a liberação por expiração.
