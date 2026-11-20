@@ -36,7 +36,7 @@ O Projeto Nix adota uma linguagem visual de **alto contraste, ergonomia adaptati
 │  LIGHT YELLOW (Modo Diurno / Alto Contraste Solar):                    │
 │  - Background:      #FDFBF7 (Branco Quente Orgânico)                   │
 │  - Surface Card:    #F4F0E6 (Linho Técnico Suave)                      │
-│  - Accent Amber:    #B8860B (Dark Goldenrod com Contraste AA)          │
+│  - Accent Amber:    #855B00 (exemplo de texto AA sobre #FDFBF7)          │
 │  - Text Primary:    #1A1710 (Preto Carvão para Leitura)                │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -289,6 +289,21 @@ O relay exige provisionamento explícito de `read_ack` pelo administrador
 local. Antes de atualizar instalações antigas, provisione credenciais
 aleatórias e configure-as no cliente. O relay rejeita o formato legado dos
 tokens de leitura derivados do identificador público.
+
+### Escopo da versão de teste
+
+- **Mensagens sem VPS:** texto BLE entre contatos com Card ID importado.
+  Recibo autenticado, Wi-Fi direto e Tor direto são entregas seguintes.
+- **Mercado:** abra **Simular negociação** para experimentar IDs descartáveis,
+  chat, confirmação fictícia e disputa no próprio aparelho. Use dados de exemplo.
+- **Mídia:** o catálogo pode abrir áudio ou vídeo escolhido no player do
+  sistema em Android e Linux. O Nix não opera servidor de streaming.
+- **Relay opcional:** o benchmark pode usar um Onion v3 de laboratório pelo
+  SOCKS5 local. Em `services/nix_relay`, rode
+  `go run ./cmd/bench -onion http://<hostname>.onion -clients 50 -duration 60m -credentials /caminho/privado/caixas.json`.
+  Forneça um array JSON privado, com modo `0600`, contendo `id`, `read_token`
+  e, quando a escrita exigir autorização, `write_token` de cada caixa de
+  teste provisionada. Observe as métricas do servidor no host da VPS.
 
 ### 3. Testes e verificações
 

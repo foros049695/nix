@@ -12,7 +12,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"regexp"
 	"runtime"
 	"sort"
 	"sync"
@@ -29,27 +31,61 @@ func main() {
 	clients := flag.Int("clients", 50, "Número de clientes concorrentes")
 	duration := flag.Duration("duration", 20*time.Second, "Duração contínua do benchmark")
 	attachRatio := flag.Int("attach-every", 25, "A cada N mensagens envia um anexo de 2 MB")
+	endpoint := flag.String("onion", "", "URL Onion v3 do relay de homologação")
+	socks := flag.String("socks", "127.0.0.1:9050", "Endereço SOCKS5 local do Tor")
+	credentials := flag.String("credentials", "", "Arquivo JSON privado com caixas de homologação provisionadas")
 	flag.Parse()
 
-	tmpDir, err := os.MkdirTemp("", "nix_bench_*")
-	if err != nil {
-		panic(err)
+	if *clients < 1 || *clients > 50 || *duration <= 0 || *attachRatio < 1 {
+		fmt.Fprintln(os.Stderr, "use entre 1 e 50 clientes, duração positiva e attach-every >= 1")
+		os.Exit(2)
 	}
-	defer os.RemoveAll(tmpDir)
 
-	cfg := buffer.DefaultConfig()
-	cfg.DataDir = tmpDir
-	cfg.MaxAttachmentSizeBytes = 50 * 1024 * 1024
-	store, err := buffer.NewBlindMailboxStore(cfg.DataDir, 7*24*time.Hour, cfg.MaxAttachmentSizeBytes, cfg.MaxInFlightPerQuotaToken)
-	if err != nil {
-		panic(err)
+	boxes := make([]benchMailbox, *clients)
+	var store buffer.RelayStore
+	var pruner *buffer.AutoPruner
+	var proxy func(*http.Request) (*url.URL, error)
+	var baseURL string
+	if *endpoint != "" {
+		var err error
+		baseURL, proxy, err = onionTransport(*endpoint, *socks)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		boxes, err = loadBenchMailboxes(*credentials, *clients)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+	} else {
+		tmpDir, err := os.MkdirTemp("", "nix_bench_*")
+		if err != nil {
+			panic(err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		cfg := buffer.DefaultConfig()
+		cfg.DataDir = tmpDir
+		store, err = buffer.NewBlindMailboxStore(cfg.DataDir, 7*24*time.Hour, cfg.MaxAttachmentSizeBytes, cfg.MaxInFlightPerQuotaToken)
+		if err != nil {
+			panic(err)
+		}
+		defer store.Close()
+		pruner = buffer.NewAutoPruner(cfg.LightThresholdPercent, cfg.SevereThresholdPercent, cfg.CriticalThresholdPercent)
+		pruner.AttachDiskMonitor(cfg.DataDir, 7*24*time.Hour, store)
+		server := httptest.NewServer(newBenchMux(cfg, store, pruner))
+		defer server.Close()
+		baseURL = server.URL
+
+		for i := range boxes {
+			sum := sha256.Sum256([]byte(fmt.Sprintf("bench-client-%d", i)))
+			boxes[i] = benchMailbox{ID: hex.EncodeToString(sum[:]), ReadToken: fmt.Sprintf("cap-bench-%d", i)}
+			if err := store.ProvisionCapability(boxes[i].ID, boxes[i].ReadToken, buffer.ScopeReadAck, 24*time.Hour); err != nil {
+				panic(err)
+			}
+		}
 	}
-	pruner := buffer.NewAutoPruner(cfg.LightThresholdPercent, cfg.SevereThresholdPercent, cfg.CriticalThresholdPercent)
-	pruner.AttachDiskMonitor(cfg.DataDir, 7*24*time.Hour, store)
-
-	// Reproduz roteamento real completo de /v1/mailboxes/ com mux isolado
-	srv := httptest.NewServer(newBenchMux(cfg, store, pruner))
-	defer srv.Close()
 
 	// Payloads pré-gerados em memória (texto pequeno E2EE e anexo de 2 MB cifrado)
 	smallCipher := make([]byte, 512)
@@ -59,18 +95,6 @@ func main() {
 	twoMBCipher := make([]byte, 2*1024*1024)
 	_, _ = rand.Read(twoMBCipher)
 	twoMBB64 := base64.StdEncoding.EncodeToString(twoMBCipher)
-
-	// Provisiona 50 mailboxes e tokens SHA-256 distintos
-	mailboxes := make([]string, *clients)
-	tokens := make([]string, *clients)
-	for i := 0; i < *clients; i++ {
-		sum := sha256.Sum256([]byte(fmt.Sprintf("bench-client-%d", i)))
-		mailboxes[i] = hex.EncodeToString(sum[:])
-		tokens[i] = fmt.Sprintf("cap-bench-%d", i)
-		if err := store.ProvisionCapability(mailboxes[i], tokens[i], buffer.ScopeReadAck, 24*time.Hour); err != nil {
-			panic(err)
-		}
-	}
 
 	var (
 		latMu      sync.Mutex
@@ -89,10 +113,13 @@ func main() {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			tr := &http.Transport{MaxIdleConnsPerHost: 4}
-			client := &http.Client{Transport: tr, Timeout: 15 * time.Second}
-			mbox := mailboxes[idx]
-			tok := tokens[idx]
+			tr := &http.Transport{MaxIdleConnsPerHost: 4, Proxy: proxy}
+			defer tr.CloseIdleConnections()
+			client := &http.Client{
+				Transport: tr, Timeout: 15 * time.Second,
+				CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+			}
+			mbox, tok := boxes[idx].ID, boxes[idx].ReadToken
 			step := 0
 
 			for time.Now().Before(stopAt) {
@@ -103,7 +130,7 @@ func main() {
 					reconnects.Add(1)
 				}
 
-				targetMbox := mailboxes[(idx+1)%*clients]
+				target := boxes[(idx+1)%*clients]
 				payloadB64 := smallB64
 				isAttach := step%*attachRatio == 0
 				if isAttach {
@@ -115,8 +142,11 @@ func main() {
 					"payload_b64": payloadB64,
 					"ttl_seconds": 3600,
 				})
-				req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/mailboxes/"+targetMbox+"/envelopes", bytes.NewReader(postBody))
+				req, _ := http.NewRequest(http.MethodPost, baseURL+"/v1/mailboxes/"+target.ID+"/envelopes", bytes.NewReader(postBody))
 				req.Header.Set("Content-Type", "application/json")
+				if target.WriteToken != "" {
+					req.Header.Set("Authorization", "Bearer "+target.WriteToken)
+				}
 				res, err := client.Do(req)
 				if err != nil || res.StatusCode != http.StatusAccepted {
 					totalErrs.Add(1)
@@ -129,7 +159,7 @@ func main() {
 				res.Body.Close()
 
 				// Fetch + Ack do próprio mailbox
-				getReq, _ := http.NewRequest(http.MethodGet, srv.URL+"/v1/mailboxes/"+mbox+"/envelopes", nil)
+				getReq, _ := http.NewRequest(http.MethodGet, baseURL+"/v1/mailboxes/"+mbox+"/envelopes", nil)
 				getReq.Header.Set("Authorization", "Bearer "+tok)
 				getRes, err := client.Do(getReq)
 				if err == nil && getRes.StatusCode == http.StatusOK {
@@ -144,10 +174,15 @@ func main() {
 							ids[i] = e.ID
 						}
 						ackBody, _ := json.Marshal(map[string]any{"ids": ids})
-						ackReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/mailboxes/"+mbox+"/ack", bytes.NewReader(ackBody))
+						ackReq, _ := http.NewRequest(http.MethodPost, baseURL+"/v1/mailboxes/"+mbox+"/ack", bytes.NewReader(ackBody))
 						ackReq.Header.Set("Content-Type", "application/json")
 						ackReq.Header.Set("Authorization", "Bearer "+tok)
-						if ackRes, aErr := client.Do(ackReq); aErr == nil {
+						ackRes, aErr := client.Do(ackReq)
+						if aErr != nil || ackRes.StatusCode != http.StatusOK {
+							totalErrs.Add(1)
+						}
+						if ackRes != nil {
+							_, _ = io.Copy(io.Discard, ackRes.Body)
 							ackRes.Body.Close()
 						}
 					}
@@ -174,10 +209,6 @@ func main() {
 	wg.Wait()
 	wall := time.Since(startWall)
 
-	// Dispara uma avaliação do AutoPruner com pressão simulada (histerese)
-	pruner.SetUsageSampler(func() int { return 88 })
-	prunerState, prunedCount := pruner.EvaluateNow(time.Now().UTC().Add(200 * time.Hour))
-
 	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
 	p50, p95, p99 := time.Duration(0), time.Duration(0), time.Duration(0)
 	if len(latencies) > 0 {
@@ -190,14 +221,67 @@ func main() {
 	runtime.ReadMemStats(&mem)
 	rssMB := float64(mem.Sys) / (1024 * 1024)
 	heapAllocMB := float64(mem.HeapAlloc) / (1024 * 1024)
-	m := store.Metrics()
 
 	fmt.Printf("=== NIX RELAY 50-CLIENT BENCHMARK RESULT ===\n")
 	fmt.Printf("clients=%d duration=%s reconnects=%d errors=%d\n", *clients, wall.Round(time.Millisecond), reconnects.Load(), totalErrs.Load())
 	fmt.Printf("ops=%d throughput=%.2f ops/s attachments_2mb=%d\n", totalOps.Load(), float64(totalOps.Load())/wall.Seconds(), total2MB.Load())
 	fmt.Printf("latency_p50=%s latency_p95=%s latency_p99=%s\n", p50.Round(time.Microsecond), p95.Round(time.Microsecond), p99.Round(time.Microsecond))
-	fmt.Printf("mem_sys_mb=%.2f heap_alloc_mb=%.2f stored_bytes=%d total_stored=%d total_acked=%d\n", rssMB, heapAllocMB, m.StoredBytes, m.TotalStored, m.TotalAcked)
-	fmt.Printf("autopruner_pressure_state=%s pruned_count=%d\n", prunerState, prunedCount)
+	fmt.Printf("benchmark_mem_sys_mb=%.2f benchmark_heap_alloc_mb=%.2f\n", rssMB, heapAllocMB)
+	if store != nil {
+		pruner.SetUsageSampler(func() int { return 88 })
+		state, pruned := pruner.EvaluateNow(time.Now().UTC().Add(200 * time.Hour))
+		m := store.Metrics()
+		fmt.Printf("stored_bytes=%d total_stored=%d total_acked=%d\n", m.StoredBytes, m.TotalStored, m.TotalAcked)
+		fmt.Printf("autopruner_pressure_state=%s pruned_count=%d\n", state, pruned)
+	}
+}
+
+type benchMailbox struct {
+	ID         string `json:"id"`
+	ReadToken  string `json:"read_token"`
+	WriteToken string `json:"write_token"`
+}
+
+func onionTransport(endpoint, socks string) (string, func(*http.Request) (*url.URL, error), error) {
+	dest, err := url.Parse(endpoint)
+	onionName := regexp.MustCompile(`^[a-z2-7]{56}\.onion$`)
+	if err != nil || (dest.Scheme != "http" && dest.Scheme != "https") ||
+		!onionName.MatchString(dest.Hostname()) || dest.User != nil ||
+		dest.RawQuery != "" || dest.Fragment != "" || (dest.Path != "" && dest.Path != "/") {
+		return "", nil, fmt.Errorf("-onion requer a URL raiz de um serviço Onion v3")
+	}
+	proxyURL, err := url.Parse("socks5h://" + socks)
+	if err != nil || proxyURL.User != nil || proxyURL.Port() == "" ||
+		proxyURL.Path != "" || proxyURL.RawQuery != "" || proxyURL.Fragment != "" ||
+		(proxyURL.Hostname() != "127.0.0.1" && proxyURL.Hostname() != "::1") {
+		return "", nil, fmt.Errorf("-socks requer host e porta SOCKS5 em loopback")
+	}
+	dest.Path = ""
+	return dest.String(), http.ProxyURL(proxyURL), nil
+}
+
+func loadBenchMailboxes(path string, count int) ([]benchMailbox, error) {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+		return nil, fmt.Errorf("-credentials requer arquivo privado com modo 0600")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao ler credenciais de homologação")
+	}
+	var boxes []benchMailbox
+	if err := json.Unmarshal(data, &boxes); err != nil || len(boxes) != count {
+		return nil, fmt.Errorf("informe exatamente %d caixas de homologação", count)
+	}
+	idPattern := regexp.MustCompile(`^[a-zA-Z0-9_-]{3,128}$`)
+	seen := make(map[string]bool, count)
+	for _, box := range boxes {
+		if !idPattern.MatchString(box.ID) || box.ReadToken == "" || seen[box.ID] {
+			return nil, fmt.Errorf("cada caixa requer id único e credencial de leitura")
+		}
+		seen[box.ID] = true
+	}
+	return boxes, nil
 }
 
 func newBenchMux(cfg buffer.Config, store buffer.RelayStore, pruner *buffer.AutoPruner) *http.ServeMux {

@@ -1,6 +1,8 @@
 package com.projetonix.nix_client
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
@@ -28,6 +30,9 @@ class MainActivity : FlutterActivity() {
 
     private val keyAlias = "nix_vault_kek_v1"
     private val prefsName = "nix_keystore_vault_prefs"
+
+    private val localMediaRequest = 15201
+    private var localMediaResult: MethodChannel.Result? = null
 
     private var bleController: NixBleMeshController? = null
     private var rnodeController: NixRNodeRadioController? = null
@@ -83,6 +88,25 @@ class MainActivity : FlutterActivity() {
         // 2. Canal Runtime Nativo Android (filesDir, nativeLibraryDir/libtor.so, ABI, allowBackup)
         MethodChannel(messenger, platformChannelName).setMethodCallHandler { call, result ->
             when (call.method) {
+                "openLocalMedia" -> {
+                    if (localMediaResult != null) {
+                        result.error("MEDIA_BUSY", "O seletor de mídia já está aberto.", null)
+                    } else {
+                        try {
+                            val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "*/*"
+                                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/*", "video/*"))
+                                putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+                            }
+                            localMediaResult = result
+                            startActivityForResult(picker, localMediaRequest)
+                        } catch (_: Exception) {
+                            localMediaResult = null
+                            result.error("MEDIA_PICKER", "Seletor de mídia indisponível.", null)
+                        }
+                    }
+                }
                 "getRuntimeInfo" -> {
                     val nativeLibDir = applicationInfo.nativeLibraryDir ?: ""
                     val torFile = File(nativeLibDir, "libtor.so")
@@ -131,7 +155,38 @@ class MainActivity : FlutterActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != localMediaRequest) return
+        val result = localMediaResult ?: return
+        localMediaResult = null
+        if (resultCode != Activity.RESULT_OK) {
+            result.success(null)
+            return
+        }
+        try {
+            val uri = data?.data
+            val mime = uri?.let { contentResolver.getType(it) }
+            if (uri?.scheme != "content" ||
+                mime == null || (!mime.startsWith("audio/") && !mime.startsWith("video/"))
+            ) {
+                result.error("MEDIA_TYPE", "Selecione um arquivo de áudio ou vídeo.", null)
+                return
+            }
+            val view = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(view, "Abrir mídia local"))
+            result.success(null)
+        } catch (_: Exception) {
+            result.error("MEDIA_PLAYER", "Player indisponível.", null)
+        }
+    }
+
     override fun onDestroy() {
+        localMediaResult?.error("MEDIA_INTERRUPTED", "Seleção de mídia interrompida.", null)
+        localMediaResult = null
         bleController?.stopMesh()
         rnodeController?.dispose()
         super.onDestroy()

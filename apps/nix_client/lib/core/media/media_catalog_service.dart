@@ -225,9 +225,10 @@ class MediaCatalogService {
     }
     final q = query.trim();
     if (q.isEmpty) return const [];
-    final results = transportExecutor != null
-        ? await transportExecutor(q)
-        : <Map<String, dynamic>>[];
+    if (transportExecutor == null) {
+      throw StateError('Transporte de ${connector.name} ainda não configurado.');
+    }
+    final results = await transportExecutor(q);
     for (final item in results) {
       final id = (item['id'] as String?) ??
           '${connector.name}_${std_crypto.sha256.convert(utf8.encode(q)).toString().substring(0, 10)}';

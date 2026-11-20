@@ -6,6 +6,7 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import 'trade_simulation_dialog.dart';
 
 /// Aba Monero Non-Custodial P2P Marketplace.
 /// Exibe anúncios assinados com verificação Ed25519 local, controle de expiração,
@@ -32,6 +33,17 @@ class MoneroP2pView extends StatelessWidget {
           color: NixColors.background,
           child: Column(
             children: [
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: TextButton.icon(
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (_) => const TradeSimulationDialog(),
+                  ),
+                  icon: const Icon(Icons.science_outlined),
+                  label: const Text('Simular negociação'),
+                ),
+              ),
               // Cabeçalho Responsivo do Mercado P2P
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),

@@ -573,41 +573,28 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildDeliveryStateIcon(Color accentText) {
-    switch (message.deliveryState) {
-      case 'failed':
-        return Icon(
-          Icons.error_outline_rounded,
-          key: Key('msg_state_failed_${message.id}'),
-          size: 13,
-          color: Colors.redAccent,
-        );
-      case 'queued':
-      case 'draft':
-      case 'sending':
-        return Icon(
-          Icons.schedule_rounded,
-          key: Key('msg_state_queued_${message.id}'),
-          size: 13,
-          color: NixColors.textMuted,
-        );
-      case 'accepted':
-        return Icon(
-          Icons.done_rounded,
-          key: Key('msg_state_accepted_${message.id}'),
-          size: 13,
-          color: accentText,
-        );
-      case 'delivered':
-      case 'received':
-      case 'read':
-      case 'saved':
-      default:
-        return Icon(
-          Icons.done_all_rounded,
-          key: Key('msg_state_delivered_${message.id}'),
-          size: 13,
-          color: accentText,
-        );
-    }
+    final (icon, label, keyState, color) = switch (message.deliveryState) {
+      'failed' => (Icons.error_outline_rounded, 'Falhou', 'failed', Colors.redAccent),
+      'queued' => (Icons.schedule_rounded, 'Na fila', 'queued', NixColors.textMuted),
+      'draft' => (Icons.edit_outlined, 'Rascunho', 'draft', NixColors.textMuted),
+      'sending' => (Icons.schedule_rounded, 'Enviando', 'sending', NixColors.textMuted),
+      'accepted' => (Icons.done_rounded, 'Aceita pelo relay', 'accepted', accentText),
+      'delivered' => (Icons.done_all_rounded, 'Entregue', 'delivered', accentText),
+      'received' => (Icons.done_all_rounded, 'Recebida', 'received', accentText),
+      'read' => (Icons.done_all_rounded, 'Lida', 'read', accentText),
+      'saved' => (Icons.bookmark_outline_rounded, 'Salva no aparelho', 'saved', accentText),
+      _ => (Icons.help_outline_rounded, 'Estado desconhecido', 'unknown', NixColors.textMuted),
+    };
+    return Tooltip(
+      message: label,
+      excludeFromSemantics: true,
+      child: Icon(
+        icon,
+        key: Key('msg_state_${keyState}_${message.id}'),
+        semanticLabel: label,
+        size: 13,
+        color: color,
+      ),
+    );
   }
 }

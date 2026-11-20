@@ -302,12 +302,26 @@ class NixPalette {
       if (primaryAccent == const Color(0xFF17191E)) return Colors.white;
       return primaryAccent;
     }
-    // Em fundos claros, garante contraste mínimo para texto/ícones amarelos ou brancos.
-    final lum = primaryAccent.computeLuminance();
-    if (lum > 0.45) {
-      return Color.lerp(primaryAccent, const Color(0xFF17191E), 0.48) ?? const Color(0xFF8C6900);
+    final backgroundLuminance = scheme.surfaceElevatedHigh.computeLuminance();
+    final accentLuminance = primaryAccent.computeLuminance();
+    final ratio = (backgroundLuminance + 0.05) / (accentLuminance + 0.05);
+    if (ratio >= 4.5) return primaryAccent;
+
+    // Escolhe a menor mistura escura que mantém AA nas superfícies claras.
+    var low = 0.0;
+    var high = 1.0;
+    for (var step = 0; step < 10; step++) {
+      final middle = (low + high) / 2;
+      final candidate = Color.lerp(primaryAccent, scheme.textPrimary, middle)!;
+      final contrast =
+          (backgroundLuminance + 0.05) / (candidate.computeLuminance() + 0.05);
+      if (contrast >= 4.5) {
+        high = middle;
+      } else {
+        low = middle;
+      }
     }
-    return primaryAccent;
+    return Color.lerp(primaryAccent, scheme.textPrimary, high)!;
   }
 
   static const List<NixPalette> standardPalettes = [

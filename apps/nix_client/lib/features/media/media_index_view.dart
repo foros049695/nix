@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/media/catalog_database.dart';
 import '../../core/media/media_index_updater.dart';
+import '../../core/security/file_picker_adapter.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
@@ -313,6 +317,55 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
     }
   }
 
+  Future<void> _openLocalMedia() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Abrir mídia local'),
+        content: const Text(
+          'O arquivo selecionado será aberto no player do sistema, '
+          'que segue suas próprias regras de privacidade.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Escolher arquivo'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || _nixState.isStrictOffGridMode) return;
+    try {
+      if (Platform.isAndroid) {
+        await const MethodChannel('com.projetonix.nix/platform')
+            .invokeMethod<void>('openLocalMedia');
+        return;
+      }
+      const extensions = ['mp4', 'mkv', 'webm', 'mp3', 'flac', 'ogg', 'wav'];
+      final paths = await const CrossPlatformFilePickerAdapter().pickAttachments(
+        allowedExtensions: extensions,
+        allowMultiple: false,
+      );
+      if (paths.length != 1 || !mounted || _nixState.isStrictOffGridMode) return;
+      final file = File(paths.single).absolute;
+      final suffix = file.path.split('.').last.toLowerCase();
+      if (!extensions.contains(suffix) || !await file.exists()) {
+        throw const FormatException('Selecione um arquivo local de áudio ou vídeo.');
+      }
+      final opened = await Process.run('xdg-open', [file.path]);
+      if (opened.exitCode != 0) throw StateError('Player do sistema indisponível.');
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível abrir a mídia no player do sistema.')),
+      );
+    }
+  }
+
   Future<void> _openCatalogUpdateDialog() async {
     final updateManager = _nixState.catalogUpdateManager;
     int currentVer = 0;
@@ -609,6 +662,14 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
         backgroundColor: NixColors.surfaceCard,
         elevation: 0,
         actions: [
+          if (Platform.isAndroid || Platform.isLinux)
+            IconButton(
+              tooltip: 'Abrir mídia local no player do sistema',
+              icon: const Icon(Icons.play_circle_outline_rounded),
+              onPressed: context.watch<NixState>().isStrictOffGridMode
+                  ? null
+                  : _openLocalMedia,
+            ),
           IconButton(
             tooltip: 'Atualizações Privadas do Catálogo (Tor)',
             icon: const Icon(Icons.cloud_sync_rounded, color: Colors.amber),
