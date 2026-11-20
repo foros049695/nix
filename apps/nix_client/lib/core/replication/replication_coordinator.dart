@@ -1007,6 +1007,7 @@ class NixReplicationCoordinator {
     'catalog_package',
     'public_refutation',
     'comment',
+    'reaction',
   };
 
   NixReplicationCoordinator({

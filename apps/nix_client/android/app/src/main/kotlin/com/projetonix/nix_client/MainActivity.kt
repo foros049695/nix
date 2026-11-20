@@ -120,6 +120,7 @@ class MainActivity : FlutterActivity() {
         // 2. Canal Runtime Nativo Android (filesDir, nativeLibraryDir/libtor.so, ABI, allowBackup)
         MethodChannel(messenger, platformChannelName).setMethodCallHandler { call, result ->
             when (call.method) {
+                "playArchiveVideo" -> playArchiveVideo(call.arguments as? ByteArray, result)
                 "pickLocalAttachments" -> {
                     if (attachmentResult != null) {
                         result.error("ATTACHMENT_BUSY", "O seletor já está aberto.", null)
@@ -278,6 +279,52 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {
             result.error("MEDIA_PLAYER", "Player indisponível.", null)
         }
+    }
+
+    private fun playArchiveVideo(bytes: ByteArray?, result: MethodChannel.Result) {
+        if (bytes == null || bytes.size !in 32..(2 * 1024 * 1024)) {
+            result.error("MEDIA_SIZE", "O vídeo excede o limite.", null)
+            return
+        }
+        val file = try {
+            File.createTempFile("archive-", ".mp4", cacheDir)
+        } catch (_: Exception) {
+            result.error("MEDIA_FILE", "Não foi possível preparar o vídeo.", null)
+            return
+        }
+        try {
+            file.writeBytes(bytes)
+        } catch (_: Exception) {
+            file.delete()
+            result.error("MEDIA_FILE", "Não foi possível preparar o vídeo.", null)
+            return
+        }
+        val video = android.widget.VideoView(this)
+        val container = android.widget.FrameLayout(this)
+        container.addView(video, android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            (240 * resources.displayMetrics.density).toInt(),
+            android.view.Gravity.CENTER
+        ))
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Vídeo do Archive")
+            .setView(container)
+            .setPositiveButton("Fechar", null)
+            .create()
+        dialog.setOnDismissListener {
+            video.stopPlayback()
+            file.delete()
+        }
+        video.setOnErrorListener { _, _, _ ->
+            android.widget.Toast.makeText(this, "Não foi possível reproduzir o MP4.", android.widget.Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+            true
+        }
+        video.setMediaController(android.widget.MediaController(this))
+        dialog.show()
+        video.setVideoPath(file.absolutePath)
+        video.start()
+        result.success(null)
     }
 
     private fun readSelectedAttachments(resultCode: Int, data: Intent?) {

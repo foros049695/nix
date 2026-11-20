@@ -6,6 +6,8 @@ import 'package:nix_core_crypto/nix_core_crypto.dart';
 import '../database/repositories.dart';
 import '../replication/replication_coordinator.dart';
 import 'archive_image.dart';
+import 'archive_reaction.dart';
+import 'archive_video.dart';
 
 /// Serviço oficial de publicação imutável Nix Archive v1 (`nix.archive.article.v1`, Fase 7 / Fase 9).
 /// Realiza canonicalização determinística, hash SHA-256 content-addressed, assinatura Ed25519,
@@ -338,6 +340,7 @@ class NixArchiveService {
     required String rawHtmlBody,
     List<({String claimId, String text})> claims = const [],
     List<ArchiveImage> images = const [],
+    ArchiveVideo? video,
     String? supersedesHash,
     String visibility = 'public',
     int? createdAtMs,
@@ -356,6 +359,7 @@ class NixArchiveService {
       'title': title.trim(),
       'bodyHtml': cleanHtml,
       if (embedded.isNotEmpty) 'images': embedded.map((image) => image.toJson()).toList(),
+      if (video != null) 'videoMp4': video.toJson(),
       'authorEd25519': author.ed25519PublicHex,
       'visibility': visibility,
       'createdAt': now,
@@ -497,6 +501,87 @@ class NixArchiveService {
     if (payload['schema'] != articleSchemaV1) return const [];
     return ArchiveImage.readList(payload['images']);
   }
+
+  Future<ArchiveVideo?> readVerifiedArticleVideo(String objectHash) async {
+    final row = await archiveRepo.getObject(objectHash);
+    if (row == null || row['kind'] != 'article' ||
+        !await _verifyObjectRow(objectHash, row)) return null;
+    final payload = jsonDecode(utf8.decode(row['canonical_bytes'] as List<int>))
+        as Map<String, dynamic>;
+    return payload['schema'] == articleSchemaV1
+        ? ArchiveVideo.fromJson(payload['videoMp4']) : null;
+  }
+
+  Future<String> setArticleReaction({
+    required NixIdentity author,
+    required String target,
+    required String? emoji,
+  }) async {
+    final visibility = await _verifiedArticleVisibility(target);
+    if (visibility == null) throw StateError('Artigo verificado indisponível.');
+    final previous = await listArticleReactions(target);
+    final revision = (previous[author.ed25519PublicHex]?.revision ?? 0) + 1;
+    final reaction = ArchiveReaction(
+      target: target, author: author.ed25519PublicHex,
+      revision: revision, emoji: emoji,
+    );
+    final bytes = canonicalizeJsonBytes(reaction.toJson());
+    final hash = computeContentHashHex(bytes);
+    final signature = Uint8List.fromList(await author.sign(bytes));
+    await _saveReaction(hash, reaction, bytes, signature);
+    if (visibility == 'public' && replicationCoordinator != null) {
+      await replicationCoordinator!.replicatePublicObject(
+        objectHash: hash,
+        kind: 'reaction',
+        canonicalBytes: bytes,
+        metadata: {'signature': _toHex(signature), 'kind': 'reaction'},
+      );
+    }
+    return hash;
+  }
+
+  Future<Map<String, ArchiveReaction>> listArticleReactions(String target) async {
+    final reactions = <String, ArchiveReaction>{};
+    for (final row in await archiveRepo.latestReactions(target)) {
+      try {
+        final bytes = row['canonical_bytes'] as Uint8List;
+        final reaction = ArchiveReaction.fromJson(
+          jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>,
+        );
+        if (reaction.target != target ||
+            reaction.author != row['author'] ||
+            reaction.revision != row['revision'] ||
+            computeContentHashHex(bytes) != row['hash']) continue;
+        if (await NixIdentity.verify(
+          message: bytes,
+          signatureBytes: row['signature'] as List<int>,
+          ed25519PublicKey: SimplePublicKey(
+            _fromHex(reaction.author), type: KeyPairType.ed25519,
+          ),
+        )) reactions[reaction.author] = reaction;
+      } on FormatException {
+        continue;
+      }
+    }
+    return reactions;
+  }
+
+  Future<String?> _verifiedArticleVisibility(String target) async {
+    final row = await archiveRepo.getObject(target);
+    if (row == null || row['kind'] != 'article' ||
+        !await _verifyObjectRow(target, row)) return null;
+    final map = jsonDecode(utf8.decode(row['canonical_bytes'] as List<int>));
+    if (map is! Map || map['schema'] != articleSchemaV1) return null;
+    final visibility = map['visibility'];
+    return visibility == 'public' || visibility == 'restricted'
+        ? visibility as String : null;
+  }
+
+  Future<void> _saveReaction(String hash, ArchiveReaction reaction,
+      Uint8List bytes, Uint8List signature) => archiveRepo.insertReaction(
+    hash: hash, target: reaction.target, author: reaction.author,
+    revision: reaction.revision, bytes: bytes, signature: signature,
+  );
 
   Future<bool> _verifyObjectRow(String objectHash, Map<String, dynamic> row) async {
     final bytes = row['canonical_bytes'] as List<int>;
@@ -709,6 +794,8 @@ class NixArchiveService {
     required String markdownContent,
     List<String> tags = const [],
     List<ArchiveImage>? images,
+    ArchiveVideo? video,
+    bool updateVideo = false,
   }) {
     if (images != null) ArchiveImage.validateLimits(images);
     return archiveRepo.saveDraft(
@@ -718,8 +805,13 @@ class NixArchiveService {
       markdownContent: markdownContent,
       tags: tags,
       images: images?.map((image) => image.toJson()).toList(),
+      video: video?.toJson(),
+      updateVideo: updateVideo || video != null,
     );
   }
+
+  Future<ArchiveVideo?> readDraftVideo(String id) async =>
+      ArchiveVideo.fromJson(await archiveRepo.getDraftVideo(id));
 
   Future<List<ArchiveImage>> readDraftImages(String id) async =>
       ArchiveImage.readList(await archiveRepo.getDraftImages(id));
@@ -769,7 +861,8 @@ class NixArchiveService {
     // 1. Deduplicação: verifica se já existe na base local
     final existingObj = await archiveRepo.getObject(objectHash);
     final existingComm = await archiveRepo.getComment(objectHash);
-    if (existingObj != null || existingComm != null) {
+    if (existingObj != null || existingComm != null ||
+        await archiveRepo.hasReaction(objectHash)) {
       return true; // Já sincronizado
     }
 
@@ -835,6 +928,21 @@ class NixArchiveService {
         throw const FormatException('Imagens só são admitidas em artigos.');
       }
       ArchiveImage.readList(canonicalObj['images']);
+    }
+    if (canonicalObj.containsKey('videoMp4')) {
+      if (schema != articleSchemaV1) {
+        throw const FormatException('Vídeo só é admitido em artigos.');
+      }
+      ArchiveVideo.fromJson(canonicalObj['videoMp4']);
+    }
+    if (schema == ArchiveReaction.schema) {
+      final reaction = ArchiveReaction.fromJson(canonicalObj);
+      if (await _verifiedArticleVisibility(reaction.target) != 'public') {
+        return false;
+      }
+      await _saveReaction(objectHash, reaction, canonicalBytes,
+          Uint8List.fromList(sigBytes));
+      return true;
     }
     final createdAt = (canonicalObj['createdAt'] as int?) ??
         int.tryParse(metadata['created_at'] ?? '') ??
@@ -927,7 +1035,8 @@ class NixArchiveService {
       try {
         final existing = await archiveRepo.getObject(h);
         final existingComm = await archiveRepo.getComment(h);
-        if (existing != null || existingComm != null) {
+        if (existing != null || existingComm != null ||
+            await archiveRepo.hasReaction(h)) {
           continue; // Pula item já sincronizado
         }
 

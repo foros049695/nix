@@ -1,3 +1,5 @@
+import '../../core/archive/archive_video.dart';
+import 'archive_video_view.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -48,6 +50,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
   bool _isPickingImage = false;
   int _editorGeneration = 0;
   List<ArchiveImage> _images = const [];
+  ArchiveVideo? _video;
   String? _publishFeedback;
   Timer? _autoSaveDebouncer;
 
@@ -154,18 +157,21 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
     final service = _nixState.archiveService;
     final title = _titleCtrl.text.trim();
     final content = _contentCtrl.text;
-    if (service == null || (_activeDraftId == null && title.isEmpty && content.trim().isEmpty && _images.isEmpty)) {
+    if (service == null || (_activeDraftId == null && title.isEmpty && content.trim().isEmpty && _images.isEmpty && _video == null)) {
       return;
     }
     final id = _activeDraftId ??= 'draft_${DateTime.now().microsecondsSinceEpoch}';
     final category = _categoryCtrl.text.trim();
     final images = _images;
+    final video = _video;
     _pendingDraft = () => service.saveDraft(
       id: id,
       title: title.isEmpty ? 'Sem título' : title,
       category: category,
       markdownContent: content,
       images: images,
+      video: video,
+      updateVideo: true,
     );
     _autoSaveDebouncer = Timer(const Duration(milliseconds: 600), () {
       unawaited(_flushAutoSave().then((_) {
@@ -294,6 +300,50 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
     }
   }
 
+  Future<void> _attachVideo() async {
+    if (_isPublishing || _isPickingImage) return;
+    final generation = _editorGeneration;
+    setState(() => _isPickingImage = true);
+    try {
+      final video = await pickArchiveVideo(context);
+      if (!mounted || video == null || generation != _editorGeneration) return;
+      setState(() => _video = video);
+      _scheduleAutoSave();
+    } catch (error) {
+      if (mounted) {
+        final text = error is FormatException ? error.message : 'Não foi possível preparar o vídeo.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+      }
+    } finally {
+      if (mounted) setState(() => _isPickingImage = false);
+    }
+  }
+
+  Widget _buildArticleVideo() {
+    final video = _video;
+    return Wrap(
+      spacing: 8,
+      children: [
+        if (video != null) ArchiveVideoView(video: video),
+        if (!_isPreviewMode)
+          OutlinedButton.icon(
+            onPressed: _isPublishing || _isPickingImage ? null : _attachVideo,
+            icon: const Icon(Icons.video_file_outlined),
+            label: Text(video == null ? 'Adicionar vídeo' : 'Trocar vídeo'),
+          ),
+        if (!_isPreviewMode && video != null)
+          IconButton(
+            tooltip: 'Remover vídeo',
+            onPressed: _isPublishing || _isPickingImage ? null : () {
+              setState(() => _video = null);
+              _scheduleAutoSave();
+            },
+            icon: const Icon(Icons.close),
+          ),
+      ],
+    );
+  }
+
   Widget _buildArticleImages() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -328,6 +378,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
     final title = _titleCtrl.text.trim();
     final body = _contentCtrl.text.trim();
     final images = _images;
+    final video = _video;
     if (title.isEmpty || body.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Título e conteúdo são obrigatórios.')),
@@ -347,16 +398,17 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
     final draftId = _activeDraftId;
 
     try {
-      if (images.isNotEmpty) {
+      if (images.isNotEmpty || video != null) {
         final authorized = await showDialog<bool>(
           context: context,
           builder: (dialog) => AlertDialog(
-            title: const Text('Publicar as imagens?'),
-            content: const Text('As imagens farão parte do artigo público assinado '
-                'e poderão circular junto com ele. Publique apenas imagens que você pode divulgar.'),
+            title: Text(video == null ? 'Publicar as imagens?' : 'Publicar as mídias?'),
+            content: Text(video == null
+                ? 'As imagens farão parte do artigo público assinado e poderão circular junto com ele.'
+                : 'O vídeo original, incluindo áudio e metadados, será incorporado ao artigo público assinado. Confira o arquivo antes de divulgar.'),
             actions: [
               TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancelar')),
-              FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Publicar imagens')),
+              FilledButton(onPressed: () => Navigator.pop(dialog, true), child: Text(video == null ? 'Publicar imagens' : 'Publicar mídias')),
             ],
           ),
         );
@@ -384,6 +436,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
         rawHtmlBody: compileArchiveMarkdown(body),
         claims: claims,
         images: images,
+        video: video,
       );
 
       if (draftId != null) await _archiveService.deleteDraft(draftId);
@@ -391,6 +444,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
       _activeDraftId = null;
       _editorGeneration++;
       _images = const [];
+      _video = null;
       _titleCtrl.clear();
       _contentCtrl.clear();
       _claimsCtrl.clear();
@@ -430,9 +484,11 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
       final generation = ++_editorGeneration;
       final latest = await _archiveService.getDraft(id);
       final images = await _archiveService.readDraftImages(id);
+      final video = await _archiveService.readDraftVideo(id);
       if (!mounted || latest == null || generation != _editorGeneration) return;
       setState(() {
         _images = images;
+        _video = video;
         _activeDraftId = id;
         _titleCtrl.text = latest['title'] as String? ?? '';
         _categoryCtrl.text = latest['category'] as String? ?? 'Tecnologia';
@@ -455,6 +511,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
       setState(() {
         _activeDraftId = null;
         _images = const [];
+      _video = null;
         _titleCtrl.clear();
         _contentCtrl.clear();
         _claimsCtrl.clear();
@@ -943,6 +1000,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
           ],
           const SizedBox(height: 10),
           _buildArticleImages(),
+          _buildArticleVideo(),
           const SizedBox(height: 10),
           TextField(
             controller: _claimsCtrl,

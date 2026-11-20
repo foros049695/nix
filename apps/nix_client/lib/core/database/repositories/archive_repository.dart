@@ -195,6 +195,13 @@ class ArchiveRepository {
     ''');
 
     await _db.execute('''
+      CREATE TABLE IF NOT EXISTS archive_draft_videos (
+        draft_id TEXT PRIMARY KEY REFERENCES archive_drafts(id) ON DELETE CASCADE,
+        video_base64 TEXT NOT NULL
+      );
+    ''');
+
+    await _db.execute('''
       CREATE TABLE IF NOT EXISTS archive_comments (
         hash TEXT PRIMARY KEY,
         target_object_hash TEXT NOT NULL,
@@ -218,6 +225,61 @@ class ArchiveRepository {
     ''');
   }
 
+  Future<void> _ensureReactionTable() async {
+    await _db.execute('''
+      CREATE TABLE IF NOT EXISTS archive_reactions (
+        hash TEXT PRIMARY KEY,
+        target_hash TEXT NOT NULL,
+        author TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        canonical_bytes BLOB NOT NULL,
+        signature BLOB NOT NULL CHECK(length(signature) = 64)
+      );
+    ''');
+    await _db.execute('''
+      CREATE INDEX IF NOT EXISTS archive_reactions_target
+      ON archive_reactions(target_hash, author, revision DESC, hash DESC);
+    ''');
+  }
+
+  Future<bool> hasReaction(String hash) async {
+    await _ensureReactionTable();
+    return (await _db.query('archive_reactions', columns: ['hash'],
+      where: 'hash = ?', whereArgs: [hash], limit: 1)).isNotEmpty;
+  }
+
+  Future<void> insertReaction({
+    required String hash,
+    required String target,
+    required String author,
+    required int revision,
+    required Uint8List bytes,
+    required Uint8List signature,
+  }) async {
+    await _ensureReactionTable();
+    await _db.insert('archive_reactions', {
+      'hash': hash,
+      'target_hash': target,
+      'author': author,
+      'revision': revision,
+      'canonical_bytes': bytes,
+      'signature': signature,
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
+  Future<List<Map<String, Object?>>> latestReactions(String target) async {
+    await _ensureReactionTable();
+    return _db.rawQuery('''
+      SELECT reaction.* FROM archive_reactions reaction
+      WHERE reaction.target_hash = ? AND reaction.hash = (
+        SELECT candidate.hash FROM archive_reactions candidate
+        WHERE candidate.target_hash = reaction.target_hash
+          AND candidate.author = reaction.author
+        ORDER BY candidate.revision DESC, candidate.hash DESC LIMIT 1
+      )
+    ''', [target]);
+  }
+
   Future<void> saveDraft({
     required String id,
     required String title,
@@ -225,6 +287,8 @@ class ArchiveRepository {
     required String markdownContent,
     List<String> tags = const [],
     List<Map<String, Object>>? images,
+    String? video,
+    bool updateVideo = false,
   }) async {
     await ensureDiscussionTables();
     final now = DateTime.now().toUtc().millisecondsSinceEpoch;
@@ -243,6 +307,16 @@ class ArchiveRepository {
       if (updated == 0) {
         await txn.insert('archive_drafts', {'id': id, 'created_at': now, ...fields});
       }
+      if (updateVideo) {
+        if (video == null) {
+          await txn.delete('archive_draft_videos',
+              where: 'draft_id = ?', whereArgs: [id]);
+        } else {
+          await txn.insert('archive_draft_videos',
+              {'draft_id': id, 'video_base64': video},
+              conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      }
       if (encodedImages != null) {
         await txn.insert('archive_draft_images', {
           'draft_id': id,
@@ -250,6 +324,13 @@ class ArchiveRepository {
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
+  }
+
+  Future<String?> getDraftVideo(String id) async {
+    await ensureDiscussionTables();
+    final rows = await _db.query('archive_draft_videos', columns: ['video_base64'],
+      where: 'draft_id = ?', whereArgs: [id], limit: 1);
+    return rows.isEmpty ? null : rows.single['video_base64'] as String;
   }
 
   Future<Object?> getDraftImages(String id) async {

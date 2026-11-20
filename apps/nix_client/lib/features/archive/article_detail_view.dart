@@ -1,4 +1,7 @@
+import '../../core/archive/archive_video.dart';
+import 'archive_video_view.dart';
 import '../../core/archive/archive_image.dart';
+import '../../core/archive/archive_reaction.dart';
 import 'archive_image_picker.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -39,6 +42,9 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
 
   bool _isLoading = true;
   List<ArchiveImage> _images = const [];
+  ArchiveVideo? _video;
+  Map<String, ArchiveReaction> _reactions = const {};
+  bool _savingReaction = false;
   String? _replyingToCommentHash;
   String? _quotingText;
 
@@ -79,6 +85,8 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
     try {
       if (_cryptoStatus == ArchiveCryptoVerificationStatus.verified) {
         _images = await _archiveService.readVerifiedArticleImages(_objectHash);
+        _video = await _archiveService.readVerifiedArticleVideo(_objectHash);
+        _reactions = await _archiveService.listArticleReactions(_objectHash);
       }
     } catch (_) {
       _images = const [];
@@ -106,6 +114,64 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
     if (mounted) {
       setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _setReaction(String? emoji) async {
+    final author = _nixState.primaryIdentity;
+    if (author == null || _savingReaction) return;
+    final service = _archiveService;
+    setState(() => _savingReaction = true);
+    try {
+      await service.setArticleReaction(
+        target: _objectHash, author: author, emoji: emoji,
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Falha ao publicar reação. $error')),
+        );
+      }
+    } finally {
+      try {
+        final latest = await service.listArticleReactions(_objectHash);
+        if (mounted) setState(() => _reactions = latest);
+      } catch (_) {
+        // Preserva os totais anteriores se o cofre for fechado durante a gravação.
+      } finally {
+        if (mounted) setState(() => _savingReaction = false);
+      }
+    }
+  }
+
+  Widget _buildReactions() {
+    final author = _nixState.primaryIdentity;
+    final selected = _reactions[author?.ed25519PublicHex]?.emoji;
+    final counts = <String, int>{};
+    for (final reaction in _reactions.values) {
+      final emoji = reaction.emoji;
+      if (emoji != null) counts.update(emoji, (value) => value + 1, ifAbsent: () => 1);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Reações assinadas'),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            for (final entry in ArchiveReaction.labels.entries)
+              ChoiceChip(
+                tooltip: entry.value,
+                label: Text('${entry.key} ${counts[entry.key] ?? 0}'),
+                selected: entry.key == selected,
+                onSelected: author == null || _savingReaction ? null
+                    : (active) => _setReaction(active ? entry.key : null),
+              ),
+          ],
+        ),
+      ],
+    );
   }
 
   Future<void> _verifyComment(String commentHash) async {
@@ -418,6 +484,11 @@ class _ArticleDetailViewState extends State<ArticleDetailView> {
                       index: index,
                     ),
 
+                  if (_video case final video?) ArchiveVideoView(video: video),
+                  if (_cryptoStatus == ArchiveCryptoVerificationStatus.verified) ...[
+                    const SizedBox(height: 16),
+                    _buildReactions(),
+                  ],
                   const Divider(height: 32),
 
                   // Seção: Alegações Auditáveis e Refutações

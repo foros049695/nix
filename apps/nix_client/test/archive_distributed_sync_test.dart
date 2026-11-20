@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_client/core/archive/nix_archive_service.dart';
 import 'package:nix_client/core/archive/archive_image.dart';
+import 'package:nix_client/core/archive/archive_video.dart';
 import 'package:nix_client/core/database/local_database.dart';
 import 'package:nix_client/core/database/repositories/archive_repository.dart';
 import 'package:nix_client/core/replication/replication_coordinator.dart';
@@ -102,6 +104,74 @@ void main() {
       );
       expect(await clientBService.syncObjectFromNetwork(privateHash), isFalse);
       expect(await clientBRepo.getObject(privateHash), isNull);
+    });
+
+    test('valida e sincroniza MP4 assinado sem divulgar vídeo restrito', () async {
+      final input = Platform.environment['NIX_ARCHIVE_MP4_TEST'];
+      final bytes = input == null ? _mp4Container() : File(input).readAsBytesSync();
+      final video = ArchiveVideo.fromMp4(bytes);
+      expect(() => ArchiveVideo.fromMp4(_mp4Container(external: true)),
+          throwsFormatException);
+      expect(() => ArchiveVideo.fromMp4(Uint8List.sublistView(bytes, 0, bytes.length - 1)),
+          throwsFormatException);
+      final hash = await clientAService.publishArticle(
+        author: clientAIdentity, title: 'Com vídeo', rawHtmlBody: '<p>Vídeo</p>',
+        video: video,
+      );
+      expect(await clientBService.syncObjectFromNetwork(hash), isTrue);
+      expect((await clientBService.readVerifiedArticleVideo(hash))!.bytes,
+          orderedEquals(bytes));
+      await clientAService.saveDraft(
+        id: 'video-draft', title: 'Rascunho', category: 'Mídia',
+        markdownContent: 'Revisão', video: video,
+      );
+      expect((await clientAService.readDraftVideo('video-draft'))!.bytes,
+          orderedEquals(bytes));
+      await clientAService.saveDraft(
+        id: 'video-draft', title: 'Rascunho', category: 'Mídia',
+        markdownContent: 'Revisão', updateVideo: true,
+      );
+      expect(await clientAService.readDraftVideo('video-draft'), isNull);
+      final restricted = await clientAService.publishArticle(
+        author: clientAIdentity, title: 'Privado', rawHtmlBody: '<p>Restrito</p>',
+        video: video, visibility: 'restricted',
+      );
+      expect(await clientBService.syncObjectFromNetwork(restricted), isFalse);
+    });
+
+    test('sincroniza reações assinadas e conserva a revisão mais nova', () async {
+      final target = await clientAService.publishArticle(
+        author: clientAIdentity,
+        title: 'Reações',
+        rawHtmlBody: '<p>Artigo</p>',
+      );
+      final first = await clientAService.setArticleReaction(
+        author: clientAIdentity, target: target, emoji: '👍',
+      );
+      final removed = await clientAService.setArticleReaction(
+        author: clientAIdentity, target: target, emoji: null,
+      );
+      expect(await clientBService.syncObjectFromNetwork(removed), isFalse);
+      expect(await clientBService.syncObjectFromNetwork(target), isTrue);
+      expect(await clientBService.syncObjectFromNetwork(removed), isTrue);
+      expect(await clientBService.syncObjectFromNetwork(first), isTrue);
+      final restored = await clientBService.listArticleReactions(target);
+      expect(restored.values.single.emoji, isNull);
+      expect(restored.values.single.revision, 2);
+      expect(await clientBService.syncIncrementalFromNetwork(
+        remoteHashes: [removed, first],
+      ), 0);
+
+      final restricted = await clientAService.publishArticle(
+        author: clientAIdentity, title: 'Restrito', rawHtmlBody: '<p>Privado</p>',
+        visibility: 'restricted',
+      );
+      final local = await clientAService.setArticleReaction(
+        author: clientAIdentity, target: restricted, emoji: '👏',
+      );
+      expect((await clientAService.listArticleReactions(restricted)).values.single.emoji, '👏');
+      expect(await sharedS3.retrieveObject(local), isNull);
+      expect(await sharedIpfs.retrieveObject(local), isNull);
     });
 
     test('1. Artigo publicado por Client A replica na malha e é sincronizado e verificado por Client B', () async {
@@ -275,4 +345,19 @@ void main() {
       expect(authorPubHex, isNot(equals(financialIdentity.ed25519PublicHex)));
     });
   });
+}
+
+Uint8List _mp4Container({bool external = false}) {
+  List<int> box(String name, List<int> bytes) => [
+    0, 0, 0, bytes.length + 8,
+    ...name.codeUnits,
+    ...bytes,
+  ];
+  final url = box('url ', [0, 0, 0, if (external) 0 else 1]);
+  final refs = box('dref', [0, 0, 0, 0, 0, 0, 0, 1, ...url]);
+  return Uint8List.fromList([
+    ...box('ftyp', [...'isom'.codeUnits, 0, 0, 0, 0]),
+    ...box('moov', box('trak', box('mdia', box('minf', box('dinf', refs))))),
+    ...box('mdat', [1, 2, 3]),
+  ]);
 }
