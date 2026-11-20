@@ -38,8 +38,9 @@ Cores do Pager**, escolha a cor da carcaça e a do visor separadamente. Em
 todas as telas e ajuste o desfoque e o escurecimento. Arraste a foto no visor
 para mudar sua posição ou desative-a para contemplar somente o fundo. Em
 **Editar avatar**, escolha entre moldura circular e quadrada arredondada.
-A música exibida pode ser inserida no editor de perfil. O passaporte cultural
-e o acervo ficam abaixo do Pager. **Buscar no catálogo** preenche a ficha da
+A música exibida pode ser inserida no editor de perfil. No Android, **Menu
+do Pager → Playlist do Pager** permite adicionar e reproduzir faixas locais
+autorizadas. O passaporte cultural e o acervo ficam abaixo do Pager. **Buscar no catálogo** preenche a ficha da
 obra a partir do banco local. A estante mostra discos, livros com lombada e
 páginas, e pôsteres. As capas vêm do pacote quando há uma imagem embutida.
 As referências de capa do catálogo inicial geram ilustrações locais.
@@ -373,4 +374,4 @@ O Projeto Nix é distribuído sob os termos da licença **GNU General Public Lic
 
 ## Piloto desktop e mensageria
 
-O cliente traz convite assinado e configuração de relay Onion pelo cofre. O piloto distribui APKs e bundles nativos. Consulte os passos de [mensageria](docs/MESSAGING_AND_MEDIA_INTEGRATION.md), [Windows](docs/WINDOWS_DESKTOP_IMPLEMENTATION.md) e o [aceite incremental](docs/FINAL_ACCEPTANCE_REPORT.md).
+O cliente oferece convite assinado por texto ou QR, leitura por câmera no Android e configuração de relay Onion pelo cofre. O relógio do compositor permite agendar texto em conversas diretas cifradas. O piloto distribui APKs e bundles nativos. Consulte os passos de [mensageria](docs/MESSAGING_AND_MEDIA_INTEGRATION.md), [Windows](docs/WINDOWS_DESKTOP_IMPLEMENTATION.md) e o [aceite incremental](docs/FINAL_ACCEPTANCE_REPORT.md).
