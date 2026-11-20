@@ -4,6 +4,7 @@ import '../../core/models/user_settings.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
+import '../profile/pager_housing.dart';
 
 /// Barra de título e controles responsivos de janela Desktop (Seção 5).
 class WindowTitleBar extends StatelessWidget {
@@ -36,8 +37,8 @@ class WindowTitleBar extends StatelessWidget {
             'NIX',
             style: TextStyle(
               color: NixColors.textPrimary,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
+              fontSize: 15,
+              fontFamily: pagerDisplayFont,
               letterSpacing: 1.8,
             ),
           ),

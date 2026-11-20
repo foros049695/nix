@@ -13,7 +13,7 @@ import 'package:nix_client/main.dart';
 import 'package:nix_client/state/nix_state.dart';
 
 void main() {
-  testWidgets('1. Splash Screen initializes and transitions to V4 Dark Yellow default shell',
+  testWidgets('1. Splash Screen initializes and transitions to default violet workspace',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -32,12 +32,13 @@ void main() {
     await tester.pump(const Duration(milliseconds: 260));
     await tester.pumpAndSettle();
 
-    // Dark Yellow V4 padrão oficial (#08090B bg, #17191E surface, #292C33 elevated, #FFC928 accent)
-    expect(NixColors.background, const Color(0xFF08090B));
-    expect(NixColors.surfaceCard, const Color(0xFF17191E));
-    expect(NixColors.surfaceElevated, const Color(0xFF292C33));
-    expect(NixColors.accentYellow, const Color(0xFFFFC928));
+    // O tema inicial usa superfícies grafite e destaque violeta.
+    expect(NixColors.background, const Color(0xFF100C17));
+    expect(NixColors.surfaceCard, const Color(0xFF1C1628));
+    expect(NixColors.surfaceElevated, const Color(0xFF302145));
+    expect(NixColors.accentPrimary, const Color(0xFF8B5CF6));
 
+    expect(find.byKey(const Key('workspace_tab_media')), findsOneWidget);
     expect(find.text('QG Nix'), findsAtLeastNWidgets(1));
     expect(find.text('geral'), findsAtLeastNWidgets(1));
     expect(find.text('desenvolvimento-core'), findsOneWidget);
@@ -90,10 +91,16 @@ void main() {
 
     await tester.tap(find.byKey(const Key('theme_mode_dark_yellow')));
     await tester.pumpAndSettle();
-    expect(NixColors.background, const Color(0xFF08090B));
+    expect(NixColors.background, const Color(0xFF100C17));
 
     // Personalização da cor de destaque
-    await tester.tap(find.byKey(const Key('palette_violet')));
+    await tester.tap(find.text('Verde / Roxo'));
+    await tester.pumpAndSettle();
+    expect(state.settings.paletteType, NixPaletteType.terminal);
+    final violet = find.byKey(const Key('palette_violet'));
+    await tester.ensureVisible(violet);
+    await tester.pumpAndSettle();
+    await tester.tap(violet);
     await tester.pumpAndSettle();
     expect(state.settings.paletteType, NixPaletteType.violet);
     expect(state.currentPalette.primaryAccent, const Color(0xFF8B5CF6));
@@ -391,7 +398,17 @@ void main() {
     expect(state.verifyMoneroOrder(expiredOrder), isFalse);
 
     // 3. Modal Compartilhar App Offline (estilo Briar)
-    await tester.tap(find.byKey(const Key('home_nav_share_offline')));
+    final shareOffline = find.byKey(const Key('home_nav_share_offline'));
+    await tester.scrollUntilVisible(
+      shareOffline,
+      100,
+      scrollable: find.descendant(
+        of: find.byKey(const Key('home_sidebar_navigation')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(shareOffline);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('share_app_offline_dialog')), findsOneWidget);
     expect(find.text('Compartilhar Nix Offline'), findsOneWidget);

@@ -110,6 +110,33 @@ class NixTheme {
         ),
       ],
       colorScheme: baseScheme,
+      textTheme: TextTheme(
+        headlineSmall: TextStyle(fontFamily: 'PixelifySans', fontSize: 25 * fontScale),
+        titleLarge: TextStyle(fontFamily: 'PixelifySans', fontSize: 21 * fontScale),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        height: 62,
+        backgroundColor: scheme.surfaceSidebar,
+        indicatorShape: RoundedRectangleBorder(borderRadius: NixTokens.borderButtonCompact),
+        indicatorColor: palette.primaryAccent,
+        labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
+          color: scheme.textPrimary,
+          fontSize: 11,
+          fontWeight: states.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500,
+        )),
+      ),
+      listTileTheme: ListTileThemeData(
+        shape: RoundedRectangleBorder(borderRadius: NixTokens.borderButtonCompact),
+        iconColor: scheme.iconSecondary,
+        textColor: scheme.textPrimary,
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: NixTokens.borderButtonCompact),
+          foregroundColor: onPrimary,
+          backgroundColor: palette.primaryAccent,
+        ),
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: scheme.surfaceSidebar,
         foregroundColor: scheme.textPrimary,
@@ -118,7 +145,8 @@ class NixTheme {
         centerTitle: false,
         titleTextStyle: TextStyle(
           color: scheme.textPrimary,
-          fontSize: 15 * fontScale,
+          fontFamily: 'PixelifySans',
+          fontSize: 18 * fontScale,
           fontWeight: FontWeight.w600,
           letterSpacing: 0.2,
         ),

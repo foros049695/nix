@@ -73,6 +73,7 @@ class _PagerProfileState extends State<PagerProfile> {
     final profile = state.userProfile;
     var name = profile.displayName;
     var bio = profile.bio;
+    var music = profile.currentActivity;
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -95,6 +96,13 @@ class _PagerProfileState extends State<PagerProfile> {
               decoration:
                   const InputDecoration(labelText: 'Biografia e interesses'),
             ),
+            TextFormField(
+              initialValue: music,
+              onChanged: (value) => music = value,
+              maxLength: 60,
+              decoration: const InputDecoration(
+                  labelText: 'Música no Pager (opcional)'),
+            ),
           ],
         ),
         actions: [
@@ -103,7 +111,11 @@ class _PagerProfileState extends State<PagerProfile> {
               child: const Text('Cancelar')),
           FilledButton(
             onPressed: () {
-              state.updateProfile(displayName: name.trim(), bio: bio.trim());
+              state.updateProfile(
+                displayName: name.trim(),
+                bio: bio.trim(),
+                currentActivity: music.trim(),
+              );
               Navigator.pop(context);
             },
             child: const Text('Salvar'),
@@ -138,6 +150,9 @@ class _PagerProfileState extends State<PagerProfile> {
       case _PagerMenu.wallpaper:
         _selectPage(2, state);
         _showContemplationSettings();
+      case _PagerMenu.chats:
+        state.closeProfileOverlay();
+        state.openSavedMessages();
       case _PagerMenu.preferences:
         _openSettings(state);
       case null:
@@ -166,7 +181,7 @@ class _PagerProfileState extends State<PagerProfile> {
           child: Column(
             children: [
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 676),
+                constraints: const BoxConstraints(maxWidth: 790),
                 child: PagerHousing(
                   reducedMotion: reduced,
                   onPrevious:
@@ -174,48 +189,43 @@ class _PagerProfileState extends State<PagerProfile> {
                   onNext:
                       _page < 2 ? () => _selectPage(_page + 1, state) : null,
                   onMenu: () => _showPagerMenu(state),
+                  minDisplayHeight: 278,
                   screen: LayoutBuilder(
                     builder: (context, constraints) {
                       final narrow = constraints.maxWidth < 350;
-                      final expandedText =
-                          MediaQuery.textScalerOf(context).scale(16) > 19;
-                      return SizedBox(
-                        height: narrow || expandedText ? 330 : 308,
-                        child: ScrollConfiguration(
-                          behavior: ScrollConfiguration.of(context).copyWith(
-                            dragDevices: const {
-                              PointerDeviceKind.touch,
-                              PointerDeviceKind.mouse,
-                              PointerDeviceKind.stylus,
-                              PointerDeviceKind.trackpad,
-                            },
-                          ),
-                          child: PageView(
-                            key: const Key('pager_screen'),
-                            controller: _controller,
-                            onPageChanged: (page) =>
-                                setState(() => _page = page),
-                            children: [
-                              _PagerPanel(
-                                title: _pages[0],
-                                page: 1,
-                                action: IconButton(
-                                  key: const Key('card_id_settings_gear'),
-                                  tooltip: 'Abrir Central de Configurações',
-                                  onPressed: () => _openSettings(state),
-                                  icon: const Icon(Icons.settings_outlined),
-                                ),
-                                child: _identity(state, profile, narrow),
+                      return ScrollConfiguration(
+                        behavior: ScrollConfiguration.of(context).copyWith(
+                          dragDevices: const {
+                            PointerDeviceKind.touch,
+                            PointerDeviceKind.mouse,
+                            PointerDeviceKind.stylus,
+                            PointerDeviceKind.trackpad,
+                          },
+                        ),
+                        child: PageView(
+                          key: const Key('pager_screen'),
+                          controller: _controller,
+                          onPageChanged: (page) => setState(() => _page = page),
+                          children: [
+                            _PagerPanel(
+                              title: _pages[0],
+                              page: 1,
+                              action: IconButton(
+                                key: const Key('card_id_settings_gear'),
+                                tooltip: 'Abrir Central de Configurações',
+                                onPressed: () => _openSettings(state),
+                                icon: const Icon(Icons.settings_outlined),
                               ),
-                              _PagerPanel(
-                                title: _pages[1],
-                                page: 2,
-                                child: _status(state, reduced),
-                              ),
-                              _ContemplationScreen(
-                                  showAvatar: !state.settings.hidePagerAvatar),
-                            ],
-                          ),
+                              child: _identity(state, profile, narrow),
+                            ),
+                            _PagerPanel(
+                              title: _pages[1],
+                              page: 2,
+                              child: _status(state, reduced),
+                            ),
+                            _ContemplationScreen(
+                                showAvatar: !state.settings.hidePagerAvatar),
+                          ],
                         ),
                       );
                     },
@@ -262,7 +272,8 @@ class _PagerProfileState extends State<PagerProfile> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: narrow ? 17 : 22,
+                        fontSize: narrow ? 18 : 25,
+                        fontFamily: pagerDisplayFont,
                         fontWeight: FontWeight.w700),
                   ),
                   Text('Desde ${profile.memberSinceYear}',
@@ -314,10 +325,15 @@ class _PagerProfileState extends State<PagerProfile> {
           ],
         ),
         if (profile.currentActivity.trim().isNotEmpty)
-          Text('Atividade: ${profile.currentActivity}',
-              style: const TextStyle(fontSize: 12),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis),
+          Row(children: [
+            const Icon(Icons.music_note_outlined, color: pagerInk, size: 15),
+            const SizedBox(width: 6),
+            Expanded(
+                child: Text(profile.currentActivity,
+                    style: const TextStyle(fontSize: 12),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis)),
+          ]),
         if (profile.publicId.isNotEmpty)
           Row(
             children: [
@@ -325,8 +341,8 @@ class _PagerProfileState extends State<PagerProfile> {
                 child: SelectableText(
                   profile.publicId,
                   style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
+                      fontFamily: pagerDisplayFont,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600),
                 ),
               ),
@@ -348,39 +364,11 @@ class _PagerProfileState extends State<PagerProfile> {
   Widget _status(NixState state, bool reduced) {
     final gate = state.securityGate;
     const instruction =
-        '> Veja o estado da rede e das chaves.\n> Avance para contemplar.';
+        '> Consulte a rede e o cofre.\n> Avance para contemplar.';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Image.asset('assets/images/pager_assistant.png',
-                width: 54,
-                height: 54,
-                filterQuality: FilterQuality.none,
-                semanticLabel: 'Assistente em pixel art'),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Semantics(
-                label: instruction,
-                child: ExcludeSemantics(
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween(begin: reduced ? 1 : 0, end: 1),
-                    duration: reduced
-                        ? Duration.zero
-                        : const Duration(milliseconds: 740),
-                    builder: (_, fraction, __) => Text(
-                      instruction.substring(
-                          0, (instruction.length * fraction).floor()),
-                      style: const TextStyle(
-                          fontFamily: 'PixelifySans', fontSize: 16),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+        PagerGuide(message: instruction, reducedMotion: reduced),
         const SizedBox(height: 9),
         _PagerStatusStrip(gate: gate),
         const SizedBox(height: 9),
@@ -408,7 +396,8 @@ class _PagerProfileState extends State<PagerProfile> {
 }
 
 enum _PagerMenu {
-  profile('Editar nome e biografia', Icons.person_outline),
+  profile('Editar perfil', Icons.person_outline),
+  chats('Abrir mensagens', Icons.chat_bubble_outline),
   wallpaper('Personalizar contemplação', Icons.wallpaper_outlined),
   preferences('Configurações do Nix', Icons.settings_outlined);
 
@@ -487,13 +476,7 @@ class _PagerStatusStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final network = gate.isStrictOffGridMode
-        ? 'Off-grid'
-        : gate.isTorAnonymityReady
-            ? 'Tor Onion v3'
-            : gate.isBootstrapping
-                ? 'Conectando Tor'
-                : 'Sem rede';
+    final network = pagerNetworkLabel(gate);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),

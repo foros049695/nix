@@ -6,6 +6,7 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import '../design/nix_surfaces.dart';
 import 'trade_simulation_dialog.dart';
 import 'payment_method_picker.dart';
 
@@ -47,11 +48,9 @@ class MoneroP2pView extends StatelessWidget {
               ),
               // Cabeçalho Responsivo do Mercado P2P
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(
-                  color: NixColors.surfaceElevated,
-                  border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
-                ),
+                margin: const EdgeInsets.fromLTRB(10, 4, 13, 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: nixFrameDecoration(context, background: context.surfaceSidebarColor),
                 child: isNarrow
                     ? Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

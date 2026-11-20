@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import '../design/nix_surfaces.dart';
 
 class ChatInputBar extends StatefulWidget {
   final String channelName;
@@ -435,12 +436,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
         LayoutBuilder(builder: (context, constraints) {
           final compact = constraints.maxWidth < 480;
           return Container(
-            padding:
-                EdgeInsets.symmetric(horizontal: compact ? 6 : 14, vertical: 6),
-            decoration: BoxDecoration(
-              color: NixColors.surfaceElevated,
-              border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
-            ),
+            margin: EdgeInsets.fromLTRB(compact ? 7 : 13, 6, compact ? 9 : 15, 9),
+            padding: EdgeInsets.symmetric(horizontal: compact ? 3 : 10, vertical: 5),
+            decoration: nixFrameDecoration(context, background: context.surfaceSidebarColor),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [

@@ -5,6 +5,7 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
 import '../dialogs/channel_settings_dialog.dart';
+import '../design/nix_surfaces.dart';
 
 class MessageHeader extends StatelessWidget {
   final Channel channel;
@@ -32,37 +33,14 @@ class MessageHeader extends StatelessWidget {
             final compact = constraints.maxWidth < 560;
             return Row(
               children: [
-                Icon(channel.icon, color: accentText, size: 19),
-                const SizedBox(width: 8),
-                Flexible(
-                  flex: compact ? 1 : 0,
-                  child: Text(
-                    channel.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: NixColors.textPrimary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14.5,
-                    ),
+                Expanded(
+                  child: NixPanelTitle(
+                    icon: channel.icon,
+                    title: channel.name,
+                    subtitle: compact || channel.topic.isEmpty ? null : channel.topic,
                   ),
                 ),
-                if (!compact && channel.topic.isNotEmpty) ...[
-                  const SizedBox(width: 10),
-                  Container(width: 1, height: 16, color: NixColors.surfaceBorder),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      channel.topic,
-                      style: TextStyle(color: NixColors.textMuted, fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ] else if (!compact) ...[
-                  const Spacer(),
-                ] else ...[
-                  const SizedBox(width: 8),
-                ],
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(

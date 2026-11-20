@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import '../design/nix_surfaces.dart';
 
 /// Passaporte cultural e acervo do perfil
 /// (Filmes, Séries, Animes, Mangás, Livros, Vinis e Repositórios GitHub).
@@ -51,11 +52,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
 
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: NixColors.surfaceSidebar,
-        borderRadius: NixTokens.borderLg,
-        border: Border.all(color: NixColors.surfaceBorder, width: 1),
-      ),
+      decoration: nixFrameDecoration(context, background: context.surfaceSidebarColor),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -73,10 +70,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                   const SizedBox(width: 8),
                   Flexible(child: Text(
                     'PASSAPORTE CULTURAL & ACERVO',
-                    style: NixTokens.labelUppercase().copyWith(
-                      color: NixColors.textPrimary,
-                      letterSpacing: 1.2,
-                    ),
+                    style: NixTokens.headingMedium(),
                   )),
                 ],
               ),
@@ -679,7 +673,7 @@ class _VinylRecordWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return NixMotionCard(child: InkWell(
       onTap: onTap,
       onLongPress: onDelete,
       borderRadius: NixTokens.borderMd,
@@ -792,7 +786,7 @@ class _VinylRecordWidget extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -902,7 +896,7 @@ class _PosterCoverCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final shade = item.toneShade.clamp(18, 90);
-    return InkWell(
+    return NixMotionCard(child: InkWell(
       onTap: onTap,
       onLongPress: onDelete,
       borderRadius: NixTokens.borderMd,
@@ -1040,7 +1034,7 @@ class _PosterCoverCard extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 

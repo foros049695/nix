@@ -18,35 +18,26 @@ O **Nix** é um ecossistema modular, auto-hospedável e de código aberto projet
 
 ---
 
-## 🎨 Identidade Visual & Design System V4.1
+## Identidade visual e Pager
 
-O Projeto Nix adota uma linguagem visual de **alto contraste, ergonomia adaptativa e discrição operacional**, inspirada na estética de terminais técnicos e no visual de painéis compactos do Telegram Desktop.
+O cliente usa molduras arredondadas com sombras deslocadas, títulos em pixel
+art e texto de leitura contínua em uma fonte sem serifa. O desktop oferece um
+painel central e colunas redimensionáveis para espaços, conversas e detalhes.
+No mobile, as mesmas áreas ficam acessíveis pela barra inferior e pelo menu
+lateral. O modo de movimento reduzido desativa os efeitos de perspectiva do
+Pager e das capas.
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        PALETAS DE CORES OFICIAIS                       │
-├────────────────────────────────────────────────────────────────────────┤
-│  DARK YELLOW (Padrão Noturno / Baixa Emissão de Luz):                  │
-│  - Background:      #08090B (Preto Profundo / AMOLED)                  │
-│  - Surface Card:    #17191E (Superfície Primária de Painéis)           │
-│  - Surface Elev:    #292C33 (Cards Elevados e Modais)                  │
-│  - Accent Amber:    #FFC928 (Dourado Técnico de Alto Contraste)        │
-│  - Text Primary:    #FFFFFF (Legibilidade Máxima WCAG 2.2 AAA)         │
-│                                                                        │
-│  LIGHT YELLOW (Modo Diurno / Alto Contraste Solar):                    │
-│  - Background:      #FDFBF7 (Branco Quente Orgânico)                   │
-│  - Surface Card:    #F4F0E6 (Linho Técnico Suave)                      │
-│  - Accent Amber:    #855B00 (exemplo de texto AA sobre #FDFBF7)          │
-│  - Text Primary:    #1A1710 (Preto Carvão para Leitura)                │
-└────────────────────────────────────────────────────────────────────────┘
-```
+Em **Aparência**, escolha **Preto / Roxo**, **Branco / Amarelo** ou **Verde /
+Roxo**. Também é possível ajustar a superfície e a cor de destaque separadamente.
 
-### Tokens de Ergonomia e Painéis Interativos
-* **Splitters Redimensionáveis (`PanelResizeDivider`):** Divisão horizontal flexível entre o *Spaces Dock* (64px–110px) e a *Channels Sidebar* (220px–480px) com persistência de largura e reset por duplo clique.
-* **Tokens de Curvatura (`NixTokens`):** Painéis internos (16px), cards e listas (14px), balões de chat (16px), inputs (12px) e botões compactos (10px).
-* **Avatar Universal Reativo (`NixUserAvatar`):** Identidade visual unificada com modos `local_file`, `monogram`, `sentinel` e `none`.
+O Pager interativo está no acesso ao app e no perfil. A identidade pública
+mostra foto, nome, QR, cofre e transporte. Escolha **Menu do Pager →
+Personalizar contemplação** para usar uma imagem local, com ou sem avatar.
+A música exibida pode ser inserida no editor de perfil. O passaporte cultural
+e o acervo ficam abaixo do Pager.
 
 ---
+
 
 ## 🧱 Arquitetura Geral do Sistema (C4 Containers)
 

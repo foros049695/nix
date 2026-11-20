@@ -56,6 +56,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    final shell = tester
+        .widget<DecoratedBox>(find.byKey(const Key('pager_rendered_shell')));
+    final texture =
+        (shell.decoration as BoxDecoration).image!.image as AssetImage;
+    expect(texture.assetName, 'assets/images/pager_shell.webp');
     final qr = tester.widget<NixQrCodeWidget>(find.byType(NixQrCodeWidget));
     expect(qr.data, state.userProfile.qrPublicPayload);
     state.updateSettings(state.settings.copyWith(allowPublicIdSharing: false));

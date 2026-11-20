@@ -6,6 +6,7 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import '../design/nix_surfaces.dart';
 import '../chat/message_header.dart';
 import '../dialogs/nix_symbol_picker.dart';
 
@@ -76,7 +77,9 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                           // Barra de Busca + Botão Novo Tópico
                           Padding(
                             padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
-                            child: Row(
+                            child: NixFrame(
+                              padding: const EdgeInsets.all(5),
+                              child: Row(
                               children: [
                                 Expanded(
                                   child: TextField(
@@ -106,6 +109,7 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                                   ),
                                 ),
                               ],
+                            ),
                             ),
                           ),
 

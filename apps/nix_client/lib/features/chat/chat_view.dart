@@ -7,6 +7,7 @@ import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
 import '../dialogs/forward_message_dialog.dart';
 import 'chat_input_bar.dart';
+import 'conversation_surface.dart';
 import 'message_bubble.dart';
 import 'message_header.dart';
 
@@ -21,6 +22,7 @@ class ChatView extends StatefulWidget {
 
 class _ChatViewState extends State<ChatView> {
   final _scrollController = ScrollController();
+  String? _lastMessageId;
 
   @override
   void dispose() {
@@ -29,8 +31,13 @@ class _ChatViewState extends State<ChatView> {
   }
 
   void _scrollToBottom() {
+    final reduce = MediaQuery.disableAnimationsOf(context);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
+        if (reduce) {
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+          return;
+        }
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 220),
@@ -62,8 +69,10 @@ class _ChatViewState extends State<ChatView> {
     final pinnedMsgs = messages.where((m) => m.isPinned).toList();
     final selectedIds = nixState.selectedMessageIds;
 
-    if (nixState.highlightedMessageId == null) {
-      _scrollToBottom();
+    final tail = messages.isEmpty ? null : messages.last.id;
+    if (_lastMessageId != tail) {
+      _lastMessageId = tail;
+      if (nixState.highlightedMessageId == null) _scrollToBottom();
     }
 
     return Column(
@@ -174,8 +183,7 @@ class _ChatViewState extends State<ChatView> {
 
         // Lista de Mensagens
         Expanded(
-          child: Container(
-            color: NixColors.background,
+          child: ConversationSurface(
             child: messages.isEmpty
                 ? _buildEmptyChat()
                 : ListView.builder(

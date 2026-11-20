@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'conversation_surface.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/member.dart';
@@ -60,7 +61,7 @@ class MessageBubble extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  child: Text(e, style: const TextStyle(fontSize: 18)),
+                  child: Text(e, style: const TextStyle(fontSize: 18, fontFamilyFallback: ['NixEmoji'])),
                 ),
               );
             }).toList(),
@@ -273,22 +274,8 @@ class MessageBubble extends StatelessWidget {
                       horizontal: 14,
                       vertical: settings.compactChatMode ? 7 : 10,
                     ),
-                    decoration: BoxDecoration(
-                      color: isHighlighted || isSelected
-                          ? NixColors.messageHighlight
-                          : (isMe ? NixColors.messageSent : NixColors.messageReceived),
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(12),
-                        topRight: const Radius.circular(12),
-                        bottomLeft: Radius.circular(isMe ? 12 : 3),
-                        bottomRight: Radius.circular(isMe ? 3 : 12),
-                      ),
-                      border: Border.all(
-                        color: isHighlighted || isSelected
-                            ? accent
-                            : (isMe ? accent.withValues(alpha: 0.35) : NixColors.surfaceBorder),
-                        width: isHighlighted || isSelected ? 1.5 : 1.0,
-                      ),
+                    decoration: messageDecoration(
+                      context, outgoing: isMe, selected: isHighlighted || isSelected,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -501,7 +488,7 @@ class MessageBubble extends StatelessWidget {
                                               },
                                               child: Padding(
                                                 padding: const EdgeInsets.all(4),
-                                                child: Text(e, style: const TextStyle(fontSize: 18)),
+                                                child: Text(e, style: const TextStyle(fontSize: 18, fontFamilyFallback: ['NixEmoji'])),
                                               ),
                                             ))
                                         .toList(),
@@ -547,7 +534,7 @@ class MessageBubble extends StatelessWidget {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(entry.key, style: const TextStyle(fontSize: 11)),
+                                Text(entry.key, style: const TextStyle(fontSize: 11, fontFamilyFallback: ['NixEmoji'])),
                                 const SizedBox(width: 4),
                                 Text(
                                   '${entry.value}',

@@ -2234,6 +2234,7 @@ class NixState extends ChangeNotifier {
       final data = {
         'settings': _settings.toJson(),
         'savedAcervoIds': _savedAcervoIds.toList(),
+        'pagerMusic': _userProfile.currentActivity,
         'culturalItems': _userProfile.culturalItems.map((c) => c.toJson()).toList(),
         'folders': _folders
             .map((f) => {
@@ -2266,6 +2267,9 @@ class NixState extends ChangeNotifier {
             NixSurfaceScheme.resolve(_settings.themeMode),
             currentPalette,
           );
+        }
+        if (raw['pagerMusic'] case final String track) {
+          _userProfile = _userProfile.copyWith(currentActivity: track);
         }
         if (raw['savedAcervoIds'] is List) {
           _savedAcervoIds
@@ -3716,6 +3720,7 @@ class NixState extends ChangeNotifier {
         avatarObjectId: _userProfile.avatarStyle,
       ));
     }
+    if (currentActivity != null) unawaited(_persistState());
     notifyListeners();
   }
 

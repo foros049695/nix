@@ -33,6 +33,7 @@ class NixApp extends StatelessWidget {
     final fontScale = context.select<NixState, double>((s) => s.settings.fontScale);
     final palette = context.select<NixState, NixPalette>((s) => s.currentPalette);
     final themeMode = context.select<NixState, NixThemeMode>((s) => s.settings.themeMode);
+    final reducedMotion = context.select<NixState, bool>((s) => s.settings.reducedMotion);
     final sysBrightness = MediaQuery.maybePlatformBrightnessOf(context) ?? Brightness.dark;
     final resolvedScheme = NixSurfaceScheme.resolve(themeMode, sysBrightness);
     NixColors.sync(resolvedScheme, palette);
@@ -53,6 +54,7 @@ class NixApp extends StatelessWidget {
         palette: palette,
         fontScale: fontScale,
       ),
+      themeAnimationDuration: reducedMotion ? Duration.zero : const Duration(milliseconds: 180),
       themeMode: themeMode == NixThemeMode.system
           ? ThemeMode.system
           : (resolvedScheme.isLight ? ThemeMode.light : ThemeMode.dark),

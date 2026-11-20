@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_palette.dart';
 import '../../core/models/channel.dart';
 import '../../core/models/member.dart';
 import '../../state/nix_state.dart';
+import '../design/nix_surfaces.dart';
 import '../chat/chat_input_bar.dart';
 import '../chat/message_bubble.dart';
 
@@ -280,20 +282,20 @@ class _CallRoomViewState extends State<CallRoomView> {
 
   Widget _buildJoinCallPrompt(BuildContext context, NixState nixState) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: NixColors.surfaceCard,
-              shape: BoxShape.circle,
-              border: Border.all(
-                  color: NixColors.accentVoice.withOpacity(0.4), width: 2),
-            ),
-            child: Icon(Icons.volume_up_rounded,
-                color: NixColors.accentVoice, size: 64),
-          ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: NixFrame(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                NixMotionCard(child: Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: nixFrameDecoration(context, background: context.surfaceActiveColor),
+                  child: Icon(Icons.graphic_eq_rounded, color: context.accentTextColor, size: 38),
+                )),
           const SizedBox(height: 20),
           Text(
             'Sala de Voz: ${channel.name}',
@@ -323,6 +325,9 @@ class _CallRoomViewState extends State<CallRoomView> {
                 style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
+            ),
+          ),
+        ),
       ),
     );
   }

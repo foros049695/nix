@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../profile/pager_housing.dart';
+import '../design/nix_surfaces.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:nix_core_crypto/nix_core_crypto.dart';
 import 'package:nix_transport/nix_transport.dart';
 import '../../core/security/seed_recovery.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
@@ -99,6 +102,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
   bool _bindToOsKeyring = true;
   String _selectedAvatarStyle = 'nyx_emblem';
 
+  final _stepScroll = ScrollController();
   StreamSubscription<TorBootstrapEvent>? _torBootstrapSub;
 
   @override
@@ -110,6 +114,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
 
   @override
   void dispose() {
+    _stepScroll.dispose();
     _torBootstrapSub?.cancel();
     _displayNameController.dispose();
     _bioController.dispose();
@@ -185,6 +190,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
 
   void _goToStep(OnboardingStep step) {
     setState(() => _currentStep = step);
+    if (_stepScroll.hasClients) _stepScroll.jumpTo(0);
     _persistCheckpoint();
   }
 
@@ -543,9 +549,9 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
                         });
                       }
                     },
-              style: ElevatedButton.styleFrom(backgroundColor: NixColors.accentYellow),
+              style: ElevatedButton.styleFrom(backgroundColor: NixColors.accentPrimary),
               icon: const Icon(Icons.restore_rounded, color: Colors.black, size: 17),
-              label: const Text('Restaurar Conta', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+              label: Text('Restaurar Conta', style: TextStyle(color: context.onAccentColor, fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -608,18 +614,8 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 680, maxHeight: 720),
-        child: Container(
-          decoration: BoxDecoration(
-            color: NixColors.surfaceElevatedHigh,
-            borderRadius: NixTokens.borderLg,
-            border: Border.all(color: NixColors.surfaceBorderStrong, width: 1.2),
-            boxShadow: const [
-              BoxShadow(color: Colors.black87, blurRadius: 28, offset: Offset(0, 10)),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: NixTokens.borderLg,
-            child: Column(
+        child: NixFrame(
+          child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // Topo: Cabeçalho com indicador de etapas e botão fechar seguro
@@ -632,8 +628,16 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
                 // Corpo da Etapa Atual
                 Expanded(
                   child: SingleChildScrollView(
+                    controller: _stepScroll,
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                    child: _buildCurrentStageView(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildAccessPager(),
+                        const SizedBox(height: 14),
+                        _buildCurrentStageView(),
+                      ],
+                    ),
                   ),
                 ),
 
@@ -643,6 +647,81 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
                 const Divider(height: 1),
                 // Rodapé com Botões de Ação
                 _buildActionFooter(),
+              ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccessPager() {
+    final first = _currentStep == OnboardingStep.welcome;
+    final canAdvance = _canAdvanceFromCurrentStep();
+    final description = switch (_currentStep) {
+      OnboardingStep.welcome => '> Vamos configurar\n  seu acesso.',
+      OnboardingStep.torConsent => '> Escolha como conectar o Nix.',
+      OnboardingStep.torBootstrap => '> Aguarde a conexão segura.',
+      OnboardingStep.torVerification => '> Verifique o transporte Tor.',
+      OnboardingStep.identityGeneration => '> Crie suas chaves neste dispositivo.',
+      OnboardingStep.recoveryBackup => '> Guarde a recuperação em papel.',
+      OnboardingStep.publicId => '> Confira o identificador público.',
+      OnboardingStep.profileSetup => '> Escolha seu nome e avatar.',
+      OnboardingStep.ready => '> Pronto. Entre no Nix.',
+    };
+    if (!first) {
+      return NixFrame(
+        background: pagerLcd,
+        padding: const EdgeInsets.all(9),
+        child: PagerGuide(
+          message: description,
+          portraitSize: 46,
+          reducedMotion: widget.nixState.settings.reducedMotion,
+        ),
+      );
+    }
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 570),
+        child: PagerHousing(
+          reducedMotion: widget.nixState.settings.reducedMotion,
+          minDisplayHeight: 242,
+          onMenu: () => setState(() => _showDiagnostics = !_showDiagnostics),
+          onNext: canAdvance ? _handleNextStepAction : null,
+          nextLabel: 'Prosseguir no Pager',
+          screen: SingleChildScrollView(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Acesso',
+                  style: const TextStyle(fontFamily: pagerDisplayFont, color: pagerInk, fontSize: 17),
+                ),
+                const Divider(color: Color(0xFF6DA5B3)),
+                PagerGuide(
+                  message: description,
+                  reducedMotion: widget.nixState.settings.reducedMotion,
+                  actions: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FilledButton(
+                        key: const Key('onboarding_next_button'),
+                        onPressed: _handleNextStepAction,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: pagerInk, foregroundColor: pagerLcd,
+                          textStyle: const TextStyle(fontFamily: pagerDisplayFont, fontSize: 16),
+                        ),
+                        child: const Text('Iniciar'),
+                      ),
+                      TextButton(
+                        key: const Key('onboarding_restore_button'),
+                        onPressed: _showRestoreFromSeedDialog,
+                        style: TextButton.styleFrom(foregroundColor: pagerInk),
+                        child: const Text('Já tenho acesso'),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -661,11 +740,13 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: NixColors.accentYellow,
+              color: NixColors.accentPrimary,
               borderRadius: BorderRadius.circular(6),
             ),
             alignment: Alignment.center,
-            child: const Text('N', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
+            child: Text('N', style: TextStyle(
+              color: context.onAccentColor, fontFamily: nixDisplayFont, fontSize: 21,
+            )),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -683,7 +764,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
                 ),
                 Text(
                   _getStepTitle(_currentStep),
-                  style: TextStyle(color: NixColors.accentYellow, fontSize: 11, fontWeight: FontWeight.w600),
+                  style: TextStyle(color: NixColors.accentText, fontSize: 11, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -717,7 +798,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
     return LinearProgressIndicator(
       value: progress,
       backgroundColor: NixColors.surfaceCard,
-      valueColor: AlwaysStoppedAnimation<Color>(NixColors.accentYellow),
+      valueColor: AlwaysStoppedAnimation<Color>(NixColors.accentPrimary),
       minHeight: 3,
     );
   }
@@ -776,7 +857,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       children: [
         Row(
           children: [
-            Icon(Icons.shield_rounded, color: NixColors.accentYellow, size: 28),
+            Icon(Icons.shield_rounded, color: NixColors.accentPrimary, size: 28),
             const SizedBox(width: 10),
             Text('Bem-vindo ao Projeto Nix', style: TextStyle(color: NixColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
           ],
@@ -827,7 +908,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
           ),
           child: Row(
             children: [
-              Icon(Icons.info_outline_rounded, color: NixColors.accentYellow, size: 18),
+              Icon(Icons.info_outline_rounded, color: NixColors.accentPrimary, size: 18),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -838,19 +919,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
             ],
           ),
         ),
-        const SizedBox(height: 14),
-        OutlinedButton.icon(
-          onPressed: _showRestoreFromSeedDialog,
-          icon: Icon(Icons.restore_rounded, color: NixColors.accentYellow, size: 18),
-          label: Text(
-            'Já possuo Seed A (Recuperar Conta de Backup)',
-            style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600),
-          ),
-          style: OutlinedButton.styleFrom(
-            side: BorderSide(color: NixColors.surfaceBorderStrong),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          ),
-        ),
+
       ],
     );
   }
@@ -861,7 +930,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       children: [
         Row(
           children: [
-            Icon(Icons.hub_rounded, color: NixColors.accentYellow, size: 22),
+            Icon(Icons.hub_rounded, color: NixColors.accentPrimary, size: 22),
             const SizedBox(width: 8),
             Text('Consentimento da Rede Tor (Fail-Closed)', style: TextStyle(color: NixColors.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
           ],
@@ -901,13 +970,13 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
             decoration: BoxDecoration(
               color: _torConsentChecked ? NixColors.surfaceElevated : NixColors.surfaceCard,
               borderRadius: NixTokens.borderSm,
-              border: Border.all(color: _torConsentChecked ? NixColors.accentYellow : NixColors.surfaceBorderStrong),
+              border: Border.all(color: _torConsentChecked ? NixColors.accentPrimary : NixColors.surfaceBorderStrong),
             ),
             child: Row(
               children: [
                 Checkbox(
                   value: _torConsentChecked,
-                  activeColor: NixColors.accentYellow,
+                  activeColor: NixColors.accentPrimary,
                   checkColor: Colors.black,
                   onChanged: (v) => setState(() => _torConsentChecked = v ?? false),
                 ),
@@ -936,8 +1005,8 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
               width: 20,
               height: 20,
               child: _isLoading
-                  ? CircularProgressIndicator(value: _bootstrapPercent > 0 ? _bootstrapPercent / 100 : null, strokeWidth: 2.5, color: NixColors.accentYellow)
-                  : Icon(_bootstrapPercent == 100 ? Icons.check_circle_rounded : Icons.pending_rounded, color: _bootstrapPercent == 100 ? NixColors.accentGreen : NixColors.accentYellow),
+                  ? CircularProgressIndicator(value: _bootstrapPercent > 0 ? _bootstrapPercent / 100 : null, strokeWidth: 2.5, color: NixColors.accentPrimary)
+                  : Icon(_bootstrapPercent == 100 ? Icons.check_circle_rounded : Icons.pending_rounded, color: _bootstrapPercent == 100 ? NixColors.accentGreen : NixColors.accentPrimary),
             ),
             const SizedBox(width: 10),
             Text('Inicialização do Daemon Tor Embutido', style: TextStyle(color: NixColors.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
@@ -957,7 +1026,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
             minHeight: 10,
             backgroundColor: NixColors.surfaceCard,
             valueColor: AlwaysStoppedAnimation<Color>(
-              _bootstrapFailed ? Colors.redAccent : (_bootstrapPercent == 100 ? NixColors.accentGreen : NixColors.accentYellow),
+              _bootstrapFailed ? Colors.redAccent : (_bootstrapPercent == 100 ? NixColors.accentGreen : NixColors.accentPrimary),
             ),
           ),
         ),
@@ -967,7 +1036,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
           children: [
             Text('Progresso: $_bootstrapPercent%', style: TextStyle(color: NixColors.textPrimary, fontSize: 12, fontWeight: FontWeight.bold)),
             Text(_bootstrapPercent == 100 ? 'CONECTADO' : (_bootstrapFailed ? 'FALHA' : 'BOOTSTRAP'),
-                style: TextStyle(color: _bootstrapFailed ? Colors.redAccent : NixColors.accentYellow, fontSize: 11, fontWeight: FontWeight.bold)),
+                style: TextStyle(color: _bootstrapFailed ? Colors.redAccent : NixColors.accentPrimary, fontSize: 11, fontWeight: FontWeight.bold)),
           ],
         ),
         const SizedBox(height: 8),
@@ -1012,8 +1081,8 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
             child: ElevatedButton.icon(
               onPressed: _startTorBootstrap,
               icon: const Icon(Icons.play_arrow_rounded, color: Colors.black),
-              label: const Text('Iniciar Daemon Tor Embutido', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(backgroundColor: NixColors.accentYellow, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
+              label: Text('Iniciar Daemon Tor Embutido', style: TextStyle(color: context.onAccentColor, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(backgroundColor: NixColors.accentPrimary, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
             ),
           ),
         ],
@@ -1079,7 +1148,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       children: [
         Row(
           children: [
-            Icon(Icons.vpn_key_rounded, color: NixColors.accentYellow, size: 22),
+            Icon(Icons.vpn_key_rounded, color: NixColors.accentPrimary, size: 22),
             const SizedBox(width: 8),
             Text('Geração Criptográfica da Identidade (Seed A)', style: TextStyle(color: NixColors.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
           ],
@@ -1137,7 +1206,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
           dense: true,
           contentPadding: EdgeInsets.zero,
           controlAffinity: ListTileControlAffinity.leading,
-          activeColor: NixColors.accentYellow,
+          activeColor: NixColors.accentPrimary,
           checkColor: Colors.black,
           title: Text(
             'Permitir desbloqueio rápido pelo chaveiro do SO (libsecret / AndroidKeyStore)',
@@ -1182,9 +1251,9 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
               : ElevatedButton.icon(
                   onPressed: _generatePrivateIdentity,
                   icon: const Icon(Icons.auto_awesome_rounded, color: Colors.black),
-                  label: const Text('Gerar Identidade Soberana Segura', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                  label: Text('Gerar Identidade Soberana Segura', style: TextStyle(color: context.onAccentColor, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: NixColors.accentYellow,
+                    backgroundColor: NixColors.accentPrimary,
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                   ),
                 ),
@@ -1199,7 +1268,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       children: [
         Row(
           children: [
-            Icon(Icons.edit_note_rounded, color: NixColors.accentYellow, size: 24),
+            Icon(Icons.edit_note_rounded, color: NixColors.accentPrimary, size: 24),
             const SizedBox(width: 8),
             Text('Backup Físico no Papel (Seed de 24 Palavras)', style: TextStyle(color: NixColors.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
           ],
@@ -1311,7 +1380,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
           children: [
             Checkbox(
               value: _paperBackupConfirmed,
-              activeColor: NixColors.accentYellow,
+              activeColor: NixColors.accentPrimary,
               checkColor: Colors.black,
               onChanged: (v) => setState(() => _paperBackupConfirmed = v ?? false),
             ),
@@ -1335,7 +1404,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       children: [
         Row(
           children: [
-            Icon(Icons.qr_code_2_rounded, color: NixColors.accentYellow, size: 24),
+            Icon(Icons.qr_code_2_rounded, color: NixColors.accentPrimary, size: 24),
             const SizedBox(width: 8),
             Text('Identificador Público Soberano (Card ID)', style: TextStyle(color: NixColors.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
           ],
@@ -1371,7 +1440,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
               SelectableText(
                 publicId,
                 style: TextStyle(
-                  color: NixColors.accentYellow,
+                  color: NixColors.accentPrimary,
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.2,
@@ -1413,7 +1482,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       children: [
         Row(
           children: [
-            Icon(Icons.person_outline_rounded, color: NixColors.accentYellow, size: 24),
+            Icon(Icons.person_outline_rounded, color: NixColors.accentPrimary, size: 24),
             const SizedBox(width: 8),
             Text('Personalização de Perfil e Avatar', style: TextStyle(color: NixColors.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
           ],
@@ -1461,7 +1530,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
                     color: isSelected ? NixColors.surfaceElevated : NixColors.surfaceCard,
                     borderRadius: NixTokens.borderSm,
                     border: Border.all(
-                      color: isSelected ? NixColors.accentYellow : NixColors.surfaceBorder,
+                      color: isSelected ? NixColors.accentPrimary : NixColors.surfaceBorder,
                       width: isSelected ? 1.8 : 1.0,
                     ),
                   ),
@@ -1469,7 +1538,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
                     children: [
                       CircleAvatar(
                         radius: 20,
-                        backgroundColor: isSelected ? NixColors.accentYellow : NixColors.surfaceElevated,
+                        backgroundColor: isSelected ? NixColors.accentPrimary : NixColors.surfaceElevated,
                         child: Icon(opt['icon'] as IconData, color: isSelected ? Colors.black : Colors.white70, size: 20),
                       ),
                       const SizedBox(height: 6),
@@ -1503,9 +1572,11 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
         ),
         const SizedBox(height: 18),
         _buildVerificationCheck(
-          title: 'Rede Tor Onion v3 Conectada',
-          description: 'SOCKS5 ativo em 127.0.0.1:9050 · Modo Fail-Closed Ativo.',
-          isOk: true,
+          title: widget.nixState.isStrictOffGridMode ? 'Modo off-grid' : 'Rede Tor Onion v3',
+          description: widget.nixState.isStrictOffGridMode
+              ? 'Comunicação local por Bluetooth ou LoRa.'
+              : 'Transporte privado via Tor.',
+          isOk: widget.nixState.securityGate.isTransportGateSatisfied,
         ),
         _buildVerificationCheck(
           title: 'Identidade Criptográfica Ativa',
@@ -1528,9 +1599,9 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
             key: const Key('enter_nix_sovereign_button'),
             onPressed: _finishOnboarding,
             icon: const Icon(Icons.rocket_launch_rounded, color: Colors.black),
-            label: const Text('Entrar no Nix Soberano', style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.bold)),
+            label: Text('Entrar no Nix Soberano', style: TextStyle(color: context.onAccentColor, fontSize: 15, fontWeight: FontWeight.bold)),
             style: ElevatedButton.styleFrom(
-              backgroundColor: NixColors.accentYellow,
+              backgroundColor: NixColors.accentPrimary,
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
               elevation: 4,
             ),
@@ -1551,7 +1622,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(color: NixColors.surfaceCard, borderRadius: BorderRadius.circular(6)),
-            child: Icon(icon, color: NixColors.accentYellow, size: 16),
+            child: Icon(icon, color: NixColors.accentPrimary, size: 16),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1610,7 +1681,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('DIAGNÓSTICO TÉCNICO:', style: TextStyle(color: NixColors.accentYellow, fontSize: 10, fontWeight: FontWeight.bold)),
+              Text('DIAGNÓSTICO TÉCNICO:', style: TextStyle(color: NixColors.accentText, fontSize: 10, fontWeight: FontWeight.bold)),
               IconButton(
                 icon: const Icon(Icons.close_rounded, size: 14, color: Colors.white70),
                 onPressed: () => setState(() => _showDiagnostics = false),
@@ -1679,13 +1750,13 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
                   label: const Text('Tentar Novamente'),
                   style: ElevatedButton.styleFrom(backgroundColor: NixColors.surfaceCard),
                 ),
-              if (_currentStep != OnboardingStep.ready)
+              if (_currentStep != OnboardingStep.ready && _currentStep != OnboardingStep.welcome)
                 ElevatedButton(
                   key: const Key('onboarding_next_button'),
                   onPressed: canAdvance ? _handleNextStepAction : null,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: NixColors.accentYellow,
-                    foregroundColor: Colors.black,
+                    backgroundColor: NixColors.accentPrimary,
+                    foregroundColor: context.onAccentColor,
                     disabledBackgroundColor: NixColors.surfaceElevated,
                     disabledForegroundColor: NixColors.textMuted,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1712,7 +1783,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       case OnboardingStep.identityGeneration:
         return 'Anotar Seed';
       case OnboardingStep.recoveryBackup:
-        return 'Avançar para Card ID';
+        return 'Avançar para o Pager';
       case OnboardingStep.publicId:
         return 'Configurar Perfil';
       case OnboardingStep.profileSetup:

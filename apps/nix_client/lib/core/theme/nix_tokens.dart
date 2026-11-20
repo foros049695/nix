@@ -99,6 +99,7 @@ class NixTokens {
   // Estilos tipográficos base
   static TextStyle headingLarge([double scale = 1.0]) => TextStyle(
         color: NixColors.textPrimary,
+        fontFamily: 'PixelifySans',
         fontSize: 22 * scale,
         fontWeight: FontWeight.w700,
         letterSpacing: -0.3,
@@ -106,7 +107,8 @@ class NixTokens {
 
   static TextStyle headingMedium([double scale = 1.0]) => TextStyle(
         color: NixColors.textPrimary,
-        fontSize: 16 * scale,
+        fontFamily: 'PixelifySans',
+        fontSize: 17 * scale,
         fontWeight: FontWeight.w600,
         letterSpacing: -0.1,
       );

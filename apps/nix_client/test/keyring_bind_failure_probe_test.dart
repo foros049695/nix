@@ -143,7 +143,7 @@ void main() {
 
       if (restore) {
         final restoreButton =
-            find.text('Já possuo Seed A (Recuperar Conta de Backup)');
+            find.byKey(const Key('onboarding_restore_button'));
         await tester.ensureVisible(restoreButton);
         await tester.pumpAndSettle();
         await tester.tap(restoreButton);
@@ -270,6 +270,8 @@ void main() {
 
     // Desmarca o checkbox do chaveiro do SO
     final checkbox = find.byType(CheckboxListTile);
+    await tester.ensureVisible(checkbox);
+    await tester.pumpAndSettle();
     await tester.tap(checkbox);
     await tester.pumpAndSettle();
 

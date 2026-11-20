@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/archive/archive_verification_status.dart';
 import '../../core/archive/nix_archive_service.dart';
+import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import '../design/nix_surfaces.dart';
 import 'article_detail_view.dart';
 
 /// Ambiente Exclusivo Nix Archive — Publicações Canônicas, Rascunhos e Discussões (Fase 19 / Etapa 2).
@@ -422,45 +424,14 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
       appBar: AppBar(
         backgroundColor: NixColors.surfaceCard,
         elevation: 0,
-        title: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.auto_stories_rounded, color: Colors.amber, size: 22),
-              const SizedBox(width: 10),
-              Text(
-                'Nix Archive',
-                style: TextStyle(
-                  color: NixColors.textPrimary,
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'Fase 19',
-                  style: TextStyle(
-                    color: Colors.amber,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
+        title: const NixPanelTitle(
+          icon: Icons.auto_stories_rounded,
+          title: 'Nix Archive',
         ),
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: Colors.amber,
-          labelColor: Colors.amber,
+          indicatorColor: context.accentTextColor,
+          labelColor: context.accentTextColor,
           unselectedLabelColor: NixColors.textSecondary,
           isScrollable: true,
           tabAlignment: TabAlignment.start,

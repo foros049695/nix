@@ -12,6 +12,7 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_palette.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import '../design/nix_surfaces.dart';
 
 /// Visão principal do Nix Media Index — Offline-First e Acervo Cultural.
 class NixMediaIndexView extends StatefulWidget {
@@ -720,53 +721,15 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
           ),
           const SizedBox(width: 8),
         ],
-        title: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.local_library_rounded, color: Colors.amber, size: 22),
-              const SizedBox(width: 10),
-              Text(
-                'Nix Media Index',
-                style: TextStyle(
-                  color: NixColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.greenAccent.withOpacity(0.12),
-                  borderRadius: NixTokens.borderSm,
-                  border: Border.all(color: Colors.greenAccent.withOpacity(0.4)),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.shield_outlined, size: 12, color: Colors.greenAccent),
-                    SizedBox(width: 4),
-                    Text(
-                      '100% Offline',
-                      style: TextStyle(
-                        color: Colors.greenAccent,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+        title: const NixPanelTitle(
+          icon: Icons.local_library_rounded,
+          title: 'Nix Media Index',
+          subtitle: '100% Offline',
         ),
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: Colors.amber,
-          labelColor: Colors.amber,
+          indicatorColor: context.accentTextColor,
+          labelColor: context.accentTextColor,
           unselectedLabelColor: NixColors.textSecondary,
           tabs: [
             Tab(
@@ -951,13 +914,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
       _ => Colors.amber,
     };
 
-    return Card(
-      color: NixColors.surfaceCard,
-      shape: RoundedRectangleBorder(
-        borderRadius: NixTokens.borderMd,
-        side: BorderSide(color: NixColors.surfaceBorder.withOpacity(0.5)),
-      ),
-      margin: EdgeInsets.zero,
+    return NixMotionCard(child: NixFrame(
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
@@ -1057,7 +1014,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
           ],
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildAcervoTab(bool isCompact) {

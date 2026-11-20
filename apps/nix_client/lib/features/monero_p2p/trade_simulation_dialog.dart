@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../core/theme/nix_colors.dart';
 import 'payment_method_picker.dart';
+import '../chat/conversation_surface.dart';
+import '../design/nix_surfaces.dart';
 
 enum _TradeStage { draft, open, accepted, paymentReported, dispute, closed }
 
@@ -83,7 +85,7 @@ class _TradeSimulationDialogState extends State<TradeSimulationDialog> {
         _stage == _TradeStage.accepted || _stage == _TradeStage.paymentReported;
     final inDispute = _stage == _TradeStage.dispute;
     return AlertDialog(
-      title: const Text('Simular negociação'),
+      title: const NixPanelTitle(icon: Icons.compare_arrows_rounded, title: 'Simular negociação'),
       content: SizedBox(
         width: 440,
         child: SingleChildScrollView(
@@ -142,13 +144,7 @@ class _TradeSimulationDialogState extends State<TradeSimulationDialog> {
                         margin: const EdgeInsets.symmetric(vertical: 4),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: event.maker!
-                              ? NixColors.surfaceElevated
-                              : NixColors.surfaceCard,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: NixColors.surfaceBorder),
-                        ),
+                        decoration: messageDecoration(context, outgoing: event.maker!),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [

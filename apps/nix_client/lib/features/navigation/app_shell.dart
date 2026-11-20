@@ -13,6 +13,8 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../onboarding/sovereign_onboarding_flow.dart';
+import '../design/nix_surfaces.dart';
+import '../profile/pager_housing.dart';
 import '../calls/call_room_view.dart';
 import '../chat/chat_view.dart';
 import '../chat/conversation_info_panel.dart';
@@ -28,10 +30,8 @@ import '../publications/publication_room_view.dart';
 import '../media/media_index_view.dart';
 import '../archive/archive_environment_view.dart';
 import 'channels_sidebar.dart';
-import 'panel_resize_divider.dart';
-import 'resizable_window_frame.dart';
 import 'spaces_dock.dart';
-import 'window_title_bar.dart';
+import 'workspace_frame.dart';
 
 class AppShell extends StatelessWidget {
   const AppShell({super.key});
@@ -136,101 +136,20 @@ class AppShell extends StatelessWidget {
           final isDesktop = constraints.maxWidth >= 820;
 
           final Widget shellScaffold = isDesktop
-              ? Scaffold(
-                  backgroundColor: NixColors.background,
-                  body: ResizableWindowFrame(
-                    isFloating: settings.floatingWindowMode,
-                    child: Column(
-                      children: [
-                        const WindowTitleBar(),
-                        if (nixState.isStrictOffGridMode)
-                          _buildStrictOffGridBanner(nixState),
-                        Expanded(
-                          child: Row(
-                            children: [
-                              // Área 1: Barra vertical compacta de Pastas & Organização (redimensionável)
-                              SpacesDock(width: nixState.dockWidth),
-
-                              // Divisor Redimensionável 1: Entre Dock e Sidebar
-                              PanelResizeDivider(
-                                key: const Key('dock_resize_divider'),
-                                onDeltaDrag: (delta) => nixState.updateDockWidth(nixState.dockWidth + delta),
-                                onDoubleTapReset: () => nixState.resetDockWidth(),
-                                tooltip: 'Redimensionar Pastas (Duplo clique para 78px)',
-                              ),
-
-                              // Área 2: Lista de Conversas & Navegação Principal (redimensionável)
-                              if (activeArea == NixActiveArea.homePrivate ||
-                                  activeArea == NixActiveArea.github ||
-                                  activeArea == NixActiveArea.moneroP2p ||
-                                  activeArea == NixActiveArea.mediaIndex ||
-                                  activeArea == NixActiveArea.archive)
-                                HomeSidebar(width: nixState.sidebarWidth)
-                              else if (activeArea == NixActiveArea.spaces)
-                                ChannelsSidebar(width: nixState.sidebarWidth),
-
-                              // Divisor Redimensionável 2: Entre Sidebar e Conversa Ativa
-                              if (activeArea == NixActiveArea.homePrivate ||
-                                  activeArea == NixActiveArea.github ||
-                                  activeArea == NixActiveArea.moneroP2p ||
-                                  activeArea == NixActiveArea.spaces ||
-                                  activeArea == NixActiveArea.mediaIndex ||
-                                  activeArea == NixActiveArea.archive)
-                                PanelResizeDivider(
-                                  key: const Key('sidebar_resize_divider'),
-                                  onDeltaDrag: (delta) => nixState.updateSidebarWidth(nixState.sidebarWidth + delta),
-                                  onDoubleTapReset: () => nixState.resetSidebarWidth(),
-                                  tooltip: 'Redimensionar Conversas (Duplo clique para 288px)',
-                                ),
-
-                              // Área 3: Conversa Ativa / Palco Principal
-                              Expanded(
-                                child: _buildActiveStage(activeArea, currentChannel),
-                              ),
-
-                              // Painel Lateral de Informações da Conversa (Seção 10)
-                              if (showInfoPanel)
-                                ConversationInfoPanel(
-                                  directMessage: activeArea == NixActiveArea.homePrivate
-                                      ? nixState.selectedDm
-                                      : null,
-                                  channel: activeArea == NixActiveArea.spaces
-                                      ? currentChannel
-                                      : null,
-                                )
-                              else if (activeArea == NixActiveArea.spaces &&
-                                  nixState.isMembersPanelOpen)
-                                const MembersPanel(),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+              ? NixDesktopWorkspace(
+                  state: nixState,
+                  stage: _buildActiveStage(activeArea, currentChannel),
+                  showInfoPanel: showInfoPanel,
+                  offGridBanner: nixState.isStrictOffGridMode ? _buildStrictOffGridBanner(nixState) : null,
                 )
               : Scaffold(
                   backgroundColor: NixColors.background,
                   appBar: AppBar(
-                    title: Row(
-                      children: [
-                        Icon(
-                          _getAreaIcon(activeArea, currentChannel),
-                          size: 18,
-                          color: NixColors.textPrimary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _getAreaTitle(activeArea, nixState.selectedDm, currentChannel),
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: NixColors.textPrimary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
+                    titleSpacing: 0,
+                    title: NixPanelTitle(
+                      icon: _getAreaIcon(activeArea, currentChannel),
+                      title: _getAreaTitle(activeArea, nixState.selectedDm, currentChannel),
+                      subtitle: pagerNetworkLabel(gate),
                     ),
                     actions: [
                       IconButton(
@@ -261,7 +180,7 @@ class AppShell extends StatelessWidget {
                     ],
                   ),
                   drawer: Drawer(
-                    width: 366,
+                    width: constraints.maxWidth < 366 ? constraints.maxWidth : 366,
                     backgroundColor: NixColors.surfaceSidebar,
                     child: SafeArea(
                       child: Row(
@@ -305,64 +224,15 @@ class AppShell extends StatelessWidget {
                     ],
                   ),
                   bottomNavigationBar: NavigationBar(
-                          selectedIndex: switch (activeArea) {
-                            NixActiveArea.homePrivate => 0,
-                            NixActiveArea.spaces => 1,
-                            NixActiveArea.mediaIndex => 2,
-                            NixActiveArea.archive => 3,
-                            NixActiveArea.moneroP2p => 4,
-                            _ => 0,
-                          },
-                          backgroundColor: NixColors.surfaceCard,
-                          indicatorColor: context.accentColor,
-                          onDestinationSelected: (idx) {
-                            switch (idx) {
-                              case 0:
-                                nixState.openHomePrivateArea();
-                                break;
-                              case 1:
-                                nixState.selectFolder('all');
-                                if (nixState.spaces.isNotEmpty) {
-                                  nixState.selectSpace(nixState.currentSpace);
-                                }
-                                break;
-                              case 2:
-                                nixState.openMediaIndexArea();
-                                break;
-                              case 3:
-                                nixState.openArchiveArea();
-                                break;
-                              case 4:
-                                nixState.openMoneroP2pArea();
-                                break;
-                            }
-                          },
+                          selectedIndex: WorkspaceTab.forArea(activeArea).index,
+                          onDestinationSelected: (idx) => WorkspaceTab.values[idx].open(nixState),
                           destinations: [
-                            NavigationDestination(
-                              icon: const Icon(Icons.chat_bubble_outline_rounded),
-                              selectedIcon: Icon(Icons.chat_bubble_rounded, color: context.onAccentColor),
-                              label: 'Conversas',
-                            ),
-                            NavigationDestination(
-                              icon: const Icon(Icons.forum_outlined),
-                              selectedIcon: Icon(Icons.forum_rounded, color: context.onAccentColor),
-                              label: 'Grupos',
-                            ),
-                            NavigationDestination(
-                              icon: const Icon(Icons.local_library_outlined),
-                              selectedIcon: Icon(Icons.local_library_rounded, color: context.onAccentColor),
-                              label: 'Acervo',
-                            ),
-                            NavigationDestination(
-                              icon: const Icon(Icons.auto_stories_outlined),
-                              selectedIcon: Icon(Icons.auto_stories_rounded, color: context.onAccentColor),
-                              label: 'Arquivo',
-                            ),
-                            NavigationDestination(
-                              icon: const Icon(Icons.currency_exchange_rounded),
-                              selectedIcon: Icon(Icons.currency_exchange_rounded, color: context.onAccentColor),
-                              label: 'Monero',
-                            ),
+                            for (final tab in WorkspaceTab.values)
+                              NavigationDestination(
+                                icon: Icon(tab.icon),
+                                selectedIcon: Icon(tab.activeIcon, color: context.onAccentColor),
+                                label: tab.label,
+                              ),
                           ],
                         ),
                 );
@@ -565,55 +435,45 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 420,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: NixColors.surfaceCard,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: NixColors.surfaceBorderStrong),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.lock_outline, color: NixColors.accentYellow, size: 22),
-              const SizedBox(width: 10),
-              Text(
-                'DESBLOQUEAR COFRE SOBERANO',
-                style: TextStyle(
-                  color: NixColors.textPrimary,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13.5,
-                  letterSpacing: 0.7,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Seu banco SQLCipher local está cifrado em repouso. Informe sua frase-passe mestra para descriptografar a sessão e carregar sua identidade.',
-            style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
-          ),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(8),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 620),
+        child: PagerHousing(
+          reducedMotion: widget.nixState.settings.reducedMotion,
+          minDisplayHeight: 330,
+          nextLabel: 'Desbloquear o cofre',
+          onNext: _busy ? null : _unlock,
+          screen: SingleChildScrollView(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Desbloquear cofre', style: TextStyle(
+                  fontFamily: pagerDisplayFont, fontSize: 18, color: pagerInk,
+                )),
+                const Divider(color: Color(0xFF6DA5B3)),
+                PagerGuide(message: '> Digite sua frase-passe.', reducedMotion: widget.nixState.settings.reducedMotion),
           const SizedBox(height: 16),
           TextField(
             controller: _ctrl,
             obscureText: true,
             onSubmitted: (_) => _unlock(),
-            style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
+            style: const TextStyle(color: pagerInk, fontSize: 14),
             decoration: InputDecoration(
               labelText: 'Frase-passe mestra ou PIN de coação',
               errorText: _error,
               filled: true,
-              fillColor: NixColors.background,
+              fillColor: const Color(0xFFD2F3F4),
+              labelStyle: const TextStyle(color: pagerInk),
+              errorStyle: const TextStyle(color: Color(0xFF792438)),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             ),
           ),
           const SizedBox(height: 16),
           ElevatedButton.icon(
             onPressed: _busy ? null : _unlock,
+            style: ElevatedButton.styleFrom(backgroundColor: pagerInk, foregroundColor: pagerLcd),
             icon: _busy
                 ? const SizedBox(
                     width: 16,
@@ -653,18 +513,21 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
                         ],
                       ),
                     );
-                    if (confirmed == true) {
+                    if (mounted && confirmed == true) {
                       setState(() => _busy = true);
                       await widget.nixState.panicWipeAllData();
                     }
                   },
             child: Text(
               'Esqueceu a frase-passe? Resetar perfil ou recuperar via Seed A',
-              style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
+              style: const TextStyle(color: pagerInk, fontSize: 11.5),
               textAlign: TextAlign.center,
             ),
           ),
-        ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

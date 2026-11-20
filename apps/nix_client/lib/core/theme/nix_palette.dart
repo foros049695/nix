@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Modos oficiais de tema e superfície do Projeto Nix (V4).
 enum NixThemeMode {
-  darkYellow,  // Tema 1 (Padrão Inicial): #08090B bg, #17191E surface, #292C33 elevated, #FFC928 accent
+  darkYellow,  // Grafite e violeta. Identificador mantido para preferências existentes.
   lightYellow, // Tema 2: #FFFFFF bg, #F6F7F9 surface, #E9EBEF elevated, #FFC928 accent
   amoled,      // Variação AMOLED Puro: #000000 bg, #0A0A0E surface, #14141A elevated
   system,      // Segue o brilho do sistema operacional (Light Yellow / Dark Yellow)
@@ -13,6 +13,7 @@ enum NixPaletteType {
   yellow,   // Padrão V4: Amarelo Nix (#FFC928)
   original, // Prata / Monocromático
   violet,   // Violeta profundo
+  terminal, // Verde LCD sobre superfícies roxas
   blue,     // Azul ciber / Sky
   crimson,  // Carmesim / Red
   amber,    // Âmbar tático
@@ -79,33 +80,33 @@ class NixSurfaceScheme {
 
   bool get isLight => brightness == Brightness.light;
 
-  /// Tema 1 — Nix Dark Yellow (Especificação V4 Oficial)
+  /// Superfícies escuras de grafite e violeta.
   static const NixSurfaceScheme darkYellow = NixSurfaceScheme(
     brightness: Brightness.dark,
-    label: 'Nix Dark Yellow',
-    background: Color(0xFF08090B),
-    surfaceDock: Color(0xFF0E1014),
-    surfaceSidebar: Color(0xFF17191E),
-    surfaceCard: Color(0xFF17191E),
-    surfaceCardHover: Color(0xFF21242B),
-    surfaceElevated: Color(0xFF292C33),
-    surfaceElevatedHigh: Color(0xFF32363F),
-    surfaceActive: Color(0xFF292C33),
-    surfaceInput: Color(0xFF121418),
-    surfaceBorder: Color(0x22FFFFFF),
-    surfaceBorderStrong: Color(0x3DFFFFFF),
-    surfaceDivider: Color(0x18FFFFFF),
-    messageReceived: Color(0xFF17191E),
-    messageSent: Color(0xFF292C33),
-    messageHighlight: Color(0xFF333742),
+    label: 'Nix Violeta',
+    background: Color(0xFF100C17),
+    surfaceDock: Color(0xFF15101E),
+    surfaceSidebar: Color(0xFF1C1628),
+    surfaceCard: Color(0xFF1C1628),
+    surfaceCardHover: Color(0xFF2A1E3C),
+    surfaceElevated: Color(0xFF302145),
+    surfaceElevatedHigh: Color(0xFF392B4E),
+    surfaceActive: Color(0xFF302145),
+    surfaceInput: Color(0xFF140F1E),
+    surfaceBorder: Color(0x38796B94),
+    surfaceBorderStrong: Color(0xFF675682),
+    surfaceDivider: Color(0x426B567E),
+    messageReceived: Color(0xFF1C1628),
+    messageSent: Color(0xFF302145),
+    messageHighlight: Color(0xFF49346A),
     textPrimary: Color(0xFFFFFFFF),
-    textSecondary: Color(0xFFB7BAC4),
-    textMuted: Color(0xFFA7AAB6),
-    textDim: Color(0xFF9599A8),
+    textSecondary: Color(0xFFDBD0E9),
+    textMuted: Color(0xFFC3B6D6),
+    textDim: Color(0xFFAFA1C7),
     textDisabled: Color(0x45B7BAC4),
     iconPrimary: Color(0xFFFFFFFF),
-    iconSecondary: Color(0xFFB7BAC4),
-    iconMuted: Color(0xFFA0A4B2),
+    iconSecondary: Color(0xFFDBD0E9),
+    iconMuted: Color(0xFFC3B6D6),
   );
 
   /// Tema 2 — Nix Light Yellow (Especificação V4 Oficial)
@@ -225,6 +226,15 @@ class NixPalette {
     glowColor: Color(0x338B5CF6),
   );
 
+  static const NixPalette terminal = NixPalette(
+    type: NixPaletteType.terminal,
+    name: 'Verde / Roxo',
+    primaryAccent: Color(0xFF69E6AF),
+    secondaryAccent: Color(0xFFBBA1FF),
+    subtleAccent: Color(0xFF46AE80),
+    glowColor: Color(0x3869E6AF),
+  );
+
   static const NixPalette blue = NixPalette(
     type: NixPaletteType.blue,
     name: 'Nix Blue',
@@ -269,6 +279,8 @@ class NixPalette {
         return original;
       case NixPaletteType.violet:
         return violet;
+      case NixPaletteType.terminal:
+        return terminal;
       case NixPaletteType.blue:
         return blue;
       case NixPaletteType.crimson:
@@ -327,6 +339,7 @@ class NixPalette {
     yellow,
     original,
     violet,
+    terminal,
     blue,
     crimson,
     amber,

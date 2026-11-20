@@ -51,6 +51,8 @@ void main() {
     expect(find.text('ETAPA 2 DE 9'), findsOneWidget);
 
     // Clica no consentimento
+    await tester.ensureVisible(find.byType(Checkbox));
+    await tester.pumpAndSettle();
     await tester.tap(find.byType(Checkbox));
     await tester.pumpAndSettle();
 

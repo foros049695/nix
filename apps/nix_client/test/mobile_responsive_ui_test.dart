@@ -97,7 +97,6 @@ void main() {
       await tester.pump();
 
       expect(find.text('Nix Archive'), findsOneWidget);
-      expect(find.text('Fase 19'), findsOneWidget);
       expect(find.text('Novo Artigo'), findsOneWidget);
       expect(find.text('Discussões'), findsOneWidget);
     });

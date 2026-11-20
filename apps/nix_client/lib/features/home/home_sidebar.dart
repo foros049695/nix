@@ -82,8 +82,42 @@ class HomeSidebar extends StatelessWidget {
           // Navegação principal + Lista de conversas (com Mensagens Salvas no topo)
           Expanded(
             child: ListView(
+              key: const Key('home_sidebar_navigation'),
               padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
               children: [
+                const SizedBox(height: 10),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'CONVERSAS & MENSAGENS SALVAS',
+                          style: NixTokens.labelUppercase(),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        key: const Key('add_contact_sidebar_button'),
+                        icon: Icon(Icons.person_add_alt_1_rounded, size: 16, color: NixColors.accentYellow),
+                        tooltip: 'Adicionar Contato por ID',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _showAddContactDialog(context, nixState),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+
+                for (final dm in filteredDms.where((dm) => dm.isSavedMessages))
+                  _DirectChatItemTile(
+                    dm: dm,
+                    isSelected: nixState.activeArea == NixActiveArea.homePrivate &&
+                        activeTab == HomeSubTab.directChat && selectedDm?.id == dm.id,
+                    onTap: () => nixState.selectDirectMessage(dm),
+                  ),
                 _navTile(
                   context,
                   icon: Icons.badge_outlined,
@@ -171,32 +205,6 @@ class HomeSidebar extends StatelessWidget {
                   },
                 ),
 
-                const SizedBox(height: 10),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'CONVERSAS & MENSAGENS SALVAS',
-                          style: NixTokens.labelUppercase(),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      IconButton(
-                        key: const Key('add_contact_sidebar_button'),
-                        icon: Icon(Icons.person_add_alt_1_rounded, size: 16, color: NixColors.accentYellow),
-                        tooltip: 'Adicionar Contato por ID',
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: () => _showAddContactDialog(context, nixState),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 4),
-
                 if (filteredDms.isEmpty)
                   Padding(
                     padding: const EdgeInsets.all(14),
@@ -206,7 +214,7 @@ class HomeSidebar extends StatelessWidget {
                     ),
                   )
                 else
-                  ...filteredDms.map((dm) {
+                  ...filteredDms.where((dm) => !dm.isSavedMessages).map((dm) {
                     final isSelected = nixState.activeArea == NixActiveArea.homePrivate &&
                         activeTab == HomeSubTab.directChat &&
                         selectedDm?.id == dm.id;

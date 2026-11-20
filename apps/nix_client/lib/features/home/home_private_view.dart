@@ -8,6 +8,8 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../chat/chat_input_bar.dart';
+import '../chat/conversation_surface.dart';
+import '../design/nix_surfaces.dart';
 import '../chat/message_bubble.dart';
 import '../profile/pager_profile.dart';
 import '../profile/peer_card_id_dialog.dart';
@@ -480,44 +482,25 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                   color: dm.isSavedMessages ? context.accentTextColor : NixColors.accentGreen,
                 ),
                 const SizedBox(width: 8),
-                InkWell(
-                  onTap: dm.isSavedMessages
-                      ? () => state.toggleConversationInfoPanel()
-                      : () => PeerCardIdDialog.showForDirectMessage(context, dm),
-                  borderRadius: BorderRadius.circular(4),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          dm.peerName,
-                          style: TextStyle(
-                            color: NixColors.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        if (!dm.isSavedMessages) ...[
-                          const SizedBox(width: 4),
-                          Icon(Icons.badge_outlined, size: 12, color: context.accentTextColor),
-                        ],
-                      ],
+                Expanded(
+                  child: InkWell(
+                    onTap: dm.isSavedMessages
+                        ? state.toggleConversationInfoPanel
+                        : () => PeerCardIdDialog.showForDirectMessage(context, dm),
+                    borderRadius: NixTokens.borderButtonCompact,
+                    child: NixPanelTitle(
+                      icon: dm.isSavedMessages ? Icons.bookmark_outline : Icons.person_outline,
+                      title: dm.peerName,
+                      subtitle: dm.hasActiveSession && state.isStrictOffGridMode
+                          ? 'Sessão E2EE · Bluetooth direto' : dm.statusText,
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                if (!dm.isSavedMessages) _TrustLevelIndicator(level: dm.trustLevel),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    dm.hasActiveSession && state.isStrictOffGridMode
-                        ? 'Sessão E2EE · Bluetooth direto'
-                        : dm.statusText,
-                    style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
-                    overflow: TextOverflow.ellipsis,
+                if (!dm.isSavedMessages && MediaQuery.sizeOf(context).width >= 700)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: _TrustLevelIndicator(level: dm.trustLevel),
                   ),
-                ),
                 if (!dm.isSavedMessages)
                   IconButton(
                     key: const Key('dm_sync_relay_button'),
@@ -649,7 +632,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
 
         // Lista de Mensagens Cifradas
         Expanded(
-          child: dm.messages.isEmpty
+          child: ConversationSurface(child: dm.messages.isEmpty
               ? Center(
                   child: Text(
                     dm.isSavedMessages
@@ -667,6 +650,7 @@ class _HomePrivateViewState extends State<HomePrivateView> {
                     return MessageBubble(message: msg);
                   },
                 ),
+          ),
         ),
 
         // Compositor Completo para DMs e Mensagens Salvas (Anexos, Emojis, Áudio, Temporizador)

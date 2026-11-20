@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import '../design/nix_surfaces.dart';
 import 'qr_code_painter.dart';
 
 class PeerCardIdDialog extends StatelessWidget {
@@ -127,27 +128,8 @@ class PeerCardIdDialog extends StatelessWidget {
             insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 520),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: NixTokens.amoledMetalGradient,
-                  borderRadius: NixTokens.borderLg,
-                  border: Border.all(
-                    color: accent.withValues(alpha: 0.5),
-                    width: 1.4,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: accent.withValues(alpha: 0.18),
-                      blurRadius: 32,
-                      spreadRadius: 2,
-                    ),
-                    const BoxShadow(
-                      color: Colors.black,
-                      blurRadius: 24,
-                      offset: Offset(0, 12),
-                    ),
-                  ],
-                ),
+              child: NixFrame(
+                child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -169,13 +151,12 @@ class PeerCardIdDialog extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              const Text(
-                                'NIX SOVEREIGN CARD ID',
+                              Text(
+                                'Perfil do contato',
                                 style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1.6,
+                                  color: NixColors.textPrimary,
+                                  fontFamily: nixDisplayFont,
+                                  fontSize: 19,
                                 ),
                               ),
                             ],
@@ -203,8 +184,8 @@ class PeerCardIdDialog extends StatelessWidget {
                             const SizedBox(height: 16),
                             Text(
                               peerName,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: NixColors.textPrimary,
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -259,11 +240,11 @@ class PeerCardIdDialog extends StatelessWidget {
                                   ),
                                   child: Center(
                                     child: Text(
-                                      peerName.isNotEmpty ? peerName[0].toUpperCase() : '?',
+                                      peerName.isNotEmpty ? peerName.characters.first.toUpperCase() : '?',
                                       style: TextStyle(
-                                        color: accent,
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 24,
+                                        color: context.accentTextColor,
+                                        fontFamily: nixDisplayFont,
+                                        fontSize: 25,
                                       ),
                                     ),
                                   ),
@@ -458,6 +439,7 @@ class PeerCardIdDialog extends StatelessWidget {
                       ),
                     ],
                   ],
+                ),
                 ),
               ),
             ),

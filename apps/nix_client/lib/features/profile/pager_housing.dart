@@ -1,22 +1,40 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
+import '../../core/security/sovereign_security_gate.dart';
 
 const pagerInk = Color(0xFF10262D);
 const pagerLcd = Color(0xFFAEE9ED);
+const pagerDisplayFont = 'PixelifySans';
 
+String pagerNetworkLabel(SovereignSecurityGateStatus status) {
+  if (status.isStrictOffGridMode) return 'Off-grid';
+  if (status.isTorAnonymityReady) return 'Tor Onion v3';
+  if (status.isBootstrapping) return 'Conectando Tor';
+  return 'Sem rede';
+}
+
+/// Carcaça renderizada do protótipo do Pager em 1000 × 650.
+/// Só as laterais do LCD se estendem para acomodar formulários e texto ampliado.
 class PagerHousing extends StatefulWidget {
   final bool reducedMotion;
   final Widget screen;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
-  final VoidCallback onMenu;
+  final VoidCallback? onMenu;
+  final String nextLabel;
+  final double minDisplayHeight;
 
   const PagerHousing({
     super.key,
     required this.reducedMotion,
     required this.screen,
-    required this.onPrevious,
-    required this.onNext,
-    required this.onMenu,
+    this.onPrevious,
+    this.onNext,
+    this.onMenu,
+    this.nextLabel = 'Próxima tela',
+    this.minDisplayHeight = 224,
   });
 
   @override
@@ -28,134 +46,139 @@ class _PagerHousingState extends State<PagerHousing> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      onHover: widget.reducedMotion
-          ? null
-          : (event) {
-              final size = context.size;
-              if (size == null || size.isEmpty) return;
-              setState(() => _tilt = Offset(
-                    (event.localPosition.dx / size.width - .5).clamp(-.5, .5),
-                    (event.localPosition.dy / size.height - .5).clamp(-.5, .5),
-                  ));
-            },
-      onExit: (_) {
-        if (_tilt != Offset.zero) setState(() => _tilt = Offset.zero);
-      },
-      child: TweenAnimationBuilder<Offset>(
-        duration: widget.reducedMotion
-            ? Duration.zero
-            : const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        tween: Tween(end: widget.reducedMotion ? Offset.zero : _tilt),
-        builder: (context, tilt, child) => Transform(
-          alignment: Alignment.center,
-          transform: Matrix4.identity()
-            ..setEntry(3, 2, .001)
-            ..rotateX(tilt.dy * .12)
-            ..rotateY(tilt.dx * -.13),
-          child: child,
-        ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(31),
-            border: Border.all(color: const Color(0xFF9381AC), width: 1.5),
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF696179), Color(0xFF40384F), Color(0xFF262331)],
-              stops: [0, .45, 1],
-            ),
-            boxShadow: const [
-              BoxShadow(color: Color(0xFF24182D), offset: Offset(0, 5)),
-              BoxShadow(color: Color(0xFF71528B), offset: Offset(0, 7)),
-              BoxShadow(
-                  color: Color(0x66090011),
-                  offset: Offset(0, 12),
-                  blurRadius: 14),
-            ],
+    final reducesMotion =
+        widget.reducedMotion || MediaQuery.disableAnimationsOf(context);
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      if (width <= 0) return const SizedBox.shrink();
+      final scale = width / 1000;
+      final displayHeight = math.max(306 * scale, widget.minDisplayHeight);
+      final extension = displayHeight - 306 * scale;
+      final height = 650 * scale + extension;
+
+      void setTilt(Offset tilt) {
+        if (_tilt != tilt) setState(() => _tilt = tilt);
+      }
+
+      return MouseRegion(
+        onHover: reducesMotion
+            ? null
+            : (event) => setTilt(Offset(
+                  (event.localPosition.dx / width - .5).clamp(-.5, .5),
+                  (event.localPosition.dy / height - .5).clamp(-.5, .5),
+                )),
+        onExit: (_) => setTilt(Offset.zero),
+        child: TweenAnimationBuilder<Offset>(
+          duration:
+              reducesMotion ? Duration.zero : const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          tween: Tween(end: reducesMotion ? Offset.zero : _tilt),
+          builder: (_, tilt, child) => Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, .00085)
+              ..rotateX(tilt.dy * .10)
+              ..rotateY(tilt.dx * -.12),
+            child: child,
           ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 11),
-            child: Column(
-              children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(21),
-                    border:
-                        Border.all(color: const Color(0xFFB09BC6), width: 1.5),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFF372B42),
-                        Color(0xFF735E8E),
-                        Color(0xFF271E31)
-                      ],
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                          color: Color(0xCC201827),
-                          offset: Offset(0, 3),
-                          blurRadius: 3),
-                    ],
+          child: SizedBox(
+            width: width,
+            height: height,
+            child: DecoratedBox(
+              key: const Key('pager_rendered_shell'),
+              decoration: BoxDecoration(
+                image: DecorationImage(
+                  image: const AssetImage('assets/images/pager_shell.webp'),
+                  fit: BoxFit.fill,
+                  scale: 1 / scale,
+                  centerSlice: Rect.fromLTRB(
+                    133 * scale,
+                    143 * scale,
+                    867 * scale,
+                    395 * scale,
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(5),
+                ),
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: 133 * scale,
+                    right: 133 * scale,
+                    top: 114 * scale,
+                    height: displayHeight,
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(15),
-                      child: ColoredBox(color: pagerLcd, child: widget.screen),
+                      borderRadius: BorderRadius.circular(23 * scale),
+                      child: ColoredBox(
+                        color: pagerLcd,
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: widget.screen,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 11),
-                LayoutBuilder(
-                  builder: (context, constraints) => Row(
-                    children: [
-                      if (constraints.maxWidth > 250)
-                        const Expanded(
-                          child: Text('NIX',
-                              style: TextStyle(
-                                color: Color(0xFFF1E6FF),
-                                fontFamily: 'PixelifySans',
-                                fontSize: 14,
-                              )),
-                        ),
-                      Expanded(
-                        flex: 2,
-                        child: _PagerKey(
-                          label: 'Anterior',
-                          icon: Icons.chevron_left_rounded,
-                          onPressed: widget.onPrevious,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        flex: 3,
-                        child: _PagerKey(
-                          label: 'Próxima tela',
-                          text: 'OK',
-                          onPressed: widget.onNext,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        flex: 2,
-                        child: _PagerKey(
-                          label: 'Menu do Pager',
-                          icon: Icons.menu_rounded,
-                          onPressed: widget.onMenu,
-                        ),
-                      ),
-                      if (constraints.maxWidth > 250)
-                        const Expanded(
-                          child: Icon(Icons.drag_handle_rounded,
-                              size: 17, color: Color(0xFFABA0B7)),
-                        ),
-                    ],
+                  _positionKey(
+                    scale,
+                    extension,
+                    261,
+                    128,
+                    'Anterior',
+                    widget.onPrevious,
                   ),
-                ),
-              ],
+                  _positionKey(
+                    scale,
+                    extension,
+                    398,
+                    204,
+                    widget.nextLabel,
+                    widget.onNext,
+                  ),
+                  _positionKey(
+                    scale,
+                    extension,
+                    611,
+                    128,
+                    'Menu do Pager',
+                    widget.onMenu,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  Widget _positionKey(
+    double scale,
+    double extension,
+    double left,
+    double width,
+    String label,
+    VoidCallback? action,
+  ) {
+    final height = math.max(44.0, 80 * scale);
+    return Positioned(
+      left: left * scale,
+      width: width * scale,
+      top: 499 * scale + extension - height / 2,
+      height: height,
+      child: Semantics(
+        label: label,
+        button: true,
+        enabled: action != null,
+        child: Tooltip(
+          message: label,
+          excludeFromSemantics: true,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: action,
+              borderRadius: BorderRadius.circular(9),
+              focusColor: const Color(0x88FFFFFF),
+              hoverColor: const Color(0x27FFFFFF),
+              splashColor: const Color(0x44160D25),
             ),
           ),
         ),
@@ -164,43 +187,84 @@ class _PagerHousingState extends State<PagerHousing> {
   }
 }
 
-class _PagerKey extends StatelessWidget {
-  final String label;
-  final IconData? icon;
-  final String? text;
-  final VoidCallback? onPressed;
+/// Mensagem da assistente no LCD. A leitura assistiva recebe a frase completa.
+class PagerGuide extends StatelessWidget {
+  final String message;
+  final bool reducedMotion;
 
-  const _PagerKey({required this.label, this.icon, this.text, this.onPressed});
+  final Widget? actions;
+  final double? portraitSize;
+
+  const PagerGuide({
+    super.key,
+    required this.message,
+    this.reducedMotion = false,
+    this.actions,
+    this.portraitSize,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final prominent = text != null;
-    return Tooltip(
-      message: label,
-      child: FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          backgroundColor:
-              prominent ? const Color(0xFFB095DF) : const Color(0xFF494255),
-          foregroundColor:
-              prominent ? const Color(0xFF251833) : const Color(0xFFF4EDFF),
-          disabledBackgroundColor: const Color(0xFF3B3446),
-          disabledForegroundColor: const Color(0xFFB6ACC3),
-          minimumSize: const Size(0, 44),
-          padding: EdgeInsets.zero,
-          elevation: 3,
-          shadowColor: const Color(0xFF140B1B),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: Color(0xFF816F96)),
+    final reducesMotion =
+        reducedMotion || MediaQuery.disableAnimationsOf(context);
+    return LayoutBuilder(builder: (context, constraints) {
+      final size =
+          portraitSize ?? (constraints.maxWidth * .235).clamp(48.0, 108.0);
+      return Row(
+        children: [
+          Image.asset(
+            'assets/images/pager_assistant.png',
+            width: size,
+            height: size,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.none,
+            semanticLabel: 'Assistente Nix em pixel art',
           ),
-        ),
-        child: text != null
-            ? Text(text!,
-                style:
-                    const TextStyle(fontFamily: 'PixelifySans', fontSize: 17))
-            : Icon(icon, size: 20),
-      ),
-    );
+          SizedBox(width: constraints.maxWidth >= 340 ? 20 : 10),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(
+                  label: message,
+                  child: ExcludeSemantics(
+                    child: TweenAnimationBuilder<double>(
+                      key: ValueKey(message),
+                      tween: Tween(begin: reducesMotion ? 1 : 0, end: 1),
+                      duration: reducesMotion
+                          ? Duration.zero
+                          : const Duration(milliseconds: 600),
+                      builder: (context, fraction, _) => Stack(
+                        children: [
+                          Opacity(
+                              opacity: 0,
+                              child: Text('${message}_', style: _textStyle)),
+                          Text(
+                            '${message.substring(0, (message.length * fraction).floor())}_',
+                            style: _textStyle,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (actions != null) ...[
+                  const SizedBox(height: 7),
+                  actions!,
+                ],
+              ],
+            ),
+          ),
+        ],
+      );
+    });
   }
+
+  static const _textStyle = TextStyle(
+    color: pagerInk,
+    fontFamily: pagerDisplayFont,
+    fontSize: 17,
+    height: 1.3,
+  );
 }

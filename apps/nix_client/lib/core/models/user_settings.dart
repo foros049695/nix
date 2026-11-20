@@ -129,7 +129,7 @@ class UserSettings {
 
   const UserSettings({
     this.themeMode = NixThemeMode.darkYellow,
-    this.paletteType = NixPaletteType.yellow,
+    this.paletteType = NixPaletteType.violet,
     this.customPaletteColor,
     this.floatingWindowMode = true,
     this.windowWidth = 1152.0,
@@ -367,7 +367,7 @@ class UserSettings {
         }
       }
     }
-    NixPaletteType parsedPalette = NixPaletteType.yellow;
+    NixPaletteType parsedPalette = NixPaletteType.violet;
     if (json['paletteType'] is String) {
       for (final p in NixPaletteType.values) {
         if (p.name == json['paletteType']) {

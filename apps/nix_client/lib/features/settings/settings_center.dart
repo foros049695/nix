@@ -9,6 +9,7 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../core/theme/nix_palette.dart';
 import '../../state/nix_state.dart';
+import '../design/nix_surfaces.dart';
 import '../dialogs/sovereign_onboarding_dialog.dart';
 
 /// Central de Configurações Modular (V2 — Aparência Living AMOLED, Privacidade, Dispositivos e Módulos).
@@ -152,11 +153,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
     final activeCat = nixState.activeSettingsCategory;
 
     return Container(
-      decoration: BoxDecoration(
-        color: NixColors.background,
-        borderRadius: NixTokens.borderLg,
-        border: Border.all(color: NixColors.surfaceBorderStrong, width: 1),
-      ),
+      decoration: nixFrameDecoration(context, background: context.bgColor),
       clipBehavior: Clip.antiAlias,
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -192,7 +189,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
                               Icon(Icons.arrow_back_rounded, size: 15, color: NixColors.textPrimary),
                               SizedBox(width: 6),
                               Text(
-                                'Card ID',
+                                'Pager',
                                 style: TextStyle(
                                   color: NixColors.textPrimary,
                                   fontSize: 12,
@@ -471,9 +468,26 @@ class _SettingsCenterState extends State<SettingsCenter> {
       children: [
         _sectionHeader(
           'Configurações → Aparência → Temas',
-          'Escolha entre os dois temas oficiais com destaque amarelo (#FFC928), AMOLED puro (#000000) ou acompanhe o sistema.',
+          'Escolha uma combinação pronta ou ajuste a superfície e o destaque separadamente.',
         ),
-        Text('TEMAS OFICIAIS DO NIX', style: NixTokens.labelUppercase()),
+        Wrap(
+          spacing: 8, runSpacing: 8,
+          children: [
+            for (final (label, mode, palette, icon) in const [
+              ('Preto / Roxo', NixThemeMode.darkYellow, NixPaletteType.violet, Icons.dark_mode_outlined),
+              ('Branco / Amarelo', NixThemeMode.lightYellow, NixPaletteType.yellow, Icons.light_mode_outlined),
+              ('Verde / Roxo', NixThemeMode.darkYellow, NixPaletteType.terminal, Icons.terminal_rounded),
+            ])
+              ChoiceChip(
+                label: Text(label),
+                avatar: Icon(icon, size: 16),
+                selected: s.themeMode == mode && s.paletteType == palette,
+                onSelected: (_) => state.updateSettings(s.copyWith(themeMode: mode, paletteType: palette)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        Text('SUPERFÍCIES', style: NixTokens.labelUppercase()),
         const SizedBox(height: 8),
         Wrap(
           spacing: 12,
@@ -483,11 +497,11 @@ class _SettingsCenterState extends State<SettingsCenter> {
               key: const Key('theme_mode_dark_yellow'),
               state: state,
               mode: NixThemeMode.darkYellow,
-              title: 'Dark Yellow',
-              subtitle: '#08090B · #FFC928',
-              previewBg: const Color(0xFF08090B),
-              previewSurface: const Color(0xFF17191E),
-              previewElevated: const Color(0xFF292C33),
+              title: 'Escuro Violeta',
+              subtitle: 'Grafite e violeta',
+              previewBg: NixSurfaceScheme.darkYellow.background,
+              previewSurface: NixSurfaceScheme.darkYellow.surfaceSidebar,
+              previewElevated: NixSurfaceScheme.darkYellow.surfaceElevated,
               previewText: const Color(0xFFFFFFFF),
               isSelected: s.themeMode == NixThemeMode.darkYellow,
             ),
