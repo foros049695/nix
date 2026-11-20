@@ -164,7 +164,19 @@ void main() {
     expect(folder.conversationIds, unorderedEquals([study.id, general.id]));
     await tester.tap(find.byKey(Key('folder_tab_${folder.id}')));
     await tester.pumpAndSettle();
-    await drag(find.text(study.name), find.byKey(const Key('folder_tab_all')));
+    final member =
+        find.byKey(ValueKey('folder_member_${folder.id}_${study.id}'));
+    final expand = find.byKey(ValueKey('folder_expand_${folder.id}'));
+    expect(member, findsOneWidget);
+    await tester.tap(expand);
+    await tester.pumpAndSettle();
+    expect(member, findsNothing);
+    await tester.tap(expand);
+    await tester.pumpAndSettle();
+    await drag(
+        find.descendant(
+            of: find.byType(ChannelsSidebar), matching: find.text(study.name)),
+        find.byKey(const Key('folder_tab_all')));
     expect(state.folders.firstWhere((f) => f.id == folder.id).conversationIds,
         [general.id]);
     expect(tester.takeException(), isNull);

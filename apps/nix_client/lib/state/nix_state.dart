@@ -4855,7 +4855,9 @@ class NixState extends ChangeNotifier {
   }
 
   void toggleFolderExpanded(String folderId) {
-    if (_workspaceFolders.toggleExpanded(folderId)) notifyListeners();
+    if (!_workspaceFolders.toggleExpanded(folderId)) return;
+    _persistState(workspaceChanged: true);
+    notifyListeners();
   }
 
   void createSpaceFolder(

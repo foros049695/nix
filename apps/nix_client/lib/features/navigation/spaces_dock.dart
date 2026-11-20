@@ -145,18 +145,98 @@ class SpacesDock extends StatelessWidget {
                                       .withValues(alpha: 0.14),
                                 )
                               : null,
-                          child: WorkspaceDragSource(
-                            id: 'folder:${folder.id}',
-                            label: folder.name,
-                            child: _TelegramFolderTab(
-                              key: Key('folder_tab_${folder.id}'),
-                              icon: folderIconFromName(folder.iconName),
-                              label: folder.name,
-                              customDotColor: folderColor,
-                              unreadCount: folderUnread,
-                              isSelected: isSelected,
-                              onTap: () => nixState.selectFolder(folder.id),
-                            ),
+                          child: Column(
+                            children: [
+                              WorkspaceDragSource(
+                                id: 'folder:${folder.id}',
+                                label: folder.name,
+                                child: _TelegramFolderTab(
+                                  key: Key('folder_tab_${folder.id}'),
+                                  icon: folderIconFromName(folder.iconName),
+                                  label: folder.name,
+                                  customDotColor: folderColor,
+                                  unreadCount: folderUnread,
+                                  isSelected: isSelected,
+                                  onTap: () => nixState.selectFolder(folder.id),
+                                ),
+                              ),
+                              IconButton(
+                                key: ValueKey('folder_expand_${folder.id}'),
+                                constraints: const BoxConstraints(
+                                    minWidth: 40, minHeight: 40),
+                                tooltip: folder.isExpanded
+                                    ? 'Recolher ${folder.name}'
+                                    : 'Expandir ${folder.name}',
+                                onPressed: () =>
+                                    nixState.toggleFolderExpanded(folder.id),
+                                icon: Icon(
+                                    folder.isExpanded
+                                        ? Icons.expand_less
+                                        : Icons.expand_more,
+                                    size: 17),
+                              ),
+                              if (folder.isExpanded)
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: folderColor.withValues(alpha: .12),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Column(children: [
+                                    for (final space in nixState.spaces.where(
+                                        (space) =>
+                                            folder.spaceIds.contains(space.id)))
+                                      WorkspaceDragSource(
+                                        id: space.id,
+                                        label: space.name,
+                                        child: _SpaceCompactTile(
+                                          space: space,
+                                          isSelected: space.id ==
+                                              nixState.currentSpace.id,
+                                          onTap: () {
+                                            nixState.selectFolder(folder.id);
+                                            nixState.selectSpace(space);
+                                          },
+                                        ),
+                                      ),
+                                    for (final channel in nixState.spaces
+                                        .expand((space) => space.channels)
+                                        .where((channel) => folder
+                                            .conversationIds
+                                            .contains(channel.id)))
+                                      WorkspaceDragSource(
+                                        id: channel.id,
+                                        label: channel.name,
+                                        child: _TelegramFolderTab(
+                                          key: ValueKey(
+                                              'folder_member_${folder.id}_${channel.id}'),
+                                          icon: channel.icon,
+                                          label: channel.name,
+                                          isSelected: channel.id ==
+                                              nixState.currentChannel.id,
+                                          onTap: () {
+                                            nixState.selectFolder(folder.id);
+                                            nixState.selectChannel(channel);
+                                          },
+                                        ),
+                                      ),
+                                    for (final dm in nixState.directMessages
+                                        .where((dm) => folder.conversationIds
+                                            .contains(dm.id)))
+                                      WorkspaceDragSource(
+                                        id: dm.id,
+                                        label: dm.peerName,
+                                        child: _TelegramFolderTab(
+                                          icon: Icons.chat_bubble_outline,
+                                          label: dm.peerName,
+                                          isSelected:
+                                              dm.id == nixState.selectedDm?.id,
+                                          onTap: () =>
+                                              nixState.selectDirectMessage(dm),
+                                        ),
+                                      ),
+                                  ]),
+                                ),
+                            ],
                           ),
                         );
                       },

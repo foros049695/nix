@@ -13,3 +13,5 @@ Para retomar, leia `AGENTS.md`, este arquivo e `git status --short --branch`. No
 Explorar passou os 4 testes de `passport_display_regression_test.dart`. O formato de grupo passou 12 testes de fórum SQLCipher e layout móvel, incluindo conversão, desbloqueio e restauração dos tópicos. Próxima etapa: imagens no formulário de tópico.
 
 Imagem de tópico incorporada ao cofre com a sanitização do Archive. O teste SQLCipher confirmou os bytes após alternar o formato e reabrir o cofre. Recorte manual do anexo segue pendente.
+
+As pastas do dock passaram a expandir, recolher e listar entradas, com preferência de expansão persistida. Os 5 testes de `attachments_call_and_music_test.dart` passaram, incluindo expansão e remoção da pasta com o gesto já suportado pela lista de canais.
