@@ -19,6 +19,7 @@ import sqlite3
 import sys
 import time
 import hashlib
+import tempfile
 from typing import Dict, List, Any, Optional
 
 # Adiciona diretório de importadores ao path
@@ -816,19 +817,33 @@ def main():
         print(f"[Aviso] Utilizando chave de teste exclusiva para fixtures: {key_path}")
 
     print(f"[Nix Metadata Builder] Criando banco SQLite FTS5 (production={args.production})...")
-    meta = create_catalog_database(args.out_db, records, version=args.version)
+    db_out = os.path.abspath(args.out_db)
+    manifest_out = os.path.abspath(args.out_manifest)
+    if os.path.realpath(db_out) == os.path.realpath(manifest_out):
+        parser.error("o banco e o manifesto precisam ter caminhos distintos")
+    os.makedirs(os.path.dirname(db_out), exist_ok=True)
+    os.makedirs(os.path.dirname(manifest_out), exist_ok=True)
+    with (
+        tempfile.TemporaryDirectory(prefix=".nix-catalog-", dir=os.path.dirname(db_out)) as db_tmp,
+        tempfile.TemporaryDirectory(prefix=".nix-manifest-", dir=os.path.dirname(manifest_out)) as manifest_tmp,
+    ):
+        staged_db = os.path.join(db_tmp, os.path.basename(db_out))
+        staged_manifest = os.path.join(manifest_tmp, os.path.basename(manifest_out))
+        meta = create_catalog_database(staged_db, records, version=args.version)
+        manifest = sign_catalog_artifact(
+            staged_db,
+            staged_manifest,
+            version=args.version,
+            entry_count=meta['entry_count'],
+            key_path=key_path,
+            key_env=args.key_env,
+            is_production=args.production,
+            previous_key_path=args.rotate_from,
+        )
+        os.replace(staged_db, db_out)
+        os.replace(staged_manifest, manifest_out)
+    meta['path'] = args.out_db
     print(f"[OK] Banco gerado com {meta['entry_count']} obras em {meta['path']} ({meta['byte_size']} bytes, SHA-256: {meta['sha256'][:16]}...)")
-
-    manifest = sign_catalog_artifact(
-        args.out_db,
-        args.out_manifest,
-        version=args.version,
-        entry_count=meta['entry_count'],
-        key_path=key_path,
-        key_env=args.key_env,
-        is_production=args.production,
-        previous_key_path=args.rotate_from
-    )
     print(f"[OK] Manifesto assinado com Ed25519 gravado em {args.out_manifest}")
     print(f"     Signer (Ed25519 Pub): {manifest['signerEd25519Hex']}")
     print(f"     Signature (Ed25519): {manifest['signatureHex'][:32]}...")
