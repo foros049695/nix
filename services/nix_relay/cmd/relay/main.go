@@ -131,6 +131,7 @@ func NewMux(cfg buffer.Config, store buffer.RelayStore, pruner *buffer.AutoPrune
 				}
 				for i := range envs {
 					envs[i].QuotaToken = ""
+					envs[i].QuotaTokenHash = ""
 				}
 				writeJSON(w, http.StatusOK, map[string]any{"envelopes": envs})
 				return

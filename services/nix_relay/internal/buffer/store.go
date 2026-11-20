@@ -28,12 +28,13 @@ var (
 
 // Envelope representa um payload cifrado opaco armazenado em trânsito.
 type Envelope struct {
-	ID         string `json:"id"`
-	PayloadB64 string `json:"payload_b64"`
-	CreatedAt  int64  `json:"created_at"`
-	ExpiresAt  int64  `json:"expires_at"`
-	ByteSize   int64  `json:"byte_size"`
-	QuotaToken string `json:"quota_token,omitempty"`
+	ID             string `json:"id"`
+	PayloadB64     string `json:"payload_b64"`
+	CreatedAt      int64  `json:"created_at"`
+	ExpiresAt      int64  `json:"expires_at"`
+	ByteSize       int64  `json:"byte_size"`
+	QuotaToken     string `json:"quota_token,omitempty"` // Leitura de registros legados.
+	QuotaTokenHash string `json:"quota_token_hash,omitempty"`
 }
 
 // CapabilityScope define os escopos de autorização de tokens de acesso cego.
@@ -152,23 +153,24 @@ func (s *BlindMailboxStore) Store(
 		ttl = capDur
 	}
 
+	quotaHash := quotaTokenHash(quotaToken)
 	env := Envelope{
-		ID:         randomID(),
-		PayloadB64: payloadB64,
-		CreatedAt:  now.Unix(),
-		ExpiresAt:  now.Add(ttl).Unix(),
-		ByteSize:   byteSize,
-		QuotaToken: quotaToken,
+		ID:             randomID(),
+		PayloadB64:     payloadB64,
+		CreatedAt:      now.Unix(),
+		ExpiresAt:      now.Add(ttl).Unix(),
+		ByteSize:       byteSize,
+		QuotaTokenHash: quotaHash,
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if quotaToken != "" && s.quotaUsage[quotaToken]+byteSize > s.maxInFlightPerQuotaToken {
+	if quotaHash != "" && s.quotaUsage[quotaHash]+byteSize > s.maxInFlightPerQuotaToken {
 		return Envelope{}, ErrQuotaExceeded
 	}
-	if quotaToken != "" {
-		s.quotaUsage[quotaToken] += byteSize
+	if quotaHash != "" {
+		s.quotaUsage[quotaHash] += byteSize
 	}
 	s.mailboxes[mailboxID] = append(s.mailboxes[mailboxID], env)
 	s.storedBytes += byteSize
@@ -181,8 +183,8 @@ func (s *BlindMailboxStore) Store(
 		}
 		s.storedBytes -= byteSize
 		s.totalStored--
-		if quotaToken != "" {
-			s.quotaUsage[quotaToken] -= byteSize
+		if quotaHash != "" {
+			s.quotaUsage[quotaHash] -= byteSize
 		}
 		return Envelope{}, fmt.Errorf("%w: %v", ErrPersistence, err)
 	}
@@ -334,10 +336,10 @@ func (s *BlindMailboxStore) subtractAccountingLocked(env Envelope) {
 	if s.storedBytes < 0 {
 		s.storedBytes = 0
 	}
-	if env.QuotaToken != "" {
-		s.quotaUsage[env.QuotaToken] -= env.ByteSize
-		if s.quotaUsage[env.QuotaToken] <= 0 {
-			delete(s.quotaUsage, env.QuotaToken)
+	if env.QuotaTokenHash != "" {
+		s.quotaUsage[env.QuotaTokenHash] -= env.ByteSize
+		if s.quotaUsage[env.QuotaTokenHash] <= 0 {
+			delete(s.quotaUsage, env.QuotaTokenHash)
 		}
 	}
 }
@@ -389,23 +391,41 @@ func (s *BlindMailboxStore) loadFromDisk() error {
 			continue
 		}
 		var valid []Envelope
+		migrated := false
 		for _, env := range list {
+			if env.QuotaToken != "" {
+				env.QuotaTokenHash = quotaTokenHash(env.QuotaToken)
+				env.QuotaToken = ""
+				migrated = true
+			}
 			if env.ExpiresAt > nowUnix {
 				valid = append(valid, env)
 				s.storedBytes += env.ByteSize
 				// Reconstrói cotas consumidas em trânsito (Marco P0-4 / REL02)
-				if env.QuotaToken != "" {
-					s.quotaUsage[env.QuotaToken] += env.ByteSize
+				if env.QuotaTokenHash != "" {
+					s.quotaUsage[env.QuotaTokenHash] += env.ByteSize
 				}
 			}
 		}
 		if len(valid) > 0 {
 			s.mailboxes[mboxID] = valid
-		} else {
-			_ = os.Remove(filepath.Join(s.dataDir, entry.Name()))
+		}
+		if migrated {
+			if err := s.persistMailboxLocked(mboxID); err != nil {
+				return fmt.Errorf("%w: %v", ErrPersistence, err)
+			}
+		} else if len(valid) == 0 {
+			_ = s.persistMailboxLocked(mboxID)
 		}
 	}
 	return s.loadCapabilitiesLocked()
+}
+
+func quotaTokenHash(token string) string {
+	if token == "" {
+		return ""
+	}
+	return hashTokenHex("nix-relay-quota:" + token)
 }
 
 func hashTokenHex(token string) string {

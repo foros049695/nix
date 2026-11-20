@@ -3,9 +3,13 @@ package buffer
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -252,5 +256,35 @@ func TestRequestedTTLIsCappedBeforeOverflow(t *testing.T) {
 	}
 	if env.ExpiresAt != now.Add(time.Hour).Unix() {
 		t.Fatalf("TTL incorreto: %d", env.ExpiresAt)
+	}
+}
+
+func TestLegacyQuotaTokenMigration(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "legacy.json")
+	now := time.Now()
+	data, err := json.Marshal([]Envelope{{
+		ID: "legacy-entry", PayloadB64: "YQ==", CreatedAt: now.Unix(),
+		ExpiresAt: now.Add(time.Hour).Unix(), ByteSize: 1, QuotaToken: "legacy-fixture",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewBlindMailboxStore(dir, time.Hour, 1024, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Store("legacy", "Yg==", 60, "legacy-fixture", StateNormal, now); !errors.Is(err, ErrQuotaExceeded) {
+		t.Fatalf("a migração deve preservar a cota: %v", err)
+	}
+	persisted, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(persisted), "legacy-fixture") || !strings.Contains(string(persisted), "quota_token_hash") {
+		t.Fatal("a migração deve conservar apenas o hash de cota")
 	}
 }

@@ -105,7 +105,7 @@ func TestAuditRemovalPersistenceFailure(t *testing.T) {
 				if got := s.Metrics(); got != before {
 					t.Errorf("contadores alterados: got=%+v want=%+v", got, before)
 				}
-				if s.quotaUsage["quota"] != before.StoredBytes {
+				if s.quotaUsage[quotaTokenHash("quota")] != before.StoredBytes {
 					t.Error("cota alterada após falha")
 				}
 				reloaded, err := NewBlindMailboxStore(d, 24*time.Hour, 100, 100)

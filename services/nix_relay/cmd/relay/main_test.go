@@ -112,7 +112,7 @@ func TestRelayHTTPStoreFetchAckAndHealthz(t *testing.T) {
 	if len(fetchOut.Envelopes) != 1 || fetchOut.Envelopes[0].ID != storeOut.ID {
 		t.Fatalf("unexpected envelopes: %+v", fetchOut.Envelopes)
 	}
-	if fetchOut.Envelopes[0].QuotaToken != "" {
+	if fetchOut.Envelopes[0].QuotaToken != "" || fetchOut.Envelopes[0].QuotaTokenHash != "" {
 		t.Fatal("o destinatário recebeu metadados de cota do emissor")
 	}
 
