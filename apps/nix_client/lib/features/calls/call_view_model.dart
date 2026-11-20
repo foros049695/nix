@@ -10,6 +10,7 @@ class CallViewModel extends ChangeNotifier {
   CallState _callState = const CallState();
   Timer? _callTimer;
   bool _disposed = false;
+  bool _microphoneMuted = false;
 
   CallState get callState => _callState;
   bool get isConnected => _callState.isConnected;
@@ -28,7 +29,7 @@ class CallViewModel extends ChangeNotifier {
       activeChannelId: channel.id,
       activeChannelName: channel.name,
       isConnected: true,
-      isMuted: _callState.isMuted,
+      isMuted: _microphoneMuted,
       isDeafened: false,
       participants: onlineMembers,
       durationSeconds: 0,
@@ -49,31 +50,33 @@ class CallViewModel extends ChangeNotifier {
     if (_disposed) return;
     _callTimer?.cancel();
     _callTimer = null;
-    _callState = CallState(isMuted: _callState.isMuted);
+    _callState = CallState(isMuted: _microphoneMuted);
     notifyListeners();
   }
 
   void toggleMute() {
     if (_disposed) return;
-    final muted = !_callState.isMuted;
+    _microphoneMuted = !_callState.isMuted;
     _callState = _callState.copyWith(
-      isMuted: muted, isDeafened: muted && _callState.isDeafened,
+      isMuted: _microphoneMuted,
+      isDeafened: _microphoneMuted && _callState.isDeafened,
     );
     notifyListeners();
   }
 
   void restoreMicrophone(bool muted) {
-    if (_disposed || muted == _callState.isMuted) return;
-    _callState = _callState.copyWith(isMuted: muted);
+    if (_disposed || muted == _microphoneMuted) return;
+    _microphoneMuted = muted;
+    _callState = _callState.copyWith(isMuted: muted || _callState.isDeafened);
     notifyListeners();
   }
 
   void toggleDeafen() {
-    if (_disposed) return;
-    final newDeafened = !_callState.isDeafened;
+    if (_disposed || !_callState.isConnected) return;
+    final deafened = !_callState.isDeafened;
     _callState = _callState.copyWith(
-      isDeafened: newDeafened,
-      isMuted: newDeafened ? true : _callState.isMuted,
+      isDeafened: deafened,
+      isMuted: deafened || _microphoneMuted,
     );
     notifyListeners();
   }
@@ -82,6 +85,7 @@ class CallViewModel extends ChangeNotifier {
     if (_disposed) return;
     _callTimer?.cancel();
     _callTimer = null;
+    _microphoneMuted = false;
     _callState = const CallState();
     notifyListeners();
   }

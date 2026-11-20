@@ -7,7 +7,9 @@ import '../../core/messaging/direct_poll.dart';
 import '../../state/nix_state.dart';
 
 class CreateDirectPollDialog extends StatefulWidget {
-  const CreateDirectPollDialog({super.key, required this.onCreate});
+  const CreateDirectPollDialog({super.key, required this.onCreate, this.local = false});
+
+  final bool local;
 
   final Future<void> Function(DirectPollSpec) onCreate;
 
@@ -72,7 +74,7 @@ class _CreateDirectPollDialogState extends State<CreateDirectPollDialog> {
   Widget build(BuildContext context) => PopScope(
         canPop: !_sending,
         child: AlertDialog(
-          title: const Text('Criar enquete'),
+          title: Text(widget.local ? 'Criar enquete local' : 'Criar enquete'),
           scrollable: true,
           content: SizedBox(
             width: 460,

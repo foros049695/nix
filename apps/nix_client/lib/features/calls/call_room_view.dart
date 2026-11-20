@@ -12,6 +12,7 @@ import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
 import '../chat/chat_input_bar.dart';
 import '../chat/message_timeline.dart';
+import '../settings/microphone_test_card.dart';
 
 class CallRoomView extends StatefulWidget {
   final Channel channel;
@@ -380,7 +381,23 @@ class _CallRoomViewState extends State<CallRoomView> {
             textAlign: TextAlign.center,
             style: TextStyle(color: NixColors.textMuted, fontSize: 13),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 12),
+          TextButton.icon(
+            icon: const Icon(Icons.graphic_eq),
+            label: const Text('Testar microfone'),
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (dialog) => AlertDialog(
+                title: const Text('Áudio da sala'),
+                scrollable: true,
+                content: const MicrophoneTestCard(),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(dialog), child: const Text('Fechar')),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: NixColors.accentVoice,

@@ -10,6 +10,7 @@ import 'chat_input_bar.dart';
 import 'conversation_surface.dart';
 import 'message_timeline.dart';
 import 'message_header.dart';
+import 'local_group_poll_sheet.dart';
 
 class ChatView extends StatefulWidget {
   final Channel channel;
@@ -131,6 +132,21 @@ class _ChatViewState extends State<ChatView> {
                     onPressed: () => nixState.togglePinMessage(pinnedMsgs.last.id),
                   ),
                 ],
+              ),
+            ),
+          ),
+
+        if (nixState.canUseLocalGroupPolls(widget.channel.id) ||
+            nixState.localGroupPollsFor(widget.channel.id).isNotEmpty)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              icon: const Icon(Icons.poll_outlined, size: 18),
+              label: const Text('Enquetes locais'),
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                builder: (_) => LocalGroupPollSheet(channelId: widget.channel.id),
               ),
             ),
           ),

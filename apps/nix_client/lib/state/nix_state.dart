@@ -36,6 +36,7 @@ import '../core/security/seed_recovery.dart';
 import '../core/security/anti_forensic_shredder.dart';
 import '../core/messaging/sovereign_messenger.dart';
 import '../core/messaging/direct_poll.dart';
+import '../core/messaging/local_group_poll.dart';
 import '../core/messaging/scheduled_messages.dart';
 import '../core/p2p/monero_ad_verifier.dart';
 import '../core/archive/nix_archive_service.dart';
@@ -123,6 +124,8 @@ class NixState extends ChangeNotifier {
   late Map<String, List<Message>> _messages;
   late Map<String, List<Publication>> _publications;
   late List<ForumPost> _forumPosts;
+  final _localGroupPolls = <LocalGroupPoll>[];
+  static const _localGroupPollsKey = 'local_group_polls_v1';
   final _directPolls = <String, Map<String, DirectPollState>>{};
   late List<Member> _members;
   late UserProfile _userProfile;
@@ -1181,6 +1184,7 @@ class NixState extends ChangeNotifier {
     _consumedMoneroNonces.clear();
     _forumTags.clear();
     _directPolls.clear();
+    _localGroupPolls.clear();
     _localDeviceId = 'dev_primary';
     _localDatabase = null;
     _sovereignMessenger = null;
@@ -1594,6 +1598,7 @@ class NixState extends ChangeNotifier {
     await flushPreferences();
     await _restoreWorkspaceLayout();
     await _restoreForum();
+    await _restoreLocalGroupPolls();
     await _migrateLegacyAcervo();
     final restoredAvatarStyle = await _restorePersonalPreferences();
     if (_localDatabase == null || _identityRepo == null) return;
@@ -2405,6 +2410,84 @@ class NixState extends ChangeNotifier {
     if (_isMockMode || repository == null ||
         _localDatabase?.cipherInfo.isEncrypted != true) return null;
     return ForumStore(repository);
+  }
+
+  Future<void> _restoreLocalGroupPolls() async {
+    final repository = _preferencesRepo;
+    if (repository == null || _localDatabase?.cipherInfo.isEncrypted != true) return;
+    try {
+      final stored = await repository.getOption(_localGroupPollsKey);
+      if (stored is! List || _disposed || _panicWipe != null) return;
+      _localGroupPolls
+        ..clear()
+        ..addAll(stored.map(LocalGroupPoll.parse).nonNulls.where(
+          (poll) => _findChannel(poll.channelId)?.type == ChannelType.text,
+        ));
+    } catch (_) {
+      // Preferências auxiliares não bloqueiam a abertura do cofre.
+    }
+  }
+
+  bool canUseLocalGroupPolls(String channelId) {
+    final channel = _currentChannel;
+    return !_disposed && _panicWipe == null &&
+        channel.id == channelId && channel.type == ChannelType.text &&
+        (_isMockMode || _localDatabase?.cipherInfo.isEncrypted == true) &&
+        channel.permissions.allowMessages && !_isLocallyBanned(channel) &&
+        !channel.mutedMembers.contains(_ownWorkspaceIdentity) &&
+        !channel.mutedMembers.contains(_securityContext.myFingerprint);
+  }
+
+  List<LocalGroupPoll> localGroupPollsFor(String channelId) =>
+      _currentChannel.id != channelId || _isLocallyBanned(_currentChannel)
+          ? const []
+          : _localGroupPolls.where((poll) => poll.channelId == channelId).toList();
+
+  String get localGroupPollActor => _ownWorkspaceIdentity;
+
+  Future<void> createLocalGroupPoll(String channel, DirectPollSpec spec) =>
+      _writeLocalGroupPolls(channel, (entries) {
+        if (entries.where((poll) => poll.channelId == channel).length >= 30) {
+          throw StateError('Limite de enquetes locais neste canal.');
+        }
+        final now = DateTime.now().toUtc();
+        return [...entries, LocalGroupPoll(
+          id: 'group-poll-${now.microsecondsSinceEpoch}',
+          channelId: channel, creator: _ownWorkspaceIdentity, created: now, spec: spec,
+        )];
+      });
+
+  Future<void> voteLocalGroupPoll(String channel, String id, List<int> choices) =>
+      _changeLocalGroupPoll(channel, id,
+        (poll) => poll.vote(_ownWorkspaceIdentity, choices, DateTime.now()));
+
+  Future<void> closeLocalGroupPoll(String channel, String id) =>
+      _changeLocalGroupPoll(channel, id, (poll) => poll.close(_ownWorkspaceIdentity));
+
+  Future<void> _changeLocalGroupPoll(String channel, String id,
+      LocalGroupPoll Function(LocalGroupPoll) change) =>
+      _writeLocalGroupPolls(channel, (entries) {
+        final index = entries.indexWhere((poll) => poll.id == id && poll.channelId == channel);
+        if (index < 0) throw StateError('Enquete indisponível.');
+        return List<LocalGroupPoll>.of(entries)..[index] = change(entries[index]);
+      });
+
+  Future<void> _writeLocalGroupPolls(String channel,
+      List<LocalGroupPoll> Function(List<LocalGroupPoll>) write) {
+    final repository = _preferencesRepo;
+    return _preferenceStore.enqueue(() async {
+      if (!canUseLocalGroupPolls(channel)) throw StateError('Canal indisponível.');
+      final updated = write(_localGroupPolls);
+      if (repository != null && !_isMockMode) {
+        await repository.setOption(_localGroupPollsKey,
+          updated.map((entry) => entry.toJson()).toList());
+      }
+      if (_disposed || _panicWipe != null) return;
+      _localGroupPolls
+        ..clear()
+        ..addAll(updated);
+      notifyListeners();
+    }, reportErrors: true);
   }
 
   Future<void> _restoreForum() async {
@@ -5708,7 +5791,20 @@ class NixState extends ChangeNotifier {
       List.unmodifiable(_messages[channelId] ?? const []);
 
   void joinCall(Channel channel) {
-    _calls.joinCall(channel, onlineMembers: _members.where((m) => m.isOnline).toList());
+    final stored = _findChannel(channel.id);
+    if (_disposed || _panicWipe != null || stored == null ||
+        stored.type != ChannelType.voice || _isLocallyBanned(stored)) return;
+    final localIdentity = _ownWorkspaceIdentity;
+    _calls.joinCall(stored, onlineMembers: [
+      Member(
+        id: localIdentity,
+        name: _userProfile.effectiveDisplayName,
+        roleName: 'Você',
+        role: MemberRole.member,
+        fingerprint: _securityContext.myFingerprint,
+        isVerified: primaryIdentity != null,
+      ),
+    ]);
   }
 
   void leaveCall() {

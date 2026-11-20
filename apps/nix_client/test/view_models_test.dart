@@ -68,6 +68,27 @@ void main() {
       expect(() => vm.toggleMute(), returnsNormally);
     });
 
+    test('desativar o áudio preserva o mute escolhido antes de entrar', () {
+      final vm = CallViewModel();
+      addTearDown(vm.dispose);
+      const channel = Channel(
+        id: 'rejoin', spaceId: 'space', name: 'Sala', topic: '',
+        type: ChannelType.voice, category: 'Voz',
+      );
+      vm.joinCall(channel);
+      vm.toggleDeafen();
+      expect(vm.isMuted, isTrue);
+      vm.toggleDeafen();
+      expect(vm.isMuted, isFalse);
+      vm.toggleMute();
+      vm.toggleDeafen();
+      vm.leaveCall();
+      expect(vm.isMuted, isTrue);
+      vm.joinCall(channel);
+      expect(vm.isMuted, isTrue);
+      expect(vm.isDeafened, isFalse);
+    });
+
     test('reset cleans up state and cancels active timer', () async {
       final vm = CallViewModel();
       const channel = Channel(
