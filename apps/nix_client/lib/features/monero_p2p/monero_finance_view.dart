@@ -20,7 +20,7 @@ class MoneroFinanceView extends StatelessWidget {
         child: const Column(
           children: [
             TabBar(labelPadding: EdgeInsets.symmetric(horizontal: 4), tabs: [
-              Tab(text: 'Mercado'),
+              Tab(text: 'Mercado Cripto'),
               Tab(child: Text('Carteira e histórico', textAlign: TextAlign.center)),
               Tab(child: Text('Bitcoin / Lightning', textAlign: TextAlign.center)),
             ]),
