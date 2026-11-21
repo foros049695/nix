@@ -83,7 +83,7 @@ class MoneroP2pView extends StatelessWidget {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  'MERCADO MONERO P2P (NON-CUSTODIAL)',
+                                  'MERCADO CRIPTO (NON-CUSTODIAL)',
                                   style: TextStyle(
                                     color: NixColors.textPrimary,
                                     fontSize: 12.5,
@@ -124,7 +124,7 @@ class MoneroP2pView extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'MERCADO MONERO P2P DESCENTRALIZADO (NON-CUSTODIAL)',
+                                  'MERCADO CRIPTO DESCENTRALIZADO (NON-CUSTODIAL)',
                                   style: TextStyle(
                                     color: NixColors.textPrimary,
                                     fontSize: 13,
@@ -171,7 +171,7 @@ class MoneroP2pView extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Aviso Non-Custodial & Anti-Fraude: O Nix apenas exibe ordens assinadas e abre negociação E2EE. Nunca transfira XMR ou fiat para endereços fora do canal criptografado verificado nem ignore alertas de assinatura.',
+                        'Aviso Non-Custodial & Anti-Fraude: O Nix apenas exibe ordens assinadas e abre negociação E2EE. Nunca transfira XMR, BTC ou fiat para endereços fora do canal criptografado verificado nem ignore alertas de assinatura.',
                         style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
                       ),
                     ),
@@ -202,15 +202,44 @@ class MoneroP2pView extends StatelessWidget {
                             ),
                             child: Wrap(
                               children: [
+                                _assetButton(
+                                  context: context,
+                                  title: 'Todos',
+                                  isSelected: nixState.moneroSelectedAsset == null,
+                                  onTap: () => nixState.setMoneroAsset(null),
+                                ),
+                                _assetButton(
+                                  context: context,
+                                  title: 'XMR',
+                                  isSelected: nixState.moneroSelectedAsset == CryptoAsset.xmr,
+                                  onTap: () => nixState.setMoneroAsset(CryptoAsset.xmr),
+                                ),
+                                _assetButton(
+                                  context: context,
+                                  title: 'BTC',
+                                  isSelected: nixState.moneroSelectedAsset == CryptoAsset.btc,
+                                  onTap: () => nixState.setMoneroAsset(CryptoAsset.btc),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: NixColors.surfaceCard,
+                              borderRadius: NixTokens.borderButtonCompact,
+                              border: Border.all(color: NixColors.surfaceBorder),
+                            ),
+                            child: Wrap(
+                              children: [
                                 _sideButton(
                                   context: context,
-                                  title: 'Comprar XMR',
+                                  title: nixState.moneroSelectedAsset == CryptoAsset.btc ? 'Comprar BTC' : 'Comprar XMR',
                                   isSelected: nixState.moneroSelectedSide == MoneroP2pSide.sell,
                                   onTap: () => nixState.setMoneroSide(MoneroP2pSide.sell),
                                 ),
                                 _sideButton(
                                   context: context,
-                                  title: 'Vender XMR',
+                                  title: nixState.moneroSelectedAsset == CryptoAsset.btc ? 'Vender BTC' : 'Vender XMR',
                                   isSelected: nixState.moneroSelectedSide == MoneroP2pSide.buy,
                                   onTap: () => nixState.setMoneroSide(MoneroP2pSide.buy),
                                 ),
@@ -273,15 +302,45 @@ class MoneroP2pView extends StatelessWidget {
                             ),
                             child: Row(
                               children: [
+                                _assetButton(
+                                  context: context,
+                                  title: 'Todos',
+                                  isSelected: nixState.moneroSelectedAsset == null,
+                                  onTap: () => nixState.setMoneroAsset(null),
+                                ),
+                                _assetButton(
+                                  context: context,
+                                  title: 'XMR',
+                                  isSelected: nixState.moneroSelectedAsset == CryptoAsset.xmr,
+                                  onTap: () => nixState.setMoneroAsset(CryptoAsset.xmr),
+                                ),
+                                _assetButton(
+                                  context: context,
+                                  title: 'BTC',
+                                  isSelected: nixState.moneroSelectedAsset == CryptoAsset.btc,
+                                  onTap: () => nixState.setMoneroAsset(CryptoAsset.btc),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: NixColors.surfaceCard,
+                              borderRadius: NixTokens.borderButtonCompact,
+                              border: Border.all(color: NixColors.surfaceBorder),
+                            ),
+                            child: Row(
+                              children: [
                                 _sideButton(
                                   context: context,
-                                  title: 'Comprar XMR',
+                                  title: nixState.moneroSelectedAsset == CryptoAsset.btc ? 'Comprar BTC' : 'Comprar XMR',
                                   isSelected: nixState.moneroSelectedSide == MoneroP2pSide.sell,
                                   onTap: () => nixState.setMoneroSide(MoneroP2pSide.sell),
                                 ),
                                 _sideButton(
                                   context: context,
-                                  title: 'Vender XMR',
+                                  title: nixState.moneroSelectedAsset == CryptoAsset.btc ? 'Vender BTC' : 'Vender XMR',
                                   isSelected: nixState.moneroSelectedSide == MoneroP2pSide.buy,
                                   onTap: () => nixState.setMoneroSide(MoneroP2pSide.buy),
                                 ),
@@ -398,6 +457,33 @@ class MoneroP2pView extends StatelessWidget {
     );
   }
 
+  Widget _assetButton({
+    required BuildContext context,
+    required String title,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? context.accentColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          title,
+          style: TextStyle(
+            color: isSelected ? context.onAccentColor : NixColors.textSecondary,
+            fontSize: 11,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _sideButton({
     required BuildContext context,
     required String title,
@@ -467,7 +553,8 @@ class MoneroP2pView extends StatelessWidget {
   ];
 
   void _showCreateOrderDialog(BuildContext context, NixState state) {
-    final priceCtrl = TextEditingController(text: '850.00');
+    var asset = state.moneroSelectedAsset ?? CryptoAsset.xmr;
+    final priceCtrl = TextEditingController(text: asset == CryptoAsset.btc ? '520000.00' : '850.00');
     final minLimitCtrl = TextEditingController(text: '100');
     final maxLimitCtrl = TextEditingController(text: '5000');
     var paymentMethod = 'PIX';
@@ -500,6 +587,45 @@ class MoneroP2pView extends StatelessWidget {
                       style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
                     ),
                     const SizedBox(height: 14),
+                    Text('CRIPTOMOEDA / ATIVO', style: NixTokens.labelUppercase()),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Monero (XMR)'),
+                          selected: asset == CryptoAsset.xmr,
+                          selectedColor: accent,
+                          labelStyle: TextStyle(
+                            color: asset == CryptoAsset.xmr ? context.onAccentColor : NixColors.textSecondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          onSelected: (_) => setModalState(() {
+                            asset = CryptoAsset.xmr;
+                            if (priceCtrl.text == '520000.00' || priceCtrl.text == '520000') {
+                              priceCtrl.text = '850.00';
+                            }
+                          }),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Bitcoin (BTC)'),
+                          selected: asset == CryptoAsset.btc,
+                          selectedColor: accent,
+                          labelStyle: TextStyle(
+                            color: asset == CryptoAsset.btc ? context.onAccentColor : NixColors.textSecondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          onSelected: (_) => setModalState(() {
+                            asset = CryptoAsset.btc;
+                            if (priceCtrl.text == '850.00' || priceCtrl.text == '850') {
+                              priceCtrl.text = '520000.00';
+                            }
+                          }),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     Text('TIPO DE ORDEM', style: NixTokens.labelUppercase()),
                     const SizedBox(height: 6),
                     Wrap(
@@ -507,7 +633,7 @@ class MoneroP2pView extends StatelessWidget {
                       runSpacing: 8,
                       children: [
                         ChoiceChip(
-                          label: const Text('Quero Vender XMR'),
+                          label: Text('Quero Vender ${asset.code}'),
                           selected: side == MoneroP2pSide.sell,
                           selectedColor: accent,
                           labelStyle: TextStyle(
@@ -517,7 +643,7 @@ class MoneroP2pView extends StatelessWidget {
                           onSelected: (_) => setModalState(() => side = MoneroP2pSide.sell),
                         ),
                         ChoiceChip(
-                          label: const Text('Quero Comprar XMR'),
+                          label: Text('Quero Comprar ${asset.code}'),
                           selected: side == MoneroP2pSide.buy,
                           selectedColor: accent,
                           labelStyle: TextStyle(
@@ -542,7 +668,7 @@ class MoneroP2pView extends StatelessWidget {
                       },
                     ),
                     const SizedBox(height: 12),
-                    Text('PREÇO POR XMR', style: NixTokens.labelUppercase()),
+                    Text('PREÇO POR ${asset.code}', style: NixTokens.labelUppercase()),
                     const SizedBox(height: 6),
                     TextField(
                       key: const Key('monero_order_price_input'),
@@ -631,7 +757,7 @@ class MoneroP2pView extends StatelessWidget {
                         final maxL = double.tryParse(maxLimitCtrl.text.trim());
                         final method = paymentMethod;
                         if (price == null || price <= 0) {
-                          setModalState(() => formError = 'Informe um preço por XMR válido (> 0).');
+                          setModalState(() => formError = 'Informe um preço por ${asset.code} válido (> 0).');
                           return;
                         }
                         if (minL == null || minL <= 0) {
@@ -653,6 +779,7 @@ class MoneroP2pView extends StatelessWidget {
                         try {
                           await state.createAndSignMoneroOrder(
                             side: side,
+                            asset: asset,
                             fiatCurrency: fiat,
                             pricePerXmr: price,
                             minFiatLimit: minL,
@@ -750,6 +877,31 @@ class _MoneroOrderCard extends StatelessWidget {
                             color: NixColors.textPrimary,
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: (order.asset == CryptoAsset.btc
+                                    ? const Color(0xFFF7931A)
+                                    : NixColors.accentGreen)
+                                .withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: order.asset == CryptoAsset.btc
+                                  ? const Color(0xFFF7931A)
+                                  : NixColors.accentGreen,
+                            ),
+                          ),
+                          child: Text(
+                            order.asset.code,
+                            style: TextStyle(
+                              color: order.asset == CryptoAsset.btc
+                                  ? const Color(0xFFF7931A)
+                                  : NixColors.accentGreen,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                         _orderTrustIndicator(order.trustLevel),
@@ -890,6 +1042,31 @@ class _MoneroOrderCard extends StatelessWidget {
                                   color: NixColors.textPrimary,
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: (order.asset == CryptoAsset.btc
+                                          ? const Color(0xFFF7931A)
+                                          : NixColors.accentGreen)
+                                      .withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: order.asset == CryptoAsset.btc
+                                        ? const Color(0xFFF7931A)
+                                        : NixColors.accentGreen,
+                                  ),
+                                ),
+                                child: Text(
+                                  order.asset.code,
+                                  style: TextStyle(
+                                    color: order.asset == CryptoAsset.btc
+                                        ? const Color(0xFFF7931A)
+                                        : NixColors.accentGreen,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                               _orderTrustIndicator(order.trustLevel),

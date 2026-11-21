@@ -1,8 +1,17 @@
 import 'member.dart';
 
 enum MoneroP2pSide {
-  buy,  // Comprar XMR
-  sell, // Vender XMR
+  buy,  // Comprar
+  sell, // Vender
+}
+
+enum CryptoAsset {
+  xmr('XMR', 'Monero'),
+  btc('BTC', 'Bitcoin');
+
+  const CryptoAsset(this.code, this.name);
+  final String code;
+  final String name;
 }
 
 /// Moedas de cotação das ofertas. Os códigos são preservados no registro assinado.
@@ -45,6 +54,7 @@ class MoneroP2pOrder {
   final double reputationScore;
   final int completedTrades;
   final MoneroP2pSide side;
+  final CryptoAsset asset;
   final String fiatCurrency;
   final double pricePerXmr;
   final double minFiatLimit;
@@ -70,6 +80,7 @@ class MoneroP2pOrder {
     this.reputationScore = 99.5,
     this.completedTrades = 84,
     required this.side,
+    this.asset = CryptoAsset.xmr,
     required this.fiatCurrency,
     required this.pricePerXmr,
     required this.minFiatLimit,
@@ -98,6 +109,7 @@ class MoneroP2pOrder {
     double? reputationScore,
     int? completedTrades,
     MoneroP2pSide? side,
+    CryptoAsset? asset,
     String? fiatCurrency,
     double? pricePerXmr,
     double? minFiatLimit,
@@ -123,6 +135,7 @@ class MoneroP2pOrder {
       reputationScore: reputationScore ?? this.reputationScore,
       completedTrades: completedTrades ?? this.completedTrades,
       side: side ?? this.side,
+      asset: asset ?? this.asset,
       fiatCurrency: fiatCurrency ?? this.fiatCurrency,
       pricePerXmr: pricePerXmr ?? this.pricePerXmr,
       minFiatLimit: minFiatLimit ?? this.minFiatLimit,
@@ -150,6 +163,7 @@ class MoneroP2pOrder {
         'reputationScore': reputationScore,
         'completedTrades': completedTrades,
         'side': side.name,
+        'asset': asset.name,
         'fiatCurrency': fiatCurrency,
         'pricePerXmr': pricePerXmr,
         'minFiatLimit': minFiatLimit,
@@ -181,6 +195,10 @@ class MoneroP2pOrder {
       reputationScore: (json['reputationScore'] as num?)?.toDouble() ?? 99.0,
       completedTrades: (json['completedTrades'] as num?)?.toInt() ?? 0,
       side: json['side'] == 'buy' ? MoneroP2pSide.buy : MoneroP2pSide.sell,
+      asset: CryptoAsset.values.firstWhere(
+        (a) => a.name == json['asset'],
+        orElse: () => CryptoAsset.xmr,
+      ),
       fiatCurrency: json['fiatCurrency'] as String? ?? 'BRL',
       pricePerXmr: (json['pricePerXmr'] as num).toDouble(),
       minFiatLimit: (json['minFiatLimit'] as num).toDouble(),
@@ -204,7 +222,7 @@ class MoneroP2pOrder {
 
   String get fiatSymbol => MoneroFiat.symbolFor(fiatCurrency);
 
-  String get formattedPrice => '$fiatSymbol ${pricePerXmr.toStringAsFixed(2)} / XMR';
+  String get formattedPrice => '$fiatSymbol ${pricePerXmr.toStringAsFixed(2)} / ${asset.code}';
   String get formattedLimits =>
       '$fiatSymbol ${minFiatLimit.toStringAsFixed(0)} - $fiatSymbol ${maxFiatLimit.toStringAsFixed(0)}';
 }

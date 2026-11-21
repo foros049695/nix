@@ -168,4 +168,227 @@ class BitcoinTestnetNode {
     }
     return decoded;
   }
+
+  /// Realiza liquidação de fatura Lightning via endpoint `/v1/channels/transactions` do nó LND próprio.
+  /// Suporta fundos sintéticos e validação estrita em redes de teste (rejeita mainnet).
+  Future<BitcoinPaymentResult> payLightningInvoice({
+    required BitcoinPaymentRequest request,
+    required String adminMacaroon,
+    int? feeLimitSat,
+  }) async {
+    if (!request.lightning ||
+        request.network == BitcoinNetwork.mainnet ||
+        !RegExp(r'^(?:[0-9a-fA-F]{2}){1,1024}$').hasMatch(adminMacaroon)) {
+      throw const FormatException(
+          'Use uma fatura de teste e um macaroon administrativo em hexadecimal.');
+    }
+
+    final rawInvoice = request.payload.startsWith('lightning:')
+        ? request.payload.substring('lightning:'.length)
+        : request.payload;
+
+    final body = jsonEncode({
+      'payment_request': rawInvoice,
+      if (feeLimitSat != null) 'fee_limit': {'fixed': feeLimitSat},
+    });
+
+    final reply = await _query(
+      path: '/v1/channels/transactions',
+      body: body,
+      macaroon: adminMacaroon,
+      circuitIsolation: _isolate(),
+    );
+
+    final now = DateTime.now().toUtc();
+    final res = _response(reply);
+
+    final paymentError = res['payment_error'] as String?;
+    final preimage = res['payment_preimage'] as String?;
+    final feeMsat = BigInt.tryParse(res['payment_route']?['total_fees_msat']?.toString() ?? '0') ?? BigInt.zero;
+
+    if (paymentError != null && paymentError.isNotEmpty) {
+      return BitcoinPaymentResult(
+        id: 'ln_${now.millisecondsSinceEpoch}',
+        status: BitcoinPaymentStatus.failed,
+        failureReason: paymentError,
+        amountMilliSatoshis: request.milliSatoshis ?? BigInt.zero,
+        feeMilliSatoshis: feeMsat,
+        timestamp: now,
+        isLightning: true,
+        destination: rawInvoice,
+        network: request.network,
+      );
+    }
+
+    if (preimage != null && preimage.isNotEmpty && !RegExp(r'^0+$').hasMatch(preimage)) {
+      return BitcoinPaymentResult(
+        id: 'ln_${now.millisecondsSinceEpoch}',
+        status: BitcoinPaymentStatus.succeeded,
+        preimageOrTxId: preimage,
+        amountMilliSatoshis: request.milliSatoshis ?? BigInt.zero,
+        feeMilliSatoshis: feeMsat,
+        timestamp: now,
+        isLightning: true,
+        destination: rawInvoice,
+        network: request.network,
+      );
+    }
+
+    return BitcoinPaymentResult(
+      id: 'ln_${now.millisecondsSinceEpoch}',
+      status: BitcoinPaymentStatus.inFlight,
+      amountMilliSatoshis: request.milliSatoshis ?? BigInt.zero,
+      feeMilliSatoshis: feeMsat,
+      timestamp: now,
+      isLightning: true,
+      destination: rawInvoice,
+      network: request.network,
+    );
+  }
+
+  /// Realiza envio Bitcoin On-chain via RPC `sendtoaddress` do nó Bitcoin Core próprio em regtest/testnet.
+  Future<BitcoinPaymentResult> sendBitcoinOnChain({
+    required BitcoinPaymentRequest request,
+    required String user,
+    required String password,
+  }) async {
+    if (request.lightning || request.network == BitcoinNetwork.mainnet) {
+      throw const FormatException(
+          'Envios diretos são restritos a endereços on-chain de teste (regtest/testnet/signet).');
+    }
+
+    final amountMsat = request.milliSatoshis;
+    if (amountMsat == null || amountMsat <= BigInt.zero) {
+      throw const FormatException('O pedido on-chain deve especificar um valor válido.');
+    }
+
+    final btcValue = amountMsat.toDouble() / 100000000000.0;
+    final address = request.payload.startsWith('bitcoin:')
+        ? Uri.parse(request.payload).path
+        : request.payload;
+
+    final body = jsonEncode({
+      'jsonrpc': '1.0',
+      'id': 'nix-sendtoaddress',
+      'method': 'sendtoaddress',
+      'params': [address, btcValue, 'nix-regtest', '', false, true],
+    });
+
+    final reply = await _query(
+      path: '/',
+      body: body,
+      basicAuthorization: base64Encode(utf8.encode('$user:$password')),
+      circuitIsolation: _isolate(),
+    );
+
+    final now = DateTime.now().toUtc();
+    final res = _response(reply);
+
+    final error = res['error'];
+    if (error != null && error is Map) {
+      return BitcoinPaymentResult(
+        id: 'btc_${now.millisecondsSinceEpoch}',
+        status: BitcoinPaymentStatus.failed,
+        failureReason: error['message']?.toString() ?? 'Erro RPC no nó Bitcoin',
+        amountMilliSatoshis: amountMsat,
+        timestamp: now,
+        isLightning: false,
+        destination: address,
+        network: request.network,
+      );
+    }
+
+    final txid = res['result'] as String?;
+    if (txid != null && RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(txid)) {
+      return BitcoinPaymentResult(
+        id: 'btc_${now.millisecondsSinceEpoch}',
+        status: BitcoinPaymentStatus.succeeded,
+        preimageOrTxId: txid,
+        amountMilliSatoshis: amountMsat,
+        timestamp: now,
+        isLightning: false,
+        destination: address,
+        network: request.network,
+      );
+    }
+
+    return BitcoinPaymentResult(
+      id: 'btc_${now.millisecondsSinceEpoch}',
+      status: BitcoinPaymentStatus.failed,
+      failureReason: 'Resposta inesperada do nó Bitcoin Core.',
+      amountMilliSatoshis: amountMsat,
+      timestamp: now,
+      isLightning: false,
+      destination: address,
+      network: request.network,
+    );
+  }
+}
+
+enum BitcoinPaymentStatus {
+  succeeded,
+  failed,
+  inFlight,
+  expired,
+}
+
+class BitcoinPaymentResult {
+  final String id;
+  final BitcoinPaymentStatus status;
+  final String? preimageOrTxId;
+  final String? failureReason;
+  final BigInt amountMilliSatoshis;
+  final BigInt feeMilliSatoshis;
+  final DateTime timestamp;
+  final bool isLightning;
+  final String destination;
+  final BitcoinNetwork network;
+
+  BitcoinPaymentResult({
+    required this.id,
+    required this.status,
+    this.preimageOrTxId,
+    this.failureReason,
+    required this.amountMilliSatoshis,
+    BigInt? feeMilliSatoshis,
+    required this.timestamp,
+    required this.isLightning,
+    required this.destination,
+    required this.network,
+  }) : feeMilliSatoshis = feeMilliSatoshis ?? BigInt.zero;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'status': status.name,
+    'preimageOrTxId': preimageOrTxId,
+    'failureReason': failureReason,
+    'amountMsat': amountMilliSatoshis.toString(),
+    'feeMsat': feeMilliSatoshis.toString(),
+    'timestampMs': timestamp.toUtc().millisecondsSinceEpoch,
+    'isLightning': isLightning,
+    'destination': destination,
+    'network': network.name,
+  };
+
+  factory BitcoinPaymentResult.fromJson(Map<String, dynamic> json) => BitcoinPaymentResult(
+    id: json['id'] as String,
+    status: BitcoinPaymentStatus.values.firstWhere(
+      (s) => s.name == json['status'],
+      orElse: () => BitcoinPaymentStatus.failed,
+    ),
+    preimageOrTxId: json['preimageOrTxId'] as String?,
+    failureReason: json['failureReason'] as String?,
+    amountMilliSatoshis: BigInt.tryParse(json['amountMsat']?.toString() ?? '0') ?? BigInt.zero,
+    feeMilliSatoshis: BigInt.tryParse(json['feeMsat']?.toString() ?? '0') ?? BigInt.zero,
+    timestamp: DateTime.fromMillisecondsSinceEpoch(
+      json['timestampMs'] as int? ?? DateTime.now().toUtc().millisecondsSinceEpoch,
+      isUtc: true,
+    ),
+    isLightning: json['isLightning'] as bool? ?? false,
+    destination: json['destination'] as String? ?? '',
+    network: BitcoinNetwork.values.firstWhere(
+      (n) => n.name == json['network'],
+      orElse: () => BitcoinNetwork.regtest,
+    ),
+  );
 }

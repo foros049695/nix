@@ -378,7 +378,7 @@ void main() {
     // 2. Monero P2P com verificação de assinatura e expiração
     await tester.tap(find.byKey(const Key('home_nav_monero')));
     await tester.pumpAndSettle();
-    expect(find.text('MERCADO MONERO P2P DESCENTRALIZADO (NON-CUSTODIAL)'), findsOneWidget);
+    expect(find.text('MERCADO CRIPTO DESCENTRALIZADO (NON-CUSTODIAL)'), findsOneWidget);
 
     final firstOrder = state.moneroOrders.first;
     expect(state.verifyMoneroOrder(firstOrder), isTrue);

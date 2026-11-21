@@ -43,6 +43,7 @@ import '../core/messaging/local_group_poll.dart';
 import '../core/messaging/shared_group_poll.dart';
 import '../core/messaging/scheduled_messages.dart';
 import '../core/p2p/monero_ad_verifier.dart';
+import '../core/bitcoin/bitcoin_testnet_node.dart';
 import '../core/archive/archive_image.dart';
 import '../core/archive/nix_archive_service.dart';
 import '../core/replication/replication_coordinator.dart';
@@ -525,6 +526,15 @@ class NixState extends ChangeNotifier {
   String get moneroWalletStatusLabel => _connectedMoneroRemoteNode != null
       ? 'Nó Remoto .onion: $_connectedMoneroRemoteNode'
       : 'Sem Custódia Local · Conecte Carteira Externa (Seed B Isolada)';
+
+  final List<BitcoinPaymentResult> _bitcoinPaymentHistory = [];
+  List<BitcoinPaymentResult> get bitcoinPaymentHistory =>
+      List.unmodifiable(_bitcoinPaymentHistory);
+
+  void recordBitcoinPayment(BitcoinPaymentResult result) {
+    _bitcoinPaymentHistory.insert(0, result);
+    notifyListeners();
+  }
 
   IdentityRepository? get identityRepo => _identityRepo;
   ContactRepository? get contactRepo => _contactRepo;
@@ -4238,6 +4248,13 @@ class NixState extends ChangeNotifier {
       !_disposed && _panicWipe == null && !_isStrictOffGridMode &&
       securityGate.isTorAnonymityReady;
 
+  CryptoAsset? get moneroSelectedAsset => _moneroFilters.selectedAsset;
+
+  void setMoneroAsset(CryptoAsset? asset) {
+    _moneroFilters.setSelectedAsset(asset);
+    notifyListeners();
+  }
+
   void setMoneroSide(MoneroP2pSide side) {
     _moneroFilters.setSelectedSide(side);
     notifyListeners();
@@ -4268,6 +4285,7 @@ class NixState extends ChangeNotifier {
   /// e persiste um anúncio Monero P2P com estado honesto (`local_signed`).
   Future<MoneroP2pOrder> createAndSignMoneroOrder({
     required MoneroP2pSide side,
+    CryptoAsset asset = CryptoAsset.xmr,
     required String fiatCurrency,
     required double pricePerXmr,
     required double minFiatLimit,
@@ -4303,6 +4321,7 @@ class NixState extends ChangeNotifier {
     );
 
     final order = signedAd.order.copyWith(
+      asset: asset,
       trustLevel: NixTrustLevel.level2Yellow,
       completedTrades: 0,
       reputationScore: 100.0,

@@ -119,4 +119,79 @@ void main() {
         throwsFormatException);
     expect(paths, ['/v1/getinfo']);
   });
+
+  test('LND payLightningInvoice liquida fatura e retorna comprovante/preimage', () async {
+    final invoice = BitcoinPaymentRequest.parse(_testInvoice);
+    final node = BitcoinTestnetNode.withQuery(({
+      required path,
+      required circuitIsolation,
+      body,
+      basicAuthorization,
+      macaroon,
+    }) async {
+      expect(path, '/v1/channels/transactions');
+      expect(macaroon, '1234abcd');
+      final req = jsonDecode(body!);
+      expect(req['payment_request'], isNotEmpty);
+      expect(req['fee_limit']['fixed'], 50);
+
+      return (
+        statusCode: 200,
+        body: jsonEncode({
+          'payment_error': '',
+          'payment_preimage': '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          'payment_route': {'total_fees_msat': '1000'},
+        }),
+      );
+    });
+
+    final res = await node.payLightningInvoice(
+      request: invoice,
+      adminMacaroon: '1234abcd',
+      feeLimitSat: 50,
+    );
+
+    expect(res.status, BitcoinPaymentStatus.succeeded);
+    expect(res.preimageOrTxId, '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef');
+    expect(res.feeMilliSatoshis, BigInt.from(1000));
+    expect(res.isLightning, isTrue);
+  });
+
+  test('Bitcoin Core sendBitcoinOnChain executa RPC sendtoaddress com sucesso', () async {
+    const validTestnetAddress = 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx';
+    final request = BitcoinPaymentRequest.parse('bitcoin:$validTestnetAddress?amount=0.01');
+    final node = BitcoinTestnetNode.withQuery(({
+      required path,
+      required circuitIsolation,
+      body,
+      basicAuthorization,
+      macaroon,
+    }) async {
+      expect(path, '/');
+      expect(basicAuthorization, base64Encode(utf8.encode('rpcuser:rpcpass')));
+      final req = jsonDecode(body!);
+      expect(req['method'], 'sendtoaddress');
+      expect(req['params'][0], validTestnetAddress);
+
+      return (
+        statusCode: 200,
+        body: jsonEncode({
+          'result': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+          'error': null,
+          'id': 'nix-sendtoaddress',
+        }),
+      );
+    });
+
+    final res = await node.sendBitcoinOnChain(
+      request: request,
+      user: 'rpcuser',
+      password: 'rpcpass',
+    );
+
+    expect(res.status, BitcoinPaymentStatus.succeeded);
+    expect(res.preimageOrTxId, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+    expect(res.isLightning, isFalse);
+    expect(res.amountMilliSatoshis, BigInt.from(1000000000));
+  });
 }
