@@ -23,6 +23,7 @@ import '../core/models/user_profile.dart';
 import '../core/models/direct_message.dart';
 import '../core/models/user_settings.dart';
 import '../core/models/crypto_market_item.dart';
+import '../core/models/monero_order.dart';
 import '../core/models/github_repo.dart';
 import '../core/theme/nix_colors.dart';
 import '../core/theme/nix_palette.dart';

@@ -1,13 +1,9 @@
-import 'package:equatable/equatable.dart';
-
 /// Modelo unificado para ofertas de compra/venda no Mercado Cripto.
 ///
 /// - `kind` identifica a moeda (ex.: "btc", "xmr").
 /// - `price` é o valor em fiat (USD, EUR…) usando fundos sintéticos.
 /// - `isBuy` define se a oferta é de compra (`true`) ou venda (`false`).
-/// - Campos opcionais (`creator`, `album`, `releaseYear`) são mantidos
-///   para compatibilidade com as interfaces existentes.
-class CryptoMarketItem extends Equatable {
+class CryptoMarketItem {
   final String id;
   final String kind; // moeda: "btc", "xmr", ...
   final String title; // descrição curta da oferta
@@ -20,7 +16,7 @@ class CryptoMarketItem extends Equatable {
   final String? summary; // texto livre explicativo
   final DateTime updatedAt;
 
-  const CryptoMarketItem({
+  CryptoMarketItem({
     required this.id,
     required this.kind,
     required this.title,
@@ -62,17 +58,16 @@ class CryptoMarketItem extends Equatable {
       );
 
   @override
-  List<Object?> get props => [
-        id,
-        kind,
-        title,
-        creator,
-        album,
-        releaseYear,
-        price,
-        currency,
-        isBuy,
-        summary,
-        updatedAt,
-      ];
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CryptoMarketItem &&
+          runtimeType == other.runtimeType &&
+          id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
+
+  @override
+  String toString() => 'CryptoMarketItem(id: $id, kind: $kind, title: $title, '
+      'price: $price $currency, isBuy: $isBuy)';
 }
