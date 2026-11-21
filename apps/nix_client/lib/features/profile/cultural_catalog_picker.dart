@@ -33,6 +33,7 @@ class _CulturalCatalogPickerState extends State<_CulturalCatalogPicker> {
   int _generation = 0;
   bool _busy = false;
   String? _message;
+  String _lastQuery = '';
   List<CatalogWork> _works = [];
 
   @override
@@ -47,7 +48,62 @@ class _CulturalCatalogPickerState extends State<_CulturalCatalogPicker> {
     super.dispose();
   }
 
+  Future<void> _searchOnline() async {
+    final query = _lastQuery.trim();
+    if (query.isEmpty) return;
+
+    final consent = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Consentimento para Busca Musical Online via Tor'),
+        content: const Text(
+          'O Nix consultará metadados musicais em fontes abertas através do Tor (SOCKS5 fail-closed). '
+          'Nenhum arquivo de áudio remoto será baixado e nenhum dado pessoal será enviado. '
+          'Você deverá vincular um arquivo de áudio local existente à faixa selecionada.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Concordar e Buscar'),
+          ),
+        ],
+      ),
+    );
+
+    if (consent != true || !mounted) return;
+
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+
+    try {
+      final state = context.read<NixState>();
+      final results = await state.searchMusicOnlineConsent(
+        query: query,
+        userConsent: true,
+      );
+      if (!mounted) return;
+      setState(() {
+        _works = results;
+        _busy = false;
+        _message = results.isEmpty ? 'Nenhuma faixa encontrada online via Tor.' : null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _message = 'Falha na busca online: $e';
+      });
+    }
+  }
+
   void _search(String query) {
+    _lastQuery = query;
     _debounce?.cancel();
     final current = ++_generation;
     setState(() {
@@ -168,6 +224,13 @@ class _CulturalCatalogPickerState extends State<_CulturalCatalogPicker> {
           ]),
         ),
         actions: [
+          if (widget.playlist != null && !_busy && _lastQuery.trim().isNotEmpty)
+            TextButton.icon(
+              key: const Key('search_music_online_tor_button'),
+              onPressed: _searchOnline,
+              icon: const Icon(Icons.public, size: 16),
+              label: const Text('Buscar online via Tor'),
+            ),
           TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancelar'))

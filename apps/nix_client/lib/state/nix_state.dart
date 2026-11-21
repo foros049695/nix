@@ -51,6 +51,7 @@ import '../core/media/media_catalog_service.dart';
 import '../core/media/pager_playlist.dart';
 import '../core/media/voice_note.dart';
 import '../core/media/catalog_database.dart';
+import '../core/media/music_online_metadata_service.dart';
 import '../core/media/media_index_updater.dart';
 import '../features/calls/call_view_model.dart';
 import '../features/home/peer_hover_view_model.dart';
@@ -642,6 +643,26 @@ class NixState extends ChangeNotifier {
       catalogDatabase: _catalogDatabase,
     );
     notifyListeners();
+  }
+
+  /// Busca metadados de músicas em fontes abertas sob consentimento expresso do usuário via Tor fail-closed.
+  /// As obras retornadas são persistidas no catálogo local FTS5 para vinculação soberana a arquivos locais.
+  Future<List<CatalogWork>> searchMusicOnlineConsent({
+    required String query,
+    required bool userConsent,
+    MusicOnlineMetadataService service = const MusicOnlineMetadataService(),
+  }) async {
+    await ensureCatalogDatabaseOpened();
+    final results = await service.searchMusicOnline(
+      query: query,
+      userConsent: userConsent,
+      isTorReady: securityGate.isTorAnonymityReady,
+      socksPort: _embeddedTor.socksPort,
+    );
+    if (results.isNotEmpty && _catalogDatabase != null) {
+      await _catalogDatabase!.batchUpsertWorks(results);
+    }
+    return results;
   }
 
   void _rebuildSovereignMessenger() {

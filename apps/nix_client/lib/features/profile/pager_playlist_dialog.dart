@@ -2,11 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'cultural_catalog_picker.dart';
 import 'desktop_pager_audio.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/media/catalog_database.dart';
 import '../../core/media/pager_playlist.dart';
+import '../../state/nix_state.dart';
 
 class PagerPlaylistDialog extends StatefulWidget {
   const PagerPlaylistDialog(
@@ -96,28 +99,123 @@ class _PagerPlaylistDialogState extends State<PagerPlaylistDialog>
     }
   }
 
+  Future<CatalogWork?> _pickOnlineMusicWork() async {
+    final queryCtrl = TextEditingController();
+    var consentGranted = false;
+
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return AlertDialog(
+            title: const Text('Buscar metadados online (via Tor)'),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.amber),
+                    ),
+                    child: const Text(
+                      'Consentimento: A busca será realizada anonimamente via Tor SOCKS5 em bases abertas (MusicBrainz). '
+                      'Nenhum áudio remoto será baixado. Você deverá vincular um arquivo de áudio local existente.',
+                      style: TextStyle(fontSize: 11.5),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  CheckboxListTile(
+                    key: const Key('music_online_consent_checkbox'),
+                    value: consentGranted,
+                    onChanged: (v) => setModalState(() => consentGranted = v ?? false),
+                    title: const Text('Concordo com a consulta anônima via Tor', style: TextStyle(fontSize: 12)),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    key: const Key('music_online_query_input'),
+                    controller: queryCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Nome da faixa, artista ou álbum',
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                key: const Key('music_online_submit_button'),
+                onPressed: !consentGranted ? null : () => Navigator.pop(dialogCtx, true),
+                child: const Text('Buscar'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (accepted != true || !mounted) return null;
+    final q = queryCtrl.text.trim();
+    if (q.isEmpty) return null;
+
+    final state = Provider.of<NixState>(context, listen: false);
+    try {
+      await state.searchMusicOnlineConsent(query: q, userConsent: true);
+    } catch (_) {
+      // Ignora erro para abrir o picker que exibirá o status ou resultados locais
+    }
+    if (!mounted) return null;
+    return pickCulturalCatalogWork(
+      context,
+      playlist: _tracks.map((track) => track.name).toList(),
+    );
+  }
+
   Future<void> _add() async {
     String? name;
     if (widget.enableCatalog) {
-      final useCatalog = await showDialog<bool>(
+      final choice = await showDialog<int>(
           context: context,
           builder: (context) => SimpleDialog(
                 title: const Text('Adicionar faixa'),
                 children: [
                   SimpleDialogOption(
-                    onPressed: () => Navigator.pop(context, true),
+                    onPressed: () => Navigator.pop(context, 1),
                     child: const Text('Escolher no Music Index local'),
                   ),
                   SimpleDialogOption(
-                    onPressed: () => Navigator.pop(context, false),
+                    key: const Key('add_track_online_metadata_option'),
+                    onPressed: () => Navigator.pop(context, 2),
+                    child: const Text('Buscar metadados online (via Tor)'),
+                  ),
+                  SimpleDialogOption(
+                    onPressed: () => Navigator.pop(context, 0),
                     child: const Text('Escolher apenas arquivo de áudio'),
                   ),
                 ],
               ));
-      if (!mounted || useCatalog == null) return;
-      if (useCatalog) {
+      if (!mounted || choice == null) return;
+      if (choice == 1) {
         final work = await pickCulturalCatalogWork(context,
             playlist: _tracks.map((track) => track.name).toList());
+        if (!mounted || work == null) return;
+        final label = [work.title, culturalItemFromCatalog(work).creatorOrYear]
+            .where((value) => value.isNotEmpty)
+            .join(' · ');
+        name = String.fromCharCodes(label.runes.take(80));
+      } else if (choice == 2) {
+        final work = await _pickOnlineMusicWork();
         if (!mounted || work == null) return;
         final label = [work.title, culturalItemFromCatalog(work).creatorOrYear]
             .where((value) => value.isNotEmpty)

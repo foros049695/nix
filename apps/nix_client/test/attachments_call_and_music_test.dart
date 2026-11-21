@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_client/core/media/catalog_database.dart';
+import 'package:nix_client/core/media/music_online_metadata_service.dart';
+import 'package:nix_client/core/media/pager_playlist.dart';
 import 'package:nix_client/core/models/channel.dart';
 import 'package:nix_client/core/models/cultural_item.dart';
 import 'package:nix_client/core/models/message.dart';
@@ -204,5 +206,90 @@ void main() {
         state.channelsInActiveFolder(state.currentSpace).single.id, general.id);
     state.dissolveFolder(folder.id);
     expect(state.channelsInActiveFolder(state.currentSpace), hasLength(2));
+  });
+
+  test('busca online consentida via Tor rejeita sem consentimento e sem Tor, e indexa metadados no catalogo',
+      () async {
+    const service = MusicOnlineMetadataService();
+
+    // 1. Falha sem consentimento do usuário
+    expect(
+      () => service.searchMusicOnline(
+        query: 'Pink Floyd',
+        userConsent: false,
+        isTorReady: true,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    // 2. Falha fail-closed se Tor não estiver pronto
+    expect(
+      () => service.searchMusicOnline(
+        query: 'Pink Floyd',
+        userConsent: true,
+        isTorReady: false,
+      ),
+      throwsA(isA<Exception>()),
+    );
+
+    // 3. Com consentimento e Tor, realiza query mockada isolada
+    var isolationSent = '';
+    final mockedService = MusicOnlineMetadataService.withQuery(
+        ({required query, required circuitIsolation}) async {
+      isolationSent = circuitIsolation;
+      expect(query, 'Echoes');
+      return jsonEncode({
+        'recordings': [
+          {
+            'id': 'mb-track-1234',
+            'title': 'Echoes',
+            'artist-credit': [
+              {'name': 'Pink Floyd'}
+            ],
+            'releases': [
+              {
+                'title': 'Meddle',
+                'date': '1971-10-30',
+              }
+            ]
+          }
+        ]
+      });
+    });
+
+    final works = await mockedService.searchMusicOnline(
+      query: 'Echoes',
+      userConsent: true,
+      isTorReady: true,
+    );
+
+    expect(isolationSent, hasLength(32));
+    expect(works, hasLength(1));
+    final work = works.first;
+    expect(work.title, 'Echoes');
+    expect(work.creators, 'Pink Floyd');
+    expect(work.releaseYear, 1971);
+    expect(work.originalTitle, 'Meddle');
+
+    // 4. Ingestão no CatalogDatabase local e busca via FTS5
+    final directory = await Directory.systemTemp.createTemp('nix-online-music-');
+    addTearDown(() => directory.delete(recursive: true));
+    final catalog = await CatalogDatabase.open(
+        path: '${directory.path}/test_catalog.db');
+    addTearDown(catalog.close);
+
+    await catalog.upsertWork(work);
+    final searchHits = await catalog.searchWorks(query: 'Echoes', kind: 'track');
+    expect(searchHits, hasLength(1));
+    expect(searchHits.first.id, 'mb_rec_mb-track-1234');
+
+    // 5. Vinculação soberana ao arquivo local existente do usuário (sem streaming remoto)
+    const localUri = 'file:///home/gus/Musicas/Echoes_Remaster.wav';
+    final track = PagerTrack(
+      uri: localUri,
+      name: '${work.title} · ${work.creators}',
+    );
+    expect(track.uri, localUri);
+    expect(track.name, 'Echoes · Pink Floyd');
   });
 }
