@@ -22,7 +22,7 @@ import '../core/media/catalog_cultural_item.dart';
 import '../core/models/user_profile.dart';
 import '../core/models/direct_message.dart';
 import '../core/models/user_settings.dart';
-import '../core/models/monero_order.dart';
+import '../core/models/crypto_market_item.dart';
 import '../core/models/github_repo.dart';
 import '../core/theme/nix_colors.dart';
 import '../core/theme/nix_palette.dart';
@@ -144,6 +144,27 @@ class NixState extends ChangeNotifier {
   late List<MoneroP2pOrder> _moneroOrders;
   late List<GithubRepository> _githubRepos;
   UserSettings _settings = const UserSettings();
+
+  // --- Crypto Market Unificado ------------------------------------------------
+  late List<CryptoMarketItem> _cryptoMarket = [];
+
+  List<CryptoMarketItem> get cryptoMarket => List.unmodifiable(_cryptoMarket);
+
+  void addCryptoItem(CryptoMarketItem item) {
+    _cryptoMarket = [..._cryptoMarket, item];
+    notifyListeners();
+  }
+
+  void removeCryptoItem(String id) {
+    _cryptoMarket = _cryptoMarket.where((i) => i.id != id).toList();
+    notifyListeners();
+  }
+
+  void updateCryptoItem(CryptoMarketItem updated) {
+    _cryptoMarket = _cryptoMarket.map((i) => i.id == updated.id ? updated : i).toList();
+    notifyListeners();
+  }
+
 
   // ViewModels extraídos (Issue #35: decomposição incremental)
   final CallViewModel _calls = CallViewModel();
