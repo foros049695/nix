@@ -210,7 +210,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
           setState(() => _pendingAttachments.addAll(picked));
 
         case _AttachmentOption.documents:
-          final extensions = LocalImageHelper.supportedMediaExtensions;
+          const extensions = LocalImageHelper.supportedMediaExtensions;
           List<String> picked;
           try {
             picked = await LocalImageHelper.filePickerAdapter.pickAttachments(
@@ -439,7 +439,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
         defaultTargetPlatform == TargetPlatform.linux ||
         defaultTargetPlatform == TargetPlatform.windows;
     final canRecordVoice = isSupportedVoicePlatform &&
-        voiceConversation != null && nixState.canSendVoiceNote(voiceConversation);
+        (widget.isDirectMessage || nixState.currentChannel.permissions.allowMessages);
 
     final ephemeralTimer = nixState.selectedEphemeralTimer;
     final enterToSend = nixState.settings.enterToSend;
@@ -793,8 +793,19 @@ class _ChatInputBarState extends State<ChatInputBar> {
                                   context: context,
                                   barrierDismissible: false,
                                   builder: (_) => VoiceNoteDialog.record(
-                                    onSend: (note) => nixState.sendVoiceNote(
-                                        voiceConversation, note),
+                                    onSend: (note) async {
+                                      if (voiceConversation != null &&
+                                          nixState.canSendVoiceNote(voiceConversation)) {
+                                        await nixState.sendVoiceNote(
+                                            voiceConversation, note);
+                                      } else {
+                                        await nixState.sendVoiceNoteEverywhere(
+                                          note: note,
+                                          isDirect: widget.isDirectMessage,
+                                          onSendCustom: widget.onSendCustom,
+                                        );
+                                      }
+                                    },
                                   ),
                                 );
                               },

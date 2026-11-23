@@ -3765,14 +3765,39 @@ class NixState extends ChangeNotifier {
   Future<Uint8List?> readMessageImage(Message message, int index) async {
     if (_disposed || _panicWipe != null || index < 0 || index >= message.attachments.length) return null;
     try {
-      final reference = message.attachments[index];
+      var reference = message.attachments[index].trim();
+      if (reference.startsWith('doc_')) {
+        reference = reference.substring(4);
+      }
       if (!LocalImageHelper.isSupportedExtension(reference)) return null;
-      if (message.isMe && File(reference).isAbsolute) {
+
+      if (File(reference).isAbsolute) {
         final file = File(reference);
         if (await file.exists() && await file.length() <= 20 * 1024 * 1024) {
           return LocalImageHelper.stripMetadataBytes(await file.readAsBytes());
         }
       }
+
+      final resolved = File(NixPlatformPaths.resolveDataFile(reference));
+      if (await resolved.exists() && await resolved.length() <= 20 * 1024 * 1024) {
+        return LocalImageHelper.stripMetadataBytes(await resolved.readAsBytes());
+      }
+
+      final sanitized = File(NixPlatformPaths.resolveDataFile('sanitized_media/$reference'));
+      if (await sanitized.exists() && await sanitized.length() <= 20 * 1024 * 1024) {
+        return LocalImageHelper.stripMetadataBytes(await sanitized.readAsBytes());
+      }
+
+      final cover = File(NixPlatformPaths.resolveDataFile('covers_cache/$reference'));
+      if (await cover.exists() && await cover.length() <= 20 * 1024 * 1024) {
+        return LocalImageHelper.stripMetadataBytes(await cover.readAsBytes());
+      }
+
+      if (reference.startsWith('assets/')) {
+        final bundleData = await rootBundle.load(reference);
+        return bundleData.buffer.asUint8List();
+      }
+
       return await _sovereignMessenger?.readImageAttachment(message.id, index);
     } catch (_) {
       return null;
@@ -3782,13 +3807,37 @@ class NixState extends ChangeNotifier {
   Future<Uint8List?> readMessageAttachmentBytes(Message message, int index) async {
     if (_disposed || _panicWipe != null || index < 0 || index >= message.attachments.length) return null;
     try {
-      final reference = message.attachments[index];
+      var reference = message.attachments[index].trim();
+      if (reference.startsWith('doc_')) {
+        reference = reference.substring(4);
+      }
       if (File(reference).isAbsolute) {
         final file = File(reference);
         if (await file.exists() && await file.length() <= 50 * 1024 * 1024) {
           return await file.readAsBytes();
         }
       }
+
+      final resolved = File(NixPlatformPaths.resolveDataFile(reference));
+      if (await resolved.exists() && await resolved.length() <= 50 * 1024 * 1024) {
+        return await resolved.readAsBytes();
+      }
+
+      final sanitized = File(NixPlatformPaths.resolveDataFile('sanitized_media/$reference'));
+      if (await sanitized.exists() && await sanitized.length() <= 50 * 1024 * 1024) {
+        return await sanitized.readAsBytes();
+      }
+
+      final voice = File(NixPlatformPaths.resolveDataFile('voice_notes/$reference'));
+      if (await voice.exists() && await voice.length() <= 50 * 1024 * 1024) {
+        return await voice.readAsBytes();
+      }
+
+      if (reference.startsWith('assets/')) {
+        final bundleData = await rootBundle.load(reference);
+        return bundleData.buffer.asUint8List();
+      }
+
       return await _sovereignMessenger?.readAttachmentBytes(message.id, index);
     } catch (_) {
       return null;
@@ -3807,13 +3856,49 @@ class NixState extends ChangeNotifier {
     if (_disposed || _panicWipe != null) return null;
     try {
       final note = await _sovereignMessenger?.readVoiceNote(message.id, index);
-      if (note != null && (_disposed || _panicWipe != null)) {
-        note.pcm.fillRange(0, note.pcm.length, 0);
-        return null;
+      if (note != null) {
+        if (_disposed || _panicWipe != null) {
+          note.pcm.fillRange(0, note.pcm.length, 0);
+          return null;
+        }
+        return note;
       }
-      return note;
+      final bytes = await readMessageAttachmentBytes(message, index);
+      if (bytes != null) {
+        try {
+          return VoiceNote.fromWav(bytes);
+        } catch (_) {
+          try {
+            return VoiceNote.fromPcm(bytes);
+          } catch (_) {}
+        }
+      }
+      return null;
     } catch (_) {
       return null;
+    }
+  }
+
+  Future<void> sendVoiceNoteEverywhere({
+    required VoiceNote note,
+    bool isDirect = false,
+    void Function(String text, List<String> attachments)? onSendCustom,
+  }) async {
+    if (_panicWipe != null) return;
+    final voiceDir = Directory(NixPlatformPaths.resolveDataFile('voice_notes'));
+    if (!await voiceDir.exists()) {
+      await voiceDir.create(recursive: true);
+    }
+    final filePath = '${voiceDir.path}/${DateTime.now().millisecondsSinceEpoch}_${VoiceNote.fileName}';
+    final file = File(filePath);
+    await file.writeAsBytes(note.toWav(), flush: true);
+
+    if (onSendCustom != null) {
+      onSendCustom('', [filePath]);
+    } else if (isDirect && _selectedDm != null) {
+      await sendDirectMessage('', attachments: [filePath]);
+    } else {
+      sendMessage('', attachments: [filePath]);
     }
   }
 

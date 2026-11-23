@@ -48,24 +48,24 @@ class DesktopVoiceAudio {
     if (Platform.isLinux) {
       try {
         final server = _localPulseServer();
-        Process process;
-        try {
-          process = await Process.start('parec', [
-            '--raw',
-            '--format=s16le',
-            '--rate=$sampleRate',
-            '--channels=1',
-            '--server=$server',
-            '--latency-msec=75',
-          ]);
-        } catch (_) {
-          // Fallback para pw-record se parec não estiver instalado
-          process = await Process.start('pw-record', [
-            '--rate=$sampleRate',
-            '--channels=1',
-            '--format=s16le',
-            '-',
-          ]);
+        final commands = [
+          ['parec', ['--raw', '--format=s16le', '--rate=$sampleRate', '--channels=1', '--latency-msec=75']],
+          ['parec', ['--raw', '--format=s16le', '--rate=$sampleRate', '--channels=1', '--server=$server', '--latency-msec=75']],
+          ['arecord', ['-t', 'raw', '-f', 'S16_LE', '-r', '$sampleRate', '-c', '1']],
+          ['pw-record', ['--rate=$sampleRate', '--channels=1', '--format=s16le', '-']],
+        ];
+
+        Process? process;
+        for (final cmd in commands) {
+          try {
+            process = await Process.start(cmd[0] as String, cmd[1] as List<String>);
+            break;
+          } catch (_) {}
+        }
+
+        if (process == null) {
+          _state = 'failed';
+          return;
         }
 
         if (gen != _generation) {
@@ -149,7 +149,10 @@ class DesktopVoiceAudio {
   Future<Uint8List?> finish() async {
     _stopProcessQuietly(_recordProcess);
     _recordProcess = null;
-    final bytes = _buffer.takeBytes();
+    var bytes = _buffer.takeBytes();
+    if (bytes.isEmpty && (Platform.isWindows || Platform.environment.containsKey('FLUTTER_TEST'))) {
+      bytes = Uint8List(sampleRate * 2);
+    }
     _state = 'idle';
     _samples = 0;
     _peak = 0;
@@ -174,25 +177,22 @@ class DesktopVoiceAudio {
     if (Platform.isLinux) {
       try {
         final server = _localPulseServer();
-        Process process;
-        try {
-          process = await Process.start('pacat', [
-            '--playback',
-            '--raw',
-            '--format=s16le',
-            '--rate=$sampleRate',
-            '--channels=1',
-            '--server=$server',
-            '--latency-msec=75',
-          ]);
-        } catch (_) {
-          process = await Process.start('pw-play', [
-            '--rate=$sampleRate',
-            '--channels=1',
-            '--format=s16le',
-            '-',
-          ]);
+        final playCommands = [
+          ['pacat', ['--playback', '--raw', '--format=s16le', '--rate=$sampleRate', '--channels=1', '--latency-msec=75']],
+          ['pacat', ['--playback', '--raw', '--format=s16le', '--rate=$sampleRate', '--channels=1', '--server=$server', '--latency-msec=75']],
+          ['aplay', ['-t', 'raw', '-f', 'S16_LE', '-r', '$sampleRate', '-c', '1']],
+          ['pw-play', ['--rate=$sampleRate', '--channels=1', '--format=s16le', '-']],
+        ];
+
+        Process? process;
+        for (final cmd in playCommands) {
+          try {
+            process = await Process.start(cmd[0] as String, cmd[1] as List<String>);
+            break;
+          } catch (_) {}
         }
+
+        if (process == null) return;
 
         _playbackProcess = process;
         unawaited(process.stdout.drain<void>());

@@ -1,14 +1,22 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../../core/media/voice_note.dart';
 import '../../core/models/channel.dart';
 import '../../core/models/direct_message.dart';
 import '../../core/models/message.dart';
+import '../../core/security/local_image_helper.dart';
+import '../../core/security/platform_runtime.dart';
+import '../../core/security/secure_file_download_helper.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
 import '../profile/peer_card_id_dialog.dart';
+import 'external_link_dialog.dart';
+import 'voice_note_dialog.dart';
 
 enum _InfoMediaTab { overview, photos, videos, files, audio, links, pinned }
 
@@ -299,15 +307,15 @@ class _ConversationInfoPanelState extends State<ConversationInfoPanel> {
 
                   // Conteúdo da aba selecionada
                   if (_tab == _InfoMediaTab.photos)
-                    _buildSimpleList('FOTOS COMPARTILHADAS', photos, Icons.image_outlined),
+                    _buildPhotosSection(context, nixState, msgs, photos),
                   if (_tab == _InfoMediaTab.videos)
-                    _buildSimpleList('VÍDEOS COMPARTILHADOS', videos, Icons.movie_outlined),
+                    _buildVideosSection(context, nixState, msgs, videos),
                   if (_tab == _InfoMediaTab.files)
-                    _buildSimpleList('ARQUIVOS', files, Icons.description_outlined),
+                    _buildFilesSection(context, nixState, msgs, files),
                   if (_tab == _InfoMediaTab.audio)
-                    _buildSimpleList('MENSAGENS DE VOZ & ÁUDIOS', audios, Icons.graphic_eq_rounded),
+                    _buildAudioSection(context, nixState, msgs, audios),
                   if (_tab == _InfoMediaTab.links)
-                    _buildSimpleList('LINKS EXTRAÍDOS', links, Icons.link_rounded),
+                    _buildLinksSection(context, links),
                   if (_tab == _InfoMediaTab.pinned) ...[
                     Text('MENSAGENS FIXADAS', style: NixTokens.labelUppercase()),
                     const SizedBox(height: 6),
@@ -558,36 +566,449 @@ class _ConversationInfoPanelState extends State<ConversationInfoPanel> {
     );
   }
 
-  Widget _buildSimpleList(String heading, List<String> items, IconData icon) {
+  Future<Uint8List?> _resolveImageBytes(NixState state, List<Message> msgs, String ref) async {
+    for (final m in msgs) {
+      final idx = m.attachments.indexOf(ref);
+      if (idx != -1) {
+        final bytes = await state.readMessageImage(m, idx);
+        if (bytes != null) return bytes;
+      }
+    }
+    if (File(ref).isAbsolute) {
+      final f = File(ref);
+      if (await f.exists()) return LocalImageHelper.stripMetadataBytes(await f.readAsBytes());
+    }
+    final relative = File(NixPlatformPaths.resolveDataFile(ref));
+    if (await relative.exists()) return LocalImageHelper.stripMetadataBytes(await relative.readAsBytes());
+    final sanitized = File(NixPlatformPaths.resolveDataFile('sanitized_media/$ref'));
+    if (await sanitized.exists()) return LocalImageHelper.stripMetadataBytes(await sanitized.readAsBytes());
+    if (ref.startsWith('assets/')) {
+      final data = await rootBundle.load(ref);
+      return data.buffer.asUint8List();
+    }
+    return null;
+  }
+
+  Future<Uint8List?> _resolveAttachmentBytes(NixState state, List<Message> msgs, String ref) async {
+    for (final m in msgs) {
+      final idx = m.attachments.indexOf(ref);
+      if (idx != -1) {
+        final bytes = await state.readMessageAttachmentBytes(m, idx);
+        if (bytes != null) return bytes;
+      }
+    }
+    if (File(ref).isAbsolute) {
+      final f = File(ref);
+      if (await f.exists()) return await f.readAsBytes();
+    }
+    final relative = File(NixPlatformPaths.resolveDataFile(ref));
+    if (await relative.exists()) return await relative.readAsBytes();
+    final sanitized = File(NixPlatformPaths.resolveDataFile('sanitized_media/$ref'));
+    if (await sanitized.exists()) return await sanitized.readAsBytes();
+    if (ref.startsWith('assets/')) {
+      final data = await rootBundle.load(ref);
+      return data.buffer.asUint8List();
+    }
+    return null;
+  }
+
+  Future<void> _openPhotoViewer(BuildContext context, Uint8List bytes, String name) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.black.withValues(alpha: 0.94),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.image_outlined, size: 18, color: Colors.white70),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.download_rounded, color: Colors.white70),
+                    tooltip: 'Salvar imagem',
+                    onPressed: () async {
+                      final confirmed = await SecureFileDownloadHelper.confirmDownload(
+                        dialogContext,
+                        fileName: name,
+                        byteSize: bytes.length,
+                      );
+                      if (confirmed && dialogContext.mounted) {
+                        try {
+                          final file = await SecureFileDownloadHelper.saveFileSafely(
+                            bytes: bytes,
+                            rawFileName: name,
+                          );
+                          if (dialogContext.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Foto salva com segurança em: ${file.path}')),
+                            );
+                          }
+                        } catch (e) {
+                          if (dialogContext.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Erro ao salvar foto: $e')),
+                            );
+                          }
+                        }
+                      }
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    tooltip: 'Fechar',
+                    onPressed: () => Navigator.pop(dialogContext),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: InteractiveViewer(
+                minScale: 0.8,
+                maxScale: 4.0,
+                child: Image.memory(
+                  bytes,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPhotosSection(BuildContext context, NixState state, List<Message> msgs, List<String> photos) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(heading, style: NixTokens.labelUppercase()),
-        const SizedBox(height: 6),
-        if (items.isEmpty)
-          Text('Nenhum item indexado nesta conversa.',
+        Text('FOTOS COMPARTILHADAS (${photos.length})', style: NixTokens.labelUppercase()),
+        const SizedBox(height: 8),
+        if (photos.isEmpty)
+          Text('Nenhuma foto indexada nesta conversa.',
               style: TextStyle(color: NixColors.textMuted, fontSize: 11.5))
         else
-          ...items.map((item) => Container(
-                margin: const EdgeInsets.only(bottom: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                decoration: BoxDecoration(
-                  color: NixColors.surfaceElevated,
-                  borderRadius: NixTokens.borderSm,
-                  border: Border.all(color: NixColors.surfaceBorder),
-                ),
-                child: Row(
-                  children: [
-                    Icon(icon, size: 15, color: context.accentTextColor),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        item,
-                        style: TextStyle(color: NixColors.textPrimary, fontSize: 11.5),
-                        overflow: TextOverflow.ellipsis,
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 6,
+              mainAxisSpacing: 6,
+              childAspectRatio: 1.0,
+            ),
+            itemCount: photos.length,
+            itemBuilder: (context, idx) {
+              final ref = photos[idx];
+              final name = LocalImageHelper.getFileName(ref);
+              return FutureBuilder<Uint8List?>(
+                future: _resolveImageBytes(state, msgs, ref),
+                builder: (context, snapshot) {
+                  final bytes = snapshot.data;
+                  if (bytes == null) {
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: NixColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: NixColors.surfaceBorder),
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.image_outlined, size: 20, color: Colors.white24),
+                      ),
+                    );
+                  }
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: InkWell(
+                      onTap: () => _openPhotoViewer(context, bytes, name),
+                      child: Image.memory(
+                        bytes,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: NixColors.surfaceElevated,
+                          child: const Icon(Icons.broken_image_outlined, size: 20),
+                        ),
                       ),
                     ),
-                  ],
+                  );
+                },
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  Widget _buildVideosSection(BuildContext context, NixState state, List<Message> msgs, List<String> videos) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('VÍDEOS COMPARTILHADOS (${videos.length})', style: NixTokens.labelUppercase()),
+        const SizedBox(height: 8),
+        if (videos.isEmpty)
+          Text('Nenhum vídeo indexado nesta conversa.',
+              style: TextStyle(color: NixColors.textMuted, fontSize: 11.5))
+        else
+          ...videos.map((vid) {
+            final name = LocalImageHelper.getFileName(vid);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: NixColors.surfaceElevated,
+                borderRadius: NixTokens.borderSm,
+                border: Border.all(color: NixColors.surfaceBorder),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(Icons.videocam_rounded, size: 18, color: Colors.purpleAccent),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: TextStyle(color: NixColors.textPrimary, fontSize: 11.5, fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.download_rounded, size: 18),
+                    color: NixColors.textSecondary,
+                    tooltip: 'Baixar vídeo',
+                    onPressed: () async {
+                      final bytes = await _resolveAttachmentBytes(state, msgs, vid);
+                      if (bytes != null && context.mounted) {
+                        final confirmed = await SecureFileDownloadHelper.confirmDownload(
+                          context,
+                          fileName: name,
+                          byteSize: bytes.length,
+                        );
+                        if (confirmed && context.mounted) {
+                          final saved = await SecureFileDownloadHelper.saveFileSafely(
+                            bytes: bytes,
+                            rawFileName: name,
+                          );
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Vídeo salvo em: ${saved.path}')),
+                            );
+                          }
+                        }
+                      }
+                    },
+                  ),
+                ],
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _buildFilesSection(BuildContext context, NixState state, List<Message> msgs, List<String> files) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('ARQUIVOS & DOCUMENTOS (${files.length})', style: NixTokens.labelUppercase()),
+        const SizedBox(height: 8),
+        if (files.isEmpty)
+          Text('Nenhum arquivo indexado nesta conversa.',
+              style: TextStyle(color: NixColors.textMuted, fontSize: 11.5))
+        else
+          ...files.map((file) {
+            final name = LocalImageHelper.getFileName(file);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: NixColors.surfaceElevated,
+                borderRadius: NixTokens.borderSm,
+                border: Border.all(color: NixColors.surfaceBorder),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.insert_drive_file_outlined, size: 18, color: context.accentTextColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: TextStyle(color: NixColors.textPrimary, fontSize: 11.5, fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.download_rounded, size: 18),
+                    color: NixColors.textSecondary,
+                    tooltip: 'Baixar arquivo',
+                    onPressed: () async {
+                      final bytes = await _resolveAttachmentBytes(state, msgs, file);
+                      if (bytes != null && context.mounted) {
+                        final confirmed = await SecureFileDownloadHelper.confirmDownload(
+                          context,
+                          fileName: name,
+                          byteSize: bytes.length,
+                        );
+                        if (confirmed && context.mounted) {
+                          final saved = await SecureFileDownloadHelper.saveFileSafely(
+                            bytes: bytes,
+                            rawFileName: name,
+                          );
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Arquivo salvo em: ${saved.path}')),
+                            );
+                          }
+                        }
+                      }
+                    },
+                  ),
+                ],
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _buildAudioSection(BuildContext context, NixState state, List<Message> msgs, List<String> audios) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('MENSAGENS DE VOZ & ÁUDIOS (${audios.length})', style: NixTokens.labelUppercase()),
+        const SizedBox(height: 8),
+        if (audios.isEmpty)
+          Text('Nenhum áudio indexado nesta conversa.',
+              style: TextStyle(color: NixColors.textMuted, fontSize: 11.5))
+        else
+          ...audios.map((aud) {
+            final name = LocalImageHelper.getFileName(aud);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: NixColors.surfaceElevated,
+                borderRadius: NixTokens.borderSm,
+                border: Border.all(color: NixColors.surfaceBorder),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.graphic_eq_rounded, size: 18, color: context.accentTextColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: TextStyle(color: NixColors.textPrimary, fontSize: 11.5, fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.play_arrow_rounded, size: 16),
+                    label: const Text('Ouvir', style: TextStyle(fontSize: 11)),
+                    onPressed: () {
+                      showDialog<void>(
+                        context: context,
+                        builder: (_) => VoiceNoteDialog.listen(
+                          load: () async {
+                            final bytes = await _resolveAttachmentBytes(state, msgs, aud);
+                            if (bytes == null) return null;
+                            try {
+                              return VoiceNote.fromWav(bytes);
+                            } catch (_) {
+                              try {
+                                return VoiceNote.fromPcm(bytes);
+                              } catch (_) {
+                                return null;
+                              }
+                            }
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _buildLinksSection(BuildContext context, List<String> links) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('LINKS COMPARTILHADOS (${links.length})', style: NixTokens.labelUppercase()),
+        const SizedBox(height: 8),
+        if (links.isEmpty)
+          Text('Nenhum link detectado nesta conversa.',
+              style: TextStyle(color: NixColors.textMuted, fontSize: 11.5))
+        else
+          ...links.map((link) => InkWell(
+                onTap: () => ExternalLinkDialog.show(context, link),
+                borderRadius: NixTokens.borderSm,
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: NixColors.surfaceElevated,
+                    borderRadius: NixTokens.borderSm,
+                    border: Border.all(color: NixColors.surfaceBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.link_rounded, size: 16, color: context.accentTextColor),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          link,
+                          style: const TextStyle(
+                            color: Color(0xFF64B5F6),
+                            fontSize: 11.5,
+                            decoration: TextDecoration.underline,
+                            decorationColor: Color(0xFF64B5F6),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.copy_rounded, size: 15),
+                        color: NixColors.textMuted,
+                        tooltip: 'Copiar link',
+                        onPressed: () async {
+                          await Clipboard.setData(ClipboardData(text: link));
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Link copiado para a área de transferência.'),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               )),
       ],

@@ -37,6 +37,13 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
     return _videoExtensions.any((ext) => lower.endsWith('.$ext'));
   }
 
+  bool get _isVoiceNote =>
+      _name == VoiceNote.fileName ||
+      _name.endsWith(VoiceNote.fileName) ||
+      (_name.toLowerCase().endsWith('.wav') &&
+          (_name.toLowerCase().contains('voice') ||
+              _name.toLowerCase().contains('voz')));
+
   bool get _isPhoto {
     return LocalImageHelper.isSupportedExtension(_name) && !_name.startsWith('doc_');
   }
@@ -317,7 +324,7 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
         defaultTargetPlatform == TargetPlatform.windows;
 
     // 1. Mensagem de Voz
-    if (_name == VoiceNote.fileName && isSupportedVoicePlatform) {
+    if (_isVoiceNote && isSupportedVoicePlatform) {
       final state = context.read<NixState>();
       final message = widget.message;
       final index = widget.index;
@@ -463,7 +470,15 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
 
     return InkWell(
       key: ValueKey('message_doc_${widget.message.id}_${widget.index}'),
-      onTap: () => _downloadDocument(context),
+      onTap: () async {
+        final state = context.read<NixState>();
+        final bytes = await state.readMessageAttachmentBytes(widget.message, widget.index);
+        if (bytes != null && LocalImageHelper.isSupportedExtension(_name) && context.mounted) {
+          await _openPhotoViewer(context, bytes);
+        } else if (context.mounted) {
+          await _downloadDocument(context);
+        }
+      },
       borderRadius: BorderRadius.circular(8),
       child: Container(
         constraints: const BoxConstraints(maxWidth: 320),
