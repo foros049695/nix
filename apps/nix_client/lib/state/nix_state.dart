@@ -3840,26 +3840,28 @@ class NixState extends ChangeNotifier {
       }
       if (!LocalImageHelper.isSupportedExtension(reference)) return null;
 
-      if (message.isMe && File(reference).isAbsolute) {
-        final file = File(reference);
-        if (await file.exists() && await file.length() <= 20 * 1024 * 1024) {
-          return LocalImageHelper.stripMetadataBytes(await file.readAsBytes());
+      if (message.isMe) {
+        if (File(reference).isAbsolute) {
+          final file = File(reference);
+          if (await file.exists() && await file.length() <= 20 * 1024 * 1024) {
+            return LocalImageHelper.stripMetadataBytes(await file.readAsBytes());
+          }
         }
-      }
 
-      final resolved = File(NixPlatformPaths.resolveDataFile(reference));
-      if (await resolved.exists() && await resolved.length() <= 20 * 1024 * 1024) {
-        return LocalImageHelper.stripMetadataBytes(await resolved.readAsBytes());
-      }
+        final resolved = File(NixPlatformPaths.resolveDataFile(reference));
+        if (await resolved.exists() && await resolved.length() <= 20 * 1024 * 1024) {
+          return LocalImageHelper.stripMetadataBytes(await resolved.readAsBytes());
+        }
 
-      final sanitized = File(NixPlatformPaths.resolveDataFile('sanitized_media/$reference'));
-      if (await sanitized.exists() && await sanitized.length() <= 20 * 1024 * 1024) {
-        return LocalImageHelper.stripMetadataBytes(await sanitized.readAsBytes());
-      }
+        final sanitized = File(NixPlatformPaths.resolveDataFile('sanitized_media/$reference'));
+        if (await sanitized.exists() && await sanitized.length() <= 20 * 1024 * 1024) {
+          return LocalImageHelper.stripMetadataBytes(await sanitized.readAsBytes());
+        }
 
-      final cover = File(NixPlatformPaths.resolveDataFile('covers_cache/$reference'));
-      if (await cover.exists() && await cover.length() <= 20 * 1024 * 1024) {
-        return LocalImageHelper.stripMetadataBytes(await cover.readAsBytes());
+        final cover = File(NixPlatformPaths.resolveDataFile('covers_cache/$reference'));
+        if (await cover.exists() && await cover.length() <= 20 * 1024 * 1024) {
+          return LocalImageHelper.stripMetadataBytes(await cover.readAsBytes());
+        }
       }
 
       if (reference.startsWith('assets/')) {
@@ -3880,26 +3882,28 @@ class NixState extends ChangeNotifier {
       if (reference.startsWith('doc_')) {
         reference = reference.substring(4);
       }
-      if (message.isMe && File(reference).isAbsolute) {
-        final file = File(reference);
-        if (await file.exists() && await file.length() <= 50 * 1024 * 1024) {
-          return await file.readAsBytes();
+      if (message.isMe) {
+        if (File(reference).isAbsolute) {
+          final file = File(reference);
+          if (await file.exists() && await file.length() <= 50 * 1024 * 1024) {
+            return await file.readAsBytes();
+          }
         }
-      }
 
-      final resolved = File(NixPlatformPaths.resolveDataFile(reference));
-      if (await resolved.exists() && await resolved.length() <= 50 * 1024 * 1024) {
-        return await resolved.readAsBytes();
-      }
+        final resolved = File(NixPlatformPaths.resolveDataFile(reference));
+        if (await resolved.exists() && await resolved.length() <= 50 * 1024 * 1024) {
+          return await resolved.readAsBytes();
+        }
 
-      final sanitized = File(NixPlatformPaths.resolveDataFile('sanitized_media/$reference'));
-      if (await sanitized.exists() && await sanitized.length() <= 50 * 1024 * 1024) {
-        return await sanitized.readAsBytes();
-      }
+        final sanitized = File(NixPlatformPaths.resolveDataFile('sanitized_media/$reference'));
+        if (await sanitized.exists() && await sanitized.length() <= 50 * 1024 * 1024) {
+          return await sanitized.readAsBytes();
+        }
 
-      final voice = File(NixPlatformPaths.resolveDataFile('voice_notes/$reference'));
-      if (await voice.exists() && await voice.length() <= 50 * 1024 * 1024) {
-        return await voice.readAsBytes();
+        final voice = File(NixPlatformPaths.resolveDataFile('voice_notes/$reference'));
+        if (await voice.exists() && await voice.length() <= 50 * 1024 * 1024) {
+          return await voice.readAsBytes();
+        }
       }
 
       if (reference.startsWith('assets/')) {

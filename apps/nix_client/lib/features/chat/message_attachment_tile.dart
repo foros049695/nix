@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
@@ -372,7 +373,7 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
                 child: Image.memory(
                   bytes,
                   fit: BoxFit.cover,
-                  cacheWidth: 640,
+                  cacheWidth: Platform.environment.containsKey('FLUTTER_TEST') ? null : 640,
                   errorBuilder: (_, __, ___) => Container(
                     padding: const EdgeInsets.all(16),
                     color: scheme.surfaceElevated,

@@ -90,9 +90,10 @@ void main() {
           child: MessageAttachmentTile(message: message, index: 0),
         ))),
       ));
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
     });
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
     // Conforme especificação moderna: fotos não expõem nome do arquivo por padrão nem o caminho
     expect(find.text('photo.png'), findsNothing);
     expect(find.text(file.path), findsNothing);
@@ -110,7 +111,10 @@ void main() {
     final channel = state.currentChannel;
     await tester.pumpWidget(ChangeNotifierProvider.value(
       value: state,
-      child: MaterialApp(home: Scaffold(body: CallRoomView(channel: channel))),
+      child: MaterialApp(
+        theme: ThemeData(useMaterial3: false),
+        home: Scaffold(body: CallRoomView(channel: channel)),
+      ),
     ));
     await tester.tap(find.text('Entrar na Sala de Call'));
     await tester.pump();
