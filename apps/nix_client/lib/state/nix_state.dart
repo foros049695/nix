@@ -6208,6 +6208,78 @@ class NixState extends ChangeNotifier {
     return true;
   }
 
+  bool canEditForumPost(ForumPost post) {
+    if (_disposed || _panicWipe != null) return false;
+    final identity = _userProfile.publicId;
+    final fingerprint = _securityContext.myFingerprint;
+    final isAuthor = (fingerprint.isNotEmpty && post.authorFingerprint == fingerprint) ||
+        (identity.isNotEmpty && post.authorFingerprint == identity) ||
+        post.authorName == _userProfile.effectiveDisplayName ||
+        post.authorName == _userProfile.displayName;
+    if (isAuthor) return true;
+
+    final channel = _findChannel(post.channelId) ??
+        (post.channelId == _currentChannel.id ? _currentChannel : null);
+    if (channel == null) return false;
+    return [identity, fingerprint].where((id) => id.isNotEmpty).any(
+      (id) => channel.ownerFingerprint == id || channel.admins.contains(id),
+    );
+  }
+
+  bool editForumPost({
+    required String postId,
+    required String title,
+    required String description,
+    required List<String> tags,
+    List<ArchiveImage>? images,
+  }) {
+    final idx = _forumPosts.indexWhere((p) => p.id == postId);
+    if (idx == -1) {
+      return false;
+    }
+    final current = _forumPosts[idx];
+
+    if (!canEditForumPost(current)) {
+      throw StateError('Apenas o autor ou um administrador pode editar este tópico.');
+    }
+
+    final cleanTitle = title.trim();
+    final detail = description.trim();
+    if (cleanTitle.isEmpty || cleanTitle.length > 120 ||
+        detail.length > 8000 || tags.length > 8 ||
+        tags.any((tag) => !forumTagsFor(current.channelId).containsKey(tag))) {
+      return false;
+    }
+
+    List<ForumImageSpec>? updatedImages;
+    if (images != null) {
+      try {
+        ArchiveImage.validateLimits(images);
+      } on FormatException {
+        return false;
+      }
+      updatedImages = List.unmodifiable(images.indexed.map((entry) =>
+          ForumImageSpec(label: 'Imagem ${entry.$1 + 1}', subtitle: '', code: '', image: entry.$2)));
+    }
+
+    final updated = current.copyWith(
+      title: cleanTitle,
+      description: detail,
+      tags: List.unmodifiable(tags),
+      images: updatedImages ?? current.images,
+      editedAt: DateTime.now(),
+      revision: current.revision + 1,
+    );
+
+    _forumPosts[idx] = updated;
+    if (_selectedForumPost?.id == postId) {
+      _selectedForumPost = updated;
+    }
+    _persistForum();
+    notifyListeners();
+    return true;
+  }
+
   void setEphemeralTimer(int seconds) {
     _selectedEphemeralTimer = seconds;
     notifyListeners();

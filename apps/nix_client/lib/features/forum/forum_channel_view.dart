@@ -192,10 +192,12 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                                   itemBuilder: (context, idx) {
                                     final post = filteredPosts[idx];
                                     final isSelected = selectedPost?.id == post.id;
+                                    final canEdit = nixState.canEditForumPost(post);
                                     return _ForumPostCard(
                                       post: post,
                                       isSelected: isSelected,
                                       onTap: () => nixState.selectForumPost(post),
+                                      onEdit: canEdit ? () => _showEditTopicModal(context, nixState, post) : null,
                                     );
                                   },
                                 );
@@ -216,6 +218,8 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                         commentController: _commentController,
                         onSendComment: () => _submitComment(nixState, selectedPost.id),
                         onClose: () => nixState.selectForumPost(null),
+                        canEdit: nixState.canEditForumPost(selectedPost),
+                        onEdit: () => _showEditTopicModal(context, nixState, selectedPost),
                       ),
                     ),
                 ],
@@ -397,17 +401,155 @@ class _ForumChannelViewState extends State<ForumChannelView> {
       ),
     );
   }
+
+  void _showEditTopicModal(BuildContext context, NixState state, ForumPost post) {
+    final titleController = TextEditingController(text: post.title);
+    final descController = TextEditingController(text: post.description);
+    String? chosenTag = post.tags.isNotEmpty ? post.tags.first : null;
+    final images = post.images.map((spec) => spec.image).whereType<ArchiveImage>().toList();
+    var picking = false;
+    final tags = state.forumTagsFor(widget.channel.id);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => AlertDialog(
+          title: const Text('Editar Tópico'),
+          scrollable: true,
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (tags.isNotEmpty)
+                  Text('TAG OPÇÃO', style: NixTokens.labelUppercase()),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  children: tags.keys.map((t) {
+                    final selected = chosenTag == t;
+                    return ChoiceChip(
+                      avatar: NixSymbol(tags[t]!, size: 15, color: selected ? ctx.onAccentColor : NixColors.textPrimary),
+                      label: Text(t, style: const TextStyle(fontSize: 11.5)),
+                      selected: selected,
+                      selectedColor: ctx.accentColor,
+                      labelStyle: TextStyle(
+                        color: selected ? ctx.onAccentColor : NixColors.textPrimary,
+                        fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                      onSelected: (value) => setModalState(() => chosenTag = value ? t : null),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 14),
+                Text('TÍTULO DO TÓPICO', style: NixTokens.labelUppercase()),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: titleController,
+                  maxLength: 120,
+                  decoration: const InputDecoration(hintText: 'ex: Análise de Antena 915MHz...'),
+                ),
+                const SizedBox(height: 12),
+                Text('DESCRIÇÃO / ESPECIFICAÇÕES', style: NixTokens.labelUppercase()),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: descController,
+                  contextMenuBuilder: buildChatFormatMenu,
+                  maxLength: 8000,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    hintText: 'Inclua peso, dimensões, hash ou observações...',
+                  ),
+                ),
+                for (final (index, image) in images.indexed)
+                  ListTile(
+                    leading: Image.memory(image.bytes, width: 58, height: 42, fit: BoxFit.contain),
+                    title: Text('Imagem ${index + 1}'),
+                    trailing: IconButton(
+                      tooltip: 'Remover imagem',
+                      onPressed: picking ? null : () => setModalState(() => images.removeAt(index)),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ),
+                OutlinedButton.icon(
+                  onPressed: picking || images.length >= ArchiveImage.maxImages ? null : () async {
+                    setModalState(() => picking = true);
+                    try {
+                      final image = await ArchiveImagePicker.pick(ctx);
+                      if (image != null && ctx.mounted) {
+                        ArchiveImage.validateLimits([...images, image]);
+                        setModalState(() => images.add(image));
+                      }
+                    } catch (_) {
+                      if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('Imagem inválida ou limite de tamanho excedido.')),
+                      );
+                    } finally {
+                      if (ctx.mounted) setModalState(() => picking = false);
+                    }
+                  },
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: const Text('Adicionar imagem'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancelar', style: TextStyle(color: NixColors.textMuted)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ctx.accentColor,
+                foregroundColor: ctx.onAccentColor,
+              ),
+              onPressed: picking ? null : () {
+                final newTitle = titleController.text.trim();
+                if (newTitle.isNotEmpty) {
+                  try {
+                    final updated = state.editForumPost(
+                      postId: post.id,
+                      title: newTitle,
+                      description: descController.text,
+                      tags: [if (chosenTag != null) chosenTag!],
+                      images: images,
+                    );
+                    if (updated) {
+                      Navigator.pop(ctx);
+                    } else {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('Não foi possível salvar as alterações.')),
+                      );
+                    }
+                  } catch (e) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(content: Text(e.toString())),
+                    );
+                  }
+                }
+              },
+              child: const Text('Salvar Alterações', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ForumPostCard extends StatelessWidget {
   final ForumPost post;
   final bool isSelected;
   final VoidCallback onTap;
+  final VoidCallback? onEdit;
 
   const _ForumPostCard({
     required this.post,
     required this.isSelected,
     required this.onTap,
+    this.onEdit,
   });
 
   @override
@@ -428,16 +570,25 @@ class _ForumPostCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Autor + Badge NEW
+            // Autor + Badge NEW + Edit button
             Row(
               children: [
                 Expanded(
                   child: Text(
-                    '${post.authorName} · há ${DateTime.now().difference(post.createdAt).inHours.clamp(1, 24)}h',
+                    '${post.authorName} · há ${DateTime.now().difference(post.createdAt).inHours.clamp(1, 24)}h${post.editedAt != null ? ' · (editado)' : ''}',
                     style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (onEdit != null)
+                  IconButton(
+                    icon: Icon(Icons.edit_outlined, size: 14, color: NixColors.textMuted),
+                    tooltip: 'Editar tópico',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: onEdit,
+                  ),
+                if (onEdit != null) const SizedBox(width: 4),
                 if (post.isNew)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -596,12 +747,16 @@ class _SplitThreadPanel extends StatelessWidget {
   final TextEditingController commentController;
   final VoidCallback onSendComment;
   final VoidCallback onClose;
+  final bool canEdit;
+  final VoidCallback? onEdit;
 
   const _SplitThreadPanel({
     required this.post,
     required this.commentController,
     required this.onSendComment,
     required this.onClose,
+    this.canEdit = false,
+    this.onEdit,
   });
 
   @override
@@ -634,6 +789,12 @@ class _SplitThreadPanel extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (canEdit && onEdit != null)
+                  IconButton(
+                    icon: Icon(Icons.edit_outlined, size: 18, color: NixColors.textSecondary),
+                    tooltip: 'Editar tópico',
+                    onPressed: onEdit,
+                  ),
                 IconButton(
                   icon: Icon(Icons.close_rounded, size: 18, color: NixColors.textSecondary),
                   tooltip: 'Fechar Tópico',
@@ -671,7 +832,7 @@ class _SplitThreadPanel extends StatelessWidget {
                       .toList(),
                 ),
                 Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Divider(height: 1, color: NixColors.surfaceBorder),
                 ),
 
@@ -712,6 +873,17 @@ class _SplitThreadPanel extends StatelessWidget {
                             TextStyle(color: Colors.black, fontSize: 9, fontWeight: FontWeight.w900),
                       ),
                     ),
+                    if (post.editedAt != null) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        '(editado)',
+                        style: TextStyle(
+                          color: NixColors.textMuted,
+                          fontSize: 11,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 10),

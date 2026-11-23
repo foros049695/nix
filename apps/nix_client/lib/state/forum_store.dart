@@ -22,6 +22,8 @@ class ForumStore {
               'author': post.authorName,
               'fingerprint': post.authorFingerprint,
               'created': post.createdAt.millisecondsSinceEpoch,
+              'edited': post.editedAt?.millisecondsSinceEpoch,
+              'revision': post.revision,
               'tags': post.tags,
               'description': post.description,
               'images': [for (final item in post.images) if (item.image != null) item.image!.toJson()],
@@ -74,6 +76,8 @@ class ForumStore {
             authorName: row['author'] as String,
             authorFingerprint: row['fingerprint'] as String,
             createdAt: _date(row['created']),
+            editedAt: row['edited'] != null ? _date(row['edited']) : null,
+            revision: row['revision'] as int? ?? 1,
             tags: (row['tags'] as List).cast<String>(),
             description: row['description'] as String,
             images: ArchiveImage.readList(row['images']).indexed.map((entry) =>
