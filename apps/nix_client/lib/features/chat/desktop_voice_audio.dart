@@ -91,7 +91,7 @@ class DesktopVoiceAudio {
             _buffer.add(toAdd);
             _samples = _buffer.length ~/ 2;
 
-            // Calcula amplitude de pico (PCM 16-bit)
+            // Calcula intensidade de pico (PCM 16-bit)
             final byteData = ByteData.sublistView(Uint8List.fromList(toAdd));
             int maxP = _peak;
             for (int i = 0; i < byteData.lengthInBytes - 1; i += 2) {
