@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/media/voice_note.dart';
+import 'desktop_voice_audio.dart';
 
 class VoiceNoteDialog extends StatefulWidget {
   const VoiceNoteDialog.record({super.key, required this.onSend}) : load = null;
@@ -19,6 +22,11 @@ class VoiceNoteDialog extends StatefulWidget {
 
 class _VoiceNoteDialogState extends State<VoiceNoteDialog>
     with WidgetsBindingObserver {
+  late final _desktop = switch (defaultTargetPlatform) {
+    TargetPlatform.linux || TargetPlatform.windows when !Platform.environment.containsKey('FLUTTER_TEST') =>
+      DesktopVoiceAudio(),
+    _ => null,
+  };
   VoiceNote? _note;
   String _status = 'idle';
   String? _error;
@@ -84,11 +92,16 @@ class _VoiceNoteDialogState extends State<VoiceNoteDialog>
     super.dispose();
   }
 
-  static Future<void> _cancel() async {
-    try {
-      await VoiceNoteDialog.channel.invokeMethod<void>('cancel');
-    } catch (_) {
-      // A atividade Android também libera o microfone ao sair de cena.
+  Future<void> _cancel() async {
+    final desktop = _desktop;
+    if (desktop != null) {
+      await desktop.cancel();
+    } else {
+      try {
+        await VoiceNoteDialog.channel.invokeMethod<void>('cancel');
+      } catch (_) {
+        // A atividade Android também libera o microfone ao sair de cena.
+      }
     }
   }
 
@@ -115,9 +128,12 @@ class _VoiceNoteDialogState extends State<VoiceNoteDialog>
     if (_busy || _polling || !mounted || _backgrounded) return;
     _polling = true;
     try {
+      final desktop = _desktop;
       if (_recording) {
-        final snapshot = await VoiceNoteDialog.channel
-            .invokeMapMethod<String, Object?>('status');
+        final snapshot = desktop != null
+            ? await desktop.status()
+            : await VoiceNoteDialog.channel
+                .invokeMapMethod<String, Object?>('status');
         if (snapshot == null ||
             !mounted ||
             _busy ||
@@ -127,31 +143,44 @@ class _VoiceNoteDialogState extends State<VoiceNoteDialog>
           _status = snapshot['state'] as String;
           _samples = snapshot['samples'] as int;
           _peak = snapshot['peak'] as int;
-          if (_status == 'failed')
+          if (_status == 'failed') {
             _error = 'A captura do microfone foi interrompida.';
+          }
         });
       } else if (_playing) {
-        final playing =
-            await VoiceNoteDialog.channel.invokeMethod<bool>('playing');
-        if (mounted && !_busy && playing != true)
+        final playing = desktop != null
+            ? await desktop.playing()
+            : await VoiceNoteDialog.channel.invokeMethod<bool>('playing');
+        if (mounted && !_busy && playing != true) {
           setState(() => _playing = false);
+        }
       }
     } catch (_) {
-      if (mounted && !_busy)
+      if (mounted && !_busy) {
         setState(() => _error = 'O áudio foi interrompido.');
+      }
     } finally {
       _polling = false;
     }
   }
 
   Future<void> _changeRecording(String method, String state) => _run(() async {
-        await VoiceNoteDialog.channel.invokeMethod<void>(method);
+        final desktop = _desktop;
+        if (desktop != null) {
+          if (method == 'start') await desktop.start();
+          if (method == 'pause') await desktop.pause();
+          if (method == 'resume') await desktop.resume();
+        } else {
+          await VoiceNoteDialog.channel.invokeMethod<void>(method);
+        }
         if (!_backgrounded && mounted) _status = state;
       });
 
   Future<void> _finish() => _run(() async {
-        final pcm =
-            await VoiceNoteDialog.channel.invokeMethod<Uint8List>('finish');
+        final desktop = _desktop;
+        final pcm = desktop != null
+            ? await desktop.finish()
+            : await VoiceNoteDialog.channel.invokeMethod<Uint8List>('finish');
         if (pcm == null) throw StateError('A gravação está vazia.');
         if (!mounted || _backgrounded) {
           pcm.fillRange(0, pcm.length, 0);
@@ -162,11 +191,20 @@ class _VoiceNoteDialogState extends State<VoiceNoteDialog>
       });
 
   Future<void> _play(VoiceNote note) => _run(() async {
+        final desktop = _desktop;
         if (_playing) {
-          await VoiceNoteDialog.channel.invokeMethod<void>('stopPlayback');
+          if (desktop != null) {
+            await desktop.stopPlayback();
+          } else {
+            await VoiceNoteDialog.channel.invokeMethod<void>('stopPlayback');
+          }
           _playing = false;
         } else {
-          await VoiceNoteDialog.channel.invokeMethod<void>('play', note.pcm);
+          if (desktop != null) {
+            await desktop.play(note.pcm);
+          } else {
+            await VoiceNoteDialog.channel.invokeMethod<void>('play', note.pcm);
+          }
           _playing = !_backgrounded;
         }
       });
