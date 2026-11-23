@@ -513,10 +513,22 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
       if (res.status == VaultUnlockStatus.duressTriggered) {
         // Panic wipe silencioso já ocorreu no State
         _ctrl.clear();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cofre autenticado com sucesso! Entrando no Nix...'),
+            duration: Duration(seconds: 1),
+          ),
+        );
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        setState(() => _error = 'Frase-passe incorreta para desbloquear o cofre.');
+        final errStr = e.toString().toLowerCase();
+        if (errStr.contains('locked') || errStr.contains('busy')) {
+          setState(() => _error = 'Banco bloqueado por outra instância do Nix em execução. Feche o outro processo.');
+        } else {
+          setState(() => _error = 'Frase-passe incorreta para desbloquear o cofre.');
+        }
       }
     } finally {
       if (mounted) setState(() => _busy = false);

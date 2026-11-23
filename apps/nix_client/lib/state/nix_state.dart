@@ -1618,17 +1618,34 @@ class NixState extends ChangeNotifier {
     final effectivePass = passphrase.trim().isEmpty ? 'nix_device_open_vault_v1' : passphrase;
     VaultUnlockResult result;
     try {
-      result = await _keyVault.unlockOrDuress(
-        passphrase: effectivePass,
-        customPath: customVaultPath,
-      );
+      if (effectivePass == 'nix_device_open_vault_v1') {
+        final osKey = await _keyVault.tryUnlockWithOsKeyring(customPath: customVaultPath);
+        if (osKey != null) {
+          result = VaultUnlockResult.unlocked(osKey);
+        } else {
+          result = await _keyVault.unlockOrDuress(
+            passphrase: effectivePass,
+            customPath: customVaultPath,
+          );
+        }
+      } else {
+        result = await _keyVault.unlockOrDuress(
+          passphrase: effectivePass,
+          customPath: customVaultPath,
+        );
+      }
     } catch (e) {
       if (effectivePass != 'nix_device_open_vault_v1') {
         try {
-          result = await _keyVault.unlockOrDuress(
-            passphrase: 'nix_device_open_vault_v1',
-            customPath: customVaultPath,
-          );
+          final osKey = await _keyVault.tryUnlockWithOsKeyring(customPath: customVaultPath);
+          if (osKey != null) {
+            result = VaultUnlockResult.unlocked(osKey);
+          } else {
+            result = await _keyVault.unlockOrDuress(
+              passphrase: 'nix_device_open_vault_v1',
+              customPath: customVaultPath,
+            );
+          }
         } catch (_) {
           rethrow;
         }
