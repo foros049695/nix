@@ -31,6 +31,7 @@ class Aria2DownloadController extends ChangeNotifier {
   final Map<String, DownloadTask> _tasks = {};
   final DartSegmentedDownloader _fallbackDownloader = DartSegmentedDownloader();
   final Set<String> _fallbackTaskIds = {};
+  final Set<String> _removedTaskIds = {};
   DownloadStatusChangeNotifier? onTasksUpdated;
 
   void _notify() {
@@ -136,7 +137,7 @@ class Aria2DownloadController extends ChangeNotifier {
         '--min-split-size=1M',
         '--continue=true',
         '--dir=$downloadDir',
-        '--check-integrity=true',
+        '--check-integrity=false',
         '--summary-interval=1',
         '--file-allocation=none',
         '--max-overall-download-limit=0',
@@ -188,6 +189,7 @@ class Aria2DownloadController extends ChangeNotifier {
     final fileName = customFileName ?? _extractFileName(uri);
     final targetPath = '$downloadDir/$fileName';
     final taskId = 'dl_${DateTime.now().microsecondsSinceEpoch}';
+    _removedTaskIds.remove(taskId);
 
     var task = DownloadTask(
       id: taskId,
@@ -387,13 +389,21 @@ class Aria2DownloadController extends ChangeNotifier {
   /// Remove permanentemente uma tarefa da fila e da memória,
   /// encerrando o processo de download no aria2 ou no fallback Dart.
   Future<void> removeDownload(String taskId, {bool deleteFile = false}) async {
+    _removedTaskIds.add(taskId);
     final task = _tasks[taskId];
+    if (task != null && task.id != taskId) {
+      _removedTaskIds.add(task.id);
+    }
+
     if (_fallbackTaskIds.contains(taskId)) {
       _fallbackDownloader.cancel(taskId);
       _fallbackTaskIds.remove(taskId);
     }
 
     if (_process != null) {
+      try {
+        await _rpcCall('aria2.forceRemove', ['token:$_rpcSecret', taskId]);
+      } catch (_) {}
       try {
         await _rpcCall('aria2.remove', ['token:$_rpcSecret', taskId]);
       } catch (_) {}
@@ -402,14 +412,21 @@ class Aria2DownloadController extends ChangeNotifier {
       } catch (_) {}
     }
 
-    if (deleteFile && task != null) {
+    if (task != null) {
       try {
-        final f = File(task.destinationPath);
-        if (await f.exists()) await f.delete();
+        if (deleteFile) {
+          final f = File(task.destinationPath);
+          if (await f.exists()) await f.delete();
+        }
+        // Sempre limpa arquivos de controle e partes temporárias ao remover
         final part = File('${task.destinationPath}.part');
         if (await part.exists()) await part.delete();
         final aria2File = File('${task.destinationPath}.aria2');
         if (await aria2File.exists()) await aria2File.delete();
+        for (var i = 0; i < 32; i++) {
+          final seg = File('${task.destinationPath}.part$i');
+          if (await seg.exists()) await seg.delete();
+        }
       } catch (_) {}
     }
 
@@ -469,6 +486,12 @@ class Aria2DownloadController extends ChangeNotifier {
       task: task,
       splitCount: 4,
       onProgress: (updated) {
+        // Impede que downloads removidos sejam ressuscitados pelo callback assíncrono
+        if (_removedTaskIds.contains(updated.id) ||
+            _removedTaskIds.contains(task.id) ||
+            !_tasks.containsKey(updated.id)) {
+          return;
+        }
         _tasks[updated.id] = updated;
         final now = DateTime.now();
         if (now.difference(lastPersist).inSeconds >= 5 ||
@@ -506,6 +529,17 @@ class Aria2DownloadController extends ChangeNotifier {
         final gid = item['gid']?.toString();
         if (gid == null) continue;
 
+        if (_removedTaskIds.contains(gid)) {
+          try {
+            await _rpcCall('aria2.removeDownloadResult', ['token:$_rpcSecret', gid]);
+          } catch (_) {}
+          continue;
+        }
+
+        if (!_tasks.containsKey(gid)) {
+          continue;
+        }
+
         final statusStr = item['status']?.toString();
         final totalLength = int.tryParse(item['totalLength']?.toString() ?? '') ?? 0;
         final completedLength = int.tryParse(item['completedLength']?.toString() ?? '') ?? 0;
@@ -514,7 +548,11 @@ class Aria2DownloadController extends ChangeNotifier {
         DownloadStatus status;
         switch (statusStr) {
           case 'active':
-            status = DownloadStatus.downloading;
+            if (totalLength > 0 && completedLength >= totalLength) {
+              status = DownloadStatus.finalizing;
+            } else {
+              status = DownloadStatus.downloading;
+            }
             break;
           case 'waiting':
             status = DownloadStatus.queued;

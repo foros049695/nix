@@ -3,6 +3,7 @@ enum DownloadStatus {
   queued('queued', 'Na fila'),
   starting('starting', 'Iniciando'),
   downloading('downloading', 'Baixando'),
+  finalizing('finalizing', 'Finalizando'),
   paused('paused', 'Pausado'),
   completed('completed', 'Concluído'),
   failed('failed', 'Falhou'),

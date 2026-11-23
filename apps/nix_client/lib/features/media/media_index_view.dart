@@ -604,7 +604,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                           const SizedBox(height: 12),
                           if (localError != null) ...[
                             Container(
-                              padding: const EdgeInsets.all(10),
+                              padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: Colors.red.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(8),
@@ -660,6 +660,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                                                   currentVer = await updateManager.getInstalledVersion();
                                                   history = await updateManager.getVersionHistory();
                                                   if (mounted) await _executeSearch();
+                                                  if (ctx.mounted) setDlgState(() => localError = null);
                                                 } catch (err) {
                                                   if (ctx.mounted) {
                                                     setDlgState(() => localError = 'Falha ao sincronizar catálogo: $err');
@@ -674,14 +675,34 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                               ),
                             ),
                             const SizedBox(height: 8),
-                          ],
-                          if (currentProgress.statusMessage.isNotEmpty) ...[
+                          ] else if (currentProgress.stage == CatalogUpdateStage.completed ||
+                              currentProgress.stage == CatalogUpdateStage.upToDate) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF34D399), size: 18),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      currentProgress.statusMessage,
+                                      style: const TextStyle(color: Color(0xFF34D399), fontSize: 12, fontWeight: FontWeight.w500),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ] else if (currentProgress.statusMessage.isNotEmpty && currentProgress.stage != CatalogUpdateStage.error) ...[
                             Text(
                               currentProgress.statusMessage,
                               style: TextStyle(
-                                color: currentProgress.stage == CatalogUpdateStage.error
-                                    ? errorColor
-                                    : NixColors.textPrimary,
+                                color: NixColors.textPrimary,
                                 fontSize: 13,
                               ),
                             ),

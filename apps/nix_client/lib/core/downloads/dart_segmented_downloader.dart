@@ -99,6 +99,8 @@ class DartSegmentedDownloader {
 
       // Validação de integridade SHA-256 quando fornecida
       if (current.status == DownloadStatus.completed && task.sha256Expected != null) {
+        current = current.copyWith(status: DownloadStatus.finalizing);
+        onProgress?.call(current);
         final actualHash = await computeFileSha256(targetFile);
         final matches = actualHash.toLowerCase() == task.sha256Expected!.toLowerCase();
         if (!matches) {
@@ -109,7 +111,10 @@ class DartSegmentedDownloader {
           );
           onProgress?.call(current);
         } else {
-          current = current.copyWith(sha256Actual: actualHash);
+          current = current.copyWith(
+            status: DownloadStatus.completed,
+            sha256Actual: actualHash,
+          );
           onProgress?.call(current);
         }
       }
@@ -186,37 +191,69 @@ class DartSegmentedDownloader {
       segmentFiles.add(segFile);
 
       futures.add(() async {
-        var existingBytes = 0;
-        if (segFile.existsSync()) {
-          existingBytes = segFile.lengthSync();
-        }
-        segmentProgress[i] = existingBytes;
+        int retries = 0;
+        const maxRetries = 3;
+        final expectedSegSize = (end - start + 1);
 
-        final actualStart = start + existingBytes;
-        if (actualStart > end) return; // Este segmento já está completo
-
-        final req = await client.getUrl(uri);
-        req.headers.set('Range', 'bytes=$actualStart-$end');
-        final res = await req.close();
-
-        final sink = segFile.openWrite(mode: FileMode.append);
-        try {
-          await for (final chunk in res) {
-            if (_cancelledTasks[task.id] == true) {
-              await sink.close();
-              throw Exception('Download cancelado pelo usuário');
-            }
-            if (_pausedTasks[task.id] == true) {
-              await sink.close();
-              return;
-            }
-
-            sink.add(chunk);
-            segmentProgress[i] += chunk.length;
+        while (true) {
+          var existingBytes = 0;
+          if (segFile.existsSync()) {
+            existingBytes = segFile.lengthSync();
           }
-        } finally {
-          await sink.flush();
-          await sink.close();
+          segmentProgress[i] = existingBytes;
+
+          if (existingBytes >= expectedSegSize) {
+            return; // Segmento já concluído
+          }
+
+          final actualStart = start + existingBytes;
+          if (actualStart > end) return;
+
+          try {
+            final req = await client.getUrl(uri);
+            req.headers.set('Range', 'bytes=$actualStart-$end');
+            final res = await req.close();
+
+            if (res.statusCode != HttpStatus.partialContent && res.statusCode != HttpStatus.ok) {
+              throw HttpException('Status HTTP inesperado para o segmento ($actualStart-$end): ${res.statusCode}');
+            }
+
+            final sink = segFile.openWrite(mode: FileMode.append);
+            try {
+              await for (final chunk in res.timeout(const Duration(seconds: 40))) {
+                if (_cancelledTasks[task.id] == true) {
+                  await sink.close();
+                  throw Exception('Download cancelado pelo usuário');
+                }
+                if (_pausedTasks[task.id] == true) {
+                  await sink.close();
+                  return;
+                }
+
+                sink.add(chunk);
+                segmentProgress[i] += chunk.length;
+              }
+            } finally {
+              await sink.flush();
+              await sink.close();
+            }
+
+            final finalSize = segFile.existsSync() ? segFile.lengthSync() : 0;
+            if (finalSize >= expectedSegSize) {
+              return; // Sucesso neste segmento
+            } else {
+              throw HttpException('Segmento $i incompleto: obtido $finalSize de $expectedSegSize bytes');
+            }
+          } catch (e) {
+            if (_cancelledTasks[task.id] == true || _pausedTasks[task.id] == true) {
+              rethrow;
+            }
+            retries++;
+            if (retries >= maxRetries) {
+              rethrow;
+            }
+            await Future.delayed(const Duration(seconds: 1));
+          }
         }
       }());
     }
@@ -227,7 +264,11 @@ class DartSegmentedDownloader {
       progressTimer.cancel();
       if (_cancelledTasks[task.id] == true) {
         for (final f in segmentFiles) {
-          if (f.existsSync()) f.deleteSync();
+          if (f.existsSync()) {
+            try {
+              f.deleteSync();
+            } catch (_) {}
+          }
         }
         return current.copyWith(status: DownloadStatus.cancelled, speedBytesPerSec: 0, clearEta: true);
       }
@@ -243,13 +284,24 @@ class DartSegmentedDownloader {
       return current.copyWith(status: DownloadStatus.paused, speedBytesPerSec: 0, clearEta: true);
     }
 
+    // Notifica que iniciou a montagem e finalização do arquivo no disco
+    current = current.copyWith(
+      status: DownloadStatus.finalizing,
+      downloadedBytes: contentLength,
+      speedBytesPerSec: 0,
+      clearEta: true,
+    );
+    onProgress?.call(current);
+
     // Costura todos os segmentos no arquivo final
     final outSink = targetFile.openWrite();
     try {
       for (final segFile in segmentFiles) {
         if (segFile.existsSync()) {
           await outSink.addStream(segFile.openRead());
-          segFile.deleteSync();
+          try {
+            segFile.deleteSync();
+          } catch (_) {}
         }
       }
     } finally {
@@ -257,13 +309,15 @@ class DartSegmentedDownloader {
       await outSink.close();
     }
 
-    return current.copyWith(
+    current = current.copyWith(
       downloadedBytes: contentLength,
       status: DownloadStatus.completed,
       completedAt: DateTime.now(),
       speedBytesPerSec: 0,
       clearEta: true,
     );
+    onProgress?.call(current);
+    return current;
   }
 
   Future<DownloadTask> _downloadDirectStream({
@@ -275,6 +329,10 @@ class DartSegmentedDownloader {
   }) async {
     final req = await client.getUrl(uri);
     final res = await req.close();
+
+    if (res.statusCode != HttpStatus.ok && res.statusCode != HttpStatus.partialContent) {
+      throw HttpException('Status HTTP inválido para download direto: ${res.statusCode}');
+    }
 
     var current = task;
     var downloaded = 0;
@@ -307,7 +365,7 @@ class DartSegmentedDownloader {
 
     final sink = targetFile.openWrite();
     try {
-      await for (final chunk in res) {
+      await for (final chunk in res.timeout(const Duration(seconds: 40))) {
         if (_cancelledTasks[task.id] == true) {
           await sink.close();
           if (targetFile.existsSync()) targetFile.deleteSync();

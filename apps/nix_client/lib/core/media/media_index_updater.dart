@@ -412,6 +412,7 @@ class MediaIndexUpdater {
     SimplePublicKey? trustedPublisherKey,
     CatalogPublisherKeyring? keyring,
     String? targetDbPath,
+    bool allowReinstall = false,
   }) async {
     final kr = keyring ??
         (trustedPublisherKey != null
@@ -439,10 +440,18 @@ class MediaIndexUpdater {
           await existingDb.close();
         }
 
-        if (manifest.version <= currentVersion) {
-          throw CatalogRollbackRejectedException(
-            '[Anti-Rollback] Versão do catálogo recebido (${manifest.version}) não é superior à versão atual ($currentVersion).',
-          );
+        if (allowReinstall) {
+          if (manifest.version < currentVersion) {
+            throw CatalogRollbackRejectedException(
+              '[Anti-Rollback] Versão do catálogo recebido (${manifest.version}) é inferior à versão atual ($currentVersion).',
+            );
+          }
+        } else {
+          if (manifest.version <= currentVersion) {
+            throw CatalogRollbackRejectedException(
+              '[Anti-Rollback] Versão do catálogo recebido (${manifest.version}) não é superior à versão atual ($currentVersion).',
+            );
+          }
         }
       } catch (e) {
         if (e is CatalogRollbackRejectedException) rethrow;
@@ -993,6 +1002,7 @@ class CatalogUpdateManager {
         manifest: manifest,
         keyring: keyring,
         targetDbPath: targetDbPath,
+        allowReinstall: true,
       );
 
       await _recordHistory(CatalogVersionEntry(
@@ -1008,7 +1018,7 @@ class CatalogUpdateManager {
       _emitProgress(CatalogUpdateProgress(
         stage: CatalogUpdateStage.completed,
         availableManifest: manifest,
-        statusMessage: 'Catálogo integrado sincronizado com sucesso (v${manifest.version})!',
+        statusMessage: 'Catálogo integrado sincronizado e validado com sucesso (v${manifest.version})!',
       ));
 
       return newDb;

@@ -299,5 +299,51 @@ void main() {
       expect(TransportPolicy.isValidOnionV3Host(uri.host), isTrue);
       expect(uri.path, endsWith('manifest.json'));
     });
+
+    test('8. Reinstalação e reparo de mesma versão com allowReinstall vs rejeição quando allowReinstall é falso', () async {
+      final v1Bytes = await createValidCatalogBytes(version: 1, count: 5);
+      final manifestV1 = await SignedCatalogManifest.signArtifact(
+        signerKeyPair: validKeyPair,
+        version: 1,
+        artifactName: 'test_catalog.db',
+        artifactBytes: v1Bytes,
+        entryCount: 5,
+      );
+
+      final keyring = CatalogPublisherKeyring(trustedKeysHex: {validPubHex});
+
+      // Aplica v1 inicial
+      final db1 = await MediaIndexUpdater.applySignedCatalogPackage(
+        packageBytes: v1Bytes,
+        manifest: manifestV1,
+        keyring: keyring,
+        targetDbPath: catalogPath,
+      );
+      expect(await db1.getVersion(), equals(1));
+      await db1.close();
+
+      // Tentativa de aplicar v1 sobre v1 com allowReinstall: false deve lançar CatalogRollbackRejectedException
+      expect(
+        () => MediaIndexUpdater.applySignedCatalogPackage(
+          packageBytes: v1Bytes,
+          manifest: manifestV1,
+          keyring: keyring,
+          targetDbPath: catalogPath,
+          allowReinstall: false,
+        ),
+        throwsA(isA<CatalogRollbackRejectedException>()),
+      );
+
+      // Tentativa de aplicar v1 sobre v1 com allowReinstall: true deve ter sucesso (reparo/sincronização do catálogo integrado)
+      final repairedDb = await MediaIndexUpdater.applySignedCatalogPackage(
+        packageBytes: v1Bytes,
+        manifest: manifestV1,
+        keyring: keyring,
+        targetDbPath: catalogPath,
+        allowReinstall: true,
+      );
+      expect(await repairedDb.getVersion(), equals(1));
+      await repairedDb.close();
+    });
   });
 }

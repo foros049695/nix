@@ -100,6 +100,19 @@ void main() {
       expect(controller.tasks, isEmpty);
       expect(notifyCount, greaterThan(countBeforeRemove));
     });
+
+    test('Remoção de download impede terminantemente ressurreição da tarefa', () async {
+      final task = await controller.addDownload(url: 'https://example.com/test_iso.iso');
+      expect(controller.tasks.length, equals(1));
+
+      // Remove a tarefa
+      await controller.removeDownload(task.id);
+      expect(controller.tasks, isEmpty);
+
+      // Espera ciclo assíncrono para garantir que nenhum callback ressuscita a tarefa
+      await Future.delayed(const Duration(milliseconds: 100));
+      expect(controller.tasks, isEmpty);
+    });
   });
 
   group('DartSegmentedDownloader (Range Requests e Integridade)', () {

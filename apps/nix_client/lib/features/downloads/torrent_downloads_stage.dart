@@ -1052,6 +1052,11 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                   'ETA: ${task.formattedEta}',
                   style: const TextStyle(color: Color(0xFFA78BFA), fontSize: 11, fontFamily: 'monospace'),
                 ),
+              ] else if (task.status == DownloadStatus.finalizing) ...[
+                const Text(
+                  '⚡ Montando e validando arquivo final...',
+                  style: TextStyle(color: Color(0xFF38BDF8), fontSize: 11, fontFamily: 'monospace'),
+                ),
               ],
             ],
           ),
@@ -1233,6 +1238,8 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
     switch (status) {
       case DownloadStatus.downloading:
         return const Color(0xFF34D399);
+      case DownloadStatus.finalizing:
+        return const Color(0xFF38BDF8);
       case DownloadStatus.paused:
         return Colors.amber;
       case DownloadStatus.completed:
