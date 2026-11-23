@@ -34,6 +34,8 @@ enum WorkspaceTab {
   final IconData icon;
   final IconData activeIcon;
 
+  static const mobileTabs = [chats, spaces, media, archive, market];
+
   static WorkspaceTab forArea(NixActiveArea area) => switch (area) {
         NixActiveArea.spaces => spaces,
         NixActiveArea.mediaIndex => media,

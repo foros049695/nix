@@ -112,6 +112,7 @@ class Aria2DownloadController {
     required String url,
     String? customFileName,
     String? sha256Expected,
+    bool allowClearnet = false,
   }) async {
     final cleanUrl = url.trim();
     _assertValidHttpUrl(cleanUrl);
@@ -128,6 +129,7 @@ class Aria2DownloadController {
       fileName: fileName,
       sha256Expected: sha256Expected,
       status: DownloadStatus.starting,
+      allowClearnet: allowClearnet,
       createdAt: DateTime.now(),
     );
 
@@ -142,16 +144,21 @@ class Aria2DownloadController {
     }
 
     try {
+      final downloadOptions = <String, String>{
+        'dir': downloadDir,
+        'out': fileName,
+        'split': '4',
+        'max-connection-per-server': '4',
+      };
+      if (task.allowClearnet) {
+        downloadOptions['all-proxy'] = '';
+      }
+
       // Submete a URL via JSON-RPC protegido
       final rpcRes = await _rpcCall('aria2.addUri', [
         'token:$_rpcSecret',
         [cleanUrl],
-        {
-          'dir': downloadDir,
-          'out': fileName,
-          'split': '4',
-          'max-connection-per-server': '4',
-        }
+        downloadOptions,
       ]);
 
       if (rpcRes != null && rpcRes['result'] != null) {
@@ -170,6 +177,21 @@ class Aria2DownloadController {
       unawaited(_runFallbackDownload(task));
       return task;
     }
+  }
+
+  /// Retenta um download que falhou permitindo conexão fora da rede Tor (Clearnet).
+  Future<void> retryDownloadWithClearnet(String taskId) async {
+    final task = _tasks[taskId];
+    if (task == null) return;
+    final updated = task.copyWith(
+      status: DownloadStatus.starting,
+      allowClearnet: true,
+      errorMessage: null,
+    );
+    _tasks[taskId] = updated;
+    onTasksUpdated?.call(tasks);
+    _fallbackTaskIds.add(taskId);
+    unawaited(_runFallbackDownload(updated));
   }
 
   Future<void> pauseDownload(String taskId) async {
@@ -335,7 +357,9 @@ class Aria2DownloadController {
       return customBinaryPath;
     }
     // Verifica caminhos comuns no Linux e PATH
-    const candidates = [
+    final home = Platform.environment['HOME'];
+    final candidates = [
+      if (home != null) '$home/.local/bin/aria2c',
       '/home/gus/.local/bin/aria2c',
       '/usr/bin/aria2c',
       '/usr/local/bin/aria2c',

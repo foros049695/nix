@@ -42,6 +42,18 @@ class NixFailClosedHttpOverrides extends HttpOverrides {
     );
   }
 
+  /// Executa um bloco permitindo transferências diretas fora da rede Tor (Clearnet)
+  /// mediante opção e consentimento explícito do usuário (ex: downloads HTTP públicos
+  /// quando indisponíveis via rota Onion v3).
+  static Future<T> runWithExplicitClearnetDownload<T>({
+    required Future<T> Function() action,
+  }) {
+    return HttpOverrides.runWithHttpOverrides(
+      action,
+      _ScopedClearnetHttpOverrides(),
+    );
+  }
+
   @override
   HttpClient createHttpClient(SecurityContext? context) {
     final prev = _previous;
@@ -60,6 +72,13 @@ class _ScopedLanPeerHttpOverrides extends HttpOverrides {
   HttpClient createHttpClient(SecurityContext? context) {
     final inner = super.createHttpClient(context);
     return _FailClosedHttpClient(inner, allowedHosts: {allowedLanHost});
+  }
+}
+
+class _ScopedClearnetHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context);
   }
 }
 

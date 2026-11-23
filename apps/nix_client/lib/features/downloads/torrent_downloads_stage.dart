@@ -40,7 +40,7 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
 
   // Estado do Buscador de Torrents
   final TextEditingController _searchController = TextEditingController();
-  TorrentSearchMode _searchMode = TorrentSearchMode.local;
+  TorrentSearchMode _searchMode = TorrentSearchMode.online;
   final TorrentSortOrder _sortOrder = TorrentSortOrder.relevance;
   final Set<TorrentCategory> _selectedCategories = {};
   bool _isFilterDrawerOpen = false;
@@ -143,6 +143,13 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
       switch (_searchMode) {
         case TorrentSearchMode.local:
           result = await _db!.search(query);
+          if (result.records.isEmpty && query.query.isNotEmpty && _onlineClient != null) {
+            result = await _onlineClient!.searchOnline(
+              query,
+              userConsent: true,
+              isTorReady: true,
+            );
+          }
           break;
         case TorrentSearchMode.online:
           result = await _onlineClient!.searchOnline(
@@ -946,6 +953,33 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
               task.errorMessage!,
               style: const TextStyle(color: Color(0xFFEF4444), fontSize: 11),
             ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFA78BFA),
+                    side: const BorderSide(color: Color(0xFF7C3AED)),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  ),
+                  icon: const Icon(Icons.refresh_rounded, size: 14),
+                  label: const Text('Tentar novamente via Tor', style: TextStyle(fontSize: 11)),
+                  onPressed: () => _downloadController?.resumeDownload(task.id),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF7C3AED),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  ),
+                  icon: const Icon(Icons.public_rounded, size: 14),
+                  label: const Text('Baixar fora da rede Tor (Clearnet)', style: TextStyle(fontSize: 11)),
+                  onPressed: () => _downloadController?.retryDownloadWithClearnet(task.id),
+                ),
+              ],
+            ),
           ],
           const SizedBox(height: 10),
 
@@ -1060,6 +1094,7 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
     final nameCtrl = TextEditingController();
     final hashCtrl = TextEditingController();
     String? validationError;
+    bool allowClearnet = false;
 
     showDialog(
       context: context,
@@ -1136,6 +1171,22 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                       isDense: true,
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text(
+                      'Baixar fora da rede Tor (Clearnet Direta)',
+                      style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: const Text(
+                      'Selecione caso o servidor de download rejeite conexões Onion v3 ou para acelerar transferências de arquivos públicos.',
+                      style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5),
+                    ),
+                    value: allowClearnet,
+                    onChanged: (v) => setDlgState(() => allowClearnet = v ?? false),
+                    activeColor: const Color(0xFF7C3AED),
+                  ),
                 ],
               ),
             ),
@@ -1162,6 +1213,7 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                             url: url,
                             customFileName: name,
                             sha256Expected: sha,
+                            allowClearnet: allowClearnet,
                           );
                         } catch (e) {
                           if (mounted) {
@@ -1225,9 +1277,35 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
         ),
         const SizedBox(height: 16),
 
-        const Text(
-          'Conectores e Indexadores Registrados',
-          style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Flexible(
+              child: Text(
+                'Conectores e Indexadores Registrados',
+                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF7C3AED),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              ),
+              icon: const Icon(Icons.add_rounded, size: 16),
+              label: const Text('Configurar Torznab / Newznab', style: TextStyle(fontSize: 11)),
+              onPressed: () => _showConfigureTorznabDialog(
+                _sourcesManager?.getSourceConfig('torznab_custom') ??
+                    const TorrentIndexerSourceConfig(
+                      id: 'torznab_custom',
+                      name: 'Torznab / Prowlarr Local',
+                      url: 'http://127.0.0.1:9696',
+                      type: IndexerSourceType.torznab,
+                    ),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 10),
 
@@ -1294,6 +1372,14 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
               ],
             ),
           ),
+          if (src.type == IndexerSourceType.torznab) ...[
+            IconButton(
+              icon: const Icon(Icons.tune_rounded, size: 18, color: Color(0xFFC4B5FD)),
+              tooltip: 'Configurar URL e API Key',
+              onPressed: () => _showConfigureTorznabDialog(src),
+            ),
+            const SizedBox(width: 4),
+          ],
           // Botão Testar Conexão
           OutlinedButton(
             style: OutlinedButton.styleFrom(
@@ -1326,6 +1412,122 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  void _showConfigureTorznabDialog(TorrentIndexerSourceConfig src) {
+    final nameCtrl = TextEditingController(text: src.name);
+    final urlCtrl = TextEditingController(text: src.url);
+    final keyCtrl = TextEditingController();
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          backgroundColor: const Color(0xFF13131F),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: const Color(0xFF7C3AED).withValues(alpha: 0.4)),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.tune_rounded, color: Color(0xFFA78BFA), size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Configurar ${src.name}',
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Insira a URL do indexador Torznab / Newznab (ex: Prowlarr, Jackett, NZBHydra2, NZBPlanet, Usenet) e a chave de API.',
+                  style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: nameCtrl,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: const InputDecoration(
+                    labelText: 'Nome do Indexador',
+                    labelStyle: TextStyle(color: Color(0xFF94A3B8)),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: urlCtrl,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: const InputDecoration(
+                    labelText: 'URL Base do Endpoint (ex: http://127.0.0.1:9696)',
+                    labelStyle: TextStyle(color: Color(0xFF94A3B8)),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: keyCtrl,
+                  obscureText: true,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: const InputDecoration(
+                    labelText: 'Chave de API (API Key)',
+                    labelStyle: TextStyle(color: Color(0xFF94A3B8)),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancelar', style: TextStyle(color: Colors.white70)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF7C3AED),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: isSaving || urlCtrl.text.trim().isEmpty
+                  ? null
+                  : () async {
+                      setDlgState(() => isSaving = true);
+                      _sourcesManager?.configureTorznabSource(
+                        id: src.id,
+                        name: nameCtrl.text.trim().isNotEmpty ? nameCtrl.text.trim() : src.name,
+                        url: urlCtrl.text.trim(),
+                        apiKey: keyCtrl.text.trim().isNotEmpty ? keyCtrl.text.trim() : null,
+                        isEnabled: true,
+                      );
+                      final testOk = await _sourcesManager?.testSource(src.id) ?? false;
+                      if (ctx.mounted) Navigator.of(ctx).pop();
+                      if (mounted) {
+                        setState(() {});
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(testOk
+                                ? 'Indexador ${nameCtrl.text.trim()} configurado e testado com sucesso!'
+                                : 'Indexador salvo. Verifique a URL e a chave de API.'),
+                          ),
+                        );
+                      }
+                    },
+              child: Text(isSaving ? 'Testando...' : 'Salvar e Conectar'),
+            ),
+          ],
+        ),
       ),
     );
   }

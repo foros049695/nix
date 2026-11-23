@@ -32,7 +32,7 @@ class FloatingWorkspaceBar extends StatelessWidget {
                     padding: const EdgeInsets.all(3),
                     child: Row(
                       children: [
-                        for (final tab in WorkspaceTab.values)
+                        for (final tab in WorkspaceTab.mobileTabs)
                           Expanded(
                             child: Semantics(
                               button: true,
@@ -106,6 +106,8 @@ class FloatingWorkspaceBar extends StatelessWidget {
                         showDialog<void>(
                             context: context,
                             builder: (_) => const CreateSpaceDialog());
+                      case _WorkspaceAction.downloads:
+                        state.openDownloadsArea();
                       case _WorkspaceAction.pager:
                         state.openProfileOverlay();
                       case _WorkspaceAction.settings:
@@ -116,6 +118,9 @@ class FloatingWorkspaceBar extends StatelessWidget {
                     PopupMenuItem(
                         value: _WorkspaceAction.space,
                         child: Text('Novo espaço')),
+                    PopupMenuItem(
+                        value: _WorkspaceAction.downloads,
+                        child: Text('Downloads & Torrents')),
                     PopupMenuItem(
                         value: _WorkspaceAction.pager,
                         child: Text('Pager e perfil')),
@@ -133,4 +138,4 @@ class FloatingWorkspaceBar extends StatelessWidget {
   }
 }
 
-enum _WorkspaceAction { space, pager, settings }
+enum _WorkspaceAction { space, downloads, pager, settings }

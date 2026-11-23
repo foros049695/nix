@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:crypto/crypto.dart' as std_crypto;
+import '../security/fail_closed_http_overrides.dart';
 import 'models/download_task.dart';
 
 typedef DownloadProgressCallback = void Function(DownloadTask updatedTask);
@@ -19,6 +20,19 @@ class DartSegmentedDownloader {
 
   /// Inicia ou retoma o download de um arquivo direto HTTP/HTTPS.
   Future<DownloadTask> download({
+    required DownloadTask task,
+    int splitCount = 4,
+    DownloadProgressCallback? onProgress,
+  }) async {
+    if (task.allowClearnet) {
+      return NixFailClosedHttpOverrides.runWithExplicitClearnetDownload(
+        action: () => _executeDownload(task: task, splitCount: splitCount, onProgress: onProgress),
+      );
+    }
+    return _executeDownload(task: task, splitCount: splitCount, onProgress: onProgress);
+  }
+
+  Future<DownloadTask> _executeDownload({
     required DownloadTask task,
     int splitCount = 4,
     DownloadProgressCallback? onProgress,

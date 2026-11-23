@@ -990,8 +990,22 @@ class _PagerProfileState extends State<PagerProfile> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: ink.withValues(alpha: 0.8), fontSize: 11)),
-          Text(value, style: TextStyle(color: ink, fontSize: 11, fontWeight: FontWeight.bold)),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: ink.withValues(alpha: 0.8), fontSize: 11),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              style: TextStyle(color: ink, fontSize: 11, fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+            ),
+          ),
         ],
       ),
     );

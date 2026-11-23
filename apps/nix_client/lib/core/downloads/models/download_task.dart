@@ -29,6 +29,7 @@ class DownloadTask {
   final String? sha256Actual;
   final bool isRangeSupported;
   final int splitCount;
+  final bool allowClearnet;
   final DateTime createdAt;
   final DateTime? completedAt;
 
@@ -47,6 +48,7 @@ class DownloadTask {
     this.sha256Actual,
     this.isRangeSupported = false,
     this.splitCount = 1,
+    this.allowClearnet = false,
     required this.createdAt,
     this.completedAt,
   });
@@ -135,6 +137,7 @@ class DownloadTask {
     String? sha256Actual,
     bool? isRangeSupported,
     int? splitCount,
+    bool? allowClearnet,
     DateTime? createdAt,
     DateTime? completedAt,
   }) {
@@ -153,6 +156,7 @@ class DownloadTask {
       sha256Actual: sha256Actual ?? this.sha256Actual,
       isRangeSupported: isRangeSupported ?? this.isRangeSupported,
       splitCount: splitCount ?? this.splitCount,
+      allowClearnet: allowClearnet ?? this.allowClearnet,
       createdAt: createdAt ?? this.createdAt,
       completedAt: completedAt ?? this.completedAt,
     );
@@ -173,6 +177,7 @@ class DownloadTask {
     if (sha256Actual != null) 'sha256Actual': sha256Actual,
     'isRangeSupported': isRangeSupported ? 1 : 0,
     'splitCount': splitCount,
+    'allowClearnet': allowClearnet ? 1 : 0,
     'createdAt': createdAt.toIso8601String(),
     if (completedAt != null) 'completedAt': completedAt!.toIso8601String(),
   };
@@ -196,6 +201,7 @@ class DownloadTask {
       sha256Actual: map['sha256Actual'] as String?,
       isRangeSupported: (map['isRangeSupported'] as int? ?? 0) == 1,
       splitCount: map['splitCount'] as int? ?? 1,
+      allowClearnet: (map['allowClearnet'] as int? ?? 0) == 1,
       createdAt: DateTime.tryParse(map['createdAt'] as String? ?? '') ?? DateTime.now(),
       completedAt: map['completedAt'] != null
           ? DateTime.tryParse(map['completedAt'] as String)

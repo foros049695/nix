@@ -123,7 +123,31 @@ class NixOnlineSearchApi {
       pageSize: pageSize,
     );
 
-    final result = await _database.search(query);
+    var result = await _database.search(query);
+    if (result.records.isEmpty && queryStr.isNotEmpty) {
+      final liveRes = await _handleLiveSearch({
+        'query': queryStr,
+        if (catSlug != null) 'category': catSlug,
+      });
+      final liveRecords = (liveRes['records'] as List?)
+              ?.map((m) => TorrentIndexRecord.fromMap(m as Map<String, dynamic>))
+              .toList() ??
+          [];
+      if (liveRecords.isNotEmpty) {
+        return {
+          'query': queryStr,
+          'category': category?.slug,
+          'page': 1,
+          'pageSize': pageSize,
+          'totalCount': liveRecords.length,
+          'totalPages': 1,
+          'records': liveRecords.map((r) => r.toMap()).toList(),
+          'mode': 'online',
+          'executedAt': DateTime.now().toIso8601String(),
+        };
+      }
+    }
+
     return {
       'query': queryStr,
       'category': category?.slug,

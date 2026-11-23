@@ -875,89 +875,77 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       );
                     }
 
-                    return GestureDetector(
-                      onLongPressStart: !canRecordVoice
-                          ? null
-                          : (details) {
-                              _voiceDragOrigin = details.globalPosition;
-                              _startVoiceRecording();
-                            },
-                      onLongPressMoveUpdate: !canRecordVoice
-                          ? null
-                          : (details) {
-                              if (_isVoiceRecording && !_isVoiceLocked && _voiceDragOrigin != null) {
-                                final dy = details.globalPosition.dy - _voiceDragOrigin!.dy;
-                                final dx = details.globalPosition.dx - _voiceDragOrigin!.dx;
-                                setState(() {
-                                  _voiceDragDy = dy;
-                                  _voiceDragDx = dx;
-                                });
-                                // Arrastou para cima >= 40px: TRAVA GRAVAÇÃO MÃOS LIVRES
-                                if (dy <= -40) {
+                    return Tooltip(
+                      message: canRecordVoice
+                          ? 'Segure para gravar · Arraste para cima para travar'
+                          : 'Gravação não disponível neste canal',
+                      child: GestureDetector(
+                        key: const Key('voice_record_button'),
+                        behavior: HitTestBehavior.opaque,
+                        onTap: !canRecordVoice
+                            ? null
+                            : () {
+                                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Segure o microfone para gravar áudio · Arraste para cima para travar'),
+                                    duration: Duration(milliseconds: 1800),
+                                  ),
+                                );
+                              },
+                        onLongPressStart: !canRecordVoice
+                            ? null
+                            : (details) {
+                                _voiceDragOrigin = details.globalPosition;
+                                _startVoiceRecording();
+                              },
+                        onLongPressMoveUpdate: !canRecordVoice
+                            ? null
+                            : (details) {
+                                if (_isVoiceRecording && !_isVoiceLocked && _voiceDragOrigin != null) {
+                                  final dy = details.globalPosition.dy - _voiceDragOrigin!.dy;
+                                  final dx = details.globalPosition.dx - _voiceDragOrigin!.dx;
                                   setState(() {
-                                    _isVoiceLocked = true;
+                                    _voiceDragDy = dy;
+                                    _voiceDragDx = dx;
                                   });
+                                  // Arrastou para cima >= 40px: TRAVA GRAVAÇÃO MÃOS LIVRES
+                                  if (dy <= -40) {
+                                    setState(() {
+                                      _isVoiceLocked = true;
+                                    });
+                                  }
+                                  // Arrastou para esquerda >= 50px: CANCELA
+                                  if (dx <= -50) {
+                                    _finishVoiceRecording(send: false);
+                                  }
                                 }
-                                // Arrastou para esquerda >= 50px: CANCELA
-                                if (dx <= -50) {
-                                  _finishVoiceRecording(send: false);
+                              },
+                        onLongPressEnd: !canRecordVoice
+                            ? null
+                            : (_) {
+                                if (_isVoiceRecording && !_isVoiceLocked) {
+                                  _finishVoiceRecording(send: _voiceRecordingMs >= 800);
                                 }
-                              }
-                            },
-                      onLongPressEnd: !canRecordVoice
-                          ? null
-                          : (_) {
-                              if (_isVoiceRecording && !_isVoiceLocked) {
-                                _finishVoiceRecording(send: _voiceRecordingMs >= 800);
-                              }
-                            },
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: canRecordVoice ? accent : NixColors.surfaceCard,
-                          shape: BoxShape.circle,
-                          border: canRecordVoice
-                              ? null
-                              : Border.all(color: NixColors.surfaceBorder),
-                        ),
-                        child: IconButton(
-                          key: const Key('voice_record_button'),
-                          padding: EdgeInsets.zero,
-                          icon: Icon(
+                              },
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: canRecordVoice ? accent : NixColors.surfaceCard,
+                            shape: BoxShape.circle,
+                            border: canRecordVoice
+                                ? null
+                                : Border.all(color: NixColors.surfaceBorder),
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(
                             Icons.mic_rounded,
                             size: 20,
                             color: canRecordVoice
                                 ? context.onAccentColor
                                 : NixColors.textMuted,
                           ),
-                          tooltip: canRecordVoice
-                              ? 'Segure para gravar · Arraste para cima para travar'
-                              : 'Gravação não disponível neste canal',
-                          onPressed: !canRecordVoice
-                              ? null
-                              : () {
-                                  _focusNode.unfocus();
-                                  showDialog<void>(
-                                    context: context,
-                                    barrierDismissible: false,
-                                    builder: (_) => VoiceNoteDialog.record(
-                                      onSend: (note) async {
-                                        if (voiceConversation != null &&
-                                            nixState.canSendVoiceNote(voiceConversation)) {
-                                          await nixState.sendVoiceNote(
-                                              voiceConversation, note);
-                                        } else {
-                                          await nixState.sendVoiceNoteEverywhere(
-                                            note: note,
-                                            isDirect: widget.isDirectMessage,
-                                            onSendCustom: widget.onSendCustom,
-                                          );
-                                        }
-                                      },
-                                    ),
-                                  );
-                                },
                         ),
                       ),
                     );
