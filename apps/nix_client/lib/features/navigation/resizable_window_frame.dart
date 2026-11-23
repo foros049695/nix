@@ -53,13 +53,18 @@ class _ResizableWindowFrameState extends State<ResizableWindowFrame> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.isFloating) {
-      return widget.child;
-    }
-
     final nixState = context.watch<NixState>();
     final isMaximized = nixState.isWindowMaximized;
     final settings = nixState.settings;
+    final wallpaper = settings.interfaceWallpaper;
+
+    if (!widget.isFloating) {
+      return InterfaceWallpaperLayer(
+        wallpaper: wallpaper,
+        reducedMotion: settings.reducedMotion,
+        child: widget.child,
+      );
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -85,13 +90,15 @@ class _ResizableWindowFrameState extends State<ResizableWindowFrame> {
         final double currentHeight =
             isMaximized ? constraints.maxHeight : _height.clamp(safeMinH, constraints.maxHeight);
 
+        final wallpaperVisible = wallpaper.image != null && wallpaper.opacity > 0;
+        final windowBorderRadius = isMaximized ? BorderRadius.zero : NixTokens.borderMd;
+
         final frameContent = Container(
           width: currentWidth,
           height: currentHeight,
           decoration: BoxDecoration(
-            color: InterfaceWallpaperLayer.visibleOf(context)
-                ? Colors.transparent : NixColors.background,
-            borderRadius: isMaximized ? BorderRadius.zero : NixTokens.borderMd,
+            color: wallpaperVisible ? Colors.transparent : NixColors.background,
+            borderRadius: windowBorderRadius,
             border: isMaximized
                 ? null
                 : Border.all(color: NixColors.surfaceBorderStrong, width: 1.2),
@@ -106,8 +113,14 @@ class _ResizableWindowFrameState extends State<ResizableWindowFrame> {
                     ),
                   ],
           ),
-          clipBehavior: Clip.antiAlias,
-          child: widget.child,
+          child: ClipRRect(
+            borderRadius: windowBorderRadius,
+            child: InterfaceWallpaperLayer(
+              wallpaper: wallpaper,
+              reducedMotion: settings.reducedMotion,
+              child: widget.child,
+            ),
+          ),
         );
 
         if (isMaximized) {

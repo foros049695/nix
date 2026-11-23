@@ -281,14 +281,18 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   bottomNavigationBar: rawMq.viewInsets.bottom > 0 ? null : FloatingWorkspaceBar(state: nixState),
                 );
 
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: InterfaceWallpaperLayer(
+          final Widget effectiveShell = isDesktop
+              ? shellScaffold
+              : InterfaceWallpaperLayer(
                   wallpaper: nixState.settings.interfaceWallpaper,
                   reducedMotion: nixState.settings.reducedMotion,
                   child: shellScaffold,
-                ),
+                );
+
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: effectiveShell,
               ),
               if (nixState.isProfileOverlayOpen) const ProfileOverlay(),
             ],

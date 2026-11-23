@@ -5,7 +5,10 @@ import 'package:nix_client/core/models/interface_wallpaper.dart';
 import 'package:nix_client/core/security/file_picker_adapter.dart';
 import 'package:nix_client/core/security/local_image_helper.dart';
 import 'package:nix_client/features/navigation/interface_wallpaper_layer.dart';
+import 'package:nix_client/features/navigation/resizable_window_frame.dart';
 import 'package:nix_client/features/navigation/workspace_image.dart';
+import 'package:nix_client/state/nix_state.dart';
+import 'package:provider/provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -85,6 +88,39 @@ void main() {
       );
 
       expect(find.byType(WorkspaceBannerView), findsOneWidget);
+    });
+
+    testWidgets(
+        'em janela Desktop flutuante menor, o wallpaper se adapta exclusivamente a moldura interna da janela',
+        (tester) async {
+      final state = NixState(loadMockData: false);
+      addTearDown(() => state.dispose());
+
+      await tester.binding.setSurfaceSize(const Size(1920, 1080));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<NixState>.value(
+          value: state,
+          child: const MaterialApp(
+            home: Scaffold(
+              body: ResizableWindowFrame(
+                isFloating: true,
+                child: Center(child: Text('Conteudo da Janela Menor')),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Conteudo da Janela Menor'), findsOneWidget);
+      expect(find.byType(InterfaceWallpaperLayer), findsOneWidget);
+
+      final layerSize = tester.getSize(find.byType(InterfaceWallpaperLayer));
+      expect(layerSize.width, lessThan(1920));
+      expect(layerSize.height, lessThan(1080));
+      expect(layerSize.width, closeTo(1150, 3));
+      expect(layerSize.height, closeTo(718, 3));
     });
   });
 }

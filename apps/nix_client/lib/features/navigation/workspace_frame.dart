@@ -1,4 +1,3 @@
-import 'interface_wallpaper_layer.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/models/user_settings.dart';
@@ -97,9 +96,10 @@ class NixDesktopWorkspace extends StatelessWidget {
             : isSpace && state.isMembersPanelOpen
                 ? const MembersPanel()
                 : null;
-    final wallpaperVisible = InterfaceWallpaperLayer.visibleOf(context);
+    final wallpaper = state.settings.interfaceWallpaper;
+    final wallpaperVisible = wallpaper.image != null && wallpaper.opacity > 0;
     return Scaffold(
-      backgroundColor: wallpaperVisible ? Colors.transparent : null,
+      backgroundColor: context.bgColor,
       body: ResizableWindowFrame(
         isFloating: state.settings.floatingWindowMode,
         child: Column(
