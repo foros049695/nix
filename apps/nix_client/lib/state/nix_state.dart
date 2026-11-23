@@ -56,6 +56,7 @@ import '../core/media/catalog_database.dart';
 import '../core/media/music_online_metadata_service.dart';
 import '../core/media/media_index_updater.dart';
 import '../core/downloads/aria2_download_controller.dart';
+import '../core/downloads/models/download_task.dart';
 import '../features/calls/call_view_model.dart';
 import '../features/home/peer_hover_view_model.dart';
 import '../features/discovery/starwire_filter_view_model.dart';
@@ -714,11 +715,22 @@ class NixState extends ChangeNotifier {
   CatalogUpdateManager get catalogUpdateManager =>
       _catalogUpdateManager ??= CatalogUpdateManager();
 
+  int _lastActiveDownloadsCount = -1;
   Aria2DownloadController? _downloadController;
   Aria2DownloadController get downloadController {
     return _downloadController ??= Aria2DownloadController(
       downloadDir: Aria2DownloadController.defaultDownloadDirectory(),
-      onTasksUpdated: (_) => notifyListeners(),
+      onTasksUpdated: (tasks) {
+        final activeCount = tasks
+            .where((t) =>
+                t.status == DownloadStatus.downloading ||
+                t.status == DownloadStatus.queued)
+            .length;
+        if (activeCount != _lastActiveDownloadsCount) {
+          _lastActiveDownloadsCount = activeCount;
+          notifyListeners();
+        }
+      },
     );
   }
 

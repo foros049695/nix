@@ -82,7 +82,7 @@ class DownloadTask {
 
   /// Estimativa de tempo restante.
   String get formattedEta {
-    if (status != DownloadStatus.downloading || etaSeconds == null || etaSeconds! <= 0) {
+    if (status != DownloadStatus.downloading || speedBytesPerSec <= 0 || etaSeconds == null || etaSeconds! <= 0) {
       return '--:--';
     }
     final sec = etaSeconds!;
@@ -131,6 +131,7 @@ class DownloadTask {
     int? downloadedBytes,
     int? speedBytesPerSec,
     int? etaSeconds,
+    bool clearEta = false,
     DownloadStatus? status,
     String? errorMessage,
     String? sha256Expected,
@@ -149,7 +150,7 @@ class DownloadTask {
       fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
       downloadedBytes: downloadedBytes ?? this.downloadedBytes,
       speedBytesPerSec: speedBytesPerSec ?? this.speedBytesPerSec,
-      etaSeconds: etaSeconds ?? this.etaSeconds,
+      etaSeconds: clearEta ? null : (etaSeconds ?? this.etaSeconds),
       status: status ?? this.status,
       errorMessage: errorMessage ?? this.errorMessage,
       sha256Expected: sha256Expected ?? this.sha256Expected,

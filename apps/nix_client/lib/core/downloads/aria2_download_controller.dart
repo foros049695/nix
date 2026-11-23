@@ -18,6 +18,7 @@ typedef DownloadStatusChangeNotifier = void Function(List<DownloadTask> tasks);
 class Aria2DownloadController extends ChangeNotifier {
   String _downloadDir;
   final int rpcPort;
+  int _actualRpcPort = 6800;
   final String? customBinaryPath;
   final bool enableFallback;
   final String? storageFilePath;
@@ -44,7 +45,8 @@ class Aria2DownloadController extends ChangeNotifier {
     this.enableFallback = true,
     this.storageFilePath,
     this.onTasksUpdated,
-  }) : _downloadDir = downloadDir ?? defaultDownloadDirectory() {
+  }) : _downloadDir = downloadDir ?? defaultDownloadDirectory(),
+       _actualRpcPort = rpcPort {
     _loadTasks();
   }
 
@@ -82,9 +84,23 @@ class Aria2DownloadController extends ChangeNotifier {
   String get rpcSecret => _rpcSecret;
   List<DownloadTask> get tasks => _tasks.values.toList();
 
+  static Future<int> _findAvailablePort(int preferred) async {
+    try {
+      final s = await ServerSocket.bind(InternetAddress.loopbackIPv4, preferred);
+      final p = s.port;
+      await s.close();
+      return p;
+    } catch (_) {
+      final s = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final p = s.port;
+      await s.close();
+      return p;
+    }
+  }
+
   /// Inicializa o daemon local aria2c em modo isolado.
   Future<bool> startDaemon() async {
-    if (_isDaemonRunning) return true;
+    if (_isDaemonRunning && _process != null) return true;
 
     // Localiza o binário aria2c
     final binary = _resolveAria2cBinary();
@@ -94,6 +110,8 @@ class Aria2DownloadController extends ChangeNotifier {
       return true;
     }
 
+    // Aloca porta RPC livre e segura sem conflitos com outros serviços
+    _actualRpcPort = await _findAvailablePort(rpcPort);
     _rpcSecret = _generateRandomToken(32);
 
     final dir = Directory(downloadDir);
@@ -105,7 +123,7 @@ class Aria2DownloadController extends ChangeNotifier {
       _process = await Process.start(binary, [
         '--enable-rpc=true',
         '--rpc-listen-all=false',
-        '--rpc-listen-port=$rpcPort',
+        '--rpc-listen-port=$_actualRpcPort',
         '--rpc-secret=$_rpcSecret',
         '--rpc-allow-origin-all=false',
         // DESATIVAÇÃO COMPLETA DE BITTORRENT, DHT, PEERS E MAGNETS
@@ -120,7 +138,17 @@ class Aria2DownloadController extends ChangeNotifier {
         '--dir=$downloadDir',
         '--check-integrity=true',
         '--summary-interval=1',
+        '--file-allocation=none',
+        '--max-overall-download-limit=0',
+        '--max-download-limit=0',
       ]);
+
+      _process!.exitCode.then((code) {
+        if (_process != null) {
+          _isDaemonRunning = false;
+          _process = null;
+        }
+      });
 
       _isDaemonRunning = true;
       _startPolling();
@@ -238,7 +266,7 @@ class Aria2DownloadController extends ChangeNotifier {
     final task = _tasks[taskId];
     if (task == null) return;
 
-    if (_fallbackTaskIds.contains(taskId)) {
+    if (_fallbackTaskIds.contains(taskId) || task.id.startsWith('dl_')) {
       _fallbackDownloader.pause(taskId);
     } else if (_process != null) {
       try {
@@ -249,6 +277,7 @@ class Aria2DownloadController extends ChangeNotifier {
     _tasks[taskId] = task.copyWith(
       status: DownloadStatus.paused,
       speedBytesPerSec: 0,
+      clearEta: true,
     );
     _persistTasks();
     _notify();
@@ -258,7 +287,8 @@ class Aria2DownloadController extends ChangeNotifier {
     final task = _tasks[taskId];
     if (task == null) return;
 
-    if (_fallbackTaskIds.contains(taskId)) {
+    if (_fallbackTaskIds.contains(taskId) || task.id.startsWith('dl_')) {
+      _fallbackTaskIds.add(taskId);
       _tasks[taskId] = task.copyWith(status: DownloadStatus.downloading);
       _notify();
       unawaited(_runFallbackDownload(task));
@@ -398,12 +428,18 @@ class Aria2DownloadController extends ChangeNotifier {
   }
 
   Future<void> _runFallbackDownload(DownloadTask task) async {
+    DateTime lastPersist = DateTime.now();
     await _fallbackDownloader.download(
       task: task,
       splitCount: 4,
       onProgress: (updated) {
         _tasks[updated.id] = updated;
-        _persistTasks();
+        final now = DateTime.now();
+        if (now.difference(lastPersist).inSeconds >= 5 ||
+            updated.status != DownloadStatus.downloading) {
+          lastPersist = now;
+          _persistTasks();
+        }
         _notify();
       },
     );
@@ -476,6 +512,7 @@ class Aria2DownloadController extends ChangeNotifier {
             downloadedBytes: completedLength,
             speedBytesPerSec: downloadSpeed,
             etaSeconds: eta,
+            clearEta: (status != DownloadStatus.downloading || downloadSpeed <= 0),
             status: status,
             completedAt: status == DownloadStatus.completed ? (existing.completedAt ?? DateTime.now()) : null,
           );
@@ -494,7 +531,7 @@ class Aria2DownloadController extends ChangeNotifier {
 
     final client = HttpClient();
     try {
-      final req = await client.postUrl(Uri.parse('http://127.0.0.1:$rpcPort/jsonrpc'));
+      final req = await client.postUrl(Uri.parse('http://127.0.0.1:$_actualRpcPort/jsonrpc'));
       req.headers.contentType = ContentType.json;
       final payload = jsonEncode({
         'jsonrpc': '2.0',
@@ -520,7 +557,11 @@ class Aria2DownloadController extends ChangeNotifier {
     // Verifica caminhos comuns no Linux e PATH
     final home = Platform.environment['HOME'];
     final candidates = [
+      if (home != null) '$home/.local/bin/aria2c-wrapper',
+      if (home != null) '$home/.local/bin/aria2c-bin',
       if (home != null) '$home/.local/bin/aria2c',
+      '/home/gus/.local/bin/aria2c-wrapper',
+      '/home/gus/.local/bin/aria2c-bin',
       '/home/gus/.local/bin/aria2c',
       '/usr/bin/aria2c',
       '/usr/local/bin/aria2c',
