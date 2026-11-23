@@ -193,17 +193,22 @@ class DesktopVoiceAudio {
         }
 
         if (process == null) return;
+        final activeProcess = process;
 
-        _playbackProcess = process;
-        unawaited(process.stdout.drain<void>());
-        unawaited(process.stderr.drain<void>());
+        _playbackProcess = activeProcess;
+        unawaited(activeProcess.stdout.drain<void>());
+        unawaited(activeProcess.stderr.drain<void>());
 
-        process.stdin.add(pcm);
-        await process.stdin.flush();
-        await process.stdin.close();
+        unawaited(() async {
+          try {
+            activeProcess.stdin.add(pcm);
+            await activeProcess.stdin.flush();
+            await activeProcess.stdin.close();
+          } catch (_) {}
+        }());
 
-        unawaited(process.exitCode.then((_) {
-          if (identical(_playbackProcess, process)) {
+        unawaited(activeProcess.exitCode.then((_) {
+          if (identical(_playbackProcess, activeProcess)) {
             _playbackProcess = null;
           }
         }));

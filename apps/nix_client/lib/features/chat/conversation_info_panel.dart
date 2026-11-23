@@ -928,6 +928,7 @@ class _ConversationInfoPanelState extends State<ConversationInfoPanel> {
                     onPressed: () {
                       showDialog<void>(
                         context: context,
+                        barrierDismissible: true,
                         builder: (_) => VoiceNoteDialog.listen(
                           load: () async {
                             final bytes = await _resolveAttachmentBytes(state, msgs, aud);

@@ -190,24 +190,24 @@ class _VoiceNoteDialogState extends State<VoiceNoteDialog>
         _status = 'idle';
       });
 
-  Future<void> _play(VoiceNote note) => _run(() async {
-        final desktop = _desktop;
-        if (_playing) {
-          if (desktop != null) {
-            await desktop.stopPlayback();
-          } else {
-            await VoiceNoteDialog.channel.invokeMethod<void>('stopPlayback');
-          }
-          _playing = false;
-        } else {
-          if (desktop != null) {
-            await desktop.play(note.pcm);
-          } else {
-            await VoiceNoteDialog.channel.invokeMethod<void>('play', note.pcm);
-          }
-          _playing = !_backgrounded;
-        }
-      });
+  Future<void> _play(VoiceNote note) async {
+    final desktop = _desktop;
+    if (_playing) {
+      if (desktop != null) {
+        await desktop.stopPlayback();
+      } else {
+        await VoiceNoteDialog.channel.invokeMethod<void>('stopPlayback');
+      }
+      if (mounted) setState(() => _playing = false);
+    } else {
+      if (desktop != null) {
+        await desktop.play(note.pcm);
+      } else {
+        await VoiceNoteDialog.channel.invokeMethod<void>('play', note.pcm);
+      }
+      if (mounted) setState(() => _playing = !_backgrounded);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -216,10 +216,28 @@ class _VoiceNoteDialogState extends State<VoiceNoteDialog>
     final elapsedMs =
         note?.durationMs ?? _samples * 1000 ~/ VoiceNote.sampleRate;
     return PopScope(
-      canPop: !_busy,
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          unawaited(_cancel());
+        }
+      },
       child: AlertDialog(
         scrollable: true,
-        title: const Text('Mensagem de voz'),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Mensagem de voz'),
+            IconButton(
+              icon: const Icon(Icons.close_rounded, size: 20),
+              tooltip: 'Fechar',
+              onPressed: () {
+                unawaited(_cancel());
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -270,7 +288,7 @@ class _VoiceNoteDialogState extends State<VoiceNoteDialog>
               ),
             if (note != null)
               TextButton.icon(
-                onPressed: _busy ? null : () => _play(note),
+                onPressed: () => _play(note),
                 icon: Icon(_playing ? Icons.stop : Icons.play_arrow),
                 label: Text(_playing ? 'Parar' : 'Reproduzir'),
               ),
@@ -278,7 +296,10 @@ class _VoiceNoteDialogState extends State<VoiceNoteDialog>
         ),
         actions: [
           TextButton(
-            onPressed: _busy ? null : () => Navigator.pop(context),
+            onPressed: () {
+              unawaited(_cancel());
+              Navigator.of(context).pop();
+            },
             child: Text(onSend == null ? 'Fechar' : 'Cancelar'),
           ),
           if (note != null && onSend != null)

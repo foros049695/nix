@@ -71,4 +71,67 @@ void main() {
         containsAllInOrder(
             ['start', 'pause', 'resume', 'finish', 'play', 'cancel']));
   });
+
+  testWidgets('ao reproduzir um áudio o diálogo pode ser fechado imediatamente',
+      (tester) async {
+    final methods = <String>[];
+    final channel =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    channel.setMockMethodCallHandler(VoiceNoteDialog.channel, (call) async {
+      methods.add(call.method);
+      return switch (call.method) {
+        'play' => null,
+        'stopPlayback' => null,
+        'cancel' => null,
+        'playing' => true,
+        _ => null,
+      };
+    });
+    addTearDown(
+        () => channel.setMockMethodCallHandler(VoiceNoteDialog.channel, null));
+
+    final testNote = VoiceNote.fromPcm(Uint8List.fromList([10, 20, 30, 40]));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(builder: (context) {
+            return TextButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                barrierDismissible: true,
+                builder: (_) => VoiceNoteDialog.listen(
+                  load: () async => testNote,
+                ),
+              ),
+              child: const Text('Ouvir Áudio'),
+            );
+          }),
+        ),
+      ),
+    );
+
+    // Abre o diálogo
+    await tester.tap(find.text('Ouvir Áudio'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mensagem de voz'), findsOneWidget);
+    expect(find.text('Reproduzir'), findsOneWidget);
+    expect(find.text('Fechar'), findsOneWidget);
+
+    // Inicia reprodução
+    await tester.tap(find.text('Reproduzir'));
+    await tester.pumpAndSettle();
+
+    expect(methods, contains('play'));
+    expect(find.text('Parar'), findsOneWidget);
+
+    // O botão 'Fechar' permanece acessível e clicável mesmo durante reprodução
+    await tester.tap(find.text('Fechar'));
+    await tester.pumpAndSettle();
+
+    // Diálogo fecha com sucesso
+    expect(find.text('Mensagem de voz'), findsNothing);
+    expect(methods, contains('cancel'));
+  });
 }
