@@ -463,6 +463,19 @@ class _SettingsCenterState extends State<SettingsCenter> {
           value: value.animated,
           onChanged: (v) => save(value.copyWith(animated: v)),
         ),
+        SwitchListTile(
+          title: const Text('Painéis Translúcidos (Efeito Vidro)'),
+          subtitle: const Text('Permite que o wallpaper apareça suavemente sob Fóruns, Mercado Cripto, Acervo e Mensagens.'),
+          value: value.translucentPanels,
+          onChanged: (v) => save(value.copyWith(translucentPanels: v)),
+        ),
+        if (value.translucentPanels)
+          _sliderCard(
+            title: 'Opacidade dos Painéis',
+            value: value.panelOpacity,
+            max: .95,
+            onChanged: (v) => save(value.copyWith(panelOpacity: v.clamp(0.05, 0.95))),
+          ),
         TextButton(
           onPressed: () => save(const InterfaceWallpaper()),
           child: const Text('Restaurar fundo padrão'),
@@ -498,6 +511,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
                 label: Text(label),
                 avatar: Icon(icon, size: 16),
                 selected: s.themeMode == mode && s.paletteType == palette,
+                showCheckmark: false,
                 onSelected: (_) => state.updateSettings(s.copyWith(themeMode: mode, paletteType: palette)),
               ),
           ],

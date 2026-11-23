@@ -74,9 +74,7 @@ class _CoverEnrichmentDialogState extends State<CoverEnrichmentDialog> {
   List<CulturalItem> _filterTargetItems(List<CulturalItem> all) {
     if (_onlyWithoutCovers) {
       return all
-          .where((i) =>
-              (i.localImagePath == null || i.localImagePath!.isEmpty) &&
-              (i.coverMotif == null || i.coverMotif!.isEmpty))
+          .where((i) => (i.localImagePath == null || i.localImagePath!.isEmpty))
           .toList();
     }
     return all;
@@ -121,9 +119,7 @@ class _CoverEnrichmentDialogState extends State<CoverEnrichmentDialog> {
     final state = context.watch<NixState>();
     final allItems = widget.targetItems ?? state.userProfile.culturalItems;
     final withoutCoversCount = allItems
-        .where((i) =>
-            (i.localImagePath == null || i.localImagePath!.isEmpty) &&
-            (i.coverMotif == null || i.coverMotif!.isEmpty))
+        .where((i) => (i.localImagePath == null || i.localImagePath!.isEmpty))
         .length;
 
     return Dialog(

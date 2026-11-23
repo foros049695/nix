@@ -7,6 +7,8 @@ class InterfaceWallpaper {
     this.shade = 0,
     this.blur = 0,
     this.animated = false,
+    this.translucentPanels = true,
+    this.panelOpacity = .28,
   });
 
   final WorkspaceBanner? image;
@@ -14,6 +16,8 @@ class InterfaceWallpaper {
   final double shade;
   final double blur;
   final bool animated;
+  final bool translucentPanels;
+  final double panelOpacity;
 
   static InterfaceWallpaper fromJson(Object? value) {
     if (value is! Map) return const InterfaceWallpaper();
@@ -30,6 +34,8 @@ class InterfaceWallpaper {
       shade: number('shade', 0, .75),
       blur: number('blur', 0, 12),
       animated: value['animated'] == true,
+      translucentPanels: value['translucentPanels'] != false,
+      panelOpacity: number('panelOpacity', .28, .95),
     );
   }
 
@@ -39,6 +45,8 @@ class InterfaceWallpaper {
         'shade': shade,
         'blur': blur,
         'animated': animated,
+        'translucentPanels': translucentPanels,
+        'panelOpacity': panelOpacity,
       };
 
   InterfaceWallpaper copyWith({
@@ -47,6 +55,8 @@ class InterfaceWallpaper {
     double? shade,
     double? blur,
     bool? animated,
+    bool? translucentPanels,
+    double? panelOpacity,
   }) =>
       InterfaceWallpaper(
         image: image ?? this.image,
@@ -54,5 +64,7 @@ class InterfaceWallpaper {
         shade: shade ?? this.shade,
         blur: blur ?? this.blur,
         animated: animated ?? this.animated,
+        translucentPanels: translucentPanels ?? this.translucentPanels,
+        panelOpacity: panelOpacity ?? this.panelOpacity,
       );
 }

@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import '../../core/media/voice_note.dart';
-import 'voice_note_dialog.dart';
+import 'telegram_audio_card.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/models/message.dart';
@@ -324,20 +324,15 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
         defaultTargetPlatform == TargetPlatform.linux ||
         defaultTargetPlatform == TargetPlatform.windows;
 
-    // 1. Mensagem de Voz
+    // 1. Mensagem de Voz (Padrão visual Telegram com waveform e player inline)
     if (_isVoiceNote && isSupportedVoicePlatform) {
       final state = context.read<NixState>();
       final message = widget.message;
       final index = widget.index;
-      return OutlinedButton.icon(
-        icon: const Icon(Icons.play_arrow_rounded),
-        label: const Text('Mensagem de voz'),
-        onPressed: () => showDialog<void>(
-          context: context,
-          builder: (_) => VoiceNoteDialog.listen(
-            load: () => state.readMessageVoiceNote(message, index),
-          ),
-        ),
+      return TelegramAudioCard(
+        message: message,
+        index: index,
+        load: () => state.readMessageVoiceNote(message, index),
       );
     }
 

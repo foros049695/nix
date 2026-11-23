@@ -4984,7 +4984,13 @@ class NixState extends ChangeNotifier {
   }
 
   void addCulturalItem(CulturalItem item) {
-    final updated = List<CulturalItem>.from(_userProfile.culturalItems)..insert(0, item);
+    final updated = List<CulturalItem>.from(_userProfile.culturalItems);
+    final idx = updated.indexWhere((i) => i.id == item.id);
+    if (idx >= 0) {
+      updated[idx] = item;
+    } else {
+      updated.insert(0, item);
+    }
     _userProfile = _userProfile.copyWith(culturalItems: updated);
     if (_mediaRepo != null) {
       unawaited(_mediaRepo!.upsertMediaItem(

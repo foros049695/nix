@@ -621,6 +621,7 @@ class _CulturalItemEditorState extends State<_CulturalItemEditor> {
                 ChoiceChip(
                   label: Text(category.label),
                   selected: _category == category,
+                  showCheckmark: false,
                   onSelected: (_) => setState(() => _category = category),
                 ),
             ]),

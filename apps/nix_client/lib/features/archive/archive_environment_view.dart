@@ -300,38 +300,14 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
     }
   }
 
-  Future<void> _attachVideo() async {
-    if (_isPublishing || _isPickingImage) return;
-    final generation = _editorGeneration;
-    setState(() => _isPickingImage = true);
-    try {
-      final video = await pickArchiveVideo(context);
-      if (!mounted || video == null || generation != _editorGeneration) return;
-      setState(() => _video = video);
-      _scheduleAutoSave();
-    } catch (error) {
-      if (mounted) {
-        final text = error is FormatException ? error.message : 'Não foi possível preparar o vídeo.';
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
-      }
-    } finally {
-      if (mounted) setState(() => _isPickingImage = false);
-    }
-  }
-
   Widget _buildArticleVideo() {
     final video = _video;
+    if (video == null) return const SizedBox.shrink();
     return Wrap(
       spacing: 8,
       children: [
-        if (video != null) ArchiveVideoView(video: video),
+        ArchiveVideoView(video: video),
         if (!_isPreviewMode)
-          OutlinedButton.icon(
-            onPressed: _isPublishing || _isPickingImage ? null : _attachVideo,
-            icon: const Icon(Icons.video_file_outlined),
-            label: Text(video == null ? 'Adicionar vídeo' : 'Trocar vídeo'),
-          ),
-        if (!_isPreviewMode && video != null)
           IconButton(
             tooltip: 'Remover vídeo',
             onPressed: _isPublishing || _isPickingImage ? null : () {

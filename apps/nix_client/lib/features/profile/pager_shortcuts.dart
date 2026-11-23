@@ -73,6 +73,10 @@ class _PagerShortcutsState extends State<PagerShortcuts> {
         math.max(groups.length, math.max(channels.length, friends.length));
     if (longest == 0) return const SizedBox.shrink();
 
+    final themeScope = PagerThemeScope.of(context);
+    final ink = themeScope?.ink ?? state.settings.pagerLcdColor.inkColor;
+    final rule = themeScope?.rule ?? state.settings.pagerLcdColor.ruleColor;
+
     void open(VoidCallback select) {
       state.closeProfileOverlay();
       select();
@@ -84,15 +88,17 @@ class _PagerShortcutsState extends State<PagerShortcuts> {
           _Shortcut(
             groups[i].name,
             'Grupo',
-            WorkspaceImage(path: groups[i].customImagePath, size: 30, fallback: NixSymbol(groups[i].iconEmoji ?? groups[i].initials, size: 15, color: pagerInk)),
+            WorkspaceImage(path: groups[i].customImagePath, size: 30, fallback: NixSymbol(groups[i].iconEmoji ?? groups[i].initials, size: 15, color: ink)),
             () => open(() => state.selectSpace(groups[i])),
+            ink,
           ),
         if (i < channels.length)
           _Shortcut(
             channels[i].name,
             'Canal',
-            WorkspaceImage(path: channels[i].customImagePath, size: 30, fallback: Icon(channels[i].icon, size: 18, color: pagerInk)),
+            WorkspaceImage(path: channels[i].customImagePath, size: 30, fallback: Icon(channels[i].icon, size: 18, color: ink)),
             () => open(() => state.selectChannel(channels[i])),
+            ink,
           ),
         if (i < friends.length)
           _Shortcut(
@@ -100,26 +106,27 @@ class _PagerShortcutsState extends State<PagerShortcuts> {
             'Amigo',
             Text(
                 friends[i].peerName.characters.take(2).toString().toUpperCase(),
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, color: pagerInk)),
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, color: ink)),
             () => open(() => state.selectDirectMessage(friends[i])),
+            ink,
           ),
       ],
     ];
 
     return Container(
-      decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: pagerRule))),
+      decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: rule))),
       padding: const EdgeInsets.only(top: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          const NixBilingualLabel(
+          NixBilingualLabel(
             label: 'Atalhos',
             japanese: '近道',
             style: TextStyle(
-                color: pagerInk, fontWeight: FontWeight.bold, fontSize: 12),
+                color: ink, fontWeight: FontWeight.bold, fontSize: 12),
           ),
           SizedBox(
             height: 67,
@@ -156,23 +163,26 @@ class _PagerShortcutsState extends State<PagerShortcuts> {
     );
   }
 
-  Widget _arrow(IconData icon, String label, VoidCallback onPressed) =>
-      SizedBox(
-        width: 36,
-        child: IconButton(
-            tooltip: label,
-            onPressed: onPressed,
-            icon: Icon(icon, color: pagerInk)),
-      );
+  Widget _arrow(IconData icon, String label, VoidCallback onPressed) {
+    final ink = PagerThemeScope.of(context)?.ink ?? context.watch<NixState>().settings.pagerLcdColor.inkColor;
+    return SizedBox(
+      width: 36,
+      child: IconButton(
+          tooltip: label,
+          onPressed: onPressed,
+          icon: Icon(icon, color: ink)),
+    );
+  }
 }
 
 class _Shortcut extends StatelessWidget {
-  const _Shortcut(this.name, this.kind, this.avatar, this.onTap);
+  const _Shortcut(this.name, this.kind, this.avatar, this.onTap, this.ink);
 
   final String name;
   final String kind;
   final Widget avatar;
   final VoidCallback onTap;
+  final Color ink;
 
   @override
   Widget build(BuildContext context) {
@@ -188,7 +198,7 @@ class _Shortcut extends StatelessWidget {
             children: [
               CircleAvatar(
                   radius: 18,
-                  backgroundColor: const Color(0x1710262D),
+                  backgroundColor: ink.withValues(alpha: 0.15),
                   child: avatar),
               const SizedBox(height: 3),
               Text(name,
@@ -196,8 +206,8 @@ class _Shortcut extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textScaler: MediaQuery.textScalerOf(context)
                       .clamp(maxScaleFactor: 1.4),
-                  style: const TextStyle(
-                      color: pagerInk,
+                  style: TextStyle(
+                      color: ink,
                       fontSize: 10,
                       fontWeight: FontWeight.w700)),
             ],

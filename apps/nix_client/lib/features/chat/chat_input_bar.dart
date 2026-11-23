@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
+import '../../core/media/voice_note.dart';
+import 'desktop_voice_audio.dart';
 import 'voice_note_dialog.dart';
+import '../navigation/interface_wallpaper_layer.dart';
 import 'chat_inline_format.dart';
 import 'direct_poll_widgets.dart';
 import 'emoji_catalog.dart';
@@ -56,6 +60,16 @@ class _ChatInputBarState extends State<ChatInputBar> {
   String? _lastLoadedEditId;
   final List<String> _recentEmojis = ['⚡', '🛡️', '🔒', '🔥', '💿', '🤝'];
 
+  // Gestos Telegram para Mensagem de Voz (Segurar para gravar, arrastar para travar)
+  bool _isVoiceRecording = false;
+  bool _isVoiceLocked = false;
+  int _voiceRecordingMs = 0;
+  Timer? _voiceTimer;
+  DesktopVoiceAudio? _desktopAudio;
+  Offset? _voiceDragOrigin;
+  double _voiceDragDy = 0.0;
+  double _voiceDragDx = 0.0;
+
   static const Map<String, String> _emojiKeywords = {
     '😀': 'sorriso feliz alegre smile',
     '😎': 'oculos cool descolado',
@@ -98,12 +112,99 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   @override
   void dispose() {
+    _voiceTimer?.cancel();
+    _desktopAudio?.cancel();
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _focusNode.dispose();
     _keyboardFocusNode.dispose();
     _emojiSearchController.dispose();
     super.dispose();
+  }
+
+  void _startVoiceRecording() async {
+    _focusNode.unfocus();
+    final desktop = switch (defaultTargetPlatform) {
+      TargetPlatform.linux || TargetPlatform.windows when !Platform.environment.containsKey('FLUTTER_TEST') =>
+        DesktopVoiceAudio(),
+      _ => null,
+    };
+    _desktopAudio = desktop;
+    try {
+      if (desktop != null) {
+        await desktop.start();
+      } else {
+        await VoiceNoteDialog.channel.invokeMethod<void>('start');
+      }
+    } catch (_) {
+      return;
+    }
+
+    setState(() {
+      _isVoiceRecording = true;
+      _isVoiceLocked = false;
+      _voiceRecordingMs = 0;
+      _voiceDragDy = 0.0;
+      _voiceDragDx = 0.0;
+    });
+
+    _voiceTimer?.cancel();
+    _voiceTimer = Timer.periodic(const Duration(milliseconds: 100), (t) {
+      if (!mounted || !_isVoiceRecording) {
+        t.cancel();
+        return;
+      }
+      setState(() {
+        _voiceRecordingMs += 100;
+      });
+      if (_voiceRecordingMs >= VoiceNote.maximumSeconds * 1000) {
+        _finishVoiceRecording(send: true);
+      }
+    });
+  }
+
+  void _finishVoiceRecording({required bool send}) async {
+    _voiceTimer?.cancel();
+    final desktop = _desktopAudio;
+    final totalMs = _voiceRecordingMs;
+
+    setState(() {
+      _isVoiceRecording = false;
+      _isVoiceLocked = false;
+      _voiceRecordingMs = 0;
+      _desktopAudio = null;
+    });
+
+    try {
+      if (!send || totalMs < 800) {
+        if (desktop != null) {
+          await desktop.cancel();
+        } else {
+          await VoiceNoteDialog.channel.invokeMethod<void>('cancel');
+        }
+        return;
+      }
+
+      final pcm = desktop != null
+          ? await desktop.finish()
+          : await VoiceNoteDialog.channel.invokeMethod<Uint8List>('finish');
+      if (pcm == null || pcm.isEmpty) return;
+
+      final note = VoiceNote.fromPcm(pcm);
+      if (!mounted) return;
+      final nixState = context.read<NixState>();
+      final voiceConversation = widget.scheduledConversationId;
+
+      if (voiceConversation != null && nixState.canSendVoiceNote(voiceConversation)) {
+        await nixState.sendVoiceNote(voiceConversation, note);
+      } else {
+        await nixState.sendVoiceNoteEverywhere(
+          note: note,
+          isDirect: widget.isDirectMessage,
+          onSendCustom: widget.onSendCustom,
+        );
+      }
+    } catch (_) {}
   }
 
   Future<void> _pickAttachments() async {
@@ -598,11 +699,23 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
         // Barra Principal de Entrada
         LayoutBuilder(builder: (context, constraints) {
+          final isGlass = InterfaceWallpaperLayer.translucentPanelsOf(context);
+          if (_isVoiceRecording) {
+            return _buildVoiceRecordingBar(context, nixState, isGlass);
+          }
           final compact = constraints.maxWidth < 480;
           return Container(
             margin: EdgeInsets.fromLTRB(compact ? 7 : 13, 6, compact ? 9 : 15, 9),
             padding: EdgeInsets.symmetric(horizontal: compact ? 3 : 10, vertical: 5),
-            decoration: nixFrameDecoration(context, background: context.surfaceSidebarColor),
+            decoration: isGlass
+                ? BoxDecoration(
+                    color: NixColors.surfaceSidebar.withValues(
+                        alpha: InterfaceWallpaperLayer.panelOpacityOf(context)),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: NixColors.surfaceBorderStrong.withValues(alpha: 0.3)),
+                  )
+                : nixFrameDecoration(context, background: context.surfaceSidebarColor),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -762,53 +875,90 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       );
                     }
 
-                    return Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: canRecordVoice ? accent : NixColors.surfaceCard,
-                        shape: BoxShape.circle,
-                        border: canRecordVoice
-                            ? null
-                            : Border.all(color: NixColors.surfaceBorder),
-                      ),
-                      child: IconButton(
-                        key: const Key('voice_record_button'),
-                        padding: EdgeInsets.zero,
-                        icon: Icon(
-                          Icons.mic_rounded,
-                          size: 20,
-                          color: canRecordVoice
-                              ? context.onAccentColor
-                              : NixColors.textMuted,
+                    return GestureDetector(
+                      onLongPressStart: !canRecordVoice
+                          ? null
+                          : (details) {
+                              _voiceDragOrigin = details.globalPosition;
+                              _startVoiceRecording();
+                            },
+                      onLongPressMoveUpdate: !canRecordVoice
+                          ? null
+                          : (details) {
+                              if (_isVoiceRecording && !_isVoiceLocked && _voiceDragOrigin != null) {
+                                final dy = details.globalPosition.dy - _voiceDragOrigin!.dy;
+                                final dx = details.globalPosition.dx - _voiceDragOrigin!.dx;
+                                setState(() {
+                                  _voiceDragDy = dy;
+                                  _voiceDragDx = dx;
+                                });
+                                // Arrastou para cima >= 40px: TRAVA GRAVAÇÃO MÃOS LIVRES
+                                if (dy <= -40) {
+                                  setState(() {
+                                    _isVoiceLocked = true;
+                                  });
+                                }
+                                // Arrastou para esquerda >= 50px: CANCELA
+                                if (dx <= -50) {
+                                  _finishVoiceRecording(send: false);
+                                }
+                              }
+                            },
+                      onLongPressEnd: !canRecordVoice
+                          ? null
+                          : (_) {
+                              if (_isVoiceRecording && !_isVoiceLocked) {
+                                _finishVoiceRecording(send: _voiceRecordingMs >= 800);
+                              }
+                            },
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: canRecordVoice ? accent : NixColors.surfaceCard,
+                          shape: BoxShape.circle,
+                          border: canRecordVoice
+                              ? null
+                              : Border.all(color: NixColors.surfaceBorder),
                         ),
-                        tooltip: canRecordVoice
-                            ? 'Gravar mensagem de voz'
-                            : 'Gravação não disponível neste canal',
-                        onPressed: !canRecordVoice
-                            ? null
-                            : () {
-                                _focusNode.unfocus();
-                                showDialog<void>(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (_) => VoiceNoteDialog.record(
-                                    onSend: (note) async {
-                                      if (voiceConversation != null &&
-                                          nixState.canSendVoiceNote(voiceConversation)) {
-                                        await nixState.sendVoiceNote(
-                                            voiceConversation, note);
-                                      } else {
-                                        await nixState.sendVoiceNoteEverywhere(
-                                          note: note,
-                                          isDirect: widget.isDirectMessage,
-                                          onSendCustom: widget.onSendCustom,
-                                        );
-                                      }
-                                    },
-                                  ),
-                                );
-                              },
+                        child: IconButton(
+                          key: const Key('voice_record_button'),
+                          padding: EdgeInsets.zero,
+                          icon: Icon(
+                            Icons.mic_rounded,
+                            size: 20,
+                            color: canRecordVoice
+                                ? context.onAccentColor
+                                : NixColors.textMuted,
+                          ),
+                          tooltip: canRecordVoice
+                              ? 'Segure para gravar · Arraste para cima para travar'
+                              : 'Gravação não disponível neste canal',
+                          onPressed: !canRecordVoice
+                              ? null
+                              : () {
+                                  _focusNode.unfocus();
+                                  showDialog<void>(
+                                    context: context,
+                                    barrierDismissible: false,
+                                    builder: (_) => VoiceNoteDialog.record(
+                                      onSend: (note) async {
+                                        if (voiceConversation != null &&
+                                            nixState.canSendVoiceNote(voiceConversation)) {
+                                          await nixState.sendVoiceNote(
+                                              voiceConversation, note);
+                                        } else {
+                                          await nixState.sendVoiceNoteEverywhere(
+                                            note: note,
+                                            isDirect: widget.isDirectMessage,
+                                            onSendCustom: widget.onSendCustom,
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  );
+                                },
+                        ),
                       ),
                     );
                   },
@@ -818,6 +968,122 @@ class _ChatInputBarState extends State<ChatInputBar> {
           );
         }),
       ],
+    );
+  }
+
+  Widget _buildVoiceRecordingBar(BuildContext context, NixState nixState, bool isGlass) {
+    final accent = context.accentColor;
+    final durationSec = (_voiceRecordingMs / 1000).floor();
+    final durationStr =
+        '${(durationSec ~/ 60).toString().padLeft(2, '0')}:${(durationSec % 60).toString().padLeft(2, '0')}';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(13, 6, 15, 9),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: isGlass
+          ? BoxDecoration(
+              color: NixColors.surfaceSidebar.withValues(
+                  alpha: InterfaceWallpaperLayer.panelOpacityOf(context)),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+            )
+          : BoxDecoration(
+              color: NixColors.surfaceSidebar,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+            ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+            tooltip: 'Cancelar gravação',
+            onPressed: () => _finishVoiceRecording(send: false),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            width: 10,
+            height: 10,
+            decoration: const BoxDecoration(
+              color: Colors.redAccent,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            durationStr,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: _isVoiceLocked
+                ? const Text(
+                    'Gravando sem as mãos...',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  )
+                : Transform.translate(
+                    offset: Offset(_voiceDragDx.clamp(-40.0, 0.0), 0),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.chevron_left_rounded, size: 16, color: Colors.white38),
+                        Text(
+                          'Deslize para cancelar',
+                          style: TextStyle(color: Colors.white38, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+          if (_isVoiceLocked)
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: accent,
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                icon: Icon(Icons.arrow_upward_rounded, color: context.onAccentColor, size: 20),
+                tooltip: 'Enviar mensagem de voz',
+                onPressed: () => _finishVoiceRecording(send: true),
+              ),
+            )
+          else
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.lock_outline_rounded,
+                  size: 16,
+                  color: _voiceDragDy <= -30 ? accent : Colors.white38,
+                ),
+                const SizedBox(height: 2),
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.redAccent.withValues(alpha: 0.4),
+                        blurRadius: 10,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.mic_rounded, color: Colors.white, size: 22),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 

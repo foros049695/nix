@@ -7,6 +7,7 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
+import '../navigation/interface_wallpaper_layer.dart';
 import 'trade_simulation_dialog.dart';
 import 'private_trade_room_view.dart';
 import 'payment_method_picker.dart';
@@ -31,9 +32,10 @@ class MoneroP2pView extends StatelessWidget {
         return LayoutBuilder(
       builder: (context, constraints) {
         final isNarrow = constraints.maxWidth < 740;
+        final isGlass = InterfaceWallpaperLayer.translucentPanelsOf(context);
 
         return Container(
-          color: NixColors.background,
+          color: isGlass ? Colors.transparent : NixColors.background,
           child: CustomScrollView(
             slivers: [
               SliverToBoxAdapter(
@@ -59,7 +61,7 @@ class MoneroP2pView extends StatelessWidget {
                       ),
                       TextButton.icon(
                         onPressed: () => showDialog<void>(
-                          context: context, builder: (_) => const TradeSimulationDialog(),
+                           context: context, builder: (_) => const TradeSimulationDialog(),
                         ),
                         icon: const Icon(Icons.science_outlined),
                         label: const Text('Simular negociação'),
@@ -72,7 +74,15 @@ class MoneroP2pView extends StatelessWidget {
               Container(
                 margin: const EdgeInsets.fromLTRB(10, 4, 13, 8),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: nixFrameDecoration(context, background: context.surfaceSidebarColor),
+                decoration: isGlass
+                    ? BoxDecoration(
+                        color: NixColors.surfaceSidebar.withValues(
+                            alpha: InterfaceWallpaperLayer.panelOpacityOf(context)),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                            color: NixColors.surfaceBorderStrong.withValues(alpha: 0.3)),
+                      )
+                    : nixFrameDecoration(context, background: context.surfaceSidebarColor),
                 child: isNarrow
                     ? Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

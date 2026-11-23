@@ -10,6 +10,7 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
+import '../navigation/interface_wallpaper_layer.dart';
 import '../chat/message_header.dart';
 import '../dialogs/nix_symbol_picker.dart';
 
@@ -78,7 +79,9 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                   Expanded(
                     flex: showSplitThread ? 6 : 10,
                     child: Container(
-                      color: NixColors.background,
+                      color: InterfaceWallpaperLayer.translucentPanelsOf(context)
+                          ? Colors.transparent
+                          : NixColors.background,
                       child: Column(
                         children: [
                           // Barra de Busca + Botão Novo Tópico
@@ -305,6 +308,7 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                       avatar: NixSymbol(tags[t]!, size: 15, color: selected ? ctx.onAccentColor : NixColors.textPrimary),
                       label: Text(t, style: const TextStyle(fontSize: 11.5)),
                       selected: selected,
+                      showCheckmark: false,
                       selectedColor: ctx.accentColor,
                       labelStyle: TextStyle(
                         color: selected ? ctx.onAccentColor : NixColors.textPrimary,
@@ -433,6 +437,7 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                       avatar: NixSymbol(tags[t]!, size: 15, color: selected ? ctx.onAccentColor : NixColors.textPrimary),
                       label: Text(t, style: const TextStyle(fontSize: 11.5)),
                       selected: selected,
+                      showCheckmark: false,
                       selectedColor: ctx.accentColor,
                       labelStyle: TextStyle(
                         color: selected ? ctx.onAccentColor : NixColors.textPrimary,
@@ -763,7 +768,10 @@ class _SplitThreadPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: NixColors.surfaceSidebar,
+        color: InterfaceWallpaperLayer.translucentPanelsOf(context)
+            ? NixColors.surfaceSidebar.withValues(
+                alpha: InterfaceWallpaperLayer.panelOpacityOf(context))
+            : NixColors.surfaceSidebar,
         border: Border(left: BorderSide(color: NixColors.surfaceBorderStrong, width: 1)),
       ),
       child: Column(
@@ -991,7 +999,10 @@ class _SplitThreadPanel extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: NixColors.background,
+              color: InterfaceWallpaperLayer.translucentPanelsOf(context)
+                  ? NixColors.background.withValues(
+                      alpha: InterfaceWallpaperLayer.panelOpacityOf(context))
+                  : NixColors.background,
               border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
             ),
             child: Row(

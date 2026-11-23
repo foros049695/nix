@@ -43,21 +43,29 @@ class NixUserAvatar extends StatelessWidget {
         nixState.settings.roundedSquareAvatar ||
         nixState.settings.avatarFrameStyle == 'roundedSquare';
 
+    final hasSpecialEffect = (effect.isNotEmpty && effect != 'none') ||
+        (nixState.settings.avatarFrameStyle != 'circle' &&
+            nixState.settings.avatarFrameStyle != 'roundedSquare' &&
+            nixState.settings.avatarFrameStyle.isNotEmpty);
+
     Color effectiveBorderColor = borderColor ?? NixColors.surfaceBorderStrong;
-    if (borderColor == null && nixState.settings.avatarFrameColorHex.isNotEmpty) {
+    if (nixState.settings.avatarFrameColorHex.isNotEmpty) {
       try {
         final hex = nixState.settings.avatarFrameColorHex.replaceAll('#', '');
         effectiveBorderColor = Color(int.parse('FF$hex', radix: 16));
       } catch (_) {}
-    } else if (borderColor == null) {
-      if (effect == 'neon' || nixState.settings.avatarFrameStyle == 'cyberpunkNeon') {
-        effectiveBorderColor = Colors.cyanAccent;
-      } else if (effect == 'glow' || nixState.settings.avatarFrameStyle == 'goldenBorder') {
+    } else if (hasSpecialEffect || borderColor == null) {
+      final style = nixState.settings.avatarFrameStyle;
+      if (effect == 'neon' || style == 'cyberpunkNeon') {
+        effectiveBorderColor = const Color(0xFF00E5FF);
+      } else if (effect == 'glow' || style == 'goldenBorder' || style == 'ouroNobre') {
         effectiveBorderColor = const Color(0xFFFFD700);
-      } else if (effect == 'softGlow' || nixState.settings.avatarFrameStyle == 'nixPurple') {
+      } else if (effect == 'softGlow' || style == 'nixPurple' || style == 'nixRoxo') {
         effectiveBorderColor = const Color(0xFFB388FF);
-      } else if (effect == 'pixelArt' || nixState.settings.avatarFrameStyle == 'pixelArt') {
-        effectiveBorderColor = NixColors.accentGreen;
+      } else if (effect == 'pixelArt' || style == 'pixelArt') {
+        effectiveBorderColor = const Color(0xFF00E676);
+      } else if (style == 'tactical' || style == 'tatica') {
+        effectiveBorderColor = const Color(0xFF90A4AE);
       } else if (effect == 'subtle') {
         effectiveBorderColor = NixColors.surfaceBorder;
       }
@@ -68,28 +76,43 @@ class NixUserAvatar extends StatelessWidget {
       size * (effect == 'pixelArt' ? 0.08 : cornerRadiusRatio),
     );
 
+    final style = nixState.settings.avatarFrameStyle;
     List<BoxShadow>? shadows;
-    if (effect == 'neon' || nixState.settings.avatarFrameStyle == 'cyberpunkNeon') {
+    if (effect == 'neon' || style == 'cyberpunkNeon') {
       shadows = [
         BoxShadow(
-          color: effectiveBorderColor.withValues(alpha: 0.75),
+          color: const Color(0xFF00E5FF).withValues(alpha: 0.85),
+          blurRadius: 12,
+          spreadRadius: 2,
+        ),
+        BoxShadow(
+          color: const Color(0xFF00E5FF).withValues(alpha: 0.45),
+          blurRadius: 20,
+          spreadRadius: 4,
+        ),
+      ];
+    } else if (effect == 'glow' || style == 'goldenBorder' || style == 'ouroNobre') {
+      shadows = [
+        BoxShadow(
+          color: const Color(0xFFFFD700).withValues(alpha: 0.75),
           blurRadius: 10,
+          spreadRadius: 2,
+        ),
+      ];
+    } else if (effect == 'softGlow' || style == 'nixPurple' || style == 'nixRoxo') {
+      shadows = [
+        BoxShadow(
+          color: const Color(0xFFB388FF).withValues(alpha: 0.65),
+          blurRadius: 9,
           spreadRadius: 1.5,
         ),
       ];
-    } else if (effect == 'glow' || nixState.settings.avatarFrameStyle == 'goldenBorder') {
+    } else if (style == 'pixelArt' || effect == 'pixelArt') {
       shadows = [
         BoxShadow(
-          color: effectiveBorderColor.withValues(alpha: 0.55),
-          blurRadius: 7,
+          color: const Color(0xFF00E676).withValues(alpha: 0.55),
+          blurRadius: 6,
           spreadRadius: 1,
-        ),
-      ];
-    } else if (effect == 'softGlow') {
-      shadows = [
-        BoxShadow(
-          color: effectiveBorderColor.withValues(alpha: 0.35),
-          blurRadius: 5,
         ),
       ];
     }

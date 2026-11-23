@@ -156,7 +156,10 @@ class _HomePrivateViewState extends State<HomePrivateView> {
       constraints: const BoxConstraints(minHeight: 52),
       padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 20, vertical: 6),
       decoration: BoxDecoration(
-        color: NixColors.surfaceElevated,
+        color: InterfaceWallpaperLayer.translucentPanelsOf(context)
+            ? NixColors.surfaceElevated.withValues(
+                alpha: InterfaceWallpaperLayer.panelOpacityOf(context))
+            : NixColors.surfaceElevated,
         border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
       ),
       child: Row(
@@ -456,7 +459,10 @@ class _HomePrivateViewState extends State<HomePrivateView> {
             height: 52,
             padding: const EdgeInsets.symmetric(horizontal: 20),
             decoration: BoxDecoration(
-              color: NixColors.surfaceElevated,
+              color: InterfaceWallpaperLayer.translucentPanelsOf(context)
+                  ? NixColors.surfaceElevated.withValues(
+                      alpha: InterfaceWallpaperLayer.panelOpacityOf(context))
+                  : NixColors.surfaceElevated,
               border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
             ),
             child: Row(

@@ -228,6 +228,11 @@ class NixTheme {
         checkColor: WidgetStateProperty.all(onPrimary),
         side: BorderSide(color: scheme.surfaceBorderStrong, width: 1.5),
       ),
+      chipTheme: ChipThemeData(
+        showCheckmark: false,
+        shape: RoundedRectangleBorder(borderRadius: NixTokens.borderSm),
+        side: BorderSide(color: scheme.surfaceBorder),
+      ),
       sliderTheme: SliderThemeData(
         activeTrackColor: palette.primaryAccent,
         inactiveTrackColor: scheme.surfaceActive,

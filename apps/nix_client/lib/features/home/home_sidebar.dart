@@ -9,6 +9,7 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import '../navigation/interface_wallpaper_layer.dart';
 import '../offline/share_app_offline_dialog.dart';
 import '../profile/nix_user_avatar.dart';
 
@@ -25,6 +26,7 @@ class HomeSidebar extends StatelessWidget {
     final selectedDm = nixState.selectedDm;
     final filteredDms = nixState.filteredDirectMessages;
     final effectiveWidth = width ?? nixState.sidebarWidth;
+    final wallpaperVisible = InterfaceWallpaperLayer.visibleOf(context);
 
     return Container(
       width: effectiveWidth,
@@ -48,7 +50,7 @@ class HomeSidebar extends StatelessWidget {
                     prefixIcon: Icon(Icons.search_rounded, size: 16, color: NixColors.textMuted),
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    fillColor: NixColors.background,
+                    fillColor: wallpaperVisible ? NixColors.background.withValues(alpha: 0.45) : NixColors.background,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(18),
                       borderSide: BorderSide(color: NixColors.surfaceBorder),
@@ -322,12 +324,13 @@ class HomeSidebar extends StatelessWidget {
   Widget _buildUserFooter(BuildContext context, NixState state) {
     final profile = state.userProfile;
     final effectiveName = profile.effectiveDisplayName;
+    final wallpaperVisible = InterfaceWallpaperLayer.visibleOf(context);
 
     return Container(
       height: 54,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: NixColors.surfaceDock,
+        color: wallpaperVisible ? Colors.transparent : NixColors.surfaceDock,
         border: Border(top: BorderSide(color: NixColors.surfaceBorder)),
       ),
       child: Row(

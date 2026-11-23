@@ -18,6 +18,7 @@ import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
 import '../profile/cultural_showcase.dart';
 import '../profile/desktop_pager_audio.dart';
+import '../navigation/interface_wallpaper_layer.dart';
 
 /// Visão principal do Nix Media Index — Offline-First e Acervo Cultural.
 class NixMediaIndexView extends StatefulWidget {
@@ -691,10 +692,15 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
   Widget build(BuildContext context) {
     final isCompact = MediaQuery.of(context).size.width < 700;
 
+    final isGlass = InterfaceWallpaperLayer.translucentPanelsOf(context);
+
     return Scaffold(
-      backgroundColor: NixColors.background,
+      backgroundColor: isGlass ? Colors.transparent : NixColors.background,
       appBar: AppBar(
-        backgroundColor: NixColors.surfaceCard,
+        backgroundColor: isGlass
+            ? NixColors.surfaceCard.withValues(
+                alpha: InterfaceWallpaperLayer.panelOpacityOf(context))
+            : NixColors.surfaceCard,
         elevation: 0,
         actions: [
           if (Platform.isAndroid || Platform.isLinux)

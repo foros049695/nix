@@ -124,17 +124,36 @@ class _PagerHousingState extends State<PagerHousing> {
                     child: Transform.scale(
                       scale: scale,
                       alignment: Alignment.topLeft,
-                      child: DecoratedBox(
-                        key: const Key('pager_rendered_shell'),
-                        decoration: BoxDecoration(
-                          image: DecorationImage(
-                            image: const AssetImage(
-                                'assets/images/pager_shell.webp'),
-                            colorFilter: pagerCaseFilter(widget.caseColor),
-                            fit: BoxFit.fill,
-                            centerSlice:
-                                const Rect.fromLTRB(133, 143, 867, 395),
-                          ),
+                      child: SizedBox(
+                        width: 1000,
+                        height: height / scale,
+                        child: Stack(
+                          children: [
+                            // 1. Carcaça de hardware tátil de alta fidelidade (à prova de falha de assets)
+                            _FallbackPagerShell(
+                              caseColor: widget.caseColor,
+                              unscaledHeight: height / scale,
+                              displayHeight: displayHeight / scale,
+                              extension: extension / scale,
+                            ),
+                            // 2. Textura fotorealística sobreposta
+                            Positioned.fill(
+                              child: DecoratedBox(
+                                key: const Key('pager_rendered_shell'),
+                                decoration: BoxDecoration(
+                                  image: DecorationImage(
+                                    image: const AssetImage(
+                                        'assets/images/pager_shell.webp'),
+                                    colorFilter: pagerCaseFilter(widget.caseColor),
+                                    fit: BoxFit.fill,
+                                    centerSlice:
+                                        const Rect.fromLTRB(133, 143, 867, 395),
+                                    onError: (_, __) {},
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -149,14 +168,22 @@ class _PagerHousingState extends State<PagerHousing> {
                     borderRadius: BorderRadius.circular(23 * scale),
                     child: ColoredBox(
                       color: Color(widget.lcdColor.rgb),
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: widget.wallpaper == null
-                            ? widget.screen
-                            : Stack(
-                                fit: StackFit.expand,
-                                children: [widget.wallpaper!, widget.screen],
-                              ),
+                      child: PagerThemeScope(
+                        lcdColor: widget.lcdColor,
+                        ink: widget.lcdColor.inkColor,
+                        secondaryInk: widget.lcdColor.secondaryInkColor,
+                        rule: widget.lcdColor.ruleColor,
+                        chipBg: widget.lcdColor.chipColor,
+                        isDark: widget.lcdColor.isDark,
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: widget.wallpaper == null
+                              ? widget.screen
+                              : Stack(
+                                  fit: StackFit.expand,
+                                  children: [widget.wallpaper!, widget.screen],
+                                ),
+                        ),
                       ),
                     ),
                   ),
@@ -388,4 +415,215 @@ class _PagerPortraitState extends State<_PagerPortrait> {
           ),
         ),
       );
+}
+
+class PagerThemeScope extends InheritedWidget {
+  final PagerLcdColor lcdColor;
+  final Color ink;
+  final Color secondaryInk;
+  final Color rule;
+  final Color chipBg;
+  final bool isDark;
+
+  const PagerThemeScope({
+    super.key,
+    required this.lcdColor,
+    required this.ink,
+    required this.secondaryInk,
+    required this.rule,
+    required this.chipBg,
+    required this.isDark,
+    required super.child,
+  });
+
+  static PagerThemeScope? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<PagerThemeScope>();
+
+  @override
+  bool updateShouldNotify(PagerThemeScope oldWidget) =>
+      lcdColor != oldWidget.lcdColor || ink != oldWidget.ink;
+}
+
+class _FallbackPagerShell extends StatelessWidget {
+  const _FallbackPagerShell({
+    required this.caseColor,
+    required this.unscaledHeight,
+    required this.displayHeight,
+    required this.extension,
+  });
+
+  final PagerCaseColor caseColor;
+  final double unscaledHeight;
+  final double displayHeight;
+  final double extension;
+
+  @override
+  Widget build(BuildContext context) {
+    final baseColor = Color(caseColor.rgb);
+    return Container(
+      width: 1000,
+      height: unscaledHeight,
+      decoration: BoxDecoration(
+        color: baseColor,
+        borderRadius: BorderRadius.circular(55),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.12),
+          width: 2,
+        ),
+      ),
+      child: Stack(
+        children: [
+          // Gradiente e profundidade da carcaça plástica
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(55),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.14),
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.32),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Borda rebaixada interna ao redor da tela LCD
+          Positioned(
+            left: 125,
+            right: 125,
+            top: 106,
+            height: displayHeight + 16,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(27),
+                color: Colors.black.withValues(alpha: 0.28),
+                border: Border.all(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  width: 3.5,
+                ),
+              ),
+            ),
+          ),
+          // Logo NIX estampada no canto inferior esquerdo
+          Positioned(
+            left: 135,
+            top: 499 + extension - 16,
+            child: Text(
+              'NIX',
+              style: TextStyle(
+                fontFamily: pagerDisplayFont,
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.white.withValues(alpha: 0.38),
+                letterSpacing: 3,
+              ),
+            ),
+          ),
+          // Botão Físico Esquerdo: < (Anterior)
+          Positioned(
+            left: 261,
+            width: 128,
+            top: 499 + extension - 36,
+            height: 72,
+            child: const _FallbackHardwareButton(label: '<'),
+          ),
+          // Botão Físico Central: OK (Pill)
+          Positioned(
+            left: 398,
+            width: 204,
+            top: 499 + extension - 36,
+            height: 72,
+            child: const _FallbackHardwareButton(label: 'OK', isPill: true),
+          ),
+          // Botão Físico Direito: = (Menu)
+          Positioned(
+            left: 611,
+            width: 128,
+            top: 499 + extension - 36,
+            height: 72,
+            child: const _FallbackHardwareButton(label: '='),
+          ),
+          // Fendas do alto-falante no canto inferior direito
+          Positioned(
+            left: 775,
+            width: 44,
+            top: 499 + extension - 20,
+            height: 40,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Container(
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Container(
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Container(
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FallbackHardwareButton extends StatelessWidget {
+  const _FallbackHardwareButton({required this.label, this.isPill = false});
+
+  final String label;
+  final bool isPill;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFF2C2F36),
+        borderRadius: BorderRadius.circular(isPill ? 36 : 14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: 4,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.2,
+          ),
+        ),
+      ),
+    );
+  }
 }

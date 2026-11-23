@@ -383,43 +383,187 @@ class CoverEnrichmentService {
     required String circuitIsolation,
     required int socksPort,
   }) async {
-    final cleanTitle = Uri.encodeQueryComponent(item.title.trim());
-    final uri = Uri.parse(
-        'https://www.wikidata.org/w/api.php?action=wbsearchentities&search=$cleanTitle&language=pt&format=json&limit=5');
+    final mediaKeyword = switch (item.category) {
+      CulturalCategory.movies => 'film',
+      CulturalCategory.series => 'series',
+      CulturalCategory.anime => 'anime',
+      _ => 'film',
+    };
 
-    final jsonStr = await _fetchJson(uri: uri, circuitIsolation: circuitIsolation, socksPort: socksPort);
-    final data = jsonDecode(jsonStr);
-    if (data is! Map || data['search'] is! List) {
-      return EnrichmentResult(
-        itemId: item.id,
-        title: item.title,
-        source: 'wikidata',
-        confidence: EnrichmentConfidence.notFound,
-      );
-    }
+    // 1. Wikipedia API (English & Portuguese) com pageimages (pilicense=any) e extracts
+    final yearSuffix = item.releaseYear != null ? ' ${item.releaseYear}' : '';
+    final searchTerms = [
+      '${item.title.trim()}$yearSuffix $mediaKeyword',
+      item.title.trim(),
+    ];
 
-    final searchList = data['search'] as List;
-    for (final entry in searchList) {
-      if (entry is! Map) continue;
-      final label = entry['label']?.toString() ?? '';
-      final desc = entry['description']?.toString() ?? '';
+    for (final term in searchTerms) {
+      final q = Uri.encodeQueryComponent(term);
+      for (final lang in ['en', 'pt']) {
+        try {
+          final wikiUri = Uri.parse(
+              'https://$lang.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=$q&gsrlimit=3&prop=pageimages|extracts&piprop=thumbnail&pithumbsize=600&pilicense=any&exintro=1&explaintext=1&format=json');
+          final jsonStr = await _fetchJson(uri: wikiUri, circuitIsolation: circuitIsolation, socksPort: socksPort);
+          final data = jsonDecode(jsonStr);
+          if (data is Map && data['query'] is Map && data['query']['pages'] is Map) {
+            final pages = data['query']['pages'] as Map;
+            for (final entry in pages.values) {
+              if (entry is! Map) continue;
+              final pageTitle = entry['title']?.toString() ?? '';
+              final extract = entry['extract']?.toString().trim();
+              final thumbMap = entry['thumbnail'] as Map?;
+              final thumbUrl = thumbMap?['source']?.toString();
 
-      // Verifica correspondência de tipo de mídia para não misturar livro com filme homônimo
-      final isExpectedMedia = _matchesMediaType(item.category, desc);
-      if (!isExpectedMedia && !_isStrictTitleMatch(item.title, label)) {
-        continue;
+              // Verifica relevância mínima do título
+              if (!_isStrictTitleMatch(item.title, pageTitle) &&
+                  !pageTitle.toLowerCase().contains(item.title.trim().toLowerCase())) {
+                continue;
+              }
+
+              String? localPath;
+              if (thumbUrl != null && thumbUrl.isNotEmpty) {
+                final imgUri = Uri.parse(thumbUrl);
+                localPath = await _downloadAndCacheImage(
+                  imgUri: imgUri,
+                  cacheDir: cacheDir,
+                  cacheKey: 'wiki_${item.id}_${imgUri.pathSegments.last}',
+                  circuitIsolation: circuitIsolation,
+                  socksPort: socksPort,
+                );
+              }
+
+              if (localPath != null || (extract != null && extract.isNotEmpty)) {
+                // Tenta extrair diretor/criador da sinopse se não existir
+                String? parsedCreator = item.creator;
+                if ((parsedCreator == null || parsedCreator.isEmpty) && extract != null) {
+                  final dirMatch = RegExp(
+                          r'(?:directed by|dirigido por)\s+([A-ZÀ-Ú][a-zA-ZÀ-ú\s\.\-]+?)(?:\.|,|;|\(|\n|\band\b)',
+                          caseSensitive: false)
+                      .firstMatch(extract);
+                  if (dirMatch != null) {
+                    parsedCreator = dirMatch.group(1)?.trim();
+                  }
+                }
+
+                // Tenta extrair ano de lançamento se não existir
+                int? parsedYear = item.releaseYear;
+                if (parsedYear == null) {
+                  final yearMatch = RegExp(r'\b(19\d\d|20\d\d)\b').firstMatch(pageTitle);
+                  if (yearMatch != null) {
+                    parsedYear = int.tryParse(yearMatch.group(1)!);
+                  }
+                }
+
+                return EnrichmentResult(
+                  itemId: item.id,
+                  title: item.title,
+                  coverPath: localPath,
+                  synopsis: (extract != null && extract.isNotEmpty) ? extract : null,
+                  creator: parsedCreator,
+                  releaseYear: parsedYear,
+                  source: 'wikipedia',
+                  confidence: localPath != null
+                      ? EnrichmentConfidence.strongAttributes
+                      : EnrichmentConfidence.ambiguous,
+                );
+              }
+            }
+          }
+        } catch (_) {}
       }
-
-      final qid = entry['id']?.toString();
-
-      return EnrichmentResult(
-        itemId: item.id,
-        title: item.title,
-        synopsis: desc.isNotEmpty ? desc : null,
-        source: 'wikidata',
-        confidence: qid != null ? EnrichmentConfidence.exactId : EnrichmentConfidence.strongAttributes,
-      );
     }
+
+    // 2. Wikidata Fallback (wbsearchentities + wbgetclaims P18/P577/P1476)
+    try {
+      final cleanTitle = Uri.encodeQueryComponent(item.title.trim());
+      final uri = Uri.parse(
+          'https://www.wikidata.org/w/api.php?action=wbsearchentities&search=$cleanTitle&language=pt&format=json&limit=5');
+      final jsonStr = await _fetchJson(uri: uri, circuitIsolation: circuitIsolation, socksPort: socksPort);
+      final data = jsonDecode(jsonStr);
+      if (data is Map && data['search'] is List) {
+        final searchList = data['search'] as List;
+        for (final entry in searchList) {
+          if (entry is! Map) continue;
+          final label = entry['label']?.toString() ?? '';
+          final desc = entry['description']?.toString() ?? '';
+          final isExpectedMedia = _matchesMediaType(item.category, desc);
+          if (!isExpectedMedia && !_isStrictTitleMatch(item.title, label)) {
+            continue;
+          }
+          final qid = entry['id']?.toString();
+          String? coverPath;
+          String? originalTitle;
+          int? releaseYear;
+
+          if (qid != null) {
+            try {
+              final claimsUri = Uri.parse(
+                  'https://www.wikidata.org/w/api.php?action=wbgetclaims&entity=$qid&format=json');
+              final claimsJson = await _fetchJson(uri: claimsUri, circuitIsolation: circuitIsolation, socksPort: socksPort);
+              final claimsData = jsonDecode(claimsJson);
+              if (claimsData is Map && claimsData['claims'] is Map) {
+                final claims = claimsData['claims'] as Map;
+                // P18 = imagem Commons
+                if (claims['P18'] is List && (claims['P18'] as List).isNotEmpty) {
+                  final p18Val = claims['P18'][0]['mainsnak']?['datavalue']?['value']?.toString();
+                  if (p18Val != null && p18Val.isNotEmpty) {
+                    try {
+                      final commonsApiUri = Uri.parse(
+                          'https://commons.wikimedia.org/w/api.php?action=query&titles=File:${Uri.encodeComponent(p18Val)}&prop=imageinfo&iiprop=url&iiurlwidth=600&format=json');
+                      final cJson = await _fetchJson(uri: commonsApiUri, circuitIsolation: circuitIsolation, socksPort: socksPort);
+                      final cData = jsonDecode(cJson);
+                      if (cData is Map && cData['query'] is Map && cData['query']['pages'] is Map) {
+                        final cPages = cData['query']['pages'] as Map;
+                        for (final cp in cPages.values) {
+                          if (cp is! Map) continue;
+                          final ii = (cp['imageinfo'] as List?)?.firstOrNull as Map?;
+                          final thumb = ii?['thumburl']?.toString() ?? ii?['url']?.toString();
+                          if (thumb != null) {
+                            coverPath = await _downloadAndCacheImage(
+                              imgUri: Uri.parse(thumb),
+                              cacheDir: cacheDir,
+                              cacheKey: 'wd_${item.id}_$p18Val',
+                              circuitIsolation: circuitIsolation,
+                              socksPort: socksPort,
+                            );
+                            break;
+                          }
+                        }
+                      }
+                    } catch (_) {}
+                  }
+                }
+                // P577 = ano de lançamento
+                if (claims['P577'] is List && (claims['P577'] as List).isNotEmpty) {
+                  final timeStr = claims['P577'][0]['mainsnak']?['datavalue']?['value']?['time']?.toString();
+                  if (timeStr != null) {
+                    final match = RegExp(r'\+?(\d{4})').firstMatch(timeStr);
+                    if (match != null) {
+                      releaseYear = int.tryParse(match.group(1)!);
+                    }
+                  }
+                }
+                // P1476 = título original
+                if (claims['P1476'] is List && (claims['P1476'] as List).isNotEmpty) {
+                  originalTitle = claims['P1476'][0]['mainsnak']?['datavalue']?['value']?['text']?.toString();
+                }
+              }
+            } catch (_) {}
+          }
+
+          return EnrichmentResult(
+            itemId: item.id,
+            title: item.title,
+            coverPath: coverPath,
+            originalTitle: originalTitle ?? item.originalTitle,
+            releaseYear: releaseYear ?? item.releaseYear,
+            synopsis: desc.isNotEmpty ? desc : null,
+            source: 'wikidata',
+            confidence: qid != null ? EnrichmentConfidence.exactId : EnrichmentConfidence.strongAttributes,
+          );
+        }
+      }
+    } catch (_) {}
 
     return EnrichmentResult(
       itemId: item.id,

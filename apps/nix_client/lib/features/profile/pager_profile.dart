@@ -464,8 +464,8 @@ class _PagerProfileState extends State<PagerProfile> {
                                     constraints.maxWidth >= 460),
                                 footer: OutlinedButton(
                                   style: OutlinedButton.styleFrom(
-                                    foregroundColor: pagerInk,
-                                    side: const BorderSide(color: pagerInk),
+                                    foregroundColor: state.settings.pagerLcdColor.inkColor,
+                                    side: BorderSide(color: state.settings.pagerLcdColor.inkColor),
                                   ),
                                   onPressed: () => _selectPage(2, state),
                                   child: const Text('Abrir contemplação'),
@@ -507,7 +507,6 @@ class _PagerProfileState extends State<PagerProfile> {
               child: NixUserAvatar(
                 key: const Key('card_id_avatar_edit_button'),
                 size: narrow ? 45 : 58,
-                borderColor: pagerInk,
                 onTap: () => showProfileAvatarEditor(context, state),
               ),
             ),
@@ -546,11 +545,21 @@ class _PagerProfileState extends State<PagerProfile> {
                     ),
                   ),
                   borderRadius: BorderRadius.circular(6),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: NixQrCodeWidget(
-                        data: profile.qrPublicPayload, size: narrow ? 62 : 76),
-                  ),
+                  child: state.settings.pagerLcdColor.isDark
+                      ? Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: NixQrCodeWidget(
+                              data: profile.qrPublicPayload, size: narrow ? 56 : 68),
+                        )
+                      : ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: NixQrCodeWidget(
+                              data: profile.qrPublicPayload, size: narrow ? 62 : 76),
+                        ),
                 ),
               ),
             ],
@@ -590,14 +599,14 @@ class _PagerProfileState extends State<PagerProfile> {
             },
             borderRadius: BorderRadius.circular(4),
             child: Row(children: [
-              const Icon(Icons.music_note_outlined, color: pagerInk, size: 15),
+              Icon(Icons.music_note_outlined, color: state.settings.pagerLcdColor.inkColor, size: 15),
               const SizedBox(width: 6),
               Expanded(
                   child: Text(profile.currentActivity,
                       style: const TextStyle(fontSize: 12),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis)),
-              const Icon(Icons.playlist_play_rounded, color: pagerInk, size: 16),
+              Icon(Icons.playlist_play_rounded, color: state.settings.pagerLcdColor.inkColor, size: 16),
             ]),
           ),
         if (profile.publicId.isNotEmpty)
@@ -671,6 +680,7 @@ class _PagerProfileState extends State<PagerProfile> {
     final isKeys = gate.identityKeysLoaded;
     final score = (isSqlCipher ? 1 : 0) + (isTor ? 1 : 0) + (isKeys ? 1 : 0) + 2;
 
+    final ink = state.settings.pagerLcdColor.inkColor;
     return InkWell(
       key: const Key('pager_security_stars_button'),
       onTap: () => _showSecurityAuditDialog(context, state),
@@ -687,16 +697,16 @@ class _PagerProfileState extends State<PagerProfile> {
                 Icon(
                   i < score ? Icons.star_rounded : Icons.star_border_rounded,
                   size: 13,
-                  color: pagerInk,
+                  color: ink,
                 ),
               const SizedBox(width: 3),
               Text(
                 '$score/5',
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: pagerDisplayFont,
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
-                  color: pagerInk,
+                  color: ink,
                 ),
               ),
             ],
@@ -713,19 +723,20 @@ class _PagerProfileState extends State<PagerProfile> {
     final isKeys = gate.identityKeysLoaded;
     final score = (isSqlCipher ? 1 : 0) + (isTor ? 1 : 0) + (isKeys ? 1 : 0) + 2;
     final ratio = (score / 5.0).clamp(0.0, 1.0);
+    final ink = state.settings.pagerLcdColor.inkColor;
 
     return Container(
       height: 4,
       width: 120,
       decoration: BoxDecoration(
-        border: Border.all(color: pagerInk, width: 0.8),
+        border: Border.all(color: ink, width: 0.8),
         borderRadius: BorderRadius.circular(1),
       ),
       padding: const EdgeInsets.all(0.5),
       child: FractionallySizedBox(
         alignment: Alignment.centerLeft,
         widthFactor: ratio,
-        child: Container(color: pagerInk),
+        child: Container(color: ink),
       ),
     );
   }
@@ -863,32 +874,34 @@ class _PagerProfileState extends State<PagerProfile> {
     );
   }
 
-  Widget _statCell(IconData icon, String count, String label, [Color ink = pagerInk]) {
+  Widget _statCell(IconData icon, String count, String label, [Color? ink]) {
+    final effectiveInk = ink ?? const Color(0xFF10262D);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: ink),
+          Icon(icon, size: 12, color: effectiveInk),
           Text(
             count,
             style: TextStyle(
               fontFamily: pagerDisplayFont,
               fontSize: 11,
               fontWeight: FontWeight.bold,
-              color: ink,
+              color: effectiveInk,
             ),
           ),
           Text(
             label,
-            style: TextStyle(fontSize: 8, color: ink),
+            style: TextStyle(fontSize: 8, color: effectiveInk),
           ),
         ],
       ),
     );
   }
 
-  Widget _stampLockCell(BuildContext context, int percent, [Color ink = pagerInk]) {
+  Widget _stampLockCell(BuildContext context, int percent, [Color? ink]) {
+    final effectiveInk = ink ?? const Color(0xFF10262D);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3),
       child: Column(
@@ -899,10 +912,10 @@ class _PagerProfileState extends State<PagerProfile> {
             height: 20,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: ink, width: 1),
+              border: Border.all(color: effectiveInk, width: 1),
             ),
             child: Center(
-              child: Icon(Icons.lock_outline_rounded, size: 10, color: ink),
+              child: Icon(Icons.lock_outline_rounded, size: 10, color: effectiveInk),
             ),
           ),
           const SizedBox(height: 1),
@@ -912,7 +925,7 @@ class _PagerProfileState extends State<PagerProfile> {
               fontFamily: pagerDisplayFont,
               fontSize: 9,
               fontWeight: FontWeight.bold,
-              color: ink,
+              color: effectiveInk,
             ),
           ),
         ],

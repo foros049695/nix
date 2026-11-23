@@ -22,6 +22,17 @@ class InterfaceWallpaperLayer extends StatefulWidget {
       context.dependOnInheritedWidgetOfExactType<_WallpaperScope>()?.visible ??
       false;
 
+  static bool translucentPanelsOf(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<_WallpaperScope>();
+    return (scope?.visible ?? false) && (scope?.wallpaper.translucentPanels ?? true);
+  }
+
+  static double panelOpacityOf(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<_WallpaperScope>();
+    if (scope == null || !scope.visible || !scope.wallpaper.translucentPanels) return 1.0;
+    return scope.wallpaper.panelOpacity.clamp(0.05, 0.95);
+  }
+
   @override
   State<InterfaceWallpaperLayer> createState() =>
       _InterfaceWallpaperLayerState();
@@ -72,6 +83,7 @@ class _InterfaceWallpaperLayerState extends State<InterfaceWallpaperLayer>
                 key: ValueKey(file.path), file: file, alignment: alignment);
     return _WallpaperScope(
       visible: visible,
+      wallpaper: wallpaper,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -102,13 +114,20 @@ class _InterfaceWallpaperLayerState extends State<InterfaceWallpaperLayer>
 }
 
 class _WallpaperScope extends InheritedWidget {
-  const _WallpaperScope({required this.visible, required super.child});
+  const _WallpaperScope({
+    required this.visible,
+    required this.wallpaper,
+    required super.child,
+  });
 
   final bool visible;
+  final InterfaceWallpaper wallpaper;
 
   @override
   bool updateShouldNotify(_WallpaperScope oldWidget) =>
-      visible != oldWidget.visible;
+      visible != oldWidget.visible ||
+      wallpaper.translucentPanels != oldWidget.wallpaper.translucentPanels ||
+      wallpaper.panelOpacity != oldWidget.wallpaper.panelOpacity;
 }
 
 class _WallpaperStill extends StatefulWidget {

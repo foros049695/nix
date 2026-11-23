@@ -50,7 +50,11 @@ enum PagerLcdColor {
   final int rgb;
 
   bool get isBlack => this == black;
-  Color get inkColor => isBlack ? const Color(0xFFF1F5F9) : const Color(0xFF10262D);
+  bool get isDark => isBlack || Color(rgb).computeLuminance() < 0.35;
+  Color get inkColor => isDark ? const Color(0xFFF1F5F9) : const Color(0xFF10262D);
+  Color get secondaryInkColor => isDark ? const Color(0xFF94A3B8) : const Color(0x9910262D);
+  Color get ruleColor => isDark ? const Color(0x33F1F5F9) : const Color(0x4D10262D);
+  Color get chipColor => isDark ? const Color(0x22FFFFFF) : const Color(0x1A10262D);
   Color get surfaceColor => Color(rgb);
 
   static PagerLcdColor read(Object? value) => values.firstWhere(

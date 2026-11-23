@@ -22,7 +22,7 @@ class WindowTitleBar extends StatelessWidget {
       height: 32,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: wallpaperVisible ? NixColors.surfaceDock.withValues(alpha: 0.65) : NixColors.surfaceDock,
+        color: wallpaperVisible ? NixColors.surfaceDock.withValues(alpha: 0.25) : NixColors.surfaceDock,
         border: Border(bottom: BorderSide(color: NixColors.surfaceBorder, width: 1)),
       ),
       child: Row(

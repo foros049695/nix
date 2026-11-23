@@ -630,6 +630,7 @@ Widget _frameChip({
   return ChoiceChip(
     label: Text(label, style: const TextStyle(fontSize: 11)),
     selected: isSelected,
+    showCheckmark: false,
     onSelected: (_) => onSelected(),
   );
 }
