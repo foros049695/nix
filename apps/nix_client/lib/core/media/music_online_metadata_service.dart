@@ -65,17 +65,16 @@ class MusicOnlineMetadataService {
         proxyHost: '127.0.0.1',
         proxyPort: socksPort,
       );
-      final host = 'musicbrainz.org';
-      final conn = await connector.connectRaw(
+      const host = 'musicbrainz.org';
+      final socket = await connector.connect(
         host,
         443,
         requireOnionV3: false,
         timeout: const Duration(seconds: 25),
       );
       try {
-        final secure = await RawSecureSocket.secure(
-          conn.socket,
-          subscription: conn.subscription,
+        final secure = await SecureSocket.secure(
+          socket,
           host: host,
         ).timeout(const Duration(seconds: 20));
         final encodedQuery = Uri.encodeQueryComponent(cleanQuery);
@@ -84,7 +83,7 @@ class MusicOnlineMetadataService {
             'Host: $host\r\n'
             'User-Agent: NixMusicMetadata/1.0 ( privacy@projetonix.org )\r\n'
             'Connection: close\r\n\r\n';
-        secure.write(utf8.encode(req));
+        secure.write(req);
         await secure.flush();
 
         final builder = BytesBuilder(copy: false);
@@ -95,7 +94,7 @@ class MusicOnlineMetadataService {
         final bodyIndex = fullText.indexOf('\r\n\r\n');
         rawResponse = bodyIndex >= 0 ? fullText.substring(bodyIndex + 4) : fullText;
       } finally {
-        await conn.socket.close();
+        await socket.close();
       }
     }
 

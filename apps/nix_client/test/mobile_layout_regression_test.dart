@@ -147,7 +147,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Carteira externa desconectada'), findsOneWidget);
     expect(state.activeArea, NixActiveArea.moneroP2p);
-    await tester.tap(find.text('Mercado Cripto'));
+    await tester.tap(find.widgetWithText(Tab, 'Mercado Cripto'));
     await tester.pumpAndSettle();
     expect(find.text('Carteira externa desconectada'), findsNothing);
     expect(tester.takeException(), isNull);
