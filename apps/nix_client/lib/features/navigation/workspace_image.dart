@@ -59,26 +59,27 @@ class _WorkspaceImageFieldState extends State<WorkspaceImageField> {
         selected =
             (await CrossPlatformFilePickerAdapter.showPortableFileChooserDialog(
                     context,
-                    title: 'Escolher imagem ou GIF',
+                    title: 'Escolher imagem, GIF ou vídeo',
                     allowedExtensions: LocalImageHelper.supportedExtensions))
                 .firstOrNull;
       }
       if (!mounted || selected == null) return;
       final file = File(selected);
-      if (!await file.exists() || await file.length() > 20 * 1024 * 1024) {
-        if (mounted)
-          setState(() => _error = 'Imagem ausente ou maior que 20 MB.');
+      if (!await file.exists() || await file.length() > 100 * 1024 * 1024) {
+        if (mounted) {
+          setState(() => _error = 'Arquivo ausente ou maior que 100 MB.');
+        }
         return;
       }
       final saved = await LocalImageHelper.sanitizeAndStoreImage(selected);
       if (!mounted) return;
       if (saved == null) {
-        setState(() => _error = 'Não foi possível validar a imagem.');
+        setState(() => _error = 'Não foi possível validar o arquivo de mídia.');
       } else {
         widget.onChanged(saved);
       }
     } catch (_) {
-      if (mounted) setState(() => _error = 'Não foi possível abrir a imagem.');
+      if (mounted) setState(() => _error = 'Não foi possível abrir o arquivo.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -98,7 +99,7 @@ class _WorkspaceImageFieldState extends State<WorkspaceImageField> {
                       path: widget.path,
                       size: 26,
                       fallback: const Icon(Icons.image_outlined, size: 19)),
-                  label: const Text('Escolher imagem ou GIF')),
+                  label: const Text('Escolher imagem, GIF ou vídeo')),
               if (widget.path != null)
                 IconButton(
                     tooltip: 'Remover imagem',
@@ -132,7 +133,7 @@ class WorkspaceBannerView extends StatelessWidget {
 }
 
 class WorkspaceBannerField extends StatelessWidget {
-  const WorkspaceBannerField({super.key, required this.banner, required this.onChanged, this.label = 'Banner'});
+  const WorkspaceBannerField({super.key, required this.banner, required this.onChanged, this.label = 'Banner ou Vídeo'});
   final WorkspaceBanner? banner;
   final ValueChanged<WorkspaceBanner?> onChanged;
   final String label;

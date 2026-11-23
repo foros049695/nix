@@ -10,10 +10,15 @@ class LocalImageHelper {
   static FilePickerAdapter filePickerAdapter =
       const CrossPlatformFilePickerAdapter();
 
-  static const List<String> supportedExtensions = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
+  static const List<String> supportedImageExtensions = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
+  static const List<String> supportedVideoExtensions = ['mp4', 'webm', 'mkv', 'mov', 'avi'];
+  static const List<String> supportedExtensions = [
+    'png', 'jpg', 'jpeg', 'webp', 'gif',
+    'mp4', 'webm', 'mkv', 'mov', 'avi',
+  ];
   static const List<String> supportedMediaExtensions = [
     'png', 'jpg', 'jpeg', 'webp', 'gif',
-    'mp4', 'mkv', 'webm',
+    'mp4', 'mkv', 'webm', 'mov', 'avi',
     'mp3', 'ogg', 'wav', 'flac',
     'pdf', 'txt', 'docx', 'md', 'json', 'tar', 'gz', 'zip'
   ];
@@ -21,6 +26,11 @@ class LocalImageHelper {
   static bool isSupportedExtension(String path) {
     final lower = path.trim().toLowerCase();
     return supportedExtensions.any((ext) => lower.endsWith('.$ext'));
+  }
+
+  static bool isVideoExtension(String path) {
+    final lower = path.trim().toLowerCase();
+    return supportedVideoExtensions.any((ext) => lower.endsWith('.$ext'));
   }
 
   /// Formata tamanho em bytes para leitura humana (ex: 2.4 MB)
@@ -52,14 +62,79 @@ class LocalImageHelper {
     );
   }
 
-  /// Copia a imagem para área isolada após sanitização; recusa contêiner malformado.
-  static Future<String?> sanitizeAndStoreImage(String sourcePath) async {
+  /// Copia a imagem ou vídeo para área isolada após sanitização; recusa contêiner malformado.
+  /// Se for um vídeo (MP4, WebM, MKV, MOV, AVI), converte automaticamente para WebP animado
+  /// com loop contínuo para renderização de alta fluidez em fundos, perfis e banners.
+  static Future<String?> sanitizeAndStoreImage(
+    String sourcePath, {
+    int maxDimension = 1280,
+    int maxSeconds = 12,
+    int fps = 18,
+  }) async {
     final file = File(sourcePath.trim());
     if (!await file.exists()) return null;
     if (!isSupportedExtension(sourcePath)) return null;
 
     final ext = sourcePath.split('.').last.toLowerCase();
+    final isVideo = supportedVideoExtensions.contains(ext);
+
+    if (isVideo) {
+      final converted = await _tryConvertVideoToAnimatedWebp(
+        sourceFile: file,
+        maxDimension: maxDimension,
+        maxSeconds: maxSeconds,
+        fps: fps,
+      );
+      if (converted != null) return converted;
+
+      return _writeDirectMedia(await file.readAsBytes(), ext);
+    }
+
     return _sanitizeAndStoreBytes(await file.readAsBytes(), ext);
+  }
+
+  static Future<String?> _tryConvertVideoToAnimatedWebp({
+    required File sourceFile,
+    int maxDimension = 1280,
+    int maxSeconds = 12,
+    int fps = 18,
+  }) async {
+    try {
+      final cacheDir = Directory(NixPlatformPaths.resolveDataFile('sanitized_media'));
+      await cacheDir.create(recursive: true);
+      final outPath =
+          '${cacheDir.path}/nix_anim_${DateTime.now().microsecondsSinceEpoch}.webp';
+
+      final filter = 'fps=$fps,scale=min($maxDimension\\,iw):-2:flags=lanczos';
+
+      final result = await Process.run(
+        'ffmpeg',
+        [
+          '-y',
+          '-v', 'error',
+          '-i', sourceFile.path,
+          '-t', '$maxSeconds',
+          '-vf', filter,
+          '-loop', '0',
+          outPath,
+        ],
+      );
+
+      if (result.exitCode == 0 && await File(outPath).exists() && await File(outPath).length() > 0) {
+        return outPath;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<String> _writeDirectMedia(Uint8List data, String ext) async {
+    final cacheDir = Directory(NixPlatformPaths.resolveDataFile('sanitized_media'));
+    await cacheDir.create(recursive: true);
+
+    final outPath =
+        '${cacheDir.path}/nix_media_${DateTime.now().microsecondsSinceEpoch}.$ext';
+    await File(outPath).writeAsBytes(data, flush: true);
+    return outPath;
   }
 
   static ({Uint8List bytes, String extension})? readCatalogThumbnail(String? reference) {
@@ -107,10 +182,22 @@ class LocalImageHelper {
   static Future<bool> storePagerWallpaper(String sourcePath) async {
     final source = File(sourcePath);
     if (!isSupportedExtension(sourcePath) || !await source.exists() ||
-        await source.length() > 20 * 1024 * 1024) {
+        await source.length() > 100 * 1024 * 1024) {
       return false;
     }
-    final cleaned = stripMetadataBytes(await source.readAsBytes());
+    final ext = sourcePath.split('.').last.toLowerCase();
+    final isVideo = supportedVideoExtensions.contains(ext);
+    final Uint8List cleaned;
+    if (isVideo) {
+      final converted = await _tryConvertVideoToAnimatedWebp(sourceFile: source, maxDimension: 640);
+      if (converted != null) {
+        cleaned = await File(converted).readAsBytes();
+      } else {
+        cleaned = await source.readAsBytes();
+      }
+    } else {
+      cleaned = stripMetadataBytes(await source.readAsBytes());
+    }
     final file = pagerWallpaper;
     await file.parent.create(recursive: true);
     final pending = File('${file.path}.pending');

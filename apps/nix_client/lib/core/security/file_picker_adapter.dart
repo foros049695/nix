@@ -18,7 +18,12 @@ abstract class FilePickerAdapter {
       'jpg',
       'jpeg',
       'webp',
-      'gif'
+      'gif',
+      'mp4',
+      'webm',
+      'mkv',
+      'mov',
+      'avi',
     ],
   });
 }
@@ -56,7 +61,12 @@ class ProgrammableFilePickerAdapter implements FilePickerAdapter {
       'jpg',
       'jpeg',
       'webp',
-      'gif'
+      'gif',
+      'mp4',
+      'webm',
+      'mkv',
+      'mov',
+      'avi',
     ],
   }) async {
     pickImageCalls++;
@@ -107,7 +117,12 @@ class CrossPlatformFilePickerAdapter implements FilePickerAdapter {
       'jpg',
       'jpeg',
       'webp',
-      'gif'
+      'gif',
+      'mp4',
+      'webm',
+      'mkv',
+      'mov',
+      'avi',
     ],
   }) async {
     if (Platform.environment['FLUTTER_TEST'] == 'true') {

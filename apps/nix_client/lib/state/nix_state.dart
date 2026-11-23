@@ -1609,6 +1609,9 @@ class NixState extends ChangeNotifier {
     bool? requireEncryption,
   }) async {
     try {
+      if (isDatabaseReady || _localDatabase != null || _keyVault.isUnlocked) {
+        return true;
+      }
       final initialized = await _keyVault.isInitialized(customPath: customVaultPath);
       if (!initialized) return false;
 
@@ -2384,8 +2387,6 @@ class NixState extends ChangeNotifier {
       _attachHardwareRadioListeners();
       if (!isTest) {
         unawaited(_bootstrapFromPreferences());
-      } else {
-        _checkPersistedOnboardingStatus();
       }
     }
   }
@@ -2626,6 +2627,7 @@ class NixState extends ChangeNotifier {
   }
 
   Future<void> _checkPersistedOnboardingStatus() async {
+    if (_disposed || _localDatabase != null || _keyVault.isUnlocked) return;
     try {
       // 1. Tenta desbloqueio automático via chaveiro nativo do SO (libsecret / AndroidKeyStore TEE)
       final unlocked = await tryAutoUnlockAndRestore();

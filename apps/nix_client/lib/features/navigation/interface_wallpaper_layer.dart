@@ -65,7 +65,13 @@ class _InterfaceWallpaperLayerState extends State<InterfaceWallpaperLayer>
     final wallpaper = widget.wallpaper;
     final banner = wallpaper.image;
     final visible = banner != null && wallpaper.opacity > 0;
-    final animate = wallpaper.animated &&
+    final path = banner?.path.toLowerCase() ?? '';
+    final isAnimatedMedia = wallpaper.animated ||
+        path.endsWith('.webp') ||
+        path.endsWith('.gif') ||
+        path.endsWith('.mp4') ||
+        path.endsWith('.webm');
+    final animate = isAnimatedMedia &&
         _foreground &&
         !widget.reducedMotion &&
         !MediaQuery.disableAnimationsOf(context);

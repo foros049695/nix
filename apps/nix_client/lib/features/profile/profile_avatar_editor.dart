@@ -319,7 +319,7 @@ void showProfileAvatarEditor(BuildContext context, NixState state) {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('IMAGEM LOCAL (PNG / JPEG / WebP)',
+                        Text('IMAGEM OU VÍDEO LOCAL (PNG, JPEG, WebP, GIF, MP4, WebM)',
                             style: NixTokens.labelUppercase()),
                         const SizedBox(height: 8),
                         Row(
@@ -335,7 +335,7 @@ void showProfileAvatarEditor(BuildContext context, NixState state) {
                                 style: TextStyle(
                                     color: NixColors.textPrimary, fontSize: 12),
                                 decoration: const InputDecoration(
-                                  hintText: '/caminho/para/avatar.png',
+                                  hintText: '/caminho/para/avatar.mp4 ou .png',
                                   isDense: true,
                                 ),
                               ),
@@ -475,11 +475,11 @@ void showProfileAvatarEditor(BuildContext context, NixState state) {
                                 if (!LocalImageHelper.isSupportedExtension(
                                     raw)) {
                                   setModalState(() => statusMsg =
-                                      'Use apenas PNG, JPEG ou WebP.');
+                                      'Formato não suportado. Use PNG, JPEG, WebP, GIF ou vídeos (MP4, WebM, MKV, MOV).');
                                   return;
                                 }
                                 final cleaned = await LocalImageHelper
-                                    .sanitizeAndStoreImage(raw);
+                                    .sanitizeAndStoreImage(raw, maxDimension: 480);
                                 if (!context.mounted) return;
                                 if (cleaned == null) {
                                   setModalState(() => statusMsg =

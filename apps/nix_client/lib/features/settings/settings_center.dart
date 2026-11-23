@@ -443,13 +443,19 @@ class _SettingsCenterState extends State<SettingsCenter> {
     void save(InterfaceWallpaper wallpaper) =>
         state.updateSettings(state.settings.copyWith(interfaceWallpaper: wallpaper));
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _sectionHeader('Fundo da interface', 'Escolha uma imagem local e ajuste a leitura dos painéis.'),
+      _sectionHeader('Fundo da interface', 'Escolha uma imagem ou vídeo local e ajuste a leitura dos painéis.'),
       WorkspaceBannerField(
-        label: 'Imagem de fundo',
+        label: 'Imagem ou vídeo de fundo',
         banner: value.image,
         onChanged: (image) => save(image == null
             ? const InterfaceWallpaper()
-            : value.copyWith(image: image)),
+            : value.copyWith(
+                image: image,
+                animated: image.path.toLowerCase().endsWith('.webp') ||
+                    image.path.toLowerCase().endsWith('.gif') ||
+                    image.path.toLowerCase().endsWith('.mp4') ||
+                    image.path.toLowerCase().endsWith('.webm'),
+              )),
       ),
       if (value.image != null) ...[
         _sliderCard(title: 'Opacidade', value: value.opacity, max: .42,
