@@ -4487,6 +4487,27 @@ class NixState extends ChangeNotifier {
     return order;
   }
 
+  /// Cancela ou exclui um anúncio do Mercado Cripto pertencente ao usuário.
+  /// Atualiza imediatamente a listagem local e preserva registros de negociações em andamento.
+  Future<bool> cancelOrDeleteMoneroOrder(String orderId) async {
+    final idx = _moneroOrders.indexWhere((o) => o.id == orderId);
+    if (idx == -1) return false;
+    _moneroOrders.removeAt(idx);
+    _moneroFilters.updateOrders(_moneroOrders);
+    if (_preferencesRepo != null) {
+      final localOrders = _moneroOrders
+          .where((o) => o.publicationState == 'local_signed')
+          .map((o) => o.toJson())
+          .toList();
+      await _preferencesRepo!.setOption(
+        'monero_local_orders_v1',
+        localOrders,
+      );
+    }
+    notifyListeners();
+    return true;
+  }
+
   // ================= GITHUB DISCOVERY (STARWIRE) =================
 
   void setGithubSearchQuery(String query) {

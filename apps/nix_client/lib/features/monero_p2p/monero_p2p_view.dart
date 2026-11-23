@@ -204,12 +204,6 @@ class MoneroP2pView extends StatelessWidget {
                               children: [
                                 _assetButton(
                                   context: context,
-                                  title: 'Todos',
-                                  isSelected: nixState.moneroSelectedAsset == null,
-                                  onTap: () => nixState.setMoneroAsset(null),
-                                ),
-                                _assetButton(
-                                  context: context,
                                   title: 'XMR',
                                   isSelected: nixState.moneroSelectedAsset == CryptoAsset.xmr,
                                   onTap: () => nixState.setMoneroAsset(CryptoAsset.xmr),
@@ -304,12 +298,6 @@ class MoneroP2pView extends StatelessWidget {
                               children: [
                                 _assetButton(
                                   context: context,
-                                  title: 'Todos',
-                                  isSelected: nixState.moneroSelectedAsset == null,
-                                  onTap: () => nixState.setMoneroAsset(null),
-                                ),
-                                _assetButton(
-                                  context: context,
                                   title: 'XMR',
                                   isSelected: nixState.moneroSelectedAsset == CryptoAsset.xmr,
                                   onTap: () => nixState.setMoneroAsset(CryptoAsset.xmr),
@@ -400,12 +388,18 @@ class MoneroP2pView extends StatelessWidget {
                       physics: const BouncingScrollPhysics(),
                       child: Row(
                         children: [
-                          _paymentMethodChip(context, nixState, 'Todos'),
                           _paymentMethodChip(context, nixState, 'PIX'),
                           _paymentMethodChip(context, nixState, 'Dinheiro'),
                           _paymentMethodChip(context, nixState, 'SEPA'),
                           _paymentMethodChip(context, nixState, 'Wise'),
                           _paymentMethodChip(context, nixState, 'TED'),
+                          if (nixState.moneroSelectedPaymentMethod.isNotEmpty &&
+                              nixState.moneroSelectedPaymentMethod != 'Todos')
+                            IconButton(
+                              icon: const Icon(Icons.clear_rounded, size: 16),
+                              tooltip: 'Limpar filtro de pagamento',
+                              onPressed: () => nixState.setMoneroPaymentMethod(''),
+                            ),
                         ],
                       ),
                     ),
@@ -517,7 +511,13 @@ class MoneroP2pView extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(right: 6),
       child: InkWell(
-        onTap: () => state.setMoneroPaymentMethod(method),
+        onTap: () {
+          if (isSelected) {
+            state.setMoneroPaymentMethod('');
+          } else {
+            state.setMoneroPaymentMethod(method);
+          }
+        },
         borderRadius: BorderRadius.circular(16),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -827,6 +827,10 @@ class _MoneroOrderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final nixState = context.watch<NixState>();
+    final isOwner = order.publicationState == 'local_signed' ||
+        (nixState.userProfile.publicId.isNotEmpty &&
+            order.traderPublicId == nixState.userProfile.publicId);
     final accent = context.accentColor;
     final expLabel = order.expiresAt == null
         ? 'Sem expiração'
@@ -993,20 +997,29 @@ class _MoneroOrderCard extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            ElevatedButton.icon(
-                              key: Key('trade_button_${order.id}'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: accent,
-                                foregroundColor: context.onAccentColor,
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                shape: RoundedRectangleBorder(borderRadius: NixTokens.borderButtonCompact),
-                              ),
-                              onPressed: onTrade,
-                              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14),
-                              label: Text(
-                                isCryptographicallyValid ? 'Negociar' : 'Bloqueado',
-                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                              ),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (isOwner)
+                                  _deleteOrderButton(context, nixState, order),
+                                ElevatedButton.icon(
+                                  key: Key('trade_button_${order.id}'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: accent,
+                                    foregroundColor: context.onAccentColor,
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: NixTokens.borderButtonCompact),
+                                  ),
+                                  onPressed: onTrade,
+                                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14),
+                                  label: Text(
+                                    isCryptographicallyValid ? 'Negociar' : 'Bloqueado',
+                                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -1158,20 +1171,29 @@ class _MoneroOrderCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        ElevatedButton.icon(
-                          key: Key('trade_button_${order.id}'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: accent,
-                            foregroundColor: context.onAccentColor,
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            shape: RoundedRectangleBorder(borderRadius: NixTokens.borderButtonCompact),
-                          ),
-                          onPressed: onTrade,
-                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14),
-                          label: Text(
-                            isCryptographicallyValid ? 'Negociar' : 'Bloqueado',
-                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                          ),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            if (isOwner)
+                              _deleteOrderButton(context, nixState, order),
+                            ElevatedButton.icon(
+                              key: Key('trade_button_${order.id}'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: accent,
+                                foregroundColor: context.onAccentColor,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                shape: RoundedRectangleBorder(borderRadius: NixTokens.borderButtonCompact),
+                              ),
+                              onPressed: onTrade,
+                              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14),
+                              label: Text(
+                                isCryptographicallyValid ? 'Negociar' : 'Bloqueado',
+                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1200,6 +1222,52 @@ class _MoneroOrderCard extends StatelessWidget {
           Container(width: 6, height: 6, decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle)),
           const SizedBox(width: 4),
           Icon(Icons.shield, size: 10, color: dotColor),
+        ],
+      ),
+    );
+  }
+
+  Widget _deleteOrderButton(BuildContext context, NixState state, MoneroP2pOrder order) {
+    final isLocalOnly = order.publicationState == 'local_signed';
+    final actionLabel = isLocalOnly ? 'Excluir anúncio local' : 'Cancelar ordem';
+    return OutlinedButton.icon(
+      key: Key('delete_order_${order.id}'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: NixColors.accentDanger,
+        side: BorderSide(color: NixColors.accentDanger.withValues(alpha: 0.5)),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        shape: RoundedRectangleBorder(borderRadius: NixTokens.borderButtonCompact),
+      ),
+      onPressed: () => _confirmOrderDeletion(context, state, order),
+      icon: const Icon(Icons.delete_outline_rounded, size: 14),
+      label: Text(actionLabel, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  void _confirmOrderDeletion(BuildContext context, NixState state, MoneroP2pOrder order) {
+    final isLocalOnly = order.publicationState == 'local_signed';
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text(isLocalOnly ? 'Excluir anúncio local' : 'Cancelar ordem'),
+        content: Text(
+          isLocalOnly
+              ? 'Deseja remover este anúncio local assinado? Ele será retirado imediatamente da sua listagem. Registros de negociações em andamento serão preservados.'
+              : 'Deseja cancelar esta ordem? A remoção da cópia local preserva assinaturas e histórico. Se a ordem foi divulgada na rede, a oferta pode requerer revogação explícita nos canais distribuídos.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Voltar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: NixColors.accentDanger),
+            onPressed: () {
+              Navigator.pop(dialogCtx);
+              state.cancelOrDeleteMoneroOrder(order.id);
+            },
+            child: const Text('Confirmar exclusão'),
+          ),
         ],
       ),
     );

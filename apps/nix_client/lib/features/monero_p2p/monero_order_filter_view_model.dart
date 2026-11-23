@@ -7,9 +7,9 @@ import '../../core/models/monero_order.dart';
 class MoneroOrderFilterViewModel extends ChangeNotifier {
   List<MoneroP2pOrder> _allOrders = const [];
   MoneroP2pSide _selectedSide = MoneroP2pSide.sell;
-  CryptoAsset? _selectedAsset;
+  CryptoAsset _selectedAsset = CryptoAsset.xmr;
   String _selectedFiat = 'BRL';
-  String _selectedPaymentMethod = 'Todos';
+  String _selectedPaymentMethod = '';
   String _searchQuery = '';
   bool _disposed = false;
 
@@ -17,7 +17,7 @@ class MoneroOrderFilterViewModel extends ChangeNotifier {
       : _allOrders = initialOrders;
 
   MoneroP2pSide get selectedSide => _selectedSide;
-  CryptoAsset? get selectedAsset => _selectedAsset;
+  CryptoAsset get selectedAsset => _selectedAsset;
   String get selectedFiat => _selectedFiat;
   String get selectedPaymentMethod => _selectedPaymentMethod;
   String get searchQuery => _searchQuery;
@@ -30,8 +30,9 @@ class MoneroOrderFilterViewModel extends ChangeNotifier {
 
   void setSelectedAsset(CryptoAsset? asset) {
     if (_disposed) return;
-    if (_selectedAsset == asset) return;
-    _selectedAsset = asset;
+    final target = asset ?? CryptoAsset.xmr;
+    if (_selectedAsset == target) return;
+    _selectedAsset = target;
     notifyListeners();
   }
 
@@ -66,9 +67,9 @@ class MoneroOrderFilterViewModel extends ChangeNotifier {
   void resetFilters() {
     if (_disposed) return;
     _selectedSide = MoneroP2pSide.sell;
-    _selectedAsset = null;
+    _selectedAsset = CryptoAsset.xmr;
     _selectedFiat = 'BRL';
-    _selectedPaymentMethod = 'Todos';
+    _selectedPaymentMethod = '';
     _searchQuery = '';
     notifyListeners();
   }
@@ -78,9 +79,9 @@ class MoneroOrderFilterViewModel extends ChangeNotifier {
     return _allOrders.where((order) {
       if (order.isExpired) return false;
       if (order.side != _selectedSide) return false;
-      if (_selectedAsset != null && order.asset != _selectedAsset) return false;
+      if (order.asset != _selectedAsset) return false;
       if (order.fiatCurrency != _selectedFiat) return false;
-      if (_selectedPaymentMethod != 'Todos') {
+      if (_selectedPaymentMethod.isNotEmpty && _selectedPaymentMethod != 'Todos') {
         if (!order.paymentMethod.toLowerCase().contains(_selectedPaymentMethod.toLowerCase())) {
           return false;
         }
