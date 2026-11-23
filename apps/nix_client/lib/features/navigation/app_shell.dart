@@ -28,6 +28,7 @@ import '../explore/explore_spaces_view.dart';
 import '../forum/forum_channel_view.dart';
 import '../home/home_private_view.dart';
 import '../home/home_sidebar.dart';
+import '../notifications/notification_center_dialog.dart';
 import '../members/members_panel.dart';
 import '../monero_p2p/monero_finance_view.dart';
 import '../profile/profile_overlay.dart';
@@ -221,6 +222,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                       subtitle: pagerNetworkLabel(gate),
                     ),
                     actions: [
+                      IconButton(
+                        tooltip: 'Central de Notificações',
+                        onPressed: () => NotificationCenterDialog.show(context),
+                        icon: Badge.count(
+                          count: nixState.unreadNotificationCount,
+                          isLabelVisible: nixState.unreadNotificationCount > 0,
+                          backgroundColor: NixColors.accentCyan,
+                          child: const Icon(Icons.notifications_none_rounded, size: 22),
+                        ),
+                      ),
                       IconButton(
                         icon: const Icon(Icons.badge_outlined),
                         tooltip: 'Abrir Pager e perfil',

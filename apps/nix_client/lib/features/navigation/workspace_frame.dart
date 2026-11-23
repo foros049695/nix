@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/user_settings.dart';
 import '../../core/theme.dart';
+import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
 import '../chat/conversation_info_panel.dart';
 import '../design/nix_surfaces.dart';
@@ -10,6 +11,7 @@ import '../design/nix_glass.dart';
 import '../home/home_sidebar.dart';
 import '../members/members_panel.dart';
 import '../profile/nix_user_avatar.dart';
+import '../notifications/notification_center_dialog.dart';
 import 'channels_sidebar.dart';
 import 'panel_resize_divider.dart';
 import 'resizable_window_frame.dart';
@@ -211,6 +213,16 @@ class _WorkspaceBar extends StatelessWidget {
                 category: SettingsCategory.appearance,
               ),
               icon: const Icon(Icons.palette_outlined, size: 19),
+            ),
+            IconButton(
+              tooltip: 'Central de Notificações',
+              onPressed: () => NotificationCenterDialog.show(context),
+              icon: Badge.count(
+                count: state.unreadNotificationCount,
+                isLabelVisible: state.unreadNotificationCount > 0,
+                backgroundColor: NixColors.accentCyan,
+                child: const Icon(Icons.notifications_none_rounded, size: 20),
+              ),
             ),
             Tooltip(
               message: 'Abrir Pager e perfil',

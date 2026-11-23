@@ -25,6 +25,7 @@ import '../core/models/user_settings.dart';
 import '../core/models/crypto_market_item.dart';
 import '../core/models/monero_order.dart';
 import '../core/models/github_repo.dart';
+import '../core/models/nix_notification.dart';
 import '../core/theme/nix_colors.dart';
 import '../core/theme/nix_palette.dart';
 import '../core/security/security_context.dart';
@@ -163,6 +164,60 @@ class NixState extends ChangeNotifier {
 
   void updateCryptoItem(CryptoMarketItem updated) {
     _cryptoMarket = _cryptoMarket.map((i) => i.id == updated.id ? updated : i).toList();
+    notifyListeners();
+  }
+
+  // --- Central de Notificações Privada ----------------------------------------
+  List<NixNotification> _notifications = [];
+
+  List<NixNotification> get notifications => List.unmodifiable(_notifications);
+
+  int get unreadNotificationCount => _notifications.where((n) => !n.isRead).length;
+
+  void addNotification(NixNotification notification) {
+    _notifications = [notification, ..._notifications];
+    notifyListeners();
+  }
+
+  void markNotificationAsRead(String id) {
+    _notifications = _notifications.map((n) {
+      if (n.id == id) {
+        return n.copyWith(isRead: true);
+      }
+      return n;
+    }).toList();
+    notifyListeners();
+  }
+
+  void markAllNotificationsAsRead() {
+    _notifications = _notifications.map((n) => n.copyWith(isRead: true)).toList();
+    notifyListeners();
+  }
+
+  void clearNotifications() {
+    _notifications = [];
+    notifyListeners();
+  }
+
+  void openNotificationTarget(NixNotification notification) {
+    markNotificationAsRead(notification.id);
+    if (notification.targetArea == 'homePrivate') {
+      openHomePrivateArea();
+      if (notification.targetId != null && _directMessages.isNotEmpty) {
+        final thread = _directMessages.firstWhere(
+          (t) => t.id == notification.targetId || t.peerPublicId == notification.targetId,
+          orElse: () => _directMessages.first,
+        );
+        selectDirectMessage(thread);
+      }
+    } else if (notification.targetArea == 'spaces' || notification.targetArea == 'forum') {
+      _activeArea = NixActiveArea.spaces;
+      notifyListeners();
+    } else if (notification.targetArea == 'moneroP2p') {
+      openMoneroP2pArea();
+    } else if (notification.targetArea == 'mediaIndex') {
+      openMediaIndexArea();
+    }
     notifyListeners();
   }
 
@@ -2353,6 +2408,44 @@ class NixState extends ChangeNotifier {
       SignedMoneroAd.registerPreVerifiedOrder(order);
     }
     _githubRepos = MockData.getInitialGithubRepos();
+    _notifications = [
+      NixNotification(
+        id: 'notif_msg_1',
+        type: NixNotificationType.message,
+        title: 'Nova mensagem privada',
+        body: 'Você recebeu uma mensagem criptografada de NX-A1F9.',
+        timestamp: DateTime.now().subtract(const Duration(minutes: 12)),
+        isRead: false,
+        targetArea: 'homePrivate',
+      ),
+      NixNotification(
+        id: 'notif_reply_1',
+        type: NixNotificationType.topicReply,
+        title: 'Nova resposta no fórum',
+        body: 'Um participante respondeu ao tópico que você acompanha.',
+        timestamp: DateTime.now().subtract(const Duration(hours: 2)),
+        isRead: false,
+        targetArea: 'spaces',
+      ),
+      NixNotification(
+        id: 'notif_contact_1',
+        type: NixNotificationType.contactRequest,
+        title: 'Solicitação de contato',
+        body: 'Novo par solicitou troca de chave de contato.',
+        timestamp: DateTime.now().subtract(const Duration(hours: 5)),
+        isRead: true,
+        targetArea: 'homePrivate',
+      ),
+      NixNotification(
+        id: 'notif_trade_1',
+        type: NixNotificationType.tradeUpdate,
+        title: 'Atualização no Mercado Cripto',
+        body: 'Nova ordem assinada compatível com seus filtros foi detectada.',
+        timestamp: DateTime.now().subtract(const Duration(days: 1)),
+        isRead: true,
+        targetArea: 'moneroP2p',
+      ),
+    ];
   }
 
   void _initializeProductionCleanState() {
@@ -2412,6 +2505,7 @@ class NixState extends ChangeNotifier {
     _systemUpdates = [];
     _moneroOrders = [];
     _githubRepos = [];
+    _notifications = [];
 
     // Mensagens Salvas (Cofre Pessoal Real e Cifrado)
     _directMessages = [
