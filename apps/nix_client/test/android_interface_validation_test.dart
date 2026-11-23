@@ -100,15 +100,15 @@ void main() {
       });
       await tester.pumpAndSettle();
 
-      // Diálogo de atualização privado aberto
+      // Diálogo de atualização privado aberto com publicador Onion configurado
       expect(find.text('Atualizações Privadas do Catálogo'), findsOneWidget);
       expect(find.text('Fechar'), findsOneWidget);
-      expect(find.text('Esta versão do Nix veio sem um publicador Onion configurado.'), findsOneWidget);
+      expect(find.textContaining('Publicador configurado:'), findsOneWidget);
       final verify = find.ancestor(
         of: find.text('Verificar Agora'),
         matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
       );
-      expect(tester.widget<ElevatedButton>(verify).onPressed, isNull);
+      expect(tester.widget<ElevatedButton>(verify).onPressed, isNotNull);
 
       // Fecha o diálogo
       await tester.tap(find.text('Fechar'));
