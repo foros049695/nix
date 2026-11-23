@@ -55,6 +55,7 @@ import '../core/media/voice_note.dart';
 import '../core/media/catalog_database.dart';
 import '../core/media/music_online_metadata_service.dart';
 import '../core/media/media_index_updater.dart';
+import '../core/downloads/aria2_download_controller.dart';
 import '../features/calls/call_view_model.dart';
 import '../features/home/peer_hover_view_model.dart';
 import '../features/discovery/starwire_filter_view_model.dart';
@@ -713,6 +714,31 @@ class NixState extends ChangeNotifier {
   CatalogUpdateManager get catalogUpdateManager =>
       _catalogUpdateManager ??= CatalogUpdateManager();
 
+  Aria2DownloadController? _downloadController;
+  Aria2DownloadController get downloadController {
+    return _downloadController ??= Aria2DownloadController(
+      downloadDir: Aria2DownloadController.defaultDownloadDirectory(),
+      onTasksUpdated: (_) => notifyListeners(),
+    );
+  }
+
+  String _catalogManifestUrl = CatalogPublisherKeyring.defaultOfficialManifestUrl;
+  String get catalogManifestUrl => _catalogManifestUrl;
+
+  Future<void> setCatalogManifestUrl(String url) async {
+    final clean = url.trim();
+    final uri = Uri.tryParse(clean);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      throw ArgumentError('URL inválida. Protocolo HTTP ou HTTPS obrigatório.');
+    }
+    _catalogManifestUrl = clean;
+    final repo = _preferencesRepo;
+    if (repo != null && !_isMockMode) {
+      await repo.setOption('catalog_manifest_url', _catalogManifestUrl);
+    }
+    notifyListeners();
+  }
+
   void setCatalogDatabase(CatalogDatabase newDb) {
     if (_disposed || _panicWipe != null) {
       unawaited(newDb.close());
@@ -1289,6 +1315,9 @@ class NixState extends ChangeNotifier {
     }
     _hasScheduledMessages = false;
     _scheduledOutboxNeedsRetry = false;
+    try {
+      _downloadController?.stopDaemon();
+    } catch (_) {}
     await _catalogUpdateManager?.cancelAndWait();
     await _pagerWallpaperChange;
     await flushPreferences();
@@ -2847,6 +2876,13 @@ class NixState extends ChangeNotifier {
   Future<void> _bootstrapFromPreferences() async {
     await _startupPreferences;
     if (_disposed) return;
+    try {
+      final savedUrl = await _preferencesRepo?.getOption('catalog_manifest_url');
+      if (savedUrl is String && savedUrl.isNotEmpty) {
+        _catalogManifestUrl = savedUrl;
+      }
+    } catch (_) {}
+    unawaited(downloadController.startDaemon());
     // Tenta montar o cofre local imediatamente pelo chaveiro nativo ou chave do dispositivo.
     // Como SQLCipher é local e não depende do Tor, isso carrega a identidade em ~150ms.
     await _checkPersistedOnboardingStatus();
@@ -6716,6 +6752,9 @@ class NixState extends ChangeNotifier {
     }
     _activeRelayClient = null;
     _activeMailboxCredentials = null;
+    try {
+      _downloadController?.stopDaemon();
+    } catch (_) {}
     try {
       _embeddedTor.dispose();
     } catch (_) {

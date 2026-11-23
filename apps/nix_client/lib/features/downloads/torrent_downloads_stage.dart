@@ -89,19 +89,14 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
     if (widget.downloadController != null) {
       _downloadController = widget.downloadController;
     } else {
-      final downloadPath = Aria2DownloadController.defaultDownloadDirectory();
-      _downloadController = Aria2DownloadController(
-        downloadDir: downloadPath,
-        onTasksUpdated: (tasks) {
-          if (mounted) setState(() => _downloadTasks = List.from(tasks));
-        },
-      );
-      await _downloadController!.startDaemon();
+      _downloadController = nixState.downloadController;
+      if (!_downloadController!.isDaemonRunning) {
+        await _downloadController!.startDaemon();
+      }
     }
     _downloadTasks = List.from(_downloadController!.tasks);
-    _downloadController!.onTasksUpdated = (tasks) {
-      if (mounted) setState(() => _downloadTasks = List.from(tasks));
-    };
+    _downloadController!.removeListener(_onTasksChanged);
+    _downloadController!.addListener(_onTasksChanged);
 
     _totalLocalRecords = await _db!.getRecordCount();
     _lastSyncDate = await _db!.getLastSyncDate();
@@ -119,11 +114,22 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
     if (mounted) setState(() {});
   }
 
+  void _onTasksChanged() {
+    if (mounted && _downloadController != null) {
+      setState(() {
+        _downloadTasks = List.from(_downloadController!.tasks);
+      });
+    }
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
-    _downloadController?.stopDaemon();
-    _db?.close();
+    _downloadController?.removeListener(_onTasksChanged);
+    // O downloadController roda em segundo plano vinculado ao NixState; não o encerra ao mudar de aba.
+    if (widget.database == null) {
+      _db?.close();
+    }
     super.dispose();
   }
 

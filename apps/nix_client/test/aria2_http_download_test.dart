@@ -13,7 +13,10 @@ void main() {
 
     setUp(() async {
       tempDir = await Directory.systemTemp.createTemp('nix_dl_test_');
-      controller = Aria2DownloadController(downloadDir: tempDir.path);
+      controller = Aria2DownloadController(
+        downloadDir: tempDir.path,
+        storageFilePath: '${tempDir.path}/tasks.json',
+      );
     });
 
     tearDown(() async {
@@ -73,6 +76,29 @@ void main() {
         createdAt: DateTime.now(),
       );
       expect(taskPdf.isExecutable, isFalse);
+    });
+
+    test('Notifica listeners via ChangeNotifier e gerencia pausa/remoção resiliente', () async {
+      int notifyCount = 0;
+      controller.addListener(() {
+        notifyCount++;
+      });
+
+      final task = await controller.addDownload(url: 'https://example.com/debian.iso');
+      expect(task.fileName, equals('debian.iso'));
+      expect(controller.tasks.length, equals(1));
+      expect(notifyCount, greaterThan(0));
+
+      final countBeforePause = notifyCount;
+      await controller.pauseDownload(task.id);
+      expect(controller.tasks.first.status, equals(DownloadStatus.paused));
+      expect(controller.tasks.first.speedBytesPerSec, equals(0));
+      expect(notifyCount, greaterThan(countBeforePause));
+
+      final countBeforeRemove = notifyCount;
+      await controller.removeDownload(task.id);
+      expect(controller.tasks, isEmpty);
+      expect(notifyCount, greaterThan(countBeforeRemove));
     });
   });
 

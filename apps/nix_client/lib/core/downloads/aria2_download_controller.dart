@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'dart_segmented_downloader.dart';
 import 'models/download_task.dart';
 
@@ -15,7 +15,7 @@ typedef DownloadStatusChangeNotifier = void Function(List<DownloadTask> tasks);
 /// 2. Proibido: BitTorrent, DHT, Peer Exchange, Trackers e Seeding através do aria2.
 /// 3. Loopback RPC estritamente protegido com token secreto aleatório gerado em tempo de execução.
 /// 4. Fallback transparente para o `DartSegmentedDownloader` caso o binário `aria2c` não esteja presente.
-class Aria2DownloadController {
+class Aria2DownloadController extends ChangeNotifier {
   String _downloadDir;
   final int rpcPort;
   final String? customBinaryPath;
@@ -31,6 +31,11 @@ class Aria2DownloadController {
   final DartSegmentedDownloader _fallbackDownloader = DartSegmentedDownloader();
   final Set<String> _fallbackTaskIds = {};
   DownloadStatusChangeNotifier? onTasksUpdated;
+
+  void _notify() {
+    onTasksUpdated?.call(tasks);
+    notifyListeners();
+  }
 
   Aria2DownloadController({
     String? downloadDir,
@@ -169,7 +174,7 @@ class Aria2DownloadController {
 
     _tasks[taskId] = task;
     _persistTasks();
-    onTasksUpdated?.call(tasks);
+    _notify();
 
     // Se o aria2c não estiver executando processo nativo, utiliza o fallback Dart
     if (_process == null) {
@@ -201,7 +206,7 @@ class Aria2DownloadController {
         task = task.copyWith(id: ariaGid, status: DownloadStatus.downloading);
         _tasks.remove(taskId);
         _tasks[ariaGid] = task;
-        onTasksUpdated?.call(tasks);
+        _notify();
         return task;
       } else {
         throw Exception('Resposta inesperada do RPC aria2: $rpcRes');
@@ -224,38 +229,89 @@ class Aria2DownloadController {
       errorMessage: null,
     );
     _tasks[taskId] = updated;
-    onTasksUpdated?.call(tasks);
+    _notify();
     _fallbackTaskIds.add(taskId);
     unawaited(_runFallbackDownload(updated));
   }
 
   Future<void> pauseDownload(String taskId) async {
+    final task = _tasks[taskId];
+    if (task == null) return;
+
     if (_fallbackTaskIds.contains(taskId)) {
       _fallbackDownloader.pause(taskId);
-      if (_tasks.containsKey(taskId)) {
-        _tasks[taskId] = _tasks[taskId]!.copyWith(status: DownloadStatus.paused);
-        onTasksUpdated?.call(tasks);
-      }
-      return;
+    } else if (_process != null) {
+      try {
+        await _rpcCall('aria2.pause', ['token:$_rpcSecret', taskId]);
+      } catch (_) {}
     }
 
-    if (_process != null) {
-      await _rpcCall('aria2.pause', ['token:$_rpcSecret', taskId]);
-    }
+    _tasks[taskId] = task.copyWith(
+      status: DownloadStatus.paused,
+      speedBytesPerSec: 0,
+    );
+    _persistTasks();
+    _notify();
   }
 
   Future<void> resumeDownload(String taskId) async {
+    final task = _tasks[taskId];
+    if (task == null) return;
+
     if (_fallbackTaskIds.contains(taskId)) {
-      final task = _tasks[taskId];
-      if (task != null) {
-        unawaited(_runFallbackDownload(task));
-      }
+      _tasks[taskId] = task.copyWith(status: DownloadStatus.downloading);
+      _notify();
+      unawaited(_runFallbackDownload(task));
       return;
     }
 
     if (_process != null) {
-      await _rpcCall('aria2.unpause', ['token:$_rpcSecret', taskId]);
+      final res = await _rpcCall('aria2.unpause', ['token:$_rpcSecret', taskId]);
+      if (res != null && res['result'] != null) {
+        _tasks[taskId] = task.copyWith(status: DownloadStatus.downloading);
+        _persistTasks();
+        _notify();
+        return;
+      }
+
+      // Se aria2c não encontrou o GID (ex: app reiniciado ou nova sessão do daemon),
+      // readiciona ao aria2c com opção continue: true para retomar o arquivo local
+      try {
+        final downloadOptions = <String, dynamic>{
+          'dir': _downloadDir,
+          'continue': 'true',
+          'max-connection-per-server': '4',
+          'split': '4',
+        };
+        if (task.fileName.isNotEmpty) {
+          downloadOptions['out'] = task.fileName;
+        }
+        if (task.allowClearnet) {
+          downloadOptions['all-proxy'] = '';
+        }
+
+        final rpcRes = await _rpcCall('aria2.addUri', [
+          'token:$_rpcSecret',
+          [task.url],
+          downloadOptions,
+        ]);
+        if (rpcRes != null && rpcRes['result'] != null) {
+          final newGid = rpcRes['result'].toString();
+          _tasks.remove(taskId);
+          final updated = task.copyWith(id: newGid, status: DownloadStatus.downloading);
+          _tasks[newGid] = updated;
+          _persistTasks();
+          _notify();
+          return;
+        }
+      } catch (_) {}
     }
+
+    // Fallback puro Dart caso aria2 não consiga
+    _fallbackTaskIds.add(taskId);
+    _tasks[taskId] = task.copyWith(status: DownloadStatus.downloading);
+    _notify();
+    unawaited(_runFallbackDownload(task));
   }
 
   Future<void> cancelDownload(String taskId) async {
@@ -293,7 +349,7 @@ class Aria2DownloadController {
 
     _tasks.remove(taskId);
     _persistTasks();
-    onTasksUpdated?.call(tasks);
+    _notify();
   }
 
   void _loadTasks() {
@@ -307,7 +363,11 @@ class Aria2DownloadController {
         for (final item in decoded) {
           if (item is Map<String, dynamic>) {
             final t = DownloadTask.fromMap(item);
-            _tasks[t.id] = t;
+            // Se o app foi encerrado durante transferência, recupera como pausado para permitir retomar com 1 clique
+            final restored = (t.status == DownloadStatus.downloading || t.status == DownloadStatus.starting)
+                ? t.copyWith(status: DownloadStatus.paused, speedBytesPerSec: 0)
+                : t;
+            _tasks[t.id] = restored;
           }
         }
       }
@@ -344,7 +404,7 @@ class Aria2DownloadController {
       onProgress: (updated) {
         _tasks[updated.id] = updated;
         _persistTasks();
-        onTasksUpdated?.call(tasks);
+        _notify();
       },
     );
   }
@@ -422,7 +482,7 @@ class Aria2DownloadController {
         }
       }
       _persistTasks();
-      onTasksUpdated?.call(tasks);
+      _notify();
     } catch (_) {}
   }
 

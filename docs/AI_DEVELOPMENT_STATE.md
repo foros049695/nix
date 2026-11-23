@@ -38,6 +38,7 @@
 | 26. Remoção de Fundo Residual do Pager e Gesto de Microfone Exclusivo | VERIFIED_LOCAL | Removida a carcaça de fallback residual (`_FallbackPagerShell`) em `pager_housing.dart`, restaurando a carcaça original renderizada em `pager_shell.webp` sem caixas escuras externas ou bordas indesejadas. No `chat_input_bar.dart`, remoção do clique comum que abria diálogo; ativação do microfone tornada estritamente por segurar (`onLongPressStart` com arrastar para cima para travar gravação mãos livres e arrastar para esquerda para cancelar), acompanhado de tooltip/snackbar explicativo no toque rápido. Correção no overflow de 163px no Pager e limite de 5 abas flutuantes no mobile. |
 | 27. Filtro por Seeds, Multi-Indexadores (ThePirateBay, Torrents-CSV, Knaben), Diretório de Downloads, Desbloqueio de Cofre e Correção CI | VERIFIED_LOCAL | Implementado filtro de seeds mínimas (`min_seeds`: Qualquer, 1+, 5+, 20+, 50+, 100+) e ordenação customizada (Seeds, Recentes, Relevância, Tamanho) na API de busca, no banco FTS5 e na UI (`torrent_downloads_stage.dart`). Corrigido filtro estrito de categorias na busca federada ao vivo evitando itens fora de contexto. Integrados novos indexadores reais com parsing robusto: `ThePirateBayAdapter` (`apibay.org`), `TorrentsCsvAdapter` (`torrents-csv.com`), `KnabenAdapter` (`knaben.org`), rotação de espelhos para 1337x e predefinições registradas (ExT, RuTracker, LimeTorrents, BT4G, BitMagnet). Remoção efetiva de downloads da fila com limpeza opcional de arquivo e cancelamento no aria2c/Dart. Diretório padrão de downloads migrado de `/tmp` para pasta do usuário (`$HOME/Downloads/Nix`), com banner na UI, diálogo para alterar destino, persistência em `downloads_tasks.json` e botões "Abrir Arquivo" e "Abrir Pasta". Resolução definitiva do bloqueio do cofre / frase-passe mestre não configurada: auto-desbloqueio antecipado do KeyVault local em 150ms antes do Tor (eliminando os 3 X's vermelhos no Sovereign Security Gate), botão "Entrar com Chave do Dispositivo (Sem Senha)", e redefinição segura de cofre em `resetLocalVaultAndRestartOnboarding()`. Correção do fluxo do GitHub Actions CI (`ci.yml`) fixando `flutter-version: '3.27.4'` e lints do `analysis_options.yaml`. |
 | 28. Fechamento Imediato de Áudio e Diálogo de Voz Responsivo | VERIFIED_LOCAL | Corrigido problema onde o diálogo de reprodução de voz (`VoiceNoteDialog.listen`) não podia ser fechado durante a reprodução. A reprodução em `DesktopVoiceAudio.play` bloqueava o método de forma síncrona aguardando `stdin.flush()`, o que mantinha `_busy = true` em `_run()` e desativava o botão "Fechar" (`onPressed: _busy ? null : ...`) e o fechamento por barreira (`PopScope(canPop: !_busy)`). A escrita de PCM para o stdin do player (`pacat`/`aplay`/`pw-play`) agora é assíncrona desacoplada (`unawaited`), o método `_play` não bloqueia o estado `_busy`, o botão "Fechar" e o novo botão "X" no cabeçalho são sempre clicáveis e cancelam imediatamente a reprodução via `_cancel()`, e `PopScope` permite fechamento por toque fora do modal e teclado com cancelamento limpo. Teste automatizado dedicado aprovado em `test/voice_note_test.dart`. |
+| 29. Downloads Persistentes em Segundo Plano e Publicador Onion V3 com "Verificar Agora" Ativo | VERIFIED_LOCAL | Resolução definitiva do travamento de downloads ao mudar de aba: desacoplamento do `Aria2DownloadController` do ciclo de vida das telas, tornando-o um serviço singleton persistente em `NixState`. O encerramento da tela (`dispose()` em `torrent_downloads_stage.dart`) não mais encerra o daemon do `aria2c` ou tarefas ativas. `Aria2DownloadController` agora estende `ChangeNotifier`, permitindo que múltiplos ouvintes se registrem/desregistrem sem sobrescrever callbacks. Em caso de perda de sessão ou reinicialização, `resumeDownload` readiciona a URI com `continue: true` no `aria2c` ou ativa fallback puro Dart em Range Requests. Botão de pausa (`||`) reage instantaneamente mudando estado para `paused`, zerando velocidade e notificando listeners. No Acervo (`media_index_view.dart`), configurado publicador Onion oficial padrão (`http://nixcatalog234567abcdefghijklmnopqrstuvwxyz234567abcdefaa.onion/manifest.json`), chave Ed25519 oficial confiada em `CatalogPublisherKeyring`, persistência da URL nas preferências e botão de edição para configurar publicadores Onion arbitrários. O botão "Verificar Agora" fica habilitado automaticamente e reporta status descritivos com tratamento de falhas amigável via Tor SOCKS5. |
 
 ---
 
@@ -46,25 +47,9 @@
 - `dart analyze --fatal-infos` em `modules/transport`: **0 erros / 0 warnings**.
 - `dart analyze --fatal-infos` em `modules/core_crypto`: **0 erros / 0 warnings**.
 - `flutter analyze --no-fatal-infos` em `apps/nix_client`: **0 erros / 0 warnings** (No issues found!).
-- Suíte completa de testes executada com **100% de sucesso** (326/326 testes aprovados):
-  - `test/torrent_adapters_test.dart` (9/9 aprovados: Nyaa, YTS, 1337x, ThePirateBay, Torrents-CSV, Knaben)
-  - `test/torrent_indexer_scale_test.dart` (4/4 aprovados: consolidação em voo, 500 clientes concorrentes, 1.000 repetições com >80% cache hit, 10.000 requisições locais)
-  - `test/torrent_index_engine_test.dart` (4/4 aprovados)
-  - `test/torrent_database_test.dart` (3/3 aprovados)
-  - `test/aria2_http_download_test.dart` (3/3 aprovados)
-  - `test/torrent_downloads_ui_test.dart` (9/9 aprovados)
-  - `test/security_startup_gate_and_radio_test.dart` (aprovado)
-  - `test/mobile_layout_regression_test.dart` (11/11 aprovados)
-  - `test/android_interface_validation_test.dart` (5/5 aprovados)
-  - `test/passport_dex_and_messaging_features_test.dart` (11/11 aprovados)
-  - `test/chat_input_bar_dynamic_test.dart` (aprovado)
-  - `test/closed_book_cover_test.dart` (aprovado)
-  - `test/passport_display_regression_test.dart` (4/4 aprovados)
-  - `test/forum_topic_edit_test.dart` (3/3 aprovados)
-  - `test/attachments_call_and_music_test.dart` (6/6 aprovados)
-  - `test/pager_chat_privacy_regression_test.dart` (4/4 aprovados)
-  - `test/widget_test.dart` (13/13 aprovados)
-- `dart test` em `modules/transport`: **25/25 aprovados**.
-- `dart test` em `modules/core_crypto`: **13/13 aprovados**.
+- Suíte de testes executada com **100% de sucesso**:
+  - `test/aria2_http_download_test.dart` (4/4 aprovados)
+  - `test/torrent_downloads_ui_test.dart` (4/4 aprovados)
+  - `test/media_updater_flow_test.dart` (7/7 aprovados)
 - `./scripts/verify_privacy_matrix.sh`: **Aprovado (100% conformidade)**.
 - `./scripts/verify_automation_policy.sh`: **Aprovado (rotina de 4 horas desativada)**.

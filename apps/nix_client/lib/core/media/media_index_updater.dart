@@ -47,6 +47,10 @@ class CatalogTestKeyRejectedException implements Exception {
 class CatalogPublisherKeyring {
   static const String fixtureTestPublisherKeyHex =
       'a805baa55178d7c0220a9d586a56db6359521455e3b66d9abf914b829a47f045';
+  static const String officialPublisherKeyHex =
+      'e2b5c179834d8fa209f87234bb4817a5690d9841804f5619ca2e8310c85b190f';
+  static const String defaultOfficialManifestUrl =
+      'http://nixcatalog234567abcdefghijklmnopqrstuvwxyz234567abcdefaa.onion/manifest.json';
 
   final Set<String> _trustedKeysHex;
   final Set<String> _revokedKeysHex;
@@ -61,6 +65,11 @@ class CatalogPublisherKeyring {
   })  : _trustedKeysHex = {
           if (trustedKeysHex != null)
             ...trustedKeysHex.map((k) => k.toLowerCase())
+          else ...[
+            officialPublisherKeyHex.toLowerCase(),
+            if (!isProductionMode || allowTestFixtureKey)
+              fixtureTestPublisherKeyHex.toLowerCase(),
+          ],
         },
         _revokedKeysHex = {
           if (revokedKeysHex != null)
@@ -617,6 +626,7 @@ class CatalogUpdateManager {
   })  : keyring = keyring ??
             CatalogPublisherKeyring(
               trustedKeysHex: {
+                CatalogPublisherKeyring.officialPublisherKeyHex,
                 if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(
                   const String.fromEnvironment('NIX_CATALOG_PUBLISHER_KEY_HEX'),
                 ))

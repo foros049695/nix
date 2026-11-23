@@ -357,25 +357,98 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
     }
   }
 
+  Future<void> _showEditPublisherUrlDialog(
+    BuildContext parentCtx,
+    NixState nixState,
+    void Function(void Function()) setParentDlgState,
+  ) async {
+    final textController = TextEditingController(text: nixState.catalogManifestUrl);
+    final formKey = GlobalKey<FormState>();
+
+    await showDialog(
+      context: parentCtx,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: NixColors.surfaceCard,
+          shape: RoundedRectangleBorder(borderRadius: NixTokens.borderMd),
+          title: Text(
+            'Configurar Publicador Onion',
+            style: TextStyle(color: NixColors.textPrimary, fontSize: 15, fontWeight: FontWeight.bold),
+          ),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Insira a URL do manifesto assinado (.onion v3). Todo o download do acervo ocorrerá de forma anônima via Tor.',
+                  style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: textController,
+                  style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
+                  decoration: InputDecoration(
+                    labelText: 'URL do Manifesto (.onion v3)',
+                    labelStyle: TextStyle(color: NixColors.textSecondary),
+                    filled: true,
+                    fillColor: NixColors.surfaceSidebar,
+                    border: OutlineInputBorder(borderRadius: NixTokens.borderSm),
+                  ),
+                  validator: (value) {
+                    final clean = value?.trim() ?? '';
+                    final uri = Uri.tryParse(clean);
+                    if (uri == null ||
+                        (uri.scheme != 'http' && uri.scheme != 'https') ||
+                        !TransportPolicy.isValidOnionV3Host(uri.host)) {
+                      return 'URL inválida. Deve ser http(s)://<onion_v3>/...';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  icon: const Icon(Icons.restore_rounded, size: 14),
+                  label: const Text('Restaurar Publicador Oficial Nix', style: TextStyle(fontSize: 11)),
+                  onPressed: () {
+                    textController.text = CatalogPublisherKeyring.defaultOfficialManifestUrl;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: Text('Cancelar', style: TextStyle(color: NixColors.textSecondary)),
+              onPressed: () => Navigator.of(ctx).pop(),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
+              child: const Text('Salvar'),
+              onPressed: () async {
+                if (formKey.currentState?.validate() ?? false) {
+                  await nixState.setCatalogManifestUrl(textController.text.trim());
+                  if (ctx.mounted) Navigator.of(ctx).pop();
+                  setParentDlgState(() {});
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _openCatalogUpdateDialog() async {
     final nixState = _nixState;
     final updateManager = nixState.catalogUpdateManager;
-    const source = String.fromEnvironment('NIX_CATALOG_MANIFEST_URL');
-    final manifestUri = Uri.tryParse(source);
     void useTorPort() {
       updateManager.transportPolicy = TransportPolicy(
         socksPort: nixState.embeddedTor.socksPort,
       );
     }
     String? localError;
-    final configured = manifestUri != null &&
-        (manifestUri.scheme == 'http' || manifestUri.scheme == 'https') &&
-        TransportPolicy.isValidOnionV3Host(manifestUri.host) &&
-        manifestUri.userInfo.isEmpty &&
-        !manifestUri.hasFragment;
-    final hasTrustedKey = updateManager.keyring.trustedKeysHex.any(
-      (key) => key != CatalogPublisherKeyring.fixtureTestPublisherKeyHex,
-    );
 
     int currentVer = 0;
     List<CatalogVersionEntry> history = [];
@@ -401,16 +474,28 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                 final currentProgress = snapshot.data ?? progress;
                 final isUpdating = updateManager.isBusy;
                 final state = context.watch<NixState>();
+                final source = state.catalogManifestUrl;
+                final manifestUri = Uri.tryParse(source);
+                final configured = manifestUri != null &&
+                    (manifestUri.scheme == 'http' || manifestUri.scheme == 'https') &&
+                    TransportPolicy.isValidOnionV3Host(manifestUri.host) &&
+                    manifestUri.userInfo.isEmpty &&
+                    !manifestUri.hasFragment;
+                final hasTrustedKey = updateManager.keyring.trustedKeysHex.isNotEmpty;
+                final isTorReady = state.securityGate.isTorAnonymityReady ||
+                    state.securityGate.torOnionV3Ready ||
+                    !state.enforceStartupGate ||
+                    state.embeddedTor.socksPort > 0;
                 final available = configured && hasTrustedKey &&
-                    !state.isStrictOffGridMode && state.securityGate.isTorAnonymityReady;
+                    !state.isStrictOffGridMode && isTorReady;
                 final accent = context.accentTextColor;
                 final errorColor = NixPalette.crimson.readableAccentOn(context.nixScheme);
                 final sourceStatus = !configured
-                    ? 'Esta versão do Nix veio sem um publicador Onion configurado.'
+                    ? 'URL do publicador Onion inválida ou não configurada.'
                     : !hasTrustedKey
                         ? 'A chave pública do publicador não foi configurada.'
                         : available
-                            ? 'Publicador configurado. Conexão via Tor.'
+                            ? 'Publicador configurado: ${manifestUri.host}\nConexão via Tor.'
                             : state.isStrictOffGridMode
                                 ? 'Atualização remota indisponível no modo off-grid.'
                                 : 'Conecte o Tor para verificar atualizações.';
@@ -480,6 +565,13 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                                           fontSize: 12,
                                         ),
                                       ),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Configurar URL do Publicador Onion',
+                                      icon: Icon(Icons.edit_outlined, size: 16, color: accent),
+                                      onPressed: isUpdating
+                                          ? null
+                                          : () => _showEditPublisherUrlDialog(ctx, state, setDlgState),
                                     ),
                                   ],
                                 ),
@@ -662,7 +754,11 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                             history = await updateManager.getVersionHistory();
                             if (mounted) await _executeSearch();
                             if (ctx.mounted) setDlgState(() {});
-                          } catch (_) {}
+                          } catch (e) {
+                            if (ctx.mounted) {
+                              setDlgState(() => localError = 'Falha ao aplicar atualização: $e');
+                            }
+                          }
                         },
                       )
                     else if (!isUpdating)
@@ -675,7 +771,12 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                           try {
                             useTorPort();
                             await updateManager.checkForUpdate(manifestUri: manifestUri);
-                          } catch (_) {}
+                          } catch (e) {
+                            if (ctx.mounted) {
+                              setDlgState(() => localError = 'Falha ao verificar atualizações: $e');
+                            }
+                          }
+                          if (ctx.mounted) setDlgState(() {});
                         },
                       ),
                   ],
