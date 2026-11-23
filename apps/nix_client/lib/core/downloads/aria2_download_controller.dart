@@ -16,10 +16,11 @@ typedef DownloadStatusChangeNotifier = void Function(List<DownloadTask> tasks);
 /// 3. Loopback RPC estritamente protegido com token secreto aleatório gerado em tempo de execução.
 /// 4. Fallback transparente para o `DartSegmentedDownloader` caso o binário `aria2c` não esteja presente.
 class Aria2DownloadController {
-  final String downloadDir;
+  String _downloadDir;
   final int rpcPort;
   final String? customBinaryPath;
   final bool enableFallback;
+  final String? storageFilePath;
 
   Process? _process;
   String _rpcSecret = '';
@@ -32,12 +33,45 @@ class Aria2DownloadController {
   DownloadStatusChangeNotifier? onTasksUpdated;
 
   Aria2DownloadController({
-    required this.downloadDir,
+    String? downloadDir,
     this.rpcPort = 6800,
     this.customBinaryPath,
     this.enableFallback = true,
+    this.storageFilePath,
     this.onTasksUpdated,
-  });
+  }) : _downloadDir = downloadDir ?? defaultDownloadDirectory() {
+    _loadTasks();
+  }
+
+  static String defaultDownloadDirectory() {
+    if (Platform.isLinux) {
+      final home = Platform.environment['HOME'];
+      if (home != null && home.isNotEmpty) {
+        return '$home/Downloads/Nix';
+      }
+    } else if (Platform.isWindows) {
+      final userProfile = Platform.environment['USERPROFILE'];
+      if (userProfile != null && userProfile.isNotEmpty) {
+        return '$userProfile\\Downloads\\Nix';
+      }
+    } else if (Platform.isAndroid) {
+      return '/storage/emulated/0/Download/Nix';
+    }
+    return '${Directory.systemTemp.path}/nix_downloads';
+  }
+
+  String get downloadDir => _downloadDir;
+
+  void setDownloadDir(String path) {
+    if (path.trim().isEmpty) return;
+    _downloadDir = path.trim();
+    final d = Directory(_downloadDir);
+    if (!d.existsSync()) {
+      try {
+        d.createSync(recursive: true);
+      } catch (_) {}
+    }
+  }
 
   bool get isDaemonRunning => _isDaemonRunning;
   String get rpcSecret => _rpcSecret;
@@ -134,6 +168,7 @@ class Aria2DownloadController {
     );
 
     _tasks[taskId] = task;
+    _persistTasks();
     onTasksUpdated?.call(tasks);
 
     // Se o aria2c não estiver executando processo nativo, utiliza o fallback Dart
@@ -224,18 +259,82 @@ class Aria2DownloadController {
   }
 
   Future<void> cancelDownload(String taskId) async {
+    await removeDownload(taskId, deleteFile: false);
+  }
+
+  /// Remove permanentemente uma tarefa da fila e da memória,
+  /// encerrando o processo de download no aria2 ou no fallback Dart.
+  Future<void> removeDownload(String taskId, {bool deleteFile = false}) async {
+    final task = _tasks[taskId];
     if (_fallbackTaskIds.contains(taskId)) {
       _fallbackDownloader.cancel(taskId);
-      if (_tasks.containsKey(taskId)) {
-        _tasks[taskId] = _tasks[taskId]!.copyWith(status: DownloadStatus.cancelled);
-        onTasksUpdated?.call(tasks);
-      }
-      return;
+      _fallbackTaskIds.remove(taskId);
     }
 
     if (_process != null) {
-      await _rpcCall('aria2.remove', ['token:$_rpcSecret', taskId]);
+      try {
+        await _rpcCall('aria2.remove', ['token:$_rpcSecret', taskId]);
+      } catch (_) {}
+      try {
+        await _rpcCall('aria2.removeDownloadResult', ['token:$_rpcSecret', taskId]);
+      } catch (_) {}
     }
+
+    if (deleteFile && task != null) {
+      try {
+        final f = File(task.destinationPath);
+        if (await f.exists()) await f.delete();
+        final part = File('${task.destinationPath}.part');
+        if (await part.exists()) await part.delete();
+        final aria2File = File('${task.destinationPath}.aria2');
+        if (await aria2File.exists()) await aria2File.delete();
+      } catch (_) {}
+    }
+
+    _tasks.remove(taskId);
+    _persistTasks();
+    onTasksUpdated?.call(tasks);
+  }
+
+  void _loadTasks() {
+    try {
+      final file = _resolveStorageFile();
+      if (file == null || !file.existsSync()) return;
+      final content = file.readAsStringSync();
+      if (content.trim().isEmpty) return;
+      final decoded = jsonDecode(content);
+      if (decoded is List) {
+        for (final item in decoded) {
+          if (item is Map<String, dynamic>) {
+            final t = DownloadTask.fromMap(item);
+            _tasks[t.id] = t;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _persistTasks() {
+    try {
+      final file = _resolveStorageFile();
+      if (file == null) return;
+      if (!file.parent.existsSync()) {
+        file.parent.createSync(recursive: true);
+      }
+      final list = _tasks.values.map((t) => t.toMap()).toList();
+      file.writeAsStringSync(jsonEncode(list));
+    } catch (_) {}
+  }
+
+  File? _resolveStorageFile() {
+    if (storageFilePath != null && storageFilePath!.isNotEmpty) {
+      return File(storageFilePath!);
+    }
+    final home = Platform.environment['HOME'];
+    if (home != null && home.isNotEmpty) {
+      return File('$home/.local/share/nix/downloads_tasks.json');
+    }
+    return null;
   }
 
   Future<void> _runFallbackDownload(DownloadTask task) async {
@@ -244,6 +343,7 @@ class Aria2DownloadController {
       splitCount: 4,
       onProgress: (updated) {
         _tasks[updated.id] = updated;
+        _persistTasks();
         onTasksUpdated?.call(tasks);
       },
     );
@@ -321,6 +421,7 @@ class Aria2DownloadController {
           );
         }
       }
+      _persistTasks();
       onTasksUpdated?.call(tasks);
     } catch (_) {}
   }

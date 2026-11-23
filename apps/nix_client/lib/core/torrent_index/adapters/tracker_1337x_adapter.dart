@@ -8,7 +8,15 @@ import 'nyaa_rss_adapter.dart';
 /// Regra inegociável do Projeto Nix: NUNCA contornar CAPTCHA ou proteções.
 /// Caso detectada proteção, sinaliza indisponibilidade e status de autorização pendente.
 class Tracker1337xAdapter implements NixIndexerAdapter {
-  final String _mirrorUrl;
+  static const defaultMirrors = [
+    'https://1337x.to',
+    'https://x1337x.cc',
+    'https://1337x.st',
+    'https://1337x.ws',
+    'https://1337x.eu',
+  ];
+
+  String _mirrorUrl;
   final TorrentHttpRequester? _requester;
   bool _isAvailable = true;
   String? _statusMessage;
@@ -42,8 +50,18 @@ class Tracker1337xAdapter implements NixIndexerAdapter {
   }) async {
     final clean = query.trim();
     final encoded = Uri.encodeComponent(clean);
-    final uri = Uri.parse('$baseUrl/search/$encoded/1/');
-    return _fetchAndParse(uri, limit);
+    
+    // Tenta o mirror atual e outros se necessário
+    final mirrorsToTry = [_mirrorUrl, ...defaultMirrors.where((m) => m != _mirrorUrl)];
+    for (final mirror in mirrorsToTry) {
+      final uri = Uri.parse('$mirror/search/$encoded/1/');
+      final res = await _fetchAndParse(uri, limit);
+      if (res.isNotEmpty) {
+        _mirrorUrl = mirror;
+        return res;
+      }
+    }
+    return const [];
   }
 
   @override

@@ -36,9 +36,13 @@ class TorrentOnlineClient {
       'query': query.query.trim(),
       'page': query.page.toString(),
       'page_size': query.pageSize.toString(),
+      'sort': query.sort.slug,
     };
     if (query.categories.isNotEmpty) {
       params['category'] = query.categories.first.slug;
+    }
+    if (query.minSeeders != null && query.minSeeders! > 0) {
+      params['min_seeds'] = query.minSeeders!.toString();
     }
 
     final response = await _request('GET', '/v1/index/search', queryParams: params);
@@ -74,9 +78,13 @@ class TorrentOnlineClient {
 
     final payload = <String, dynamic>{
       'query': query.query.trim(),
+      'sort': query.sort.slug,
     };
     if (query.categories.isNotEmpty) {
       payload['category'] = query.categories.first.slug;
+    }
+    if (query.minSeeders != null && query.minSeeders! > 0) {
+      payload['min_seeds'] = query.minSeeders!;
     }
 
     final response = await _request('POST', '/v1/index/live-search', jsonBody: payload);

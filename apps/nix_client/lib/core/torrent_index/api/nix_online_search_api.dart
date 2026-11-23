@@ -114,13 +114,25 @@ class NixOnlineSearchApi {
     final category = catSlug != null ? TorrentCategory.fromSlug(catSlug) : null;
     final page = int.tryParse(params['page'] ?? '1') ?? 1;
     final pageSize = (int.tryParse(params['page_size'] ?? '20') ?? 20).clamp(1, 100);
+    final minSeeds = int.tryParse(params['min_seeds'] ?? '0') ?? 0;
+    final sortSlug = params['sort'] ?? 'seeders_desc';
+
+    TorrentSortOrder sortOrder = TorrentSortOrder.seedersDesc;
+    for (final s in TorrentSortOrder.values) {
+      if (s.slug == sortSlug) {
+        sortOrder = s;
+        break;
+      }
+    }
 
     final query = TorrentSearchQuery(
       query: queryStr,
       categories: category != null ? {category} : const {},
       mode: TorrentSearchMode.online,
+      sort: sortOrder,
       page: page,
       pageSize: pageSize,
+      minSeeders: minSeeds > 0 ? minSeeds : null,
     );
 
     var result = await _database.search(query);
@@ -128,6 +140,8 @@ class NixOnlineSearchApi {
       final liveRes = await _handleLiveSearch({
         'query': queryStr,
         if (catSlug != null) 'category': catSlug,
+        if (minSeeds > 0) 'min_seeds': minSeeds,
+        'sort': sortSlug,
       });
       final liveRecords = (liveRes['records'] as List?)
               ?.map((m) => TorrentIndexRecord.fromMap(m as Map<String, dynamic>))
@@ -262,7 +276,33 @@ class NixOnlineSearchApi {
       }
 
       // Normaliza e deduplica por InfoHash BitTorrent canônico
-      final deduplicated = TorrentDeduplicator.deduplicate(rawResults);
+      var deduplicated = TorrentDeduplicator.deduplicate(rawResults);
+
+      // Aplica filtro de categoria estrito se solicitado
+      if (category != null) {
+        deduplicated = deduplicated.where((r) => r.category == category).toList();
+      }
+
+      // Aplica filtro de seeders mínimos
+      final minSeeds = (body['min_seeds'] is int)
+          ? body['min_seeds'] as int
+          : int.tryParse(body['min_seeds']?.toString() ?? '0') ?? 0;
+      if (minSeeds > 0) {
+        deduplicated = deduplicated.where((r) => (r.seeders ?? 0) >= minSeeds).toList();
+      }
+
+      // Ordenação
+      final sort = body['sort']?.toString() ?? 'seeders_desc';
+      if (sort == 'seeders' || sort == 'seeders_desc') {
+        deduplicated.sort((a, b) => (b.seeders ?? 0).compareTo(a.seeders ?? 0));
+      } else if (sort == 'size_asc') {
+        deduplicated.sort((a, b) => (a.sizeBytes ?? 0).compareTo(b.sizeBytes ?? 0));
+      } else if (sort == 'size_desc') {
+        deduplicated.sort((a, b) => (b.sizeBytes ?? 0).compareTo(a.sizeBytes ?? 0));
+      } else if (sort == 'date_desc') {
+        deduplicated.sort((a, b) => (b.publicationDate ?? DateTime.fromMillisecondsSinceEpoch(0))
+            .compareTo(a.publicationDate ?? DateTime.fromMillisecondsSinceEpoch(0)));
+      }
 
       // Salva no banco local em segundo plano para consultas futuras
       if (deduplicated.isNotEmpty) {

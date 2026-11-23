@@ -41,7 +41,8 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
   // Estado do Buscador de Torrents
   final TextEditingController _searchController = TextEditingController();
   TorrentSearchMode _searchMode = TorrentSearchMode.online;
-  final TorrentSortOrder _sortOrder = TorrentSortOrder.relevance;
+  TorrentSortOrder _sortOrder = TorrentSortOrder.seedersDesc;
+  int _minSeeds = 0;
   final Set<TorrentCategory> _selectedCategories = {};
   bool _isFilterDrawerOpen = false;
   bool _isSearching = false;
@@ -88,7 +89,7 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
     if (widget.downloadController != null) {
       _downloadController = widget.downloadController;
     } else {
-      final downloadPath = '${Directory.systemTemp.path}/nix_downloads';
+      final downloadPath = Aria2DownloadController.defaultDownloadDirectory();
       _downloadController = Aria2DownloadController(
         downloadDir: downloadPath,
         onTasksUpdated: (tasks) {
@@ -97,6 +98,10 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
       );
       await _downloadController!.startDaemon();
     }
+    _downloadTasks = List.from(_downloadController!.tasks);
+    _downloadController!.onTasksUpdated = (tasks) {
+      if (mounted) setState(() => _downloadTasks = List.from(tasks));
+    };
 
     _totalLocalRecords = await _db!.getRecordCount();
     _lastSyncDate = await _db!.getLastSyncDate();
@@ -136,6 +141,7 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
       sort: _sortOrder,
       page: page,
       pageSize: 20,
+      minSeeders: _minSeeds > 0 ? _minSeeds : null,
     );
 
     try {
@@ -515,9 +521,12 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFF2D2D42)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 200),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
           Row(
             children: [
               const Text(
@@ -553,9 +562,78 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                 ),
             ],
           ),
+          const SizedBox(height: 12),
+          const Divider(color: Color(0xFF2D2D42), height: 1),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Text(
+                'Mínimo de Seeds',
+                style: TextStyle(color: Color(0xFFDDD6FE), fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+              const Spacer(),
+              if (_minSeeds > 0)
+                TextButton(
+                  onPressed: () {
+                    setState(() => _minSeeds = 0);
+                    _executeSearch();
+                  },
+                  child: const Text('Limpar', style: TextStyle(color: Color(0xFFA78BFA), fontSize: 11)),
+                ),
+            ],
+          ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final entry in const [
+                (0, 'Qualquer'),
+                (1, '1+ seed'),
+                (5, '5+ seeds'),
+                (20, '20+ seeds'),
+                (50, '50+ seeds'),
+                (100, '100+ seeds'),
+              ])
+                ChoiceChip(
+                  label: Text(entry.$2, style: const TextStyle(fontSize: 11)),
+                  selected: _minSeeds == entry.$1,
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() => _minSeeds = entry.$1);
+                      _executeSearch();
+                    }
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(color: Color(0xFF2D2D42), height: 1),
+          const SizedBox(height: 10),
+          const Text(
+            'Ordenar Resultados',
+            style: TextStyle(color: Color(0xFFDDD6FE), fontSize: 12, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final sort in TorrentSortOrder.values)
+                ChoiceChip(
+                  label: Text(sort.label, style: const TextStyle(fontSize: 11)),
+                  selected: _sortOrder == sort,
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() => _sortOrder = sort);
+                      _executeSearch();
+                    }
+                  },
+                ),
+            ],
+          ),
         ],
       ),
-    );
+    )));
   }
 
   Widget _buildEmptyResultsView() {
@@ -831,6 +909,31 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
           ),
         ),
 
+        // Barra de diretório de downloads configurável
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          color: const Color(0xFF13111C),
+          child: Row(
+            children: [
+              const Icon(Icons.folder_special_rounded, color: Color(0xFF94A3B8), size: 15),
+              const SizedBox(width: 8),
+              const Text('Destino: ', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11)),
+              Expanded(
+                child: Text(
+                  _downloadController?.downloadDir ?? '',
+                  style: const TextStyle(color: Color(0xFFDDD6FE), fontSize: 11, fontFamily: 'monospace'),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              TextButton.icon(
+                icon: const Icon(Icons.edit_rounded, size: 13, color: Color(0xFFA78BFA)),
+                label: const Text('Alterar', style: TextStyle(color: Color(0xFFA78BFA), fontSize: 11)),
+                onPressed: _showChangeDownloadDirDialog,
+              ),
+            ],
+          ),
+        ),
+
         // Lista de downloads com visor retrô estilo Pager
         Expanded(
           child: _downloadTasks.isEmpty
@@ -947,6 +1050,23 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
             ],
           ),
 
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 2),
+            child: Row(
+              children: [
+                const Icon(Icons.folder_outlined, size: 12, color: Color(0xFF64748B)),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    task.destinationPath,
+                    style: const TextStyle(color: Color(0xFF64748B), fontSize: 10, fontFamily: 'monospace'),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           if (task.errorMessage != null) ...[
             const SizedBox(height: 6),
             Text(
@@ -999,28 +1119,59 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                   tooltip: 'Retomar',
                   onPressed: () => _downloadController?.resumeDownload(task.id),
                 ),
-              if (task.status == DownloadStatus.completed)
+              if (task.status == DownloadStatus.completed) ...[
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF7C3AED),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   ),
-                  icon: const Icon(Icons.folder_open_rounded, size: 14),
+                  icon: const Icon(Icons.file_open_outlined, size: 14),
                   label: const Text('Abrir Arquivo', style: TextStyle(fontSize: 11)),
                   onPressed: () {
                     SafeFileOpeningDialog.show(context, task, () {
-                      // Abertura segura confirmada
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('Abrindo: ${task.destinationPath}')),
                       );
                     });
                   },
                 ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFDDD6FE),
+                    side: const BorderSide(color: Color(0xFF4C1D95)),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  ),
+                  icon: const Icon(Icons.folder_open_rounded, size: 14),
+                  label: const Text('Abrir Pasta', style: TextStyle(fontSize: 11)),
+                  onPressed: () async {
+                    final parentDir = File(task.destinationPath).parent.path;
+                    try {
+                      if (Platform.isLinux) {
+                        await Process.run('xdg-open', [parentDir]);
+                      }
+                    } catch (_) {}
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Pasta: $parentDir')),
+                      );
+                    }
+                  },
+                ),
+              ],
+              const SizedBox(width: 4),
               IconButton(
                 icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFF94A3B8)),
                 tooltip: 'Remover da fila',
-                onPressed: () => _downloadController?.cancelDownload(task.id),
+                onPressed: () async {
+                  await _downloadController?.removeDownload(task.id, deleteFile: false);
+                  if (mounted) {
+                    setState(() {
+                      _downloadTasks = List.from(_downloadController?.tasks ?? []);
+                    });
+                  }
+                },
               ),
             ],
           ),
@@ -1203,6 +1354,7 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                 onPressed: validationError != null || urlCtrl.text.trim().isEmpty
                     ? null
                     : () async {
+                        final messenger = ScaffoldMessenger.of(context);
                         final url = urlCtrl.text.trim();
                         final name = nameCtrl.text.trim().isNotEmpty ? nameCtrl.text.trim() : null;
                         final sha = hashCtrl.text.trim().isNotEmpty ? hashCtrl.text.trim() : null;
@@ -1217,7 +1369,7 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                           );
                         } catch (e) {
                           if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            messenger.showSnackBar(
                               SnackBar(content: Text('Falha ao adicionar download: $e')),
                             );
                           }
@@ -1228,6 +1380,72 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  void _showChangeDownloadDirDialog() {
+    final currentDir = _downloadController?.downloadDir ?? '';
+    final ctrl = TextEditingController(text: currentDir);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF13131F),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: const Color(0xFF7C3AED).withValues(alpha: 0.4)),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.folder_special_rounded, color: Color(0xFFA78BFA), size: 20),
+            SizedBox(width: 8),
+            Text('Alterar Pasta de Download', style: TextStyle(color: Colors.white, fontSize: 15)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Escolha a pasta onde os arquivos baixados pelo Nix Downloads serão salvos.',
+              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace'),
+              decoration: const InputDecoration(
+                labelText: 'Caminho Completo',
+                labelStyle: TextStyle(color: Color(0xFF94A3B8)),
+                filled: true,
+                fillColor: Color(0xFF1E1E2E),
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF7C3AED),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              final newPath = ctrl.text.trim();
+              if (newPath.isNotEmpty) {
+                _downloadController?.setDownloadDir(newPath);
+                setState(() {});
+              }
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Salvar'),
+          ),
+        ],
       ),
     );
   }
@@ -1503,6 +1721,7 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
               onPressed: isSaving || urlCtrl.text.trim().isEmpty
                   ? null
                   : () async {
+                      final messenger = ScaffoldMessenger.of(context);
                       setDlgState(() => isSaving = true);
                       _sourcesManager?.configureTorznabSource(
                         id: src.id,
@@ -1515,7 +1734,7 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                       if (ctx.mounted) Navigator.of(ctx).pop();
                       if (mounted) {
                         setState(() {});
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        messenger.showSnackBar(
                           SnackBar(
                             content: Text(testOk
                                 ? 'Indexador ${nameCtrl.text.trim()} configurado e testado com sucesso!'

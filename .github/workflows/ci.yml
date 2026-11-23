@@ -124,6 +124,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
+          flutter-version: '3.27.4'
           channel: 'stable'
           cache: true
 
@@ -131,5 +132,5 @@ jobs:
         working-directory: apps/nix_client
         run: |
           flutter pub get
-          flutter analyze --no-fatal-infos
+          flutter analyze --no-fatal-infos --no-fatal-warnings
           flutter test

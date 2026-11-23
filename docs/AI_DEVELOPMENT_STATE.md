@@ -36,6 +36,7 @@
 | 24. Downloads Fora da Rede Tor (Clearnet Fallback) | VERIFIED_LOCAL | Opção explícita de download fora da rede Tor quando o túnel Onion v3 não estiver disponível ou for bloqueado (`TransportBlockedException`). Integração do escopo seguro `NixFailClosedHttpOverrides.runWithExplicitClearnetDownload`, campo `allowClearnet` no modelo e serialização de `DownloadTask`, bypass de proxy no `Aria2DownloadController` e no `DartSegmentedDownloader`. Na interface, checkbox "Baixar fora da rede Tor (Clearnet Direta)" no modal de adição e botão direto de retentativa fora da rede em tarefas com falha. |
 | 25. Indexadores Resilientes, Usenet & Configuração Torznab | VERIFIED_LOCAL | `defaultTorrentHttpRequester` resiliente (tenta Tor SOCKS5 isolado primeiro e recorre a clearnet HTTP caso Tor esteja indisponível, garantindo que buscas nunca falhem silenciosamente). Adicionados conectores para a lista de indexadores Usenet: `BinsearchAdapter` (buscador Usenet aberto com parsing HTML limpo) e `NewznabAdapter` (suporte ao padrão Newznab/Torznab para NZBHydra2, NzbPlanet, NZBFinder, usenet-crawler, altHUB). Modal de configuração customizada de Torznab / Newznab (URL e Chave de API) na interface de Fontes & Conectores. |
 | 26. Remoção de Fundo Residual do Pager e Gesto de Microfone Exclusivo | VERIFIED_LOCAL | Removida a carcaça de fallback residual (`_FallbackPagerShell`) em `pager_housing.dart`, restaurando a carcaça original renderizada em `pager_shell.webp` sem caixas escuras externas ou bordas indesejadas. No `chat_input_bar.dart`, remoção do clique comum que abria diálogo; ativação do microfone tornada estritamente por segurar (`onLongPressStart` com arrastar para cima para travar gravação mãos livres e arrastar para esquerda para cancelar), acompanhado de tooltip/snackbar explicativo no toque rápido. Correção no overflow de 163px no Pager e limite de 5 abas flutuantes no mobile. |
+| 27. Filtro por Seeds, Multi-Indexadores (ThePirateBay, Torrents-CSV, Knaben), Diretório de Downloads, Desbloqueio de Cofre e Correção CI | VERIFIED_LOCAL | Implementado filtro de seeds mínimas (`min_seeds`: Qualquer, 1+, 5+, 20+, 50+, 100+) e ordenação customizada (Seeds, Recentes, Relevância, Tamanho) na API de busca, no banco FTS5 e na UI (`torrent_downloads_stage.dart`). Corrigido filtro estrito de categorias na busca federada ao vivo evitando itens fora de contexto. Integrados novos indexadores reais com parsing robusto: `ThePirateBayAdapter` (`apibay.org`), `TorrentsCsvAdapter` (`torrents-csv.com`), `KnabenAdapter` (`knaben.org`), rotação de espelhos para 1337x e predefinições registradas (ExT, RuTracker, LimeTorrents, BT4G, BitMagnet). Remoção efetiva de downloads da fila com limpeza opcional de arquivo e cancelamento no aria2c/Dart. Diretório padrão de downloads migrado de `/tmp` para pasta do usuário (`$HOME/Downloads/Nix`), com banner na UI, diálogo para alterar destino, persistência em `downloads_tasks.json` e botões "Abrir Arquivo" e "Abrir Pasta". Resolução definitiva do bloqueio do cofre / frase-passe mestre não configurada: auto-desbloqueio antecipado do KeyVault local em 150ms antes do Tor (eliminando os 3 X's vermelhos no Sovereign Security Gate), botão "Entrar com Chave do Dispositivo (Sem Senha)", e redefinição segura de cofre em `resetLocalVaultAndRestartOnboarding()`. Correção do fluxo do GitHub Actions CI (`ci.yml`) fixando `flutter-version: '3.27.4'` e lints do `analysis_options.yaml`. |
 
 ---
 
@@ -43,14 +44,15 @@
 
 - `dart analyze --fatal-infos` em `modules/transport`: **0 erros / 0 warnings**.
 - `dart analyze --fatal-infos` em `modules/core_crypto`: **0 erros / 0 warnings**.
-- `flutter analyze --no-fatal-infos` em `apps/nix_client`: **0 erros / 0 warnings**.
-- Suíte completa de testes executada com **100% de sucesso**:
+- `flutter analyze --no-fatal-infos` em `apps/nix_client`: **0 erros / 0 warnings** (No issues found!).
+- Suíte completa de testes executada com **100% de sucesso** (326/326 testes aprovados):
+  - `test/torrent_adapters_test.dart` (9/9 aprovados: Nyaa, YTS, 1337x, ThePirateBay, Torrents-CSV, Knaben)
+  - `test/torrent_indexer_scale_test.dart` (4/4 aprovados: consolidação em voo, 500 clientes concorrentes, 1.000 repetições com >80% cache hit, 10.000 requisições locais)
   - `test/torrent_index_engine_test.dart` (4/4 aprovados)
-  - `test/torrent_adapters_test.dart` (6/6 aprovados)
   - `test/torrent_database_test.dart` (3/3 aprovados)
   - `test/aria2_http_download_test.dart` (3/3 aprovados)
-  - `test/torrent_indexer_scale_test.dart` (4/4 aprovados)
   - `test/torrent_downloads_ui_test.dart` (9/9 aprovados)
+  - `test/security_startup_gate_and_radio_test.dart` (aprovado)
   - `test/mobile_layout_regression_test.dart` (11/11 aprovados)
   - `test/android_interface_validation_test.dart` (5/5 aprovados)
   - `test/passport_dex_and_messaging_features_test.dart` (11/11 aprovados)

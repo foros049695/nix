@@ -1,6 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nix_client/core/torrent_index/adapters/knaben_adapter.dart';
 import 'package:nix_client/core/torrent_index/adapters/nyaa_rss_adapter.dart';
 import 'package:nix_client/core/torrent_index/adapters/rss_index_adapter.dart';
+import 'package:nix_client/core/torrent_index/adapters/thepiratebay_adapter.dart';
+import 'package:nix_client/core/torrent_index/adapters/torrents_csv_adapter.dart';
 import 'package:nix_client/core/torrent_index/adapters/torznab_adapter.dart';
 import 'package:nix_client/core/torrent_index/adapters/tracker_1337x_adapter.dart';
 import 'package:nix_client/core/torrent_index/adapters/yts_api_adapter.dart';
@@ -190,6 +193,91 @@ void main() {
       expect(rec.title, equals('Public Domain Book Audio'));
       expect(rec.infoHashV1, equals('9988776655443322110099887766554433221100'));
       expect(rec.sizeBytes, equals(125000000));
+    });
+  });
+
+  group('ThePirateBayAdapter', () {
+    test('Analisa JSON oficial da API apibay extraindo hashes, seeds e categorias', () {
+      const tpbJson = '''[
+        {
+          "id": "7654321",
+          "name": "Debian 12 Bookworm Netinst amd64",
+          "info_hash": "2233445566778899001122334455667788990011",
+          "leechers": "25",
+          "seeders": "420",
+          "size": "734003200",
+          "added": "1690000000",
+          "category": "300"
+        }
+      ]''';
+
+      const adapter = ThePirateBayAdapter();
+      final records = adapter.parseJson(tpbJson, 10);
+      expect(records.length, equals(1));
+
+      final rec = records.first;
+      expect(rec.title, equals('Debian 12 Bookworm Netinst amd64'));
+      expect(rec.infoHashV1, equals('2233445566778899001122334455667788990011'));
+      expect(rec.seeders, equals(420));
+      expect(rec.leechers, equals(25));
+      expect(rec.sizeBytes, equals(734003200));
+      expect(rec.category, equals(TorrentCategory.software));
+      expect(rec.magnetUri, startsWith('magnet:?xt=urn:btih:2233445566778899001122334455667788990011'));
+    });
+  });
+
+  group('TorrentsCsvAdapter', () {
+    test('Analisa JSON do Torrents-CSV com tamanho e seeds reais', () {
+      const csvJson = '''{
+        "torrents": [
+          {
+            "infohash": "3344556677889900112233445566778899001122",
+            "name": "Ubuntu.24.04.LTS.Desktop.iso",
+            "size_bytes": 5242880000,
+            "created_unix": 1714000000,
+            "seeders": 1500,
+            "leechers": 120
+          }
+        ]
+      }''';
+
+      const adapter = TorrentsCsvAdapter();
+      final records = adapter.parseJson(csvJson, 10);
+      expect(records.length, equals(1));
+
+      final rec = records.first;
+      expect(rec.title, equals('Ubuntu.24.04.LTS.Desktop.iso'));
+      expect(rec.normalizedTitle, equals('Ubuntu 24 04 LTS Desktop iso'));
+      expect(rec.infoHashV1, equals('3344556677889900112233445566778899001122'));
+      expect(rec.seeders, equals(1500));
+      expect(rec.sizeBytes, equals(5242880000));
+    });
+  });
+
+  group('KnabenAdapter', () {
+    test('Extrai magnets canônicos, seeds e bytes do HTML do Knaben', () {
+      const knabenHtml = '''
+      <table>
+        <tr>
+          <td class="text-wrap w-100">
+            <a title="Arch Linux 2026.11 x86_64" href="magnet:?xt=urn:btih:4455667788990011223344556677889900112233&amp;dn=Arch+Linux">Arch Linux 2026.11 x86_64</a>
+          </td>
+          <td title="1073741824 Bytes">1.0 GB</td>
+          <td title="2026-11-23 10:00:00">2026-11-23</td>
+          <td>95</td>
+        </tr>
+      </table>
+      ''';
+
+      const adapter = KnabenAdapter();
+      final records = adapter.parseHtml(knabenHtml, 10);
+      expect(records.length, equals(1));
+
+      final rec = records.first;
+      expect(rec.title, equals('Arch Linux 2026.11 x86_64'));
+      expect(rec.infoHashV1, equals('4455667788990011223344556677889900112233'));
+      expect(rec.seeders, equals(95));
+      expect(rec.sizeBytes, equals(1073741824));
     });
   });
 }

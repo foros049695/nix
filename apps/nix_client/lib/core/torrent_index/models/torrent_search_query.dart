@@ -39,6 +39,7 @@ class TorrentSearchQuery {
   final int pageSize;
   final int? minSizeBytes;
   final int? maxSizeBytes;
+  final int? minSeeders;
 
   const TorrentSearchQuery({
     required this.query,
@@ -50,6 +51,7 @@ class TorrentSearchQuery {
     this.pageSize = 20,
     this.minSizeBytes,
     this.maxSizeBytes,
+    this.minSeeders,
   });
 
   bool get isEmpty => query.trim().isEmpty && categories.isEmpty && sources.isEmpty;
@@ -64,6 +66,7 @@ class TorrentSearchQuery {
     int? pageSize,
     int? minSizeBytes,
     int? maxSizeBytes,
+    int? minSeeders,
   }) {
     return TorrentSearchQuery(
       query: query ?? this.query,
@@ -75,6 +78,7 @@ class TorrentSearchQuery {
       pageSize: pageSize ?? this.pageSize,
       minSizeBytes: minSizeBytes ?? this.minSizeBytes,
       maxSizeBytes: maxSizeBytes ?? this.maxSizeBytes,
+      minSeeders: minSeeders ?? this.minSeeders,
     );
   }
 }

@@ -209,6 +209,12 @@ class TorrentIndexDatabase {
       whereArgs.add(query.maxSizeBytes!);
     }
 
+    // Filtro de seeders mínimos
+    if (query.minSeeders != null && query.minSeeders! > 0) {
+      whereClauses.add('seeders >= ?');
+      whereArgs.add(query.minSeeders!);
+    }
+
     String orderBy;
     switch (query.sort) {
       case TorrentSortOrder.seedersDesc:

@@ -38,7 +38,13 @@ void main() {
       await db.upsertRecords(seeded);
 
       // Adaptador mock com contagem de requisições upstream
-      final mockRequester = (String method, Uri uri, {Map<String, String>? headers, String? body, Duration? timeout}) async {
+      Future<({int statusCode, String body})> mockRequester(
+        String method,
+        Uri uri, {
+        Map<String, String>? headers,
+        String? body,
+        Duration? timeout,
+      }) async {
         mockUpstreamCalls++;
         await Future.delayed(const Duration(milliseconds: 10)); // Simula latência de rede
         const xml = '''<rss version="2.0" xmlns:nyaa="https://nyaa.si/xmlns/nyaa">
@@ -53,13 +59,15 @@ void main() {
           </channel>
         </rss>''';
         return (statusCode: 200, body: xml);
-      };
+      }
 
       sourcesManager = IndexerSourcesManager(requester: mockRequester);
       // Mantém apenas o adaptador nyaa ativo no teste de escala para contagem determinística
-      sourcesManager.setSourceEnabled('yts', false);
-      sourcesManager.setSourceEnabled('1337x', false);
-      sourcesManager.setSourceEnabled('binsearch', false);
+      for (final s in sourcesManager.listSources()) {
+        if (s.id != 'nyaa') {
+          sourcesManager.setSourceEnabled(s.id, false);
+        }
+      }
 
       api = NixOnlineSearchApi(
         database: db,

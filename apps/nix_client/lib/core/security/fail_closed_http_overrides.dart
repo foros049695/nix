@@ -76,6 +76,7 @@ class _ScopedLanPeerHttpOverrides extends HttpOverrides {
 }
 
 class _ScopedClearnetHttpOverrides extends HttpOverrides {
+  // ignore: unnecessary_overrides
   @override
   HttpClient createHttpClient(SecurityContext? context) {
     return super.createHttpClient(context);

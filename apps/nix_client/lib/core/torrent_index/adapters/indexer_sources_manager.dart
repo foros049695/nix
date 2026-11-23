@@ -2,10 +2,13 @@ import '../models/indexer_source_config.dart';
 import '../models/torrent_record.dart';
 import 'binsearch_adapter.dart';
 import 'default_torrent_requester.dart';
+import 'knaben_adapter.dart';
 import 'newznab_adapter.dart';
 import 'nix_indexer_adapter.dart';
 import 'nyaa_rss_adapter.dart';
 import 'rss_index_adapter.dart';
+import 'thepiratebay_adapter.dart';
+import 'torrents_csv_adapter.dart';
 import 'torznab_adapter.dart';
 import 'tracker_1337x_adapter.dart';
 import 'yts_api_adapter.dart';
@@ -68,7 +71,69 @@ class IndexerSourcesManager {
       ],
     );
 
-    // 4. Binsearch (Usenet Search Aberto)
+    // 4. ThePirateBay (apibay.org API direta)
+    final tpb = ThePirateBayAdapter(requester: _requester);
+    _adapters[tpb.sourceId] = tpb;
+    _configs[tpb.sourceId] = const TorrentIndexerSourceConfig(
+      id: 'thepiratebay',
+      name: 'ThePirateBay (apibay)',
+      url: 'https://apibay.org',
+      type: IndexerSourceType.api,
+      isEnabled: true,
+      isAvailable: true,
+      supportedCategories: [
+        TorrentCategory.movies,
+        TorrentCategory.tv,
+        TorrentCategory.games,
+        TorrentCategory.software,
+        TorrentCategory.music,
+        TorrentCategory.other,
+      ],
+    );
+
+    // 5. Torrents-CSV (API aberta sem Cloudflare)
+    final torrentsCsv = TorrentsCsvAdapter(requester: _requester);
+    _adapters[torrentsCsv.sourceId] = torrentsCsv;
+    _configs[torrentsCsv.sourceId] = const TorrentIndexerSourceConfig(
+      id: 'torrents_csv',
+      name: 'Torrents-CSV (Aberto)',
+      url: 'https://torrents-csv.com/service',
+      type: IndexerSourceType.api,
+      isEnabled: true,
+      isAvailable: true,
+      supportedCategories: [
+        TorrentCategory.movies,
+        TorrentCategory.tv,
+        TorrentCategory.games,
+        TorrentCategory.software,
+        TorrentCategory.music,
+        TorrentCategory.books,
+        TorrentCategory.other,
+      ],
+    );
+
+    // 6. Knaben (Agregador Multi-Tracker)
+    final knaben = KnabenAdapter(requester: _requester);
+    _adapters[knaben.sourceId] = knaben;
+    _configs[knaben.sourceId] = const TorrentIndexerSourceConfig(
+      id: 'knaben',
+      name: 'Knaben (Agregador Multi-Tracker)',
+      url: 'https://knaben.org',
+      type: IndexerSourceType.api,
+      isEnabled: true,
+      isAvailable: true,
+      supportedCategories: [
+        TorrentCategory.movies,
+        TorrentCategory.tv,
+        TorrentCategory.games,
+        TorrentCategory.software,
+        TorrentCategory.music,
+        TorrentCategory.books,
+        TorrentCategory.other,
+      ],
+    );
+
+    // 7. Binsearch (Usenet Search Aberto)
     final binsearch = BinsearchAdapter(requester: _requester);
     _adapters[binsearch.sourceId] = binsearch;
     _configs[binsearch.sourceId] = const TorrentIndexerSourceConfig(
@@ -87,7 +152,7 @@ class IndexerSourcesManager {
       ],
     );
 
-    // 5. Torznab / Prowlarr Local (Opcional - integração personalizada do usuário)
+    // 8. Torznab / Prowlarr Local (Opcional - integração personalizada do usuário)
     final torznab = TorznabAdapter(url: 'http://127.0.0.1:9696/1/api', requester: _requester);
     _adapters['torznab_custom'] = torznab;
     _configs['torznab_custom'] = const TorrentIndexerSourceConfig(
@@ -99,6 +164,38 @@ class IndexerSourcesManager {
       isAvailable: false,
       requiresAuth: true,
       statusMessage: 'Conector opcional para servidores locais do usuário.',
+    );
+
+    // 9. Presets Adicionais de Torrents
+    _registerTorrentPreset(
+      id: 'ext_to',
+      name: 'ExT (ext.to)',
+      url: 'https://ext.to',
+      statusMessage: 'Agregador torrents e DHT',
+    );
+    _registerTorrentPreset(
+      id: 'rutracker',
+      name: 'RuTracker (rutracker.org)',
+      url: 'https://rutracker.org',
+      statusMessage: 'Requer credenciais/cookies de sessão',
+    );
+    _registerTorrentPreset(
+      id: 'limetorrents',
+      name: 'LimeTorrents',
+      url: 'https://limetorrents.fun',
+      statusMessage: 'Indexador público geral',
+    );
+    _registerTorrentPreset(
+      id: 'bt4g',
+      name: 'BT4G (DHT Index)',
+      url: 'https://bt4gprx.com',
+      statusMessage: 'Indexador baseado na rede DHT',
+    );
+    _registerTorrentPreset(
+      id: 'bitmagnet_local',
+      name: 'BitMagnet Local (DHT / Torznab)',
+      url: 'http://127.0.0.1:3333/torznab',
+      statusMessage: 'Instância local do bitmagnet indexando DHT',
     );
 
     // 6. NZBHydra2 (Usenet / Newznab Meta Search)
@@ -151,6 +248,26 @@ class IndexerSourcesManager {
       isAvailable: false,
       requiresAuth: true,
       statusMessage: statusMessage ?? 'Conector compatível Newznab / Usenet.',
+    );
+  }
+
+  void _registerTorrentPreset({
+    required String id,
+    required String name,
+    required String url,
+    String? statusMessage,
+  }) {
+    final adapter = TorznabAdapter(url: url, requester: _requester);
+    _adapters[id] = adapter;
+    _configs[id] = TorrentIndexerSourceConfig(
+      id: id,
+      name: name,
+      url: url,
+      type: IndexerSourceType.torznab,
+      isEnabled: false,
+      isAvailable: false,
+      requiresAuth: false,
+      statusMessage: statusMessage ?? 'Indexador de torrents.',
     );
   }
 

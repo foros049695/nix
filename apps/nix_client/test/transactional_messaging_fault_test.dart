@@ -802,7 +802,7 @@ void main() {
           isOnline: false,
           isVerified: false,
           trustLevel: NixTrustLevel.level1Red,
-          messages: const [],
+          messages: [],
         );
         aliceState.directMessages.add(unverifiedThread);
         aliceState.selectDirectMessage(unverifiedThread);

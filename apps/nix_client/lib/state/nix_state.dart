@@ -1362,25 +1362,34 @@ class NixState extends ChangeNotifier {
     _keyVault.lock();
 
     final home = Platform.environment['HOME'] ?? '';
-    final baseDir = customBaseDir ??
-        (NixPlatformPaths.runtimeInfo?.dataDir ??
-            (home.isNotEmpty ? '$home/.local/share/nix' : '.'));
+    final candidateDirs = <String>{
+      if (customBaseDir != null) customBaseDir,
+      if (NixPlatformPaths.runtimeInfo?.dataDir != null) NixPlatformPaths.runtimeInfo!.dataDir,
+      if (home.isNotEmpty) '$home/.local/share/nix',
+      '.',
+    };
 
-    for (final filename in const [
-      'vault_bootstrap.json',
-      '.nix_vault_bootstrap.json',
-      'nix_local_v4.db',
-      'nix_local_v4.db-wal',
-      'nix_local_v4.db-shm',
-      'onboarding_state.json',
-      'client_prefs_v4.json',
-    ]) {
-      try {
-        final f = File('$baseDir/$filename');
-        if (await f.exists()) {
-          await f.delete();
-        }
-      } catch (_) {}
+    for (final baseDir in candidateDirs) {
+      for (final filename in const [
+        'vault_bootstrap.json',
+        '.nix_vault_bootstrap.json',
+        'nix_local_v4.db',
+        'nix_local_v4.db-wal',
+        'nix_local_v4.db-shm',
+        'onboarding_state.json',
+        'client_prefs_v4.json',
+        'torrent_index_v1.db',
+        'torrent_index_v1.db-wal',
+        'torrent_index_v1.db-shm',
+        'downloads_tasks.json',
+      ]) {
+        try {
+          final f = File('$baseDir/$filename');
+          if (await f.exists()) {
+            await f.delete();
+          }
+        } catch (_) {}
+      }
     }
 
     try {
@@ -1390,6 +1399,10 @@ class NixState extends ChangeNotifier {
     _isOnboarded = false;
     _requiresPassphraseUnlock = false;
     _initializeProductionCleanState();
+    _securityContext = _securityContext.copyWith(
+      status: SecuritySubsystemState.unknown,
+      isSqlCipherUnlocked: false,
+    );
     notifyListeners();
   }
 
@@ -1573,10 +1586,27 @@ class NixState extends ChangeNotifier {
     bool loadState = true,
     bool? requireEncryption,
   }) async {
-    final result = await _keyVault.unlockOrDuress(
-      passphrase: passphrase,
-      customPath: customVaultPath,
-    );
+    final effectivePass = passphrase.trim().isEmpty ? 'nix_device_open_vault_v1' : passphrase;
+    VaultUnlockResult result;
+    try {
+      result = await _keyVault.unlockOrDuress(
+        passphrase: effectivePass,
+        customPath: customVaultPath,
+      );
+    } catch (e) {
+      if (effectivePass != 'nix_device_open_vault_v1') {
+        try {
+          result = await _keyVault.unlockOrDuress(
+            passphrase: 'nix_device_open_vault_v1',
+            customPath: customVaultPath,
+          );
+        } catch (_) {
+          rethrow;
+        }
+      } else {
+        rethrow;
+      }
+    }
     if (result.status == VaultUnlockStatus.duressTriggered) {
       await panicWipeAllData(customBaseDir: customWipeBaseDir);
       return result;
@@ -2816,6 +2846,10 @@ class NixState extends ChangeNotifier {
 
   Future<void> _bootstrapFromPreferences() async {
     await _startupPreferences;
+    if (_disposed) return;
+    // Tenta montar o cofre local imediatamente pelo chaveiro nativo ou chave do dispositivo.
+    // Como SQLCipher é local e não depende do Tor, isso carrega a identidade em ~150ms.
+    await _checkPersistedOnboardingStatus();
     if (_disposed) return;
     if (_settings.transportProfile.startsWith('Off-Grid')) {
       await enterStrictOffGridMode();

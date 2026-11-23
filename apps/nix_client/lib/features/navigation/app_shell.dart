@@ -501,9 +501,8 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
     super.dispose();
   }
 
-  Future<void> _unlock() async {
-    final pass = _ctrl.text;
-    if (pass.isEmpty) return;
+  Future<void> _unlock({String? explicitPass}) async {
+    final pass = explicitPass ?? _ctrl.text;
     setState(() {
       _busy = true;
       _error = null;
@@ -578,6 +577,16 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
                   )
                 : const Icon(Icons.vpn_key_outlined, size: 17),
             label: const Text('Desbloquear & Montar SQLCipher'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : () => _unlock(explicitPass: 'nix_device_open_vault_v1'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: pagerInk,
+              side: const BorderSide(color: pagerInk),
+            ),
+            icon: const Icon(Icons.lock_open_rounded, size: 16),
+            label: const Text('Entrar com Chave do Dispositivo (Sem Senha)', style: TextStyle(fontSize: 12)),
           ),
           const SizedBox(height: 10),
           TextButton(
