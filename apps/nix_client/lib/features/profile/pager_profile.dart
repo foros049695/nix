@@ -9,6 +9,7 @@ import '../../core/security/file_picker_adapter.dart';
 import '../../core/security/local_image_helper.dart';
 import '../../core/security/sovereign_security_gate.dart';
 import '../../core/theme/nix_tokens.dart';
+import '../../core/media/pager_playlist.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_bilingual_label.dart';
 import 'cultural_showcase.dart';
@@ -82,51 +83,253 @@ class _PagerProfileState extends State<PagerProfile> {
     var music = profile.currentActivity;
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Editar perfil do Pager'),
-        scrollable: true,
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              initialValue: name,
-              onChanged: (value) => name = value,
-              maxLength: 32,
-              decoration: const InputDecoration(labelText: 'Nome de exibição'),
-            ),
-            TextFormField(
-              initialValue: bio,
-              onChanged: (value) => bio = value,
-              maxLength: 180,
-              maxLines: 3,
-              decoration:
-                  const InputDecoration(labelText: 'Biografia e interesses'),
-            ),
-            TextFormField(
-              initialValue: music,
-              onChanged: (value) => music = value,
-              maxLength: 60,
-              decoration: const InputDecoration(
-                  labelText: 'Música no Pager (opcional)'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setEditorState) => AlertDialog(
+          title: const Text('Editar perfil do Pager'),
+          scrollable: true,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextFormField(
+                initialValue: name,
+                onChanged: (value) => name = value,
+                maxLength: 32,
+                decoration: const InputDecoration(labelText: 'Nome de exibição'),
+              ),
+              TextFormField(
+                initialValue: bio,
+                onChanged: (value) => bio = value,
+                maxLength: 180,
+                maxLines: 3,
+                decoration:
+                    const InputDecoration(labelText: 'Biografia e interesses'),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Theme.of(context).dividerColor),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.music_note_rounded, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Música no Pager (Playlist)',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            music.isNotEmpty ? music : 'Nenhuma música selecionada',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: music.isNotEmpty ? null : Theme.of(context).hintColor,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    TextButton.icon(
+                      key: const Key('select_profile_track_button'),
+                      onPressed: () async {
+                        final selected = await _showPlaylistTrackSelector(
+                          context,
+                          state,
+                          selectedTrackName: music,
+                        );
+                        if (selected != null) {
+                          setEditorState(() {
+                            music = selected;
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.playlist_play_rounded, size: 18),
+                      label: Text(music.isNotEmpty ? 'Trocar' : 'Escolher'),
+                    ),
+                    if (music.isNotEmpty)
+                      IconButton(
+                        tooltip: 'Remover música do perfil',
+                        icon: const Icon(Icons.clear_rounded, size: 16),
+                        onPressed: () {
+                          setEditorState(() {
+                            music = '';
+                          });
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () {
+                state.updateProfile(
+                  displayName: name.trim(),
+                  bio: bio.trim(),
+                  currentActivity: music.trim(),
+                );
+                Navigator.pop(context);
+              },
+              child: const Text('Salvar'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar')),
-          FilledButton(
-            onPressed: () {
-              state.updateProfile(
-                displayName: name.trim(),
-                bio: bio.trim(),
-                currentActivity: music.trim(),
-              );
-              Navigator.pop(context);
-            },
-            child: const Text('Salvar'),
+      ),
+    );
+  }
+
+  Future<String?> _showPlaylistTrackSelector(
+    BuildContext context,
+    NixState state, {
+    String? selectedTrackName,
+  }) async {
+    final playlist = state.pagerPlaylist;
+    if (playlist == null) return null;
+
+    final tracks = await playlist.load();
+    if (!context.mounted) return null;
+
+    return showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Selecionar música da Playlist'),
+        content: SizedBox(
+          width: 440,
+          height: 380,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Escolha uma faixa da sua playlist local persistente para vincular ao Pager:',
+                style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: tracks.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.music_off_outlined, size: 36, color: Colors.grey),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Sua playlist local está vazia.',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Vincule arquivos .wav locais ou busque no catálogo cultural.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 11, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 12),
+                            FilledButton.icon(
+                              onPressed: () async {
+                                Navigator.pop(dialogCtx);
+                                await showDialog<void>(
+                                  context: context,
+                                  builder: (_) => PagerPlaylistDialog(
+                                    playlist: playlist,
+                                    enableCatalog: true,
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.add_rounded, size: 16),
+                              label: const Text('Abrir Gerenciador da Playlist'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.separated(
+                        itemCount: tracks.length,
+                        separatorBuilder: (_, __) => const Divider(height: 8),
+                        itemBuilder: (itemCtx, idx) {
+                          final track = tracks[idx];
+                          final isCurrent = track.name == selectedTrackName;
+                          return ListTile(
+                            dense: true,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            tileColor: isCurrent
+                                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
+                                : null,
+                            leading: CircleAvatar(
+                              radius: 16,
+                              backgroundColor: Theme.of(context).cardColor,
+                              child: Icon(
+                                Icons.audiotrack_rounded,
+                                size: 16,
+                                color: isCurrent
+                                    ? Theme.of(context).colorScheme.primary
+                                    : null,
+                              ),
+                            ),
+                            title: Text(
+                              track.name,
+                              style: TextStyle(
+                                fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+                                fontSize: 13,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Arquivo local (.wav)',
+                              style: TextStyle(fontSize: 10, color: Colors.green),
+                            ),
+                            trailing: isCurrent
+                                ? const Icon(Icons.check_circle_rounded, color: Colors.green, size: 20)
+                                : ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      visualDensity: VisualDensity.compact,
+                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                    ),
+                                    onPressed: () => Navigator.pop(dialogCtx, track.name),
+                                    child: const Text('Escolher', style: TextStyle(fontSize: 11)),
+                                  ),
+                            onTap: () => Navigator.pop(dialogCtx, track.name),
+                          );
+                        },
+                      ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  TextButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(dialogCtx);
+                      await showDialog<void>(
+                        context: context,
+                        builder: (_) => PagerPlaylistDialog(
+                          playlist: playlist,
+                          enableCatalog: true,
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.settings_outlined, size: 16),
+                    label: const Text('Gerenciar playlist', style: TextStyle(fontSize: 12)),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogCtx),
+                    child: const Text('Fechar'),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -369,15 +572,28 @@ class _PagerProfileState extends State<PagerProfile> {
           ],
         ),
         if (profile.currentActivity.trim().isNotEmpty)
-          Row(children: [
-            const Icon(Icons.music_note_outlined, color: pagerInk, size: 15),
-            const SizedBox(width: 6),
-            Expanded(
-                child: Text(profile.currentActivity,
-                    style: const TextStyle(fontSize: 12),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis)),
-          ]),
+          InkWell(
+            onTap: () async {
+              final activePlaylist = state.pagerPlaylist;
+              if (activePlaylist != null) {
+                await showDialog<void>(
+                  context: context,
+                  builder: (_) => PagerPlaylistDialog(playlist: activePlaylist, enableCatalog: true),
+                );
+              }
+            },
+            borderRadius: BorderRadius.circular(4),
+            child: Row(children: [
+              const Icon(Icons.music_note_outlined, color: pagerInk, size: 15),
+              const SizedBox(width: 6),
+              Expanded(
+                  child: Text(profile.currentActivity,
+                      style: const TextStyle(fontSize: 12),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis)),
+              const Icon(Icons.playlist_play_rounded, color: pagerInk, size: 16),
+            ]),
+          ),
         if (profile.publicId.isNotEmpty)
           Row(
             children: [

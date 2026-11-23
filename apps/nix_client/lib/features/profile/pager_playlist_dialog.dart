@@ -273,6 +273,12 @@ class _PagerPlaylistDialogState extends State<PagerPlaylistDialog>
     await _save(_tracks.where((value) => value.uri != track.uri).toList());
     await _release(track);
     if (_playing == track.uri) _playing = null;
+    if (mounted) {
+      final state = context.read<NixState>();
+      if (state.userProfile.currentActivity == track.name) {
+        state.updateProfile(currentActivity: '');
+      }
+    }
   }
 
   Future<void> _toggle(PagerTrack track) async {

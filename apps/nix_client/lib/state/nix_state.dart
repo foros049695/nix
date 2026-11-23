@@ -4615,11 +4615,19 @@ class NixState extends ChangeNotifier {
 
   // ================= ATUALIZAÇÃO DO PERFIL & PASSAPORTE CULTURAL =================
 
+  PagerPlaylist? _injectedPagerPlaylist;
+
   PagerPlaylist? get pagerPlaylist {
+    if (_injectedPagerPlaylist != null) return _injectedPagerPlaylist;
     final repository = _preferencesRepo;
     if (_disposed || _panicWipe != null || repository == null ||
         _localDatabase?.cipherInfo.isEncrypted != true) return null;
     return PagerPlaylist(repository);
+  }
+
+  @visibleForTesting
+  void setPagerPlaylistForTest(PagerPlaylist? playlist) {
+    _injectedPagerPlaylist = playlist;
   }
 
   void updateProfile({
