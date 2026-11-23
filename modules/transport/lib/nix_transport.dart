@@ -450,6 +450,201 @@ class Socks5Connector {
       rethrow;
     }
   }
+
+  /// Executa requisição HTTP/HTTPS via proxy SOCKS5 usando [RawSocket] / [RawSecureSocket]
+  /// sem chamar `_detachRaw` e sem vazar DNS local.
+  Future<({int statusCode, String body})> httpRequest(
+    String method,
+    Uri uri, {
+    Map<String, String> headers = const {},
+    String? body,
+    Duration timeout = const Duration(seconds: 30),
+    int? maxResponseBytes,
+    bool requireOnionV3 = true,
+    SecurityContext? tlsContext,
+    bool Function(X509Certificate)? onBadCertificate,
+  }) async {
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      throw UnsupportedTransportSchemeException(uri.scheme);
+    }
+
+    final port = uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
+    final conn = await connectRaw(uri.host, port, requireOnionV3: requireOnionV3, timeout: timeout);
+
+    RawSocket activeSocket = conn.socket;
+    StreamSubscription<RawSocketEvent> activeSub = conn.subscription;
+    try {
+      if (uri.scheme == 'https') {
+        final secure = await RawSecureSocket.secure(
+          conn.socket,
+          subscription: conn.subscription,
+          host: uri.host,
+          context: tlsContext,
+          onBadCertificate: onBadCertificate ?? (_) => false,
+        ).timeout(timeout);
+        activeSocket = secure;
+      }
+
+      final bodyBytes = body != null ? utf8.encode(body) : const <int>[];
+      final targetPath = uri.path.isEmpty ? '/' : uri.path;
+      final reqBuf = StringBuffer()
+        ..write('$method $targetPath${uri.hasQuery ? '?${uri.query}' : ''} HTTP/1.1\r\n')
+        ..write('Host: ${uri.host}\r\n')
+        ..write('Connection: close\r\n');
+      headers.forEach((k, v) => reqBuf.write('$k: $v\r\n'));
+      if (bodyBytes.isNotEmpty) {
+        reqBuf.write('Content-Length: ${bodyBytes.length}\r\n');
+      }
+      reqBuf.write('\r\n');
+
+      final requestBytes = BytesBuilder(copy: false)
+        ..add(utf8.encode(reqBuf.toString()))
+        ..add(bodyBytes);
+      final reqList = requestBytes.takeBytes();
+
+      final responseBuilder = BytesBuilder(copy: false);
+      final doneCompleter = Completer<void>();
+      Completer<void>? writeReady;
+
+      void drainReads() {
+        while (activeSocket.available() > 0) {
+          final chunk = activeSocket.read();
+          if (chunk == null || chunk.isEmpty) break;
+          if (maxResponseBytes != null &&
+              responseBuilder.length + chunk.length > maxResponseBytes) {
+            if (!doneCompleter.isCompleted) {
+              doneCompleter.completeError(const HttpException('Resposta excede o limite máximo permitido.'));
+            }
+            activeSocket.readEventsEnabled = false;
+            return;
+          }
+          responseBuilder.add(chunk);
+        }
+        if (!doneCompleter.isCompleted &&
+            RelayClient._hasCompleteHttpMessage(responseBuilder.toBytes())) {
+          doneCompleter.complete();
+        }
+      }
+
+      void bindHandlers(StreamSubscription<RawSocketEvent> sub) {
+        sub.onData((event) {
+          if (event == RawSocketEvent.read) {
+            drainReads();
+          } else if (event == RawSocketEvent.write) {
+            if (writeReady != null && !writeReady!.isCompleted) {
+              writeReady!.complete();
+              writeReady = null;
+            }
+          } else if (event == RawSocketEvent.readClosed) {
+            drainReads();
+            if (!doneCompleter.isCompleted) doneCompleter.complete();
+          } else if (event == RawSocketEvent.closed) {
+            if (!doneCompleter.isCompleted) doneCompleter.complete();
+          }
+        });
+        sub.onError((Object err, StackTrace st) {
+          if (writeReady != null && !writeReady!.isCompleted) {
+            writeReady!.completeError(err, st);
+            writeReady = null;
+          }
+          if (!doneCompleter.isCompleted) doneCompleter.completeError(err, st);
+        });
+        sub.onDone(() {
+          if (writeReady != null && !writeReady!.isCompleted) {
+            writeReady!.complete();
+            writeReady = null;
+          }
+          if (!doneCompleter.isCompleted) doneCompleter.complete();
+        });
+      }
+
+      if (uri.scheme == 'https') {
+        activeSub = activeSocket.listen((_) {});
+      }
+      bindHandlers(activeSub);
+
+      activeSocket.readEventsEnabled = true;
+      int offset = 0;
+      final writeDeadline = DateTime.now().add(timeout);
+      while (offset < reqList.length) {
+        final written = activeSocket.write(reqList, offset, reqList.length - offset);
+        offset += written;
+        if (offset < reqList.length) {
+          final rem = writeDeadline.difference(DateTime.now());
+          if (rem.isNegative) {
+            throw const SocketException('Timeout ao gravar requisição HTTP sobre túnel SOCKS5.');
+          }
+          activeSocket.writeEventsEnabled = true;
+          writeReady ??= Completer<void>();
+          await writeReady!.future.timeout(rem);
+        }
+      }
+
+      await doneCompleter.future.timeout(timeout);
+
+      final fullBytes = responseBuilder.takeBytes();
+      int splitIdx = -1;
+      for (int i = 0; i < fullBytes.length - 3; i++) {
+        if (fullBytes[i] == 13 && fullBytes[i + 1] == 10 && fullBytes[i + 2] == 13 && fullBytes[i + 3] == 10) {
+          splitIdx = i;
+          break;
+        }
+      }
+      if (splitIdx == -1) {
+        throw const HttpException('Resposta HTTP inválida sobre túnel SOCKS5.');
+      }
+
+      final headerStr = utf8.decode(fullBytes.sublist(0, splitIdx), allowMalformed: true);
+      final bodyPayloadBytes = fullBytes.sublist(splitIdx + 4);
+
+      final headerLines = headerStr.split('\r\n');
+      final statusLine = headerLines.first;
+      final parts = statusLine.split(' ');
+      final statusCode = parts.length >= 2 ? (int.tryParse(parts[1]) ?? 500) : 500;
+
+      bool isChunked = false;
+      for (final line in headerLines.skip(1)) {
+        final colon = line.indexOf(':');
+        if (colon != -1) {
+          final key = line.substring(0, colon).trim().toLowerCase();
+          final val = line.substring(colon + 1).trim().toLowerCase();
+          if (key == 'transfer-encoding' && val.contains('chunked')) {
+            isChunked = true;
+          }
+        }
+      }
+
+      final payload = isChunked ? RelayClient._decodeChunked(bodyPayloadBytes) : Uint8List.fromList(bodyPayloadBytes);
+      final resBody = utf8.decode(payload, allowMalformed: true);
+      return (statusCode: statusCode, body: resBody);
+    } finally {
+      try {
+        await activeSocket.close().timeout(const Duration(milliseconds: 500));
+      } catch (_) {}
+      await activeSub.cancel();
+    }
+  }
+
+  /// Conveniência para requisições GET sobre SOCKS5
+  Future<({int statusCode, String body})> httpGet(
+    Uri uri, {
+    Map<String, String> headers = const {},
+    Duration timeout = const Duration(seconds: 30),
+    int? maxResponseBytes,
+    bool requireOnionV3 = true,
+    SecurityContext? tlsContext,
+    bool Function(X509Certificate)? onBadCertificate,
+  }) =>
+      httpRequest(
+        'GET',
+        uri,
+        headers: headers,
+        timeout: timeout,
+        maxResponseBytes: maxResponseBytes,
+        requireOnionV3: requireOnionV3,
+        tlsContext: tlsContext,
+        onBadCertificate: onBadCertificate,
+      );
 }
 
 /// Socket decorado que mantém o fluxo contínuo do socket TCP subjacente
@@ -1034,174 +1229,24 @@ class RelayClient {
     Duration timeout = const Duration(seconds: 30),
     int? maxResponseBytes,
     String? circuitIsolation,
-  }) async {
-    if (uri.scheme != 'http' && uri.scheme != 'https') {
-      throw UnsupportedTransportSchemeException(uri.scheme);
-    }
-
+  }) {
     final connector = Socks5Connector(
       proxyHost: policy.socksHost,
       proxyPort: policy.socksPort,
       username: circuitIsolation,
       password: circuitIsolation,
     );
-    final port = uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
-    final conn = await connector.connectRaw(uri.host, port, requireOnionV3: true, timeout: timeout);
-
-    RawSocket activeSocket = conn.socket;
-    StreamSubscription<RawSocketEvent> activeSub = conn.subscription;
-    try {
-      // Issue #11 resolvido: upgrade TLS nativo com RawSecureSocket sobre RawSocket,
-      // herdando a subscription sem `_detachRaw` e sem resolução DNS local.
-      if (uri.scheme == 'https') {
-        final secure = await RawSecureSocket.secure(
-          conn.socket,
-          subscription: conn.subscription,
-          host: uri.host,
-          context: tlsContext,
-          onBadCertificate: onBadCertificate ?? (_) => false,
-        ).timeout(timeout);
-        activeSocket = secure;
-      }
-
-      final bodyBytes = body != null ? utf8.encode(body) : const <int>[];
-      final targetPath = uri.path.isEmpty ? '/' : uri.path;
-      final reqBuf = StringBuffer()
-        ..write('$method $targetPath${uri.hasQuery ? '?${uri.query}' : ''} HTTP/1.1\r\n')
-        ..write('Host: ${uri.host}\r\n')
-        ..write('Connection: close\r\n');
-      headers.forEach((k, v) => reqBuf.write('$k: $v\r\n'));
-      if (bodyBytes.isNotEmpty) {
-        reqBuf.write('Content-Length: ${bodyBytes.length}\r\n');
-      }
-      reqBuf.write('\r\n');
-
-      final requestBytes = BytesBuilder(copy: false)
-        ..add(utf8.encode(reqBuf.toString()))
-        ..add(bodyBytes);
-      final reqList = requestBytes.takeBytes();
-
-      final responseBuilder = BytesBuilder(copy: false);
-      final doneCompleter = Completer<void>();
-      Completer<void>? writeReady;
-
-      void drainReads() {
-        while (activeSocket.available() > 0) {
-          final chunk = activeSocket.read();
-          if (chunk == null || chunk.isEmpty) break;
-          if (maxResponseBytes != null &&
-              responseBuilder.length + chunk.length > maxResponseBytes) {
-            if (!doneCompleter.isCompleted) {
-              doneCompleter.completeError(const HttpException('Resposta Onion excede o limite.'));
-            }
-            activeSocket.readEventsEnabled = false;
-            return;
-          }
-          responseBuilder.add(chunk);
-        }
-        if (!doneCompleter.isCompleted &&
-            _hasCompleteHttpMessage(responseBuilder.toBytes())) {
-          doneCompleter.complete();
-        }
-      }
-
-      void bindHandlers(StreamSubscription<RawSocketEvent> sub) {
-        sub.onData((event) {
-          if (event == RawSocketEvent.read) {
-            drainReads();
-          } else if (event == RawSocketEvent.write) {
-            if (writeReady != null && !writeReady!.isCompleted) {
-              writeReady!.complete();
-              writeReady = null;
-            }
-          } else if (event == RawSocketEvent.readClosed) {
-            drainReads();
-            if (!doneCompleter.isCompleted) doneCompleter.complete();
-          } else if (event == RawSocketEvent.closed) {
-            if (!doneCompleter.isCompleted) doneCompleter.complete();
-          }
-        });
-        sub.onError((Object err, StackTrace st) {
-          if (writeReady != null && !writeReady!.isCompleted) {
-            writeReady!.completeError(err, st);
-            writeReady = null;
-          }
-          if (!doneCompleter.isCompleted) doneCompleter.completeError(err, st);
-        });
-        sub.onDone(() {
-          if (writeReady != null && !writeReady!.isCompleted) {
-            writeReady!.complete();
-            writeReady = null;
-          }
-          if (!doneCompleter.isCompleted) doneCompleter.complete();
-        });
-      }
-
-      if (uri.scheme == 'https') {
-        activeSub = activeSocket.listen((_) {});
-      }
-      bindHandlers(activeSub);
-
-      activeSocket.readEventsEnabled = true;
-      int offset = 0;
-      final writeDeadline = DateTime.now().add(timeout);
-      while (offset < reqList.length) {
-        final written = activeSocket.write(reqList, offset, reqList.length - offset);
-        offset += written;
-        if (offset < reqList.length) {
-          final rem = writeDeadline.difference(DateTime.now());
-          if (rem.isNegative) {
-            throw const SocketException('Timeout ao gravar requisição HTTP sobre túnel SOCKS5.');
-          }
-          activeSocket.writeEventsEnabled = true;
-          writeReady ??= Completer<void>();
-          await writeReady!.future.timeout(rem);
-        }
-      }
-
-      await doneCompleter.future.timeout(timeout);
-
-      final fullBytes = responseBuilder.takeBytes();
-      int splitIdx = -1;
-      for (int i = 0; i < fullBytes.length - 3; i++) {
-        if (fullBytes[i] == 13 && fullBytes[i + 1] == 10 && fullBytes[i + 2] == 13 && fullBytes[i + 3] == 10) {
-          splitIdx = i;
-          break;
-        }
-      }
-      if (splitIdx == -1) {
-        throw const HttpException('Resposta HTTP inválida sobre túnel SOCKS5.');
-      }
-
-      final headerStr = utf8.decode(fullBytes.sublist(0, splitIdx), allowMalformed: true);
-      final bodyPayloadBytes = fullBytes.sublist(splitIdx + 4);
-
-      final headerLines = headerStr.split('\r\n');
-      final statusLine = headerLines.first;
-      final parts = statusLine.split(' ');
-      final statusCode = parts.length >= 2 ? (int.tryParse(parts[1]) ?? 500) : 500;
-
-      bool isChunked = false;
-      for (final line in headerLines.skip(1)) {
-        final colon = line.indexOf(':');
-        if (colon != -1) {
-          final key = line.substring(0, colon).trim().toLowerCase();
-          final val = line.substring(colon + 1).trim().toLowerCase();
-          if (key == 'transfer-encoding' && val.contains('chunked')) {
-            isChunked = true;
-          }
-        }
-      }
-
-      final payload = isChunked ? _decodeChunked(bodyPayloadBytes) : Uint8List.fromList(bodyPayloadBytes);
-      final resBody = utf8.decode(payload, allowMalformed: true);
-      return (statusCode: statusCode, body: resBody);
-    } finally {
-      try {
-        await activeSocket.close().timeout(const Duration(milliseconds: 500));
-      } catch (_) {}
-      await activeSub.cancel();
-    }
+    return connector.httpRequest(
+      method,
+      uri,
+      headers: headers,
+      body: body,
+      timeout: timeout,
+      maxResponseBytes: maxResponseBytes,
+      requireOnionV3: true,
+      tlsContext: tlsContext,
+      onBadCertificate: onBadCertificate,
+    );
   }
 
   static bool _hasCompleteHttpMessage(Uint8List fullBytes) {

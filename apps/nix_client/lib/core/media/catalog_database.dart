@@ -359,8 +359,12 @@ class CatalogDatabase {
     final args = <dynamic>[tokens];
 
     if (kind != null && kind.isNotEmpty) {
-      conditions.add('w.kind = ?');
-      args.add(kind);
+      if (kind == 'music') {
+        conditions.add("w.kind IN ('track', 'album')");
+      } else {
+        conditions.add('w.kind = ?');
+        args.add(kind);
+      }
     }
     if (genre != null && genre.isNotEmpty) {
       conditions.add('w.genres LIKE ?');
@@ -385,7 +389,47 @@ class CatalogDatabase {
     ''';
 
     final rows = await _db.rawQuery(sql, args);
-    return rows.map((r) => CatalogWork.fromRow(r)).toList();
+    if (rows.isNotEmpty) {
+      return rows.map((r) => CatalogWork.fromRow(r)).toList();
+    }
+
+    // Fallback: se o FTS5 por prefixo não encontrar resultados (ex: caracteres especiais,
+    // correspondência no meio de palavra ou correspondência direta por artista/álbum/título),
+    // executa consulta com LIKE em w.title, w.original_title e w.creators.
+    final fallbackConditions = <String>[
+      '(w.title LIKE ? OR w.original_title LIKE ? OR w.creators LIKE ?)'
+    ];
+    final likeArg = '%$clean%';
+    final fallbackArgs = <dynamic>[likeArg, likeArg, likeArg];
+
+    if (kind != null && kind.isNotEmpty) {
+      if (kind == 'music') {
+        fallbackConditions.add("w.kind IN ('track', 'album')");
+      } else {
+        fallbackConditions.add('w.kind = ?');
+        fallbackArgs.add(kind);
+      }
+    }
+    if (genre != null && genre.isNotEmpty) {
+      fallbackConditions.add('w.genres LIKE ?');
+      fallbackArgs.add('%$genre%');
+    }
+    if (releaseYear != null) {
+      fallbackConditions.add('w.release_year = ?');
+      fallbackArgs.add(releaseYear);
+    }
+    fallbackArgs.add(limit);
+    fallbackArgs.add(offset);
+
+    final fallbackSql = '''
+      SELECT w.*
+      FROM catalog_works w
+      WHERE ${fallbackConditions.join(' AND ')}
+      ORDER BY w.release_year DESC, w.title ASC
+      LIMIT ? OFFSET ?;
+    ''';
+    final fallbackRows = await _db.rawQuery(fallbackSql, fallbackArgs);
+    return fallbackRows.map((r) => CatalogWork.fromRow(r)).toList();
   }
 
   Future<List<CatalogWork>> listWorks({
@@ -399,8 +443,12 @@ class CatalogDatabase {
     final args = <dynamic>[];
 
     if (kind != null && kind.isNotEmpty) {
-      conditions.add('kind = ?');
-      args.add(kind);
+      if (kind == 'music') {
+        conditions.add("kind IN ('track', 'album')");
+      } else {
+        conditions.add('kind = ?');
+        args.add(kind);
+      }
     }
     if (genre != null && genre.isNotEmpty) {
       conditions.add('genres LIKE ?');

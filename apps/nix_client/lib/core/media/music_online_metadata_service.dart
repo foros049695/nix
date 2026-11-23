@@ -64,38 +64,23 @@ class MusicOnlineMetadataService {
       final connector = Socks5Connector(
         proxyHost: '127.0.0.1',
         proxyPort: socksPort,
+        username: isolation,
+        password: isolation,
       );
       const host = 'musicbrainz.org';
-      final socket = await connector.connect(
-        host,
-        443,
+      final encodedQuery = Uri.encodeQueryComponent(cleanQuery);
+      final uri = Uri.parse('https://$host/ws/2/recording?query=$encodedQuery&fmt=json&limit=20');
+      final res = await connector.httpRequest(
+        'GET',
+        uri,
+        headers: const {
+          'User-Agent': 'NixMusicMetadata/1.0 ( privacy@projetonix.org )',
+          'Accept': 'application/json',
+        },
         requireOnionV3: false,
         timeout: const Duration(seconds: 25),
       );
-      try {
-        final secure = await SecureSocket.secure(
-          socket,
-          host: host,
-        ).timeout(const Duration(seconds: 20));
-        final encodedQuery = Uri.encodeQueryComponent(cleanQuery);
-        final req =
-            'GET /ws/2/recording?query=$encodedQuery&fmt=json&limit=20 HTTP/1.1\r\n'
-            'Host: $host\r\n'
-            'User-Agent: NixMusicMetadata/1.0 ( privacy@projetonix.org )\r\n'
-            'Connection: close\r\n\r\n';
-        secure.write(req);
-        await secure.flush();
-
-        final builder = BytesBuilder(copy: false);
-        await for (final chunk in secure) {
-          builder.add(chunk);
-        }
-        final fullText = utf8.decode(builder.takeBytes(), allowMalformed: true);
-        final bodyIndex = fullText.indexOf('\r\n\r\n');
-        rawResponse = bodyIndex >= 0 ? fullText.substring(bodyIndex + 4) : fullText;
-      } finally {
-        await socket.close();
-      }
+      rawResponse = res.body;
     }
 
     return _parseMusicBrainzResponse(rawResponse);

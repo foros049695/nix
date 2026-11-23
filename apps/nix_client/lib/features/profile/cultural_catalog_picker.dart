@@ -118,7 +118,7 @@ class _CulturalCatalogPickerState extends State<_CulturalCatalogPicker> {
         if (catalog == null) throw StateError('Catálogo local indisponível');
         final results = await catalog.searchWorks(
             query: query.trim(),
-            kind: widget.playlist == null ? null : 'track',
+            kind: widget.playlist == null ? null : 'music',
             limit: 40);
         if (!mounted || current != _generation) return;
         setState(() {
@@ -178,8 +178,11 @@ class _CulturalCatalogPickerState extends State<_CulturalCatalogPicker> {
                                 itemBuilder: (context, index) {
                                   final work = _works[index];
                                   final item = culturalItemFromCatalog(work);
+                                  final hasLocalAudio = widget.playlist?.any(
+                                    (name) => name.toLowerCase().contains(work.title.toLowerCase())
+                                  ) ?? false;
                                   return SizedBox(
-                                    width: 132,
+                                    width: 140,
                                     child: InkWell(
                                       onTap: () => Navigator.pop(context, work),
                                       child: Column(
@@ -188,13 +191,34 @@ class _CulturalCatalogPickerState extends State<_CulturalCatalogPicker> {
                                         children: [
                                           CulturalCoverArt(
                                               item: item, width: 64),
+                                          const SizedBox(height: 4),
                                           Text(work.title,
                                               maxLines: 2,
                                               overflow: TextOverflow.ellipsis,
-                                              textAlign: TextAlign.center),
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
                                           Text(item.creatorOrYear,
                                               maxLines: 1,
-                                              overflow: TextOverflow.ellipsis),
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(fontSize: 10.5)),
+                                          Container(
+                                            margin: const EdgeInsets.only(top: 3),
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                            decoration: BoxDecoration(
+                                              color: hasLocalAudio
+                                                  ? Colors.green.withValues(alpha: 0.15)
+                                                  : Colors.amber.withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              hasLocalAudio ? 'Áudio local' : 'Apenas metadados',
+                                              style: TextStyle(
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.bold,
+                                                color: hasLocalAudio ? Colors.green : Colors.amber,
+                                              ),
+                                            ),
+                                          ),
                                         ],
                                       ),
                                     ),
