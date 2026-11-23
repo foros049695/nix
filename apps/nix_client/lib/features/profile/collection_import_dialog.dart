@@ -345,7 +345,7 @@ class _CollectionImportDialogState extends State<CollectionImportDialog> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         subtitle: Text(
-                          '${item.category.label} · ${item.creatorOrYear}',
+                          '${item.category.name} · ${item.creatorOrYear}',
                           style: const TextStyle(fontSize: 11, color: Colors.grey),
                         ),
                         trailing: Row(

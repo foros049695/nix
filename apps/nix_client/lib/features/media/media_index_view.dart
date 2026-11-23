@@ -1,11 +1,14 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:nix_transport/nix_transport.dart';
 import '../../core/media/catalog_database.dart';
 import '../../core/media/media_index_updater.dart';
+import '../../core/media/pager_playlist.dart';
+import '../../core/models/cultural_item.dart';
 import '../../core/security/file_picker_adapter.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
@@ -14,6 +17,7 @@ import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
 import '../profile/cultural_showcase.dart';
+import '../profile/desktop_pager_audio.dart';
 
 /// Visão principal do Nix Media Index — Offline-First e Acervo Cultural.
 class NixMediaIndexView extends StatefulWidget {
@@ -891,7 +895,23 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
     );
   }
 
+  void _showWorkDetails(BuildContext context, CatalogWork work) {
+    final nixState = context.read<NixState>();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => _CatalogWorkDetailDialog(work: work, nixState: nixState),
+    );
+  }
+
   Widget _buildWorkCard(CatalogWork work) {
+    final nixState = context.watch<NixState>();
+    final inAcervo = nixState.userProfile.culturalItems.any(
+      (item) =>
+          item.id == 'catalog:${work.id}' ||
+          item.id == work.id ||
+          item.title.trim().toLowerCase() == work.title.trim().toLowerCase(),
+    );
+
     final kindIcon = switch (work.kind) {
       'movie' || 'film' => Icons.movie_outlined,
       'series' => Icons.tv_rounded,
@@ -913,110 +933,704 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
       _ => Colors.amber,
     };
 
-    return NixMotionCard(child: NixFrame(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Placeholder Seguro de Capa (zero conexões de rede externas)
-            Container(
-              width: 54,
-              height: 74,
-              decoration: BoxDecoration(
-                color: kindColor.withOpacity(0.12),
-                borderRadius: NixTokens.borderSm,
-                border: Border.all(color: kindColor.withOpacity(0.3)),
-              ),
-              child: Center(
-                child: Icon(kindIcon, size: 28, color: kindColor),
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Informações
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+    return NixMotionCard(
+      child: InkWell(
+        onTap: () => _showWorkDetails(context, work),
+        borderRadius: NixTokens.borderMd,
+        child: NixFrame(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Placeholder Seguro de Capa clicável
+                InkWell(
+                  onTap: () => _showWorkDetails(context, work),
+                  borderRadius: NixTokens.borderSm,
+                  child: Container(
+                    width: 54,
+                    height: 74,
+                    decoration: BoxDecoration(
+                      color: kindColor.withValues(alpha: 0.12),
+                      borderRadius: NixTokens.borderSm,
+                      border: Border.all(color: kindColor.withValues(alpha: 0.3)),
+                    ),
+                    child: Center(
+                      child: Icon(kindIcon, size: 28, color: kindColor),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Informações
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: kindColor.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: kindColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              work.kind.toUpperCase(),
+                              style: TextStyle(
+                                color: kindColor,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          if (work.releaseYear != null) ...[
+                            const SizedBox(width: 6),
+                            Text(
+                              '${work.releaseYear}',
+                              style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      InkWell(
+                        onTap: () => _showWorkDetails(context, work),
                         child: Text(
-                          work.kind.toUpperCase(),
+                          work.title,
                           style: TextStyle(
-                            color: kindColor,
-                            fontSize: 9.5,
+                            color: NixColors.textPrimary,
+                            fontSize: 14,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
-                      if (work.releaseYear != null) ...[
-                        const SizedBox(width: 6),
+                      if (work.originalTitle != null &&
+                          work.originalTitle != work.title) ...[
                         Text(
-                          '${work.releaseYear}',
-                          style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
+                          work.originalTitle!,
+                          style: TextStyle(
+                            color: NixColors.textSecondary,
+                            fontSize: 11,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                      if (work.creators != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          work.creators!,
+                          style: TextStyle(color: NixColors.textSecondary, fontSize: 11.5),
+                        ),
+                      ],
+                      if (work.summary != null && work.summary!.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          work.summary!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: NixColors.textSecondary, fontSize: 11.5),
                         ),
                       ],
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    work.title,
-                    style: TextStyle(
-                      color: NixColors.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
+                ),
+                const SizedBox(width: 8),
+                // Botão Adicionar ou Ver no Acervo
+                IconButton(
+                  icon: Icon(
+                    inAcervo ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined,
+                    color: inAcervo ? Colors.amber : Colors.amber.withValues(alpha: 0.7),
                   ),
-                  if (work.originalTitle != null &&
-                      work.originalTitle != work.title) ...[
-                    Text(
-                      work.originalTitle!,
-                      style: TextStyle(
-                        color: NixColors.textSecondary,
-                        fontSize: 11,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                  if (work.creators != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      work.creators!,
-                      style: TextStyle(color: NixColors.textSecondary, fontSize: 11.5),
-                    ),
-                  ],
-                  if (work.summary != null && work.summary!.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      work.summary!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: NixColors.textSecondary, fontSize: 11.5),
-                    ),
-                  ],
-                ],
-              ),
+                  tooltip: inAcervo ? 'No meu Acervo (Ver detalhes)' : 'Adicionar ao Acervo',
+                  onPressed: () {
+                    if (inAcervo) {
+                      _showWorkDetails(context, work);
+                    } else {
+                      _openAddToAcervoDialog(work);
+                    }
+                  },
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            // Botão Adicionar ao Acervo
-            IconButton(
-              icon: const Icon(Icons.bookmark_add_outlined, color: Colors.amber),
-              tooltip: 'Adicionar ao Acervo',
-              onPressed: () => _openAddToAcervoDialog(work),
-            ),
-          ],
+          ),
         ),
       ),
-    ));
+    );
   }
 
   Widget _buildAcervoTab(bool isCompact) {
     return const SingleChildScrollView(child: CulturalShowcase());
+  }
+}
+
+class _CatalogWorkDetailDialog extends StatefulWidget {
+  final CatalogWork work;
+  final NixState nixState;
+
+  const _CatalogWorkDetailDialog({required this.work, required this.nixState});
+
+  @override
+  State<_CatalogWorkDetailDialog> createState() => _CatalogWorkDetailDialogState();
+}
+
+class _CatalogWorkDetailDialogState extends State<_CatalogWorkDetailDialog> {
+  late final _desktop = switch (defaultTargetPlatform) {
+    TargetPlatform.linux || TargetPlatform.windows => DesktopPagerAudio(),
+    _ => null,
+  };
+  List<PagerTrack> _playlistTracks = [];
+  String? _playingUri;
+  bool _loadingAudio = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPlaylist();
+  }
+
+  @override
+  void dispose() {
+    _desktop?.stop();
+    super.dispose();
+  }
+
+  Future<void> _loadPlaylist() async {
+    final playlist = widget.nixState.pagerPlaylist;
+    if (playlist != null) {
+      try {
+        final tracks = await playlist.load();
+        if (mounted) {
+          setState(() {
+            _playlistTracks = tracks;
+          });
+        }
+      } catch (_) {}
+    }
+  }
+
+  CulturalItem? _findInAcervo(NixState state) {
+    final draftId = 'catalog:${widget.work.id}';
+    for (final item in state.userProfile.culturalItems) {
+      if (item.id == draftId || item.id == widget.work.id) return item;
+      if (item.title.trim().toLowerCase() == widget.work.title.trim().toLowerCase()) return item;
+    }
+    return null;
+  }
+
+  Future<void> _toggleAudio(PagerTrack track) async {
+    if (_playingUri == track.uri) {
+      _desktop?.stop();
+      if (defaultTargetPlatform != TargetPlatform.linux && defaultTargetPlatform != TargetPlatform.windows) {
+        await const MethodChannel('com.projetonix.nix/pager_audio').invokeMethod<void>('stop');
+      }
+      if (mounted) setState(() => _playingUri = null);
+      return;
+    }
+    setState(() => _loadingAudio = true);
+    try {
+      if (_desktop != null) {
+        await _desktop!.play(track);
+        if (mounted) setState(() => _playingUri = track.uri);
+      } else {
+        await const MethodChannel('com.projetonix.nix/pager_audio').invokeMethod<void>('play', {'uri': track.uri});
+        if (mounted) setState(() => _playingUri = track.uri);
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Falha ao reproduzir áudio local.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loadingAudio = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: widget.nixState,
+      builder: (dialogCtx, _) {
+        final nixState = widget.nixState;
+        final work = widget.work;
+        final acervoItem = _findInAcervo(nixState);
+        final inAcervo = acervoItem != null;
+
+    final kindIcon = switch (work.kind) {
+      'movie' || 'film' => Icons.movie_outlined,
+      'series' => Icons.tv_rounded,
+      'anime' => Icons.animation_rounded,
+      'manga' => Icons.menu_book_rounded,
+      'book' => Icons.auto_stories_rounded,
+      'album' => Icons.album_outlined,
+      'track' => Icons.music_note_outlined,
+      _ => Icons.bookmark_outline_rounded,
+    };
+
+    final kindColor = switch (work.kind) {
+      'movie' || 'film' => Colors.blueAccent,
+      'series' => Colors.purpleAccent,
+      'anime' => Colors.pinkAccent,
+      'manga' => Colors.orangeAccent,
+      'book' => Colors.greenAccent,
+      'album' || 'track' => Colors.cyanAccent,
+      _ => Colors.amber,
+    };
+
+    final isMusic = work.kind == 'track' || work.kind == 'album' || work.kind == 'music';
+    final matchingTracks = isMusic
+        ? _playlistTracks
+            .where((t) => t.name.toLowerCase().contains(work.title.toLowerCase()))
+            .toList()
+        : const <PagerTrack>[];
+
+    return Dialog(
+      backgroundColor: NixColors.surfaceCard,
+      shape: RoundedRectangleBorder(borderRadius: NixTokens.borderMd),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 580, maxHeight: 680),
+        child: Column(
+          children: [
+            // Header com Barra de Fechar
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: NixColors.surfaceBorder)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: kindColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: kindColor.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(kindIcon, size: 13, color: kindColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          work.kind.toUpperCase(),
+                          style: TextStyle(color: kindColor, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (work.releaseYear != null) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      '${work.releaseYear}',
+                      style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                    ),
+                  ],
+                  const Spacer(),
+                  IconButton(
+                    icon: Icon(Icons.close_rounded, size: 20, color: NixColors.textSecondary),
+                    tooltip: 'Fechar',
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+
+            // Conteúdo Rolável
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  // Capa + Título + Criadores
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 80,
+                        height: 110,
+                        decoration: BoxDecoration(
+                          color: kindColor.withValues(alpha: 0.12),
+                          borderRadius: NixTokens.borderSm,
+                          border: Border.all(color: kindColor.withValues(alpha: 0.3)),
+                        ),
+                        child: Center(
+                          child: Icon(kindIcon, size: 40, color: kindColor),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              work.title,
+                              style: TextStyle(
+                                color: NixColors.textPrimary,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            if (work.originalTitle != null && work.originalTitle != work.title) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                work.originalTitle!,
+                                style: TextStyle(
+                                  color: NixColors.textSecondary,
+                                  fontSize: 13,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                            if (work.creators != null && work.creators!.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(Icons.person_outline_rounded, size: 14, color: NixColors.textMuted),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      work.creators!,
+                                      style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Gêneros
+                  if (work.genres != null && work.genres!.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text('GÊNEROS', style: NixTokens.labelUppercase()),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: work.genres!
+                          .split(',')
+                          .map((g) => g.trim())
+                          .where((g) => g.isNotEmpty)
+                          .map((genre) => Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: NixColors.surfaceCardHover,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: NixColors.surfaceBorder),
+                                ),
+                                child: Text(
+                                  genre,
+                                  style: TextStyle(color: NixColors.textSecondary, fontSize: 11),
+                                ),
+                              ))
+                          .toList(),
+                    ),
+                  ],
+
+                  // Sinopse
+                  if (work.summary != null && work.summary!.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text('SINOPSE & DETALHES', style: NixTokens.labelUppercase()),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: NixColors.surfaceSidebar,
+                        borderRadius: NixTokens.borderSm,
+                        border: Border.all(color: NixColors.surfaceBorder),
+                      ),
+                      child: Text(
+                        work.summary!,
+                        style: TextStyle(color: NixColors.textSecondary, fontSize: 12.5, height: 1.45),
+                      ),
+                    ),
+                  ],
+
+                  // Músicas & Álbuns
+                  if (isMusic) ...[
+                    const SizedBox(height: 16),
+                    Text('ÁUDIO & FAIXAS LOCAIS', style: NixTokens.labelUppercase()),
+                    const SizedBox(height: 6),
+                    if (matchingTracks.isNotEmpty) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.cyanAccent.withValues(alpha: 0.08),
+                          borderRadius: NixTokens.borderSm,
+                          border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.3)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.music_note_rounded, size: 16, color: Colors.cyanAccent),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Faixa de áudio local disponível',
+                                    style: TextStyle(
+                                      color: NixColors.textPrimary,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            for (final track in matchingTracks)
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: Icon(
+                                      _playingUri == track.uri ? Icons.stop_circle_rounded : Icons.play_circle_fill_rounded,
+                                      color: Colors.cyanAccent,
+                                      size: 26,
+                                    ),
+                                    onPressed: _loadingAudio ? null : () => _toggleAudio(track),
+                                    tooltip: _playingUri == track.uri ? 'Parar reprodução' : 'Reproduzir áudio local',
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      track.name,
+                                      style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: NixColors.surfaceSidebar,
+                          borderRadius: NixTokens.borderSm,
+                          border: Border.all(color: NixColors.surfaceBorder),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline_rounded, size: 16, color: NixColors.textMuted),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Apenas metadados indexados. Para reprodução nesta versão, adicione e vincule um arquivo de áudio (.wav) na playlist do Pager.',
+                                style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+
+                  // Identificadores Externos
+                  if (work.externalIds.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text('IDENTIFICADORES DO CATÁLOGO', style: NixTokens.labelUppercase()),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: work.externalIds.entries.map((entry) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: NixColors.surfaceSidebar,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: NixColors.surfaceBorder),
+                          ),
+                          child: Text(
+                            '${entry.key.toUpperCase()}: ${entry.value}',
+                            style: NixTokens.monoCode(),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+
+                  const SizedBox(height: 20),
+                  Divider(height: 1, color: NixColors.surfaceBorder),
+                  const SizedBox(height: 16),
+
+                  // Seção Acervo Pessoal
+                  Text('STATUS NO ACERVO PESSOAL', style: NixTokens.labelUppercase()),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: inAcervo
+                          ? Colors.amber.withValues(alpha: 0.07)
+                          : NixColors.surfaceSidebar,
+                      borderRadius: NixTokens.borderMd,
+                      border: Border.all(
+                        color: inAcervo
+                            ? Colors.amber.withValues(alpha: 0.35)
+                            : NixColors.surfaceBorder,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              inAcervo ? Icons.bookmark_added_rounded : Icons.bookmark_outline_rounded,
+                              color: inAcervo ? Colors.amber : NixColors.textMuted,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                inAcervo ? 'Obra presente no seu Acervo Pessoal' : 'Obra não incluída no Acervo',
+                                style: TextStyle(
+                                  color: inAcervo ? NixColors.textPrimary : NixColors.textSecondary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            if (inAcervo)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  'Nota: ${acervoItem.rating}/10',
+                                  style: const TextStyle(
+                                    color: Colors.amber,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+
+                        if (inAcervo) ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Text(
+                                'Status de Consumo: ',
+                                style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: DropdownButton<String>(
+                                  value: acervoItem.tracking.stage?.name ?? 'planned',
+                                  isExpanded: true,
+                                  isDense: true,
+                                  dropdownColor: NixColors.surfaceCard,
+                                  underline: const SizedBox(),
+                                  style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5),
+                                  items: const [
+                                    DropdownMenuItem(value: 'planned', child: Text('Planejado / Quero Ver')),
+                                    DropdownMenuItem(value: 'inProgress', child: Text('Em Andamento / Consumindo')),
+                                    DropdownMenuItem(value: 'completed', child: Text('Concluído')),
+                                    DropdownMenuItem(value: 'onHold', child: Text('Pausado')),
+                                    DropdownMenuItem(value: 'dropped', child: Text('Abandonado')),
+                                  ],
+                                  onChanged: (newStage) {
+                                    if (newStage != null) {
+                                      final rawRating = ((double.tryParse(acervoItem.rating) ?? 8.0) * 10).toInt();
+                                      nixState.saveCatalogWork(
+                                        work,
+                                        status: newStage == 'completed'
+                                            ? 'completed'
+                                            : (newStage == 'inProgress' ? 'watching' : 'want_to_watch'),
+                                        rating: rawRating,
+                                        notes: acervoItem.tracking.privateNotes,
+                                      );
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton.icon(
+                                style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                                icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                                label: const Text('Remover do Acervo', style: TextStyle(fontSize: 12)),
+                                onPressed: () {
+                                  nixState.removeCulturalItem(acervoItem.id);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('"${work.title}" removido do seu Acervo.')),
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ] else ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.amber,
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                ),
+                                icon: const Icon(Icons.bookmark_add_rounded, size: 16),
+                                label: const Text('Adicionar ao Acervo', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                                onPressed: () async {
+                                  try {
+                                    await nixState.saveCatalogWork(
+                                      work,
+                                      status: work.kind == 'book' || work.kind == 'manga' ? 'want_to_read' : 'want_to_watch',
+                                      rating: 80,
+                                      notes: '',
+                                    );
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('"${work.title}" adicionado ao seu Acervo.')),
+                                      );
+                                    }
+                                  } catch (_) {
+                                    // Adiciona diretamente se o repositório estiver em modo sem cofre nativo
+                                    nixState.addCulturalItem(CulturalItem(
+                                      id: 'catalog:${work.id}',
+                                      title: work.title,
+                                      creatorOrYear: work.creators ?? '',
+                                      category: work.kind == 'book' || work.kind == 'manga' ? CulturalCategory.books : CulturalCategory.movies,
+                                      monogram: String.fromCharCodes(work.title.runes.take(2)).toUpperCase(),
+                                    ));
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('"${work.title}" adicionado ao seu Acervo.')),
+                                      );
+                                    }
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+      },
+    );
   }
 }
