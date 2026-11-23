@@ -21,7 +21,7 @@ class DartSegmentedDownloader {
   /// Inicia ou retoma o download de um arquivo direto HTTP/HTTPS.
   Future<DownloadTask> download({
     required DownloadTask task,
-    int splitCount = 4,
+    int splitCount = 8,
     DownloadProgressCallback? onProgress,
   }) async {
     if (task.allowClearnet) {
@@ -34,7 +34,7 @@ class DartSegmentedDownloader {
 
   Future<DownloadTask> _executeDownload({
     required DownloadTask task,
-    int splitCount = 4,
+    int splitCount = 8,
     DownloadProgressCallback? onProgress,
   }) async {
     _validateHttpUrl(task.url);
@@ -45,7 +45,9 @@ class DartSegmentedDownloader {
     var current = task.copyWith(status: DownloadStatus.starting);
     onProgress?.call(current);
 
-    final client = HttpClient();
+    final client = HttpClient()
+      ..maxConnectionsPerHost = 16
+      ..connectionTimeout = const Duration(seconds: 20);
     try {
       final uri = Uri.parse(task.url);
 
@@ -151,12 +153,12 @@ class DartSegmentedDownloader {
     var currentSpeed = 0;
     final speedStopwatch = Stopwatch()..start();
 
-    // Timer suave e desacoplado para notificações da UI (a cada 300ms) sem travar o event loop do Dart
+    // Timer suave e desacoplado para notificações da UI (a cada 500ms) sem travar o event loop do Dart
     Timer? progressTimer;
-    progressTimer = Timer.periodic(const Duration(milliseconds: 300), (_) {
+    progressTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
       final totalDown = segmentProgress.reduce((a, b) => a + b);
       final elapsedSec = speedStopwatch.elapsedMilliseconds / 1000.0;
-      if (elapsedSec >= 0.3) {
+      if (elapsedSec >= 0.5) {
         final deltaBytes = totalDown - lastRecordedBytes;
         currentSpeed = deltaBytes > 0 ? (deltaBytes / elapsedSec).round() : 0;
         lastRecordedBytes = totalDown;

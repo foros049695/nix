@@ -1,8 +1,8 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/media/voice_note.dart';
 import 'telegram_audio_card.dart';
 import 'package:provider/provider.dart';
@@ -46,7 +46,10 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
               _name.toLowerCase().contains('voz')));
 
   bool get _isPhoto {
-    return LocalImageHelper.isSupportedExtension(_name) && !_name.startsWith('doc_');
+    return !_isVideo &&
+        LocalImageHelper.supportedImageExtensions
+            .any((ext) => _name.toLowerCase().endsWith('.$ext')) &&
+        !_name.startsWith('doc_');
   }
 
   @override
@@ -179,6 +182,43 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
     );
   }
 
+  Future<void> _playVideoInSystem(BuildContext context, Uint8List bytes) async {
+    try {
+      if (Platform.isAndroid) {
+        await const MethodChannel('com.projetonix.nix/platform')
+            .invokeMethod<void>('playArchiveVideo', bytes);
+        return;
+      }
+      final tempDir = Directory.systemTemp.createTempSync('nix-video-');
+      final cleanName = _name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final tempFile = File('${tempDir.path}/$cleanName');
+      await tempFile.writeAsBytes(bytes, flush: true);
+      if (Platform.isLinux) {
+        await Process.run('xdg-open', [tempFile.path]);
+      } else if (Platform.isWindows) {
+        await Process.run('powershell.exe', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          r'Invoke-Item -LiteralPath $env:NIX_PLAYBACK_FILE',
+        ], environment: {'NIX_PLAYBACK_FILE': tempFile.path});
+      } else if (Platform.isMacOS) {
+        await Process.run('open', [tempFile.path]);
+      }
+      Future<void>.delayed(const Duration(minutes: 10), () async {
+        try {
+          if (tempDir.existsSync()) await tempDir.delete(recursive: true);
+        } catch (_) {}
+      });
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Não foi possível iniciar o player do sistema: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _openVideoViewer(BuildContext context) async {
     final state = context.read<NixState>();
     final bytes = await state.readMessageAttachmentBytes(widget.message, widget.index);
@@ -246,14 +286,26 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
               ),
             ),
             Container(
-              height: 240,
+              height: 250,
               width: double.infinity,
               color: Colors.black,
               child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.play_circle_fill_rounded, size: 64, color: Colors.white70),
+                    InkWell(
+                      onTap: bytes == null ? null : () => _playVideoInSystem(context, bytes),
+                      borderRadius: BorderRadius.circular(40),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: context.accentColor.withValues(alpha: 0.25),
+                          border: Border.all(color: context.accentColor.withValues(alpha: 0.7)),
+                        ),
+                        child: const Icon(Icons.play_arrow_rounded, size: 48, color: Colors.white),
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     Text(
                       'Reprodução de Vídeo Protegida',
@@ -264,6 +316,19 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
                       'Decodificação isolada no cliente Nix sem tráfego remoto',
                       style: TextStyle(color: NixColors.textMuted, fontSize: 11),
                     ),
+                    if (bytes != null) ...[
+                      const SizedBox(height: 12),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                        label: const Text('Abrir no Reprodutor do Sistema'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: context.accentColor,
+                          foregroundColor: context.onAccentColor,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        ),
+                        onPressed: () => _playVideoInSystem(context, bytes),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -426,6 +491,23 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
                   Icons.play_arrow_rounded,
                   color: Colors.white,
                   size: 30,
+                ),
+              ),
+              Positioned(
+                bottom: 8,
+                left: 8,
+                right: 70,
+                child: Text(
+                  _name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    shadows: [
+                      Shadow(blurRadius: 4, color: Colors.black),
+                    ],
+                  ),
                 ),
               ),
               Positioned(

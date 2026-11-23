@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as std_crypto;
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:nix_transport/nix_transport.dart';
 import '../security/platform_runtime.dart';
 import 'catalog_database.dart';
@@ -51,6 +52,8 @@ class CatalogPublisherKeyring {
       'e2b5c179834d8fa209f87234bb4817a5690d9841804f5619ca2e8310c85b190f';
   static const String defaultOfficialManifestUrl =
       'http://nixcatalog234567abcdefghijklmnopqrstuvwxyz234567abcdefaa.onion/manifest.json';
+  static const String officialHttpsManifestUrl =
+      'https://raw.githubusercontent.com/foros049695/nix/main/apps/nix_client/assets/catalog/seed_catalog_manifest.json';
 
   final Set<String> _trustedKeysHex;
   final Set<String> _revokedKeysHex;
@@ -396,6 +399,8 @@ class SignedCatalogManifest {
 
 /// Orquestrador de atualizações assinadas e substituição atômica do Nix Media Index.
 class MediaIndexUpdater {
+  static const String officialHttpsManifestUrl =
+      CatalogPublisherKeyring.officialHttpsManifestUrl;
   /// Aplica um novo pacote de catálogo assinado com verificação estrita:
   /// 1. Rejeição anti-rollback (versão recebida <= versão instalada).
   /// 2. Verificação de integridade SHA-256 e assinatura Ed25519 contra [trustedPublisherKey] ou [keyring].
@@ -671,8 +676,12 @@ class CatalogUpdateManager {
     }
   }
 
+  static const String officialHttpsManifestUrl =
+      'https://raw.githubusercontent.com/foros049695/nix/main/apps/nix_client/assets/catalog/seed_catalog_manifest.json';
+
   Future<SignedCatalogManifest?> checkForUpdate({
     required Uri manifestUri,
+    bool allowClearnet = false,
   }) async {
     if (isBusy) throw StateError('Já existe uma operação de catálogo em andamento.');
     _isCancelled = false;
@@ -682,9 +691,11 @@ class CatalogUpdateManager {
     ));
 
     try {
-      transportPolicy.assertAllowedUri(manifestUri);
+      if (!allowClearnet) {
+        transportPolicy.assertAllowedUri(manifestUri);
+      }
 
-      final manifestBytes = await _downloadBytes(manifestUri);
+      final manifestBytes = await _downloadBytes(manifestUri, allowClearnet: allowClearnet);
       if (_isCancelled) {
         throw const CatalogUpdateCancelledException();
       }
@@ -741,6 +752,7 @@ class CatalogUpdateManager {
   Future<CatalogDatabase> downloadAndApplyUpdate({
     required SignedCatalogManifest manifest,
     required Uri packageUri,
+    bool allowClearnet = false,
     void Function(CatalogUpdateProgress)? onProgress,
   }) async {
     if (isBusy) throw StateError('Já existe uma operação de catálogo em andamento.');
@@ -748,16 +760,21 @@ class CatalogUpdateManager {
     _emitProgress(CatalogUpdateProgress(
       stage: CatalogUpdateStage.downloading,
       availableManifest: manifest,
-      statusMessage: 'Iniciando download seguro via Tor...',
+      statusMessage: allowClearnet
+          ? 'Iniciando download seguro via espelho HTTPS oficial...'
+          : 'Iniciando download seguro via Tor...',
       totalBytes: manifest.byteSize,
     ));
 
     try {
-      transportPolicy.assertAllowedUri(packageUri);
+      if (!allowClearnet) {
+        transportPolicy.assertAllowedUri(packageUri);
+      }
 
       final packageBytes = await _downloadBytes(
         packageUri,
         expectedLength: manifest.byteSize,
+        allowClearnet: allowClearnet,
         onProgress: (received, total) {
           final percent = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.0;
           final p = CatalogUpdateProgress(
@@ -895,6 +912,7 @@ class CatalogUpdateManager {
     Uri uri, {
     int? expectedLength,
     void Function(int received, int total)? onProgress,
+    bool allowClearnet = false,
   }) async {
     if (uri.scheme != 'http' && uri.scheme != 'https') {
       throw UnsupportedTransportSchemeException(uri.scheme);
@@ -905,7 +923,103 @@ class CatalogUpdateManager {
       return _downloadLoopback(uri, expectedLength: expectedLength, onProgress: onProgress);
     }
 
+    if (allowClearnet || !uri.host.endsWith('.onion')) {
+      if (allowClearnet || uri.scheme == 'https') {
+        return _downloadHttpsDirect(uri, expectedLength: expectedLength, onProgress: onProgress);
+      }
+    }
+
     return _downloadSocksTor(uri, expectedLength: expectedLength, onProgress: onProgress);
+  }
+
+  Future<Uint8List> _downloadHttpsDirect(
+    Uri uri, {
+    int? expectedLength,
+    void Function(int received, int total)? onProgress,
+  }) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
+    _activeHttpClient = client;
+
+    try {
+      final req = await client.getUrl(uri);
+      req.headers.clear();
+      req.headers.set(HttpHeaders.hostHeader, uri.host);
+      req.headers.set(HttpHeaders.connectionHeader, 'close');
+      req.headers.set(HttpHeaders.acceptHeader, 'application/json, application/octet-stream, */*');
+      req.headers.set(HttpHeaders.userAgentHeader, 'NixClient/1.0 (Signed-Catalog-Sync)');
+
+      final res = await req.close();
+      if (res.statusCode != 200) {
+        throw HttpException('Falha HTTP ${res.statusCode} ao consultar espelho (${uri.path})');
+      }
+
+      final total = res.contentLength > 0 ? res.contentLength : (expectedLength ?? 0);
+      final builder = BytesBuilder(copy: false);
+      int received = 0;
+
+      await for (final chunk in res) {
+        if (_isCancelled) {
+          throw const CatalogUpdateCancelledException();
+        }
+        builder.add(chunk);
+        received += chunk.length;
+        onProgress?.call(received, total);
+      }
+
+      return builder.takeBytes();
+    } finally {
+      client.close(force: true);
+      _activeHttpClient = null;
+    }
+  }
+
+  Future<CatalogDatabase> syncBundledCatalog() async {
+    _isCancelled = false;
+    _emitProgress(const CatalogUpdateProgress(
+      stage: CatalogUpdateStage.downloading,
+      statusMessage: 'Carregando catálogo integrado assinado...',
+    ));
+
+    try {
+      final manifestStr = await rootBundle.loadString('assets/catalog/seed_catalog_manifest.json');
+      final manifestJson = jsonDecode(manifestStr) as Map<String, dynamic>;
+      final manifest = SignedCatalogManifest.fromJson(manifestJson);
+
+      final dbByteData = await rootBundle.load('assets/catalog/seed_catalog.db');
+      final dbBytes = dbByteData.buffer.asUint8List();
+
+      final newDb = await MediaIndexUpdater.applySignedCatalogPackage(
+        packageBytes: dbBytes,
+        manifest: manifest,
+        keyring: keyring,
+        targetDbPath: targetDbPath,
+      );
+
+      await _recordHistory(CatalogVersionEntry(
+        version: manifest.version,
+        artifactName: manifest.artifactName,
+        sha256Hex: manifest.sha256Hex,
+        entryCount: manifest.entryCount,
+        signerPublicKeyHex: manifest.signerEd25519Hex,
+        appliedAtUnix: DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000,
+        status: 'success',
+      ));
+
+      _emitProgress(CatalogUpdateProgress(
+        stage: CatalogUpdateStage.completed,
+        availableManifest: manifest,
+        statusMessage: 'Catálogo integrado sincronizado com sucesso (v${manifest.version})!',
+      ));
+
+      return newDb;
+    } catch (e) {
+      _emitProgress(CatalogUpdateProgress(
+        stage: CatalogUpdateStage.error,
+        errorMessage: e.toString(),
+        statusMessage: 'Falha ao sincronizar catálogo integrado: $e',
+      ));
+      rethrow;
+    }
   }
 
   Future<Uint8List> _downloadLoopback(

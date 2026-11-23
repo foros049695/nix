@@ -131,8 +131,8 @@ class Aria2DownloadController extends ChangeNotifier {
         '--enable-peer-exchange=false',
         '--follow-torrent=false',
         '--follow-metalink=false',
-        '--max-connection-per-server=4',
-        '--split=4',
+        '--max-connection-per-server=8',
+        '--split=8',
         '--min-split-size=1M',
         '--continue=true',
         '--dir=$downloadDir',
@@ -204,7 +204,11 @@ class Aria2DownloadController extends ChangeNotifier {
     _persistTasks();
     _notify();
 
-    // Se o aria2c não estiver executando processo nativo, utiliza o fallback Dart
+    // Se o aria2c não estiver executando processo nativo, tenta iniciar daemon
+    if (_process == null) {
+      await startDaemon();
+    }
+
     if (_process == null) {
       _fallbackTaskIds.add(taskId);
       unawaited(_runFallbackDownload(task));
@@ -215,8 +219,9 @@ class Aria2DownloadController extends ChangeNotifier {
       final downloadOptions = <String, String>{
         'dir': downloadDir,
         'out': fileName,
-        'split': '4',
-        'max-connection-per-server': '4',
+        'split': '8',
+        'max-connection-per-server': '8',
+        'continue': 'true',
       };
       if (task.allowClearnet) {
         downloadOptions['all-proxy'] = '';
@@ -258,6 +263,37 @@ class Aria2DownloadController extends ChangeNotifier {
     );
     _tasks[taskId] = updated;
     _notify();
+
+    if (_process == null) {
+      await startDaemon();
+    }
+
+    if (_process != null) {
+      try {
+        final downloadOptions = <String, String>{
+          'dir': downloadDir,
+          'out': updated.fileName,
+          'split': '8',
+          'max-connection-per-server': '8',
+          'continue': 'true',
+          'all-proxy': '',
+        };
+        final rpcRes = await _rpcCall('aria2.addUri', [
+          'token:$_rpcSecret',
+          [updated.url],
+          downloadOptions,
+        ]);
+        if (rpcRes != null && rpcRes['result'] != null) {
+          final ariaGid = rpcRes['result'].toString();
+          _tasks.remove(taskId);
+          _tasks[ariaGid] = updated.copyWith(id: ariaGid, status: DownloadStatus.downloading);
+          _persistTasks();
+          _notify();
+          return;
+        }
+      } catch (_) {}
+    }
+
     _fallbackTaskIds.add(taskId);
     unawaited(_runFallbackDownload(updated));
   }

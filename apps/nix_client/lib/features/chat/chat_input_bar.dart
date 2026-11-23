@@ -700,29 +700,103 @@ class _ChatInputBarState extends State<ChatInputBar> {
         // Barra Principal de Entrada
         LayoutBuilder(builder: (context, constraints) {
           final isGlass = InterfaceWallpaperLayer.translucentPanelsOf(context);
-          if (_isVoiceRecording) {
-            return _buildVoiceRecordingBar(context, nixState, isGlass);
-          }
           final compact = constraints.maxWidth < 480;
+          final durationSec = (_voiceRecordingMs / 1000).floor();
+          final durationStr =
+              '${(durationSec ~/ 60).toString().padLeft(2, '0')}:${(durationSec % 60).toString().padLeft(2, '0')}';
+
           return Container(
             margin: EdgeInsets.fromLTRB(compact ? 7 : 13, 6, compact ? 9 : 15, 9),
             padding: EdgeInsets.symmetric(horizontal: compact ? 3 : 10, vertical: 5),
-            decoration: isGlass
+            decoration: _isVoiceRecording
                 ? BoxDecoration(
-                    color: NixColors.surfaceSidebar.withValues(
-                        alpha: InterfaceWallpaperLayer.panelOpacityOf(context)),
+                    color: NixColors.surfaceSidebar,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                        color: NixColors.surfaceBorderStrong.withValues(alpha: 0.3)),
+                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.8), width: 1.5),
                   )
-                : nixFrameDecoration(context, background: context.surfaceSidebarColor),
+                : (isGlass
+                    ? BoxDecoration(
+                        color: NixColors.surfaceSidebar.withValues(
+                            alpha: InterfaceWallpaperLayer.panelOpacityOf(context)),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: NixColors.surfaceBorderStrong.withValues(alpha: 0.3)),
+                      )
+                    : nixFrameDecoration(context, background: context.surfaceSidebarColor)),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: IconButton(
+                if (_isVoiceRecording) ...[
+                  SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: IconButton(
+                      key: const Key('voice_cancel_button'),
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
+                      tooltip: 'Cancelar gravação',
+                      onPressed: () => _finishVoiceRecording(send: false),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                      color: Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    durationStr,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onHorizontalDragUpdate: (details) {
+                        if (!_isVoiceLocked) {
+                          setState(() {
+                            _voiceDragDx = (_voiceDragDx + details.delta.dx).clamp(-100.0, 0.0);
+                          });
+                          if (_voiceDragDx <= -50) {
+                            _finishVoiceRecording(send: false);
+                          }
+                        }
+                      },
+                      child: _isVoiceLocked
+                          ? const Text(
+                              'Gravando sem as mãos...',
+                              style: TextStyle(color: Colors.white70, fontSize: 12),
+                            )
+                          : Transform.translate(
+                              offset: Offset(_voiceDragDx.clamp(-40.0, 0.0), 0),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.chevron_left_rounded, size: 16, color: Colors.white38),
+                                  Text(
+                                    _voiceDragDx <= -30 ? 'Solte para cancelar' : 'Deslize para cancelar',
+                                    style: TextStyle(
+                                      color: _voiceDragDx <= -30 ? Colors.redAccent : Colors.white38,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                    ),
+                  ),
+                ] else ...[
+                  SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: IconButton(
                     key: const Key('chat_attach_button'),
                     padding: EdgeInsets.zero,
                     icon: Icon(Icons.attach_file_rounded,
@@ -841,20 +915,22 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     ),
                   ),
                 ),
+                ],
                 const SizedBox(width: 8),
                 Builder(
                   builder: (context) {
                     final hasText = _controller.text.trim().isNotEmpty;
                     final hasAttachments = _pendingAttachments.isNotEmpty;
                     final isEditing = editing != null;
-                    final showSend = isEditing || hasAttachments || hasText;
+                    final isLockedVoice = _isVoiceRecording && _isVoiceLocked;
+                    final showSend = (isEditing || hasAttachments || hasText) && !_isVoiceRecording;
 
-                    if (showSend) {
+                    if (showSend || isLockedVoice) {
                       return Container(
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: accent,
+                          color: isLockedVoice ? Colors.green.shade600 : accent,
                           shape: BoxShape.circle,
                         ),
                         child: IconButton(
@@ -862,22 +938,32 @@ class _ChatInputBarState extends State<ChatInputBar> {
                           padding: EdgeInsets.zero,
                           icon: Icon(
                             isEditing ? Icons.check_rounded : Icons.arrow_upward_rounded,
-                            color: context.onAccentColor,
+                            color: Colors.white,
                             size: 18,
                           ),
-                          tooltip: isEditing
-                              ? 'Salvar Edição'
-                              : (hasAttachments
-                                  ? 'Enviar Anexos Cifrados'
-                                  : 'Transmitir Envelope Cifrado (Enter)'),
-                          onPressed: () => _send(nixState),
+                          tooltip: isLockedVoice
+                              ? 'Enviar Mensagem de Voz'
+                              : (isEditing
+                                  ? 'Salvar Edição'
+                                  : (hasAttachments
+                                      ? 'Enviar Anexos Cifrados'
+                                      : 'Transmitir Envelope Cifrado (Enter)')),
+                          onPressed: () {
+                            if (isLockedVoice) {
+                              _finishVoiceRecording(send: true);
+                            } else {
+                              _send(nixState);
+                            }
+                          },
                         ),
                       );
                     }
 
                     return Tooltip(
                       message: canRecordVoice
-                          ? 'Segure para gravar · Arraste para cima para travar'
+                          ? (_isVoiceRecording
+                              ? 'Arraste para cima para travar · Arraste para esquerda para cancelar'
+                              : 'Segure para gravar · Arraste para cima para travar')
                           : 'Gravação não disponível neste canal',
                       child: GestureDetector(
                         key: const Key('voice_record_button'),
@@ -885,13 +971,19 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         onTap: !canRecordVoice
                             ? null
                             : () {
-                                ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Segure o microfone para gravar áudio · Arraste para cima para travar'),
-                                    duration: Duration(milliseconds: 1800),
-                                  ),
-                                );
+                                if (_isVoiceRecording) {
+                                  setState(() {
+                                    _isVoiceLocked = true;
+                                  });
+                                } else {
+                                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Segure o microfone para gravar áudio · Arraste para cima para travar'),
+                                      duration: Duration(milliseconds: 1800),
+                                    ),
+                                  );
+                                }
                               },
                         onLongPressStart: !canRecordVoice
                             ? null
@@ -928,23 +1020,51 @@ class _ChatInputBarState extends State<ChatInputBar> {
                                   _finishVoiceRecording(send: _voiceRecordingMs >= 800);
                                 }
                               },
-                        child: Container(
-                          width: 36,
-                          height: 36,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: _isVoiceRecording ? 40 : 36,
+                          height: _isVoiceRecording ? 40 : 36,
                           decoration: BoxDecoration(
-                            color: canRecordVoice ? accent : NixColors.surfaceCard,
+                            color: _isVoiceRecording
+                                ? Colors.redAccent
+                                : (canRecordVoice ? accent : NixColors.surfaceCard),
                             shape: BoxShape.circle,
-                            border: canRecordVoice
+                            boxShadow: _isVoiceRecording
+                                ? [
+                                    BoxShadow(
+                                      color: Colors.redAccent.withValues(alpha: 0.5),
+                                      blurRadius: 10,
+                                      spreadRadius: 2,
+                                    ),
+                                  ]
+                                : null,
+                            border: canRecordVoice && !_isVoiceRecording
                                 ? null
-                                : Border.all(color: NixColors.surfaceBorder),
+                                : Border.all(color: _isVoiceRecording ? Colors.white70 : NixColors.surfaceBorder),
                           ),
                           alignment: Alignment.center,
-                          child: Icon(
-                            Icons.mic_rounded,
-                            size: 20,
-                            color: canRecordVoice
-                                ? context.onAccentColor
-                                : NixColors.textMuted,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Icon(
+                                Icons.mic_rounded,
+                                size: _isVoiceRecording ? 22 : 20,
+                                color: _isVoiceRecording
+                                    ? Colors.white
+                                    : (canRecordVoice
+                                        ? context.onAccentColor
+                                        : NixColors.textMuted),
+                              ),
+                              if (_isVoiceRecording && _voiceDragDy <= -20)
+                                Positioned(
+                                  top: 2,
+                                  child: Icon(
+                                    Icons.lock_open_rounded,
+                                    size: 10,
+                                    color: _voiceDragDy <= -40 ? Colors.white : Colors.white70,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ),
@@ -959,121 +1079,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     );
   }
 
-  Widget _buildVoiceRecordingBar(BuildContext context, NixState nixState, bool isGlass) {
-    final accent = context.accentColor;
-    final durationSec = (_voiceRecordingMs / 1000).floor();
-    final durationStr =
-        '${(durationSec ~/ 60).toString().padLeft(2, '0')}:${(durationSec % 60).toString().padLeft(2, '0')}';
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(13, 6, 15, 9),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: isGlass
-          ? BoxDecoration(
-              color: NixColors.surfaceSidebar.withValues(
-                  alpha: InterfaceWallpaperLayer.panelOpacityOf(context)),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
-            )
-          : BoxDecoration(
-              color: NixColors.surfaceSidebar,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
-            ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
-            tooltip: 'Cancelar gravação',
-            onPressed: () => _finishVoiceRecording(send: false),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            width: 10,
-            height: 10,
-            decoration: const BoxDecoration(
-              color: Colors.redAccent,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            durationStr,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: _isVoiceLocked
-                ? const Text(
-                    'Gravando sem as mãos...',
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
-                  )
-                : Transform.translate(
-                    offset: Offset(_voiceDragDx.clamp(-40.0, 0.0), 0),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.chevron_left_rounded, size: 16, color: Colors.white38),
-                        Text(
-                          'Deslize para cancelar',
-                          style: TextStyle(color: Colors.white38, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-          ),
-          if (_isVoiceLocked)
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: accent,
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                icon: Icon(Icons.arrow_upward_rounded, color: context.onAccentColor, size: 20),
-                tooltip: 'Enviar mensagem de voz',
-                onPressed: () => _finishVoiceRecording(send: true),
-              ),
-            )
-          else
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.lock_outline_rounded,
-                  size: 16,
-                  color: _voiceDragDy <= -30 ? accent : Colors.white38,
-                ),
-                const SizedBox(height: 2),
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: Colors.redAccent,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.redAccent.withValues(alpha: 0.4),
-                        blurRadius: 10,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                  child: const Center(
-                    child: Icon(Icons.mic_rounded, color: Colors.white, size: 22),
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildAttachmentsPreviewTray(BuildContext context) {
     return Container(

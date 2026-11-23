@@ -382,7 +382,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Insira a URL do manifesto assinado (.onion v3). Todo o download do acervo ocorrerá de forma anônima via Tor.',
+                  'Insira a URL do manifesto assinado (.onion v3 para Tor ou https:// para espelho seguro). Todo pacote tem assinatura Ed25519 verificada.',
                   style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
                 ),
                 const SizedBox(height: 12),
@@ -390,7 +390,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                   controller: textController,
                   style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
                   decoration: InputDecoration(
-                    labelText: 'URL do Manifesto (.onion v3)',
+                    labelText: 'URL do Manifesto (.onion ou https://)',
                     labelStyle: TextStyle(color: NixColors.textSecondary),
                     filled: true,
                     fillColor: NixColors.surfaceSidebar,
@@ -400,20 +400,35 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                     final clean = value?.trim() ?? '';
                     final uri = Uri.tryParse(clean);
                     if (uri == null ||
-                        (uri.scheme != 'http' && uri.scheme != 'https') ||
-                        !TransportPolicy.isValidOnionV3Host(uri.host)) {
-                      return 'URL inválida. Deve ser http(s)://<onion_v3>/...';
+                        (uri.scheme != 'http' && uri.scheme != 'https')) {
+                      return 'URL inválida. Deve começar com http:// ou https://';
+                    }
+                    if (uri.scheme == 'http' && !TransportPolicy.isValidOnionV3Host(uri.host)) {
+                      return 'Conexões HTTP simples são restritas a endereços .onion v3.';
                     }
                     return null;
                   },
                 ),
                 const SizedBox(height: 10),
-                TextButton.icon(
-                  icon: const Icon(Icons.restore_rounded, size: 14),
-                  label: const Text('Restaurar Publicador Oficial Nix', style: TextStyle(fontSize: 11)),
-                  onPressed: () {
-                    textController.text = CatalogPublisherKeyring.defaultOfficialManifestUrl;
-                  },
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    TextButton.icon(
+                      icon: const Icon(Icons.vpn_lock_rounded, size: 14),
+                      label: const Text('Publicador Tor (.onion)', style: TextStyle(fontSize: 11)),
+                      onPressed: () {
+                        textController.text = CatalogPublisherKeyring.defaultOfficialManifestUrl;
+                      },
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.public_rounded, size: 14),
+                      label: const Text('Espelho Oficial HTTPS', style: TextStyle(fontSize: 11)),
+                      onPressed: () {
+                        textController.text = MediaIndexUpdater.officialHttpsManifestUrl;
+                      },
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -476,9 +491,10 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                 final state = context.watch<NixState>();
                 final source = state.catalogManifestUrl;
                 final manifestUri = Uri.tryParse(source);
+                final isHttpsSource = manifestUri != null && manifestUri.scheme == 'https';
                 final configured = manifestUri != null &&
                     (manifestUri.scheme == 'http' || manifestUri.scheme == 'https') &&
-                    TransportPolicy.isValidOnionV3Host(manifestUri.host) &&
+                    (TransportPolicy.isValidOnionV3Host(manifestUri.host) || isHttpsSource) &&
                     manifestUri.userInfo.isEmpty &&
                     !manifestUri.hasFragment;
                 final hasTrustedKey = updateManager.keyring.trustedKeysHex.isNotEmpty;
@@ -487,15 +503,17 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                     !state.enforceStartupGate ||
                     state.embeddedTor.socksPort > 0;
                 final available = configured && hasTrustedKey &&
-                    !state.isStrictOffGridMode && isTorReady;
+                    !state.isStrictOffGridMode && (isTorReady || isHttpsSource);
                 final accent = context.accentTextColor;
                 final errorColor = NixPalette.crimson.readableAccentOn(context.nixScheme);
                 final sourceStatus = !configured
-                    ? 'URL do publicador Onion inválida ou não configurada.'
+                    ? 'URL do publicador inválida ou não configurada.'
                     : !hasTrustedKey
                         ? 'A chave pública do publicador não foi configurada.'
                         : available
-                            ? 'Publicador configurado: ${manifestUri.host}\nConexão via Tor.'
+                            ? (isHttpsSource
+                                ? 'Espelho Oficial HTTPS: ${manifestUri.host}\nConexão segura com assinatura Ed25519.'
+                                : 'Publicador configurado: ${manifestUri.host}\nConexão via Tor.')
                             : state.isStrictOffGridMode
                                 ? 'Atualização remota indisponível no modo off-grid.'
                                 : 'Conecte o Tor para verificar atualizações.';
@@ -584,8 +602,79 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                             style: TextStyle(color: NixColors.textSecondary, fontSize: 13),
                           ),
                           const SizedBox(height: 12),
-                          if (localError != null)
-                            Text(localError!, style: TextStyle(color: errorColor)),
+                          if (localError != null) ...[
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(localError!, style: TextStyle(color: errorColor, fontSize: 12)),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    children: [
+                                      ElevatedButton.icon(
+                                        icon: const Icon(Icons.public_rounded, size: 14),
+                                        label: const Text('Verificar via Espelho HTTPS', style: TextStyle(fontSize: 11)),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.amber,
+                                          foregroundColor: Colors.black,
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                        ),
+                                        onPressed: isUpdating
+                                            ? null
+                                            : () async {
+                                                setDlgState(() => localError = null);
+                                                try {
+                                                  final mirrorUri = Uri.parse(MediaIndexUpdater.officialHttpsManifestUrl);
+                                                  await updateManager.checkForUpdate(manifestUri: mirrorUri, allowClearnet: true);
+                                                } catch (err) {
+                                                  if (ctx.mounted) {
+                                                    setDlgState(() => localError = 'Falha no espelho HTTPS: $err');
+                                                  }
+                                                }
+                                                if (ctx.mounted) setDlgState(() {});
+                                              },
+                                      ),
+                                      OutlinedButton.icon(
+                                        icon: const Icon(Icons.offline_bolt_rounded, size: 14),
+                                        label: const Text('Sincronizar Catálogo Integrado', style: TextStyle(fontSize: 11)),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                        ),
+                                        onPressed: isUpdating
+                                            ? null
+                                            : () async {
+                                                setDlgState(() => localError = null);
+                                                try {
+                                                  final newDb = await updateManager.syncBundledCatalog();
+                                                  await newDb.installBundledMusic();
+                                                  nixState.setCatalogDatabase(newDb);
+                                                  currentVer = await updateManager.getInstalledVersion();
+                                                  history = await updateManager.getVersionHistory();
+                                                  if (mounted) await _executeSearch();
+                                                } catch (err) {
+                                                  if (ctx.mounted) {
+                                                    setDlgState(() => localError = 'Falha ao sincronizar catálogo: $err');
+                                                  }
+                                                }
+                                                if (ctx.mounted) setDlgState(() {});
+                                              },
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
                           if (currentProgress.statusMessage.isNotEmpty) ...[
                             Text(
                               currentProgress.statusMessage,
@@ -744,9 +833,11 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                           setDlgState(() => localError = null);
                           try {
                             useTorPort();
+                            final isHttps = manifestUri.scheme == 'https';
                             final newDb = await updateManager.downloadAndApplyUpdate(
                               manifest: manifest,
                               packageUri: manifestUri.resolve(package),
+                              allowClearnet: isHttps,
                             );
                             await newDb.installBundledMusic();
                             nixState.setCatalogDatabase(newDb);
@@ -770,7 +861,18 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                           setDlgState(() => localError = null);
                           try {
                             useTorPort();
-                            await updateManager.checkForUpdate(manifestUri: manifestUri);
+                            final isHttps = manifestUri.scheme == 'https';
+                            try {
+                              await updateManager.checkForUpdate(manifestUri: manifestUri, allowClearnet: isHttps);
+                            } catch (e) {
+                              if (manifestUri.host.endsWith('.onion')) {
+                                setDlgState(() => localError =
+                                    'Publicador Onion v3 offline ou sem circuito Tor ativo ($e).\n'
+                                    'Você pode verificar via Espelho Seguro HTTPS ou Catálogo Integrado.');
+                              } else {
+                                rethrow;
+                              }
+                            }
                           } catch (e) {
                             if (ctx.mounted) {
                               setDlgState(() => localError = 'Falha ao verificar atualizações: $e');
