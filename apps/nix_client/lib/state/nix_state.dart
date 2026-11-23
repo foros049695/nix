@@ -4806,6 +4806,38 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Importa transacionalmente itens de coleção pessoal (Letterboxd, Goodreads, MAL, CSV/HTML)
+  /// preservando a privacidade local no cofre cifrado.
+  int importCulturalItems(List<CulturalItem> importedItems, {bool skipDuplicates = true}) {
+    final existingTitles = _userProfile.culturalItems.map((i) => i.title.trim().toLowerCase()).toSet();
+    final toAdd = <CulturalItem>[];
+    for (final item in importedItems) {
+      if (skipDuplicates && existingTitles.contains(item.title.trim().toLowerCase())) {
+        continue;
+      }
+      toAdd.add(item);
+    }
+    if (toAdd.isEmpty) return 0;
+
+    final updated = List<CulturalItem>.from(_userProfile.culturalItems)..addAll(toAdd);
+    _userProfile = _userProfile.copyWith(culturalItems: updated);
+    if (_mediaRepo != null) {
+      for (final item in toAdd) {
+        unawaited(_mediaRepo!.upsertMediaItem(
+          id: item.id,
+          kind: _mapMediaKind(item.category),
+          title: item.title,
+          metadata: item.toJson(),
+          source: 'import_collection',
+          sourceId: item.id,
+        ));
+      }
+    }
+    _persistState();
+    notifyListeners();
+    return toAdd.length;
+  }
+
   void updateCulturalItem(CulturalItem updatedItem) {
     final updated = _userProfile.culturalItems.map((item) {
       return item.id == updatedItem.id ? updatedItem : item;

@@ -16,6 +16,7 @@ import '../design/nix_glass.dart';
 import '../design/nix_surfaces.dart';
 import 'cultural_catalog_picker.dart';
 import 'cultural_cover_art.dart';
+import 'collection_import_dialog.dart';
 
 class CulturalShowcase extends StatefulWidget {
   const CulturalShowcase({super.key});
@@ -77,6 +78,12 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                 onPressed: () => _edit(),
                 icon: const Icon(Icons.add_rounded, size: 18),
                 label: const Text('Adicionar ao Acervo'),
+              ),
+              OutlinedButton.icon(
+                key: const Key('import_collection_button'),
+                onPressed: () => CollectionImportDialog.show(context),
+                icon: const Icon(Icons.file_upload_outlined, size: 18),
+                label: const Text('Importar coleção'),
               ),
             ]),
             if (items.isNotEmpty) ...[
