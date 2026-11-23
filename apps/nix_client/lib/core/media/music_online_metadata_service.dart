@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:nix_transport/nix_transport.dart';
-import 'dart:io';
 import 'catalog_database.dart';
 
 typedef OnlineMusicQueryHandler = Future<String> Function({

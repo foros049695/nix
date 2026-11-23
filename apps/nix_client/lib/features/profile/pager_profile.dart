@@ -9,7 +9,6 @@ import '../../core/security/file_picker_adapter.dart';
 import '../../core/security/local_image_helper.dart';
 import '../../core/security/sovereign_security_gate.dart';
 import '../../core/theme/nix_tokens.dart';
-import '../../core/media/pager_playlist.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_bilingual_label.dart';
 import 'cultural_showcase.dart';
