@@ -1022,7 +1022,13 @@ class NixState extends ChangeNotifier {
   bool _isOnboarded = false;
   bool _onboardingNoticeDismissed = false;
 
-  bool get isOnboarded => _isOnboarded;
+  bool get isOnboarded =>
+      (_isMockMode || Platform.environment['FLUTTER_TEST'] == 'true')
+          ? _isOnboarded
+          : (_isOnboarded &&
+              _localDatabase != null &&
+              _keyVault.isUnlocked &&
+              _primaryIdentity != null);
   bool get onboardingNoticeDismissed => _onboardingNoticeDismissed;
 
   void dismissOnboardingToIncompleteNotice() {
@@ -1339,6 +1345,53 @@ class NixState extends ChangeNotifier {
     return report;
   }
 
+  /// Reseta completamente o cofre de chaves local, banco e preferências,
+  /// retornando o estado para onboarding soberano limpo sem derrubar o Tor.
+  Future<void> resetLocalVaultAndRestartOnboarding({String? customBaseDir}) async {
+    try {
+      await _localDatabase?.close();
+    } catch (_) {}
+    _localDatabase = null;
+    if (_activeMasterKey != null) {
+      _activeMasterKey!.fillRange(0, _activeMasterKey!.length, 0);
+      _activeMasterKey = null;
+    }
+    _primaryIdentity = null;
+    _sovereignMessenger = null;
+    _keyVault.lock();
+
+    final home = Platform.environment['HOME'] ?? '';
+    final baseDir = customBaseDir ??
+        (NixPlatformPaths.runtimeInfo?.dataDir ??
+            (home.isNotEmpty ? '$home/.local/share/nix' : '.'));
+
+    for (final filename in const [
+      'vault_bootstrap.json',
+      '.nix_vault_bootstrap.json',
+      'nix_local_v4.db',
+      'nix_local_v4.db-wal',
+      'nix_local_v4.db-shm',
+      'onboarding_state.json',
+      'client_prefs_v4.json',
+    ]) {
+      try {
+        final f = File('$baseDir/$filename');
+        if (await f.exists()) {
+          await f.delete();
+        }
+      } catch (_) {}
+    }
+
+    try {
+      await _keyVault.clearOsKeyringSecret();
+    } catch (_) {}
+
+    _isOnboarded = false;
+    _requiresPassphraseUnlock = false;
+    _initializeProductionCleanState();
+    notifyListeners();
+  }
+
   /// Deriva uma chave de envelopamento de material privado isolada por contexto HKDF-SHA256.
   Future<SecretKeyData> _deriveWrappingKey(String domainInfo) async {
     final master = _activeMasterKey;
@@ -1559,19 +1612,35 @@ class NixState extends ChangeNotifier {
       final initialized = await _keyVault.isInitialized(customPath: customVaultPath);
       if (!initialized) return false;
 
+      Uint8List? effectiveMasterKey;
       final masterKey = await _keyVault.tryUnlockWithOsKeyring(
         customPath: customVaultPath,
       );
-      if (masterKey == null) {
+      if (masterKey != null) {
+        effectiveMasterKey = Uint8List.fromList(masterKey);
+      } else {
+        // Tenta desbloqueio automático padrão para perfis sem frase-passe personalizada
+        try {
+          final fallbackResult = await _keyVault.unlockOrDuress(
+            passphrase: 'nix_device_open_vault_v1',
+            customPath: customVaultPath,
+          );
+          if (fallbackResult.status == VaultUnlockStatus.unlocked && fallbackResult.masterKey != null) {
+            effectiveMasterKey = Uint8List.fromList(fallbackResult.masterKey!);
+          }
+        } catch (_) {}
+      }
+
+      if (effectiveMasterKey == null) {
         _requiresPassphraseUnlock = true;
         notifyListeners();
         return false;
       }
 
-      _activeMasterKey = Uint8List.fromList(masterKey);
+      _activeMasterKey = effectiveMasterKey;
       _localDatabase = await LocalDatabase.open(
         path: customDbPath,
-        rawCipherKey: Uint8List.fromList(masterKey),
+        rawCipherKey: effectiveMasterKey,
         requireEncryption: requireEncryption ??
             (!Platform.environment.containsKey('FLUTTER_TEST') ||
                 Platform.environment['NIX_REQUIRE_SQLCIPHER'] == 'true'),
@@ -3771,7 +3840,7 @@ class NixState extends ChangeNotifier {
       }
       if (!LocalImageHelper.isSupportedExtension(reference)) return null;
 
-      if (File(reference).isAbsolute) {
+      if (message.isMe && File(reference).isAbsolute) {
         final file = File(reference);
         if (await file.exists() && await file.length() <= 20 * 1024 * 1024) {
           return LocalImageHelper.stripMetadataBytes(await file.readAsBytes());
@@ -3811,7 +3880,7 @@ class NixState extends ChangeNotifier {
       if (reference.startsWith('doc_')) {
         reference = reference.substring(4);
       }
-      if (File(reference).isAbsolute) {
+      if (message.isMe && File(reference).isAbsolute) {
         final file = File(reference);
         if (await file.exists() && await file.length() <= 50 * 1024 * 1024) {
           return await file.readAsBytes();

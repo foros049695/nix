@@ -598,7 +598,15 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
                     );
                     if (mounted && confirmed == true) {
                       setState(() => _busy = true);
-                      await widget.nixState.panicWipeAllData();
+                      try {
+                        await widget.nixState.resetLocalVaultAndRestartOnboarding();
+                      } catch (e) {
+                        debugPrint('[ResetVault] Falha ao resetar cofre local: $e');
+                      } finally {
+                        if (mounted) {
+                          setState(() => _busy = false);
+                        }
+                      }
                     }
                   },
             child: Text(
@@ -925,6 +933,37 @@ class _SovereignSecurityGateViewState
                       style: const TextStyle(fontSize: 12),
                     ),
                   ),
+                  if (!gate.isCryptographyReady)
+                    TextButton(
+                      onPressed: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            backgroundColor: NixColors.surfaceCard,
+                            title: Text('Reiniciar Onboarding / Limpar Cofre Local?',
+                                style: TextStyle(color: NixColors.textPrimary, fontSize: 14)),
+                            content: Text(
+                                'Isso limpará dados de cofre inconsistentes deste dispositivo para que você possa iniciar um novo onboarding ou restaurar com suas 24 palavras (Seed A).',
+                                style: TextStyle(color: NixColors.textSecondary, fontSize: 12)),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(ctx).pop(false),
+                                child: const Text('Cancelar'),
+                              ),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                                onPressed: () => Navigator.of(ctx).pop(true),
+                                child: const Text('Limpar e Reiniciar'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmed == true && context.mounted) {
+                          await widget.nixState.resetLocalVaultAndRestartOnboarding();
+                        }
+                      },
+                      child: const Text('Limpar Cofre / Reiniciar', style: TextStyle(color: Colors.redAccent, fontSize: 11.5)),
+                    ),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

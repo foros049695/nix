@@ -351,6 +351,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
             _CulturalItemEditor(existing: existing, draft: draft, work: work),
       );
 
+  // ignore: unused_element
   Future<void> _showGallery(List<CulturalItem> items, int index) async {
     final edit = await showDialog<CulturalItem>(
       context: context,

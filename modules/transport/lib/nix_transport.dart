@@ -723,8 +723,11 @@ class SocksSocket extends Stream<Uint8List> implements Socket {
   /// Delega chamadas internas do Dart SDK (ex: `_detachRaw` em `SecureSocket.secure`).
   @override
   dynamic noSuchMethod(Invocation invocation) {
+    final member = invocation.memberName.toString();
     if (invocation.memberName == #_detachRaw ||
-        invocation.memberName == const Symbol('_detachRaw')) {
+        invocation.memberName == const Symbol('_detachRaw') ||
+        member.contains('_detachRaw') ||
+        member.contains('detachRaw')) {
       try {
         // ignore: avoid_dynamic_calls
         return (_rawSocket as dynamic)._detachRaw();

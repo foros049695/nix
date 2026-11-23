@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import '../../core/models/cultural_item.dart';
 import '../../core/models/cultural_tracking.dart';
 import '../../core/theme/nix_colors.dart';
-import '../../core/theme/nix_tokens.dart';
-import '../design/nix_glass.dart';
 
 /// Opções de filtragem avançada de múltiplas seleções do Acervo Cultural (Seção 1).
 class CulturalFilterOptions {

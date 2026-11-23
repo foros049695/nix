@@ -315,13 +315,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
     await _persistCheckpoint();
   }
 
-  String _generateRandomHexPassphrase() {
-    final rng = Random.secure();
-    return List.generate(
-      32,
-      (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0'),
-    ).join();
-  }
+  static const String defaultOpenPassphrase = 'nix_device_open_vault_v1';
 
   Future<void> _generatePrivateIdentity() async {
     final userPassphrase = _passphraseController.text.trim();
@@ -372,7 +366,7 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
       // 3. Inicializa o cofre KeyVault (Argon2id + XChaCha20-Poly1305) e banco SQLCipher
       final effectivePassphrase = userPassphrase.isNotEmpty
           ? userPassphrase
-          : _generateRandomHexPassphrase();
+          : defaultOpenPassphrase;
       final effectiveBindKeyring = userPassphrase.isEmpty
           ? true
           : _bindToOsKeyring &&
@@ -439,128 +433,27 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
   }
 
   Future<void> _showRestoreFromSeedDialog() async {
-    final seedInputCtrl = TextEditingController();
-    final passInputCtrl = TextEditingController();
-    String? errorMsg;
-    bool busy = false;
-
     await showDialog<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          backgroundColor: NixColors.surfaceCard,
-          title: Text(
-            'Recuperar Identidade (Seed A - 24 palavras)',
-            style: TextStyle(color: NixColors.textPrimary, fontSize: 15, fontWeight: FontWeight.bold),
-          ),
-          content: SizedBox(
-            width: 460,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Cole ou digite as 24 palavras da sua Seed A separadas por espaços para restaurar deterministicamente suas chaves Ed25519/X25519 e Public ID.',
-                  style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: seedInputCtrl,
-                  maxLines: 3,
-                  style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5, fontFamily: 'monospace'),
-                  decoration: InputDecoration(
-                    labelText: 'Frase mnemônica (24 palavras)',
-                    hintText: 'ex: abandon ability able ...',
-                    errorText: errorMsg,
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: passInputCtrl,
-                  obscureText: true,
-                  style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5),
-                  decoration: const InputDecoration(
-                    labelText: 'Nova frase-passe do cofre local (opcional)',
-                    hintText: 'Vazio = proteção automática via chaveiro do SO',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: busy ? null : () => Navigator.of(ctx).pop(),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton.icon(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      final words = seedInputCtrl.text
-                          .trim()
-                          .split(RegExp(r'\s+'))
-                          .where((w) => w.isNotEmpty)
-                          .toList();
-                      if (!SeedRecoveryManager.validateMnemonic(words)) {
-                        setDlgState(() => errorMsg = 'Frase inválida: verifique as 24 palavras e o checksum.');
-                        return;
-                      }
-                      setDlgState(() {
-                        busy = true;
-                        errorMsg = null;
-                      });
-                      try {
-                        final identity = await SeedRecoveryManager.deriveIdentityFromMnemonic(words);
-                        final customPass = passInputCtrl.text.trim();
-                        final pass = customPass.isNotEmpty ? customPass : _generateRandomHexPassphrase();
-                        final dbOk = await widget.nixState.initializeEncryptedDatabase(
-                          passphrase: pass,
-                          bindToOsKeyring: customPass.isEmpty,
-                          overwriteExistingVault: true,
-                        );
-                        if (!dbOk) {
-                          setDlgState(() {
-                            busy = false;
-                            errorMsg = 'Falha ao abrir banco cifrado local.';
-                          });
-                          return;
-                        }
-                        await widget.nixState.persistPrimaryIdentity(
-                          identity: identity,
-                          displayName: _displayNameController.text.trim(),
-                          avatarStyle: _selectedAvatarStyle,
-                        );
-                        if (!mounted) return;
-                        setState(() {
-                          _generatedIdentity = identity;
-                          _seedWords = words;
-                          _derivedPublicId = identity.publicId;
-                          _paperBackupConfirmed = true;
-                          _challengePassed = true;
-                          _torConsentChecked = true;
-                          _diagnosticsLogs.add('[Recuperação] Seed A restaurada com ID ${identity.publicId}.');
-                        });
-                        if (ctx.mounted) Navigator.of(ctx).pop();
-                        _goToStep(OnboardingStep.profileSetup);
-                      } catch (e) {
-                        setDlgState(() {
-                          busy = false;
-                          errorMsg = 'Erro na derivação: $e';
-                        });
-                      }
-                    },
-              style: ElevatedButton.styleFrom(backgroundColor: NixColors.accentPrimary),
-              icon: const Icon(Icons.restore_rounded, color: Colors.black, size: 17),
-              label: Text('Restaurar Conta', style: TextStyle(color: context.onAccentColor, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
+      builder: (ctx) => _RestoreFromSeedDialog(
+        nixState: widget.nixState,
+        displayName: _displayNameController.text.trim(),
+        selectedAvatarStyle: _selectedAvatarStyle,
+        onRestored: (identity, words) {
+          if (!mounted) return;
+          setState(() {
+            _generatedIdentity = identity;
+            _seedWords = words;
+            _derivedPublicId = identity.publicId;
+            _paperBackupConfirmed = true;
+            _challengePassed = true;
+            _torConsentChecked = true;
+            _diagnosticsLogs.add('[Recuperação] Seed A restaurada com ID ${identity.publicId}.');
+          });
+          _goToStep(OnboardingStep.profileSetup);
+        },
       ),
     );
-    seedInputCtrl.dispose();
-    passInputCtrl.dispose();
   }
 
   void _verifyBackupChallenge() {
@@ -1879,5 +1772,171 @@ class _SovereignOnboardingFlowState extends State<SovereignOnboardingFlow> {
         _finishOnboarding();
         break;
     }
+  }
+}
+
+class _RestoreFromSeedDialog extends StatefulWidget {
+  final NixState nixState;
+  final String displayName;
+  final String selectedAvatarStyle;
+  final void Function(NixIdentity identity, List<String> words) onRestored;
+
+  const _RestoreFromSeedDialog({
+    required this.nixState,
+    required this.displayName,
+    required this.selectedAvatarStyle,
+    required this.onRestored,
+  });
+
+  @override
+  State<_RestoreFromSeedDialog> createState() => _RestoreFromSeedDialogState();
+}
+
+class _RestoreFromSeedDialogState extends State<_RestoreFromSeedDialog> {
+  late final TextEditingController _seedInputCtrl;
+  late final TextEditingController _passInputCtrl;
+  String? _errorMsg;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _seedInputCtrl = TextEditingController();
+    _passInputCtrl = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _seedInputCtrl.dispose();
+    _passInputCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: NixColors.surfaceCard,
+      title: Text(
+        'Recuperar Identidade (Seed A - 24 palavras)',
+        style: TextStyle(
+          color: NixColors.textPrimary,
+          fontSize: 15,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Cole ou digite as 24 palavras da sua Seed A separadas por espaços para restaurar deterministicamente suas chaves Ed25519/X25519 e Public ID.',
+              style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _seedInputCtrl,
+              maxLines: 3,
+              style: TextStyle(
+                color: NixColors.textPrimary,
+                fontSize: 12.5,
+                fontFamily: 'monospace',
+              ),
+              decoration: InputDecoration(
+                labelText: 'Frase mnemônica (24 palavras)',
+                hintText: 'ex: abandon ability able ...',
+                errorText: _errorMsg,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _passInputCtrl,
+              obscureText: true,
+              style: TextStyle(color: NixColors.textPrimary, fontSize: 12.5),
+              decoration: const InputDecoration(
+                labelText: 'Nova frase-passe do cofre local (opcional)',
+                hintText: 'Vazio = proteção automática via chaveiro do SO',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton.icon(
+          onPressed: _busy
+              ? null
+              : () async {
+                  final words = _seedInputCtrl.text
+                      .trim()
+                      .split(RegExp(r'\s+'))
+                      .where((w) => w.isNotEmpty)
+                      .toList();
+                  if (!SeedRecoveryManager.validateMnemonic(words)) {
+                    setState(() => _errorMsg =
+                        'Frase inválida: verifique as 24 palavras e o checksum.');
+                    return;
+                  }
+                  setState(() {
+                    _busy = true;
+                    _errorMsg = null;
+                  });
+                  try {
+                    final identity =
+                        await SeedRecoveryManager.deriveIdentityFromMnemonic(words);
+                    final customPass = _passInputCtrl.text.trim();
+                    final pass = customPass.isNotEmpty
+                        ? customPass
+                        : _SovereignOnboardingFlowState.defaultOpenPassphrase;
+                    final dbOk = await widget.nixState.initializeEncryptedDatabase(
+                      passphrase: pass,
+                      bindToOsKeyring: customPass.isEmpty,
+                      overwriteExistingVault: true,
+                    );
+                    if (!dbOk) {
+                      if (mounted) {
+                        setState(() {
+                          _busy = false;
+                          _errorMsg = 'Falha ao abrir banco cifrado local.';
+                        });
+                      }
+                      return;
+                    }
+                    await widget.nixState.persistPrimaryIdentity(
+                      identity: identity,
+                      displayName: widget.displayName,
+                      avatarStyle: widget.selectedAvatarStyle,
+                    );
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                    }
+                    widget.onRestored(identity, words);
+                  } catch (e) {
+                    if (mounted) {
+                      setState(() {
+                        _busy = false;
+                        _errorMsg = 'Erro na derivação: $e';
+                      });
+                    }
+                  }
+                },
+          style: ElevatedButton.styleFrom(backgroundColor: NixColors.accentPrimary),
+          icon: const Icon(Icons.restore_rounded, color: Colors.black, size: 17),
+          label: Text(
+            'Restaurar Conta',
+            style: TextStyle(
+              color: context.onAccentColor,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
