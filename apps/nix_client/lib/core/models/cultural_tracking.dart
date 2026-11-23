@@ -72,4 +72,28 @@ class CulturalTracking {
       privateNotes: json['privateNotes'] as String? ?? '',
     );
   }
+
+  CulturalTracking copyWith({
+    CulturalStage? stage,
+    int? current,
+    int? total,
+    int? seasonOrVolume,
+    bool? favorite,
+    List<String>? tags,
+    String? collection,
+    String? review,
+    String? privateNotes,
+  }) {
+    return CulturalTracking(
+      stage: stage ?? this.stage,
+      current: current ?? this.current,
+      total: total ?? this.total,
+      seasonOrVolume: seasonOrVolume ?? this.seasonOrVolume,
+      favorite: favorite ?? this.favorite,
+      tags: tags ?? this.tags,
+      collection: collection ?? this.collection,
+      review: review ?? this.review,
+      privateNotes: privateNotes ?? this.privateNotes,
+    );
+  }
 }

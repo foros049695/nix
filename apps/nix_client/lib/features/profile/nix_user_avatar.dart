@@ -34,20 +34,70 @@ class NixUserAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
     final profile = nixState.userProfile;
-    final effectiveBorderColor = borderColor ?? NixColors.surfaceBorderStrong;
+    final frameStyle = nixState.settings.avatarFrameStyle;
+    final userBorderWidth = nixState.settings.avatarBorderWidth;
+    final effectiveWidth = borderWidth != 1.2 ? borderWidth : userBorderWidth;
 
-    final square = nixState.settings.roundedSquareAvatar;
-    final corners = BorderRadius.circular(size * (square ? .24 : .5));
+    Color effectiveBorderColor = borderColor ?? NixColors.surfaceBorderStrong;
+    if (borderColor == null && nixState.settings.avatarFrameColorHex.isNotEmpty) {
+      try {
+        final hex = nixState.settings.avatarFrameColorHex.replaceAll('#', '');
+        effectiveBorderColor = Color(int.parse('FF$hex', radix: 16));
+      } catch (_) {}
+    }
+
+    final isSquare = frameStyle == 'roundedSquare' || nixState.settings.roundedSquareAvatar;
+    final isPixel = frameStyle == 'pixelArt';
+    final isNeon = frameStyle == 'cyberpunkNeon';
+    final isGold = frameStyle == 'goldenBorder';
+    final isPurple = frameStyle == 'nixPurple';
+    final isTactical = frameStyle == 'tactical';
+
+    if (isNeon) {
+      effectiveBorderColor = Colors.cyanAccent;
+    } else if (isGold) {
+      effectiveBorderColor = const Color(0xFFFFD700);
+    } else if (isPurple) {
+      effectiveBorderColor = const Color(0xFFB388FF);
+    } else if (isTactical) {
+      effectiveBorderColor = Colors.tealAccent;
+    }
+
+    final corners = BorderRadius.circular(
+      size * (isPixel ? 0.12 : (isSquare || isNeon || isTactical ? 0.26 : 0.5)),
+    );
+
     Widget avatarCore = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        shape: square ? BoxShape.rectangle : BoxShape.circle,
-        borderRadius: square ? corners : null,
+        shape: (!isSquare && !isPixel && !isNeon && !isTactical)
+            ? BoxShape.circle
+            : BoxShape.rectangle,
+        borderRadius: (!isSquare && !isPixel && !isNeon && !isTactical) ? null : corners,
         color: NixColors.surfaceCard,
         border: showBorder
-            ? Border.all(color: effectiveBorderColor, width: borderWidth)
+            ? Border.all(
+                color: effectiveBorderColor,
+                width: effectiveWidth,
+              )
             : null,
+        boxShadow: isNeon
+            ? [
+                BoxShadow(
+                  color: Colors.cyanAccent.withValues(alpha: 0.6),
+                  blurRadius: 6,
+                  spreadRadius: 1,
+                ),
+              ]
+            : (isGold
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFFFFD700).withValues(alpha: 0.5),
+                      blurRadius: 5,
+                    ),
+                  ]
+                : null),
       ),
       clipBehavior: Clip.antiAlias,
       child: _buildAvatarContent(context, profile),

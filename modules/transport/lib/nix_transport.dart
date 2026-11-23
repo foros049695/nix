@@ -719,6 +719,11 @@ class SocksSocket extends Stream<Uint8List> implements Socket {
   InternetAddress get address => _rawSocket.address;
   @override
   InternetAddress get remoteAddress => _rawSocket.remoteAddress;
+
+  /// Delega `_detachRaw` para o socket TCP subjacente quando chamado pelo Dart SDK (ex: SecureSocket.secure).
+  dynamic _detachRaw() {
+    return (_rawSocket as dynamic)._detachRaw();
+  }
 }
 
 /// Cliente para a ControlPort do daemon Tor (autenticação, bootstrap e Hidden Services v3).

@@ -547,19 +547,23 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    // Compositor completo presente em Mensagens Salvas
+    // Compositor dinâmico presente em Mensagens Salvas: campo vazio exibe botão de voz
     expect(find.byKey(const Key('chat_attach_button')), findsOneWidget);
     expect(find.byKey(const Key('chat_timer_button')), findsOneWidget);
     expect(find.byKey(const Key('emoji_picker_toggle_button')), findsOneWidget);
     expect(find.byKey(const Key('chat_message_input')), findsOneWidget);
     expect(find.byKey(const Key('voice_record_button')), findsOneWidget);
-    expect(find.byKey(const Key('chat_send_button')), findsOneWidget);
+    expect(find.byKey(const Key('chat_send_button')), findsNothing);
 
     // Clica no botão de anexo (simulado em teste)
     await tester.tap(find.byKey(const Key('chat_attach_button')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Arquivos'));
+    await tester.tap(find.byKey(const Key('attach_option_documents')));
     await tester.pumpAndSettle();
+
+    // Com anexo selecionado, botão alterna automaticamente para envio
+    expect(find.byKey(const Key('chat_send_button')), findsOneWidget);
+    expect(find.byKey(const Key('voice_record_button')), findsNothing);
 
     // Bandeja de anexo exibe o arquivo selecionado com botão de remover
     expect(find.text('documento_seguro.pdf'), findsOneWidget);

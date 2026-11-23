@@ -129,6 +129,9 @@ class UserSettings {
   final bool reducedMotion;
   final bool hidePagerAvatar;
   final bool roundedSquareAvatar;
+  final String avatarFrameStyle;
+  final double avatarBorderWidth;
+  final String avatarFrameColorHex;
   final double pagerWallpaperShade;
   final double pagerWallpaperBlur;
   final bool pagerWallpaperAcrossPages;
@@ -236,6 +239,9 @@ class UserSettings {
     this.reducedMotion = false,
     this.hidePagerAvatar = false,
     this.roundedSquareAvatar = false,
+    this.avatarFrameStyle = 'circle',
+    this.avatarBorderWidth = 1.5,
+    this.avatarFrameColorHex = '',
     this.pagerWallpaperShade = 0,
     this.pagerWallpaperBlur = 0,
     this.pagerWallpaperAcrossPages = false,
@@ -302,6 +308,9 @@ class UserSettings {
     bool? reducedMotion,
     bool? hidePagerAvatar,
     bool? roundedSquareAvatar,
+    String? avatarFrameStyle,
+    double? avatarBorderWidth,
+    String? avatarFrameColorHex,
     double? pagerWallpaperShade,
     double? pagerWallpaperBlur,
     bool? pagerWallpaperAcrossPages,
@@ -367,6 +376,9 @@ class UserSettings {
       reducedMotion: reducedMotion ?? this.reducedMotion,
       hidePagerAvatar: hidePagerAvatar ?? this.hidePagerAvatar,
       roundedSquareAvatar: roundedSquareAvatar ?? this.roundedSquareAvatar,
+      avatarFrameStyle: avatarFrameStyle ?? this.avatarFrameStyle,
+      avatarBorderWidth: avatarBorderWidth ?? this.avatarBorderWidth,
+      avatarFrameColorHex: avatarFrameColorHex ?? this.avatarFrameColorHex,
       pagerWallpaperShade: pagerWallpaperShade ?? this.pagerWallpaperShade,
       pagerWallpaperBlur: pagerWallpaperBlur ?? this.pagerWallpaperBlur,
       pagerWallpaperAcrossPages: pagerWallpaperAcrossPages ?? this.pagerWallpaperAcrossPages,
@@ -401,6 +413,9 @@ class UserSettings {
         'reducedMotion': reducedMotion,
         'hidePagerAvatar': hidePagerAvatar,
         'roundedSquareAvatar': roundedSquareAvatar,
+        'avatarFrameStyle': avatarFrameStyle,
+        'avatarBorderWidth': avatarBorderWidth,
+        'avatarFrameColorHex': avatarFrameColorHex,
         'pagerWallpaperShade': pagerWallpaperShade,
         'interfaceWallpaper': interfaceWallpaper.toJson(),
         'pagerWallpaperBlur': pagerWallpaperBlur,
@@ -557,6 +572,10 @@ class UserSettings {
       reducedMotion: (json['reducedMotion'] as bool?) ?? false,
       hidePagerAvatar: (json['hidePagerAvatar'] as bool?) ?? false,
       roundedSquareAvatar: json['roundedSquareAvatar'] == true,
+      avatarFrameStyle: (json['avatarFrameStyle'] as String?) ??
+          (json['roundedSquareAvatar'] == true ? 'roundedSquare' : 'circle'),
+      avatarBorderWidth: (json['avatarBorderWidth'] as num?)?.toDouble() ?? 1.5,
+      avatarFrameColorHex: (json['avatarFrameColorHex'] as String?) ?? '',
       interfaceWallpaper: InterfaceWallpaper.fromJson(json['interfaceWallpaper']),
       pagerWallpaperShade: readAvatarValue(json['pagerWallpaperShade'], 0, 0, .75),
       pagerWallpaperBlur: readAvatarValue(json['pagerWallpaperBlur'], 0, 0, 18),

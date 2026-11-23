@@ -10,6 +10,7 @@ import '../design/nix_surfaces.dart';
 import '../design/nix_glass.dart';
 import '../home/home_sidebar.dart';
 import '../members/members_panel.dart';
+import '../media/passport_dex_sheet.dart';
 import '../profile/nix_user_avatar.dart';
 import '../notifications/notification_center_dialog.dart';
 import 'channels_sidebar.dart';
@@ -78,14 +79,24 @@ class NixDesktopWorkspace extends StatelessWidget {
     final isSpace = area == NixActiveArea.spaces;
     final hasSidebar = area != NixActiveArea.explore &&
         !(isSpace && state.currentSpace.isSingleChat);
-    final panel = showInfoPanel
-        ? ConversationInfoPanel(
-            directMessage: isSpace ? null : state.selectedDm,
-            channel: isSpace ? state.currentChannel : null,
+    final activeWork = state.activeWorkDetail;
+    final panel = activeWork != null
+        ? SizedBox(
+            width: 360,
+            child: PassportDexSheet(
+              item: activeWork,
+              isSidebar: true,
+              onClose: state.closeWorkDetail,
+            ),
           )
-        : isSpace && state.isMembersPanelOpen
-            ? const MembersPanel()
-            : null;
+        : showInfoPanel
+            ? ConversationInfoPanel(
+                directMessage: isSpace ? null : state.selectedDm,
+                channel: isSpace ? state.currentChannel : null,
+              )
+            : isSpace && state.isMembersPanelOpen
+                ? const MembersPanel()
+                : null;
     final wallpaperVisible = InterfaceWallpaperLayer.visibleOf(context);
     return Scaffold(
       backgroundColor: wallpaperVisible ? Colors.transparent : null,
@@ -104,7 +115,7 @@ class NixDesktopWorkspace extends StatelessWidget {
                 final width = constraints.maxWidth;
                 final sidebarWidth = state.sidebarWidth
                     .clamp(200.0, width * .30 < 200 ? 200.0 : width * .30);
-                final showSideBySide = panel != null && width >= 1100;
+                final showSideBySide = panel != null && width >= 900;
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(8, 0, 10, 10),
                   child: Row(

@@ -51,15 +51,104 @@ void showProfileAvatarEditor(BuildContext context, NixState state) {
                         TextStyle(color: NixColors.textSecondary, fontSize: 12),
                   ),
                   const SizedBox(height: 14),
-                  SwitchListTile(
-                    title: const Text('Moldura quadrada arredondada'),
-                    value: state.settings.roundedSquareAvatar,
-                    onChanged: (value) {
-                      state.updateSettings(state.settings.copyWith(roundedSquareAvatar: value));
-                      setModalState(() {});
-                    },
-                    contentPadding: EdgeInsets.zero,
+                  Text('Estilo da Moldura do Avatar', style: NixTokens.labelUppercase()),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _frameChip(
+                        label: 'Circular',
+                        keyName: 'circle',
+                        current: state.settings.avatarFrameStyle,
+                        onSelected: () {
+                          state.updateSettings(state.settings.copyWith(
+                            avatarFrameStyle: 'circle',
+                            roundedSquareAvatar: false,
+                          ));
+                          setModalState(() {});
+                        },
+                      ),
+                      _frameChip(
+                        label: 'Quadrada',
+                        keyName: 'roundedSquare',
+                        current: state.settings.avatarFrameStyle,
+                        onSelected: () {
+                          state.updateSettings(state.settings.copyWith(
+                            avatarFrameStyle: 'roundedSquare',
+                            roundedSquareAvatar: true,
+                          ));
+                          setModalState(() {});
+                        },
+                      ),
+                      _frameChip(
+                        label: 'Pixel Art',
+                        keyName: 'pixelArt',
+                        current: state.settings.avatarFrameStyle,
+                        onSelected: () {
+                          state.updateSettings(state.settings.copyWith(avatarFrameStyle: 'pixelArt'));
+                          setModalState(() {});
+                        },
+                      ),
+                      _frameChip(
+                        label: 'Cyberpunk Neon',
+                        keyName: 'cyberpunkNeon',
+                        current: state.settings.avatarFrameStyle,
+                        onSelected: () {
+                          state.updateSettings(state.settings.copyWith(avatarFrameStyle: 'cyberpunkNeon'));
+                          setModalState(() {});
+                        },
+                      ),
+                      _frameChip(
+                        label: 'Ouro Nobre',
+                        keyName: 'goldenBorder',
+                        current: state.settings.avatarFrameStyle,
+                        onSelected: () {
+                          state.updateSettings(state.settings.copyWith(avatarFrameStyle: 'goldenBorder'));
+                          setModalState(() {});
+                        },
+                      ),
+                      _frameChip(
+                        label: 'Nix Roxo',
+                        keyName: 'nixPurple',
+                        current: state.settings.avatarFrameStyle,
+                        onSelected: () {
+                          state.updateSettings(state.settings.copyWith(avatarFrameStyle: 'nixPurple'));
+                          setModalState(() {});
+                        },
+                      ),
+                      _frameChip(
+                        label: 'Tática',
+                        keyName: 'tactical',
+                        current: state.settings.avatarFrameStyle,
+                        onSelected: () {
+                          state.updateSettings(state.settings.copyWith(avatarFrameStyle: 'tactical'));
+                          setModalState(() {});
+                        },
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Text('Espessura da borda: ', style: TextStyle(fontSize: 12)),
+                      Expanded(
+                        child: Slider(
+                          value: state.settings.avatarBorderWidth,
+                          min: 1.0,
+                          max: 5.0,
+                          divisions: 8,
+                          label: '${state.settings.avatarBorderWidth.toStringAsFixed(1)}px',
+                          onChanged: (val) {
+                            state.updateSettings(state.settings.copyWith(avatarBorderWidth: val));
+                            setModalState(() {});
+                          },
+                        ),
+                      ),
+                      Text('${state.settings.avatarBorderWidth.toStringAsFixed(1)}px', style: const TextStyle(fontSize: 11)),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
                   _avatarOptionTile(
                     ctx: ctx,
                     state: state,
@@ -398,5 +487,19 @@ Widget _avatarOptionTile({
         ],
       ),
     ),
+  );
+}
+
+Widget _frameChip({
+  required String label,
+  required String keyName,
+  required String current,
+  required VoidCallback onSelected,
+}) {
+  final isSelected = current == keyName;
+  return ChoiceChip(
+    label: Text(label, style: const TextStyle(fontSize: 11)),
+    selected: isSelected,
+    onSelected: (_) => onSelected(),
   );
 }

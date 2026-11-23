@@ -6,6 +6,11 @@ import 'voice_note_dialog.dart';
 import 'chat_inline_format.dart';
 import 'direct_poll_widgets.dart';
 import 'emoji_catalog.dart';
+import 'chat_attachment_pickers.dart';
+import 'image_quality_dialog.dart';
+import 'offline_location_picker_dialog.dart';
+import 'work_share_card.dart';
+import '../profile/cultural_catalog_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/messaging/scheduled_messages.dart';
@@ -35,7 +40,7 @@ class ChatInputBar extends StatefulWidget {
   State<ChatInputBar> createState() => _ChatInputBarState();
 }
 
-enum _AttachmentSource { photos, files }
+enum _AttachmentOption { media, documents, articles, location, music, acervo }
 
 class _ChatInputBarState extends State<ChatInputBar> {
   final _controller = TextEditingController();
@@ -73,8 +78,27 @@ class _ChatInputBarState extends State<ChatInputBar> {
     '👁️': 'olho privacidade',
   };
 
+  bool _hasText = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _hasText = _controller.text.trim().isNotEmpty;
+    _controller.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    final currentHasText = _controller.text.trim().isNotEmpty;
+    if (_hasText != currentHasText && mounted) {
+      setState(() {
+        _hasText = currentHasText;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _focusNode.dispose();
     _keyboardFocusNode.dispose();
@@ -86,49 +110,181 @@ class _ChatInputBarState extends State<ChatInputBar> {
     if (_pickingAttachments) return;
     _pickingAttachments = true;
     try {
-      final source = await showModalBottomSheet<_AttachmentSource>(
+      final source = await showModalBottomSheet<_AttachmentOption>(
         context: context,
         showDragHandle: true,
+        backgroundColor: NixColors.surfaceElevatedHigh,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
         builder: (sheet) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('Fotos'),
-                onTap: () => Navigator.pop(sheet, _AttachmentSource.photos),
-              ),
-              ListTile(
-                leading: const Icon(Icons.attach_file),
-                title: const Text('Arquivos'),
-                onTap: () => Navigator.pop(sheet, _AttachmentSource.files),
-              ),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  key: const Key('attach_option_media'),
+                  leading: const Icon(Icons.photo_library_outlined, color: Colors.blueAccent),
+                  title: const Text('Fotos e vídeos'),
+                  subtitle: const Text('Galeria local de imagens e vídeos', style: TextStyle(fontSize: 11)),
+                  onTap: () => Navigator.pop(sheet, _AttachmentOption.media),
+                ),
+                ListTile(
+                  key: const Key('attach_option_documents'),
+                  leading: const Icon(Icons.description_outlined, color: Colors.amber),
+                  title: const Text('Documentos e Arquivos'),
+                  subtitle: const Text('Arquivos protegidos com verificação SHA-256', style: TextStyle(fontSize: 11)),
+                  onTap: () => Navigator.pop(sheet, _AttachmentOption.documents),
+                ),
+                ListTile(
+                  key: const Key('attach_option_articles'),
+                  leading: const Icon(Icons.auto_stories_outlined, color: Colors.purpleAccent),
+                  title: const Text('Artigos'),
+                  subtitle: const Text('Nix Archive assinado criptograficamente', style: TextStyle(fontSize: 11)),
+                  onTap: () => Navigator.pop(sheet, _AttachmentOption.articles),
+                ),
+                ListTile(
+                  key: const Key('attach_option_location'),
+                  leading: const Icon(Icons.explore_outlined, color: Colors.tealAccent),
+                  title: const Text('Localização'),
+                  subtitle: const Text('Mapa tático offline com marcador manual', style: TextStyle(fontSize: 11)),
+                  onTap: () => Navigator.pop(sheet, _AttachmentOption.location),
+                ),
+                ListTile(
+                  key: const Key('attach_option_music'),
+                  leading: const Icon(Icons.music_note_outlined, color: Colors.cyanAccent),
+                  title: const Text('Música'),
+                  subtitle: const Text('Faixas da playlist local e acervo sonoro', style: TextStyle(fontSize: 11)),
+                  onTap: () => Navigator.pop(sheet, _AttachmentOption.music),
+                ),
+                ListTile(
+                  key: const Key('attach_option_acervo'),
+                  leading: const Icon(Icons.bookmark_outline_rounded, color: Colors.pinkAccent),
+                  title: const Text('Acervo'),
+                  subtitle: const Text('Obras culturais e passaporte PassportDex', style: TextStyle(fontSize: 11)),
+                  onTap: () => Navigator.pop(sheet, _AttachmentOption.acervo),
+                ),
+              ],
+            ),
           ),
         ),
       );
       if (!mounted || source == null) return;
-      final extensions = source == _AttachmentSource.photos
-          ? LocalImageHelper.supportedExtensions
-          : LocalImageHelper.supportedMediaExtensions;
-      List<String> picked;
-      try {
-        picked = await LocalImageHelper.filePickerAdapter.pickAttachments(
-          allowedExtensions: extensions,
-          allowMultiple: true,
-        );
-      } on FilePickerUnavailableException {
-        if (!mounted) return;
-        picked = await CrossPlatformFilePickerAdapter.showPortableFileChooserDialog(
-          context,
-          allowedExtensions: extensions,
-        );
-      }
-      if (source == _AttachmentSource.photos) {
-        picked = picked.where(LocalImageHelper.isSupportedExtension).toList();
-      }
-      if (picked.isNotEmpty && mounted) {
-        setState(() => _pendingAttachments.addAll(picked));
+
+      final nixState = context.read<NixState>();
+
+      switch (source) {
+        case _AttachmentOption.media:
+          final extensions = [
+            ...LocalImageHelper.supportedExtensions,
+            'mp4', 'mkv', 'webm', 'mov', 'avi',
+          ];
+          List<String> picked;
+          try {
+            picked = await LocalImageHelper.filePickerAdapter.pickAttachments(
+              allowedExtensions: extensions,
+              allowMultiple: true,
+            );
+          } on FilePickerUnavailableException {
+            if (!mounted) return;
+            picked = await CrossPlatformFilePickerAdapter.showPortableFileChooserDialog(
+              context,
+              allowedExtensions: extensions,
+            );
+          }
+          if (picked.isEmpty || !mounted) return;
+
+          final isImage = LocalImageHelper.isSupportedExtension(picked.first);
+          if (isImage) {
+            final quality = await ImageQualityDialog.selectQuality(
+              context,
+              filePath: picked.first,
+            );
+            if (quality == null || !mounted) return;
+            if (quality == ImageSendQuality.asFile) {
+              final markedDocs = picked.map((p) => p.startsWith('doc_') ? p : 'doc_$p').toList();
+              setState(() => _pendingAttachments.addAll(markedDocs));
+              return;
+            }
+          }
+          setState(() => _pendingAttachments.addAll(picked));
+
+        case _AttachmentOption.documents:
+          final extensions = LocalImageHelper.supportedMediaExtensions;
+          List<String> picked;
+          try {
+            picked = await LocalImageHelper.filePickerAdapter.pickAttachments(
+              allowedExtensions: extensions,
+              allowMultiple: true,
+            );
+          } on FilePickerUnavailableException {
+            if (!mounted) return;
+            picked = await CrossPlatformFilePickerAdapter.showPortableFileChooserDialog(
+              context,
+              allowedExtensions: extensions,
+            );
+          }
+          if (picked.isNotEmpty && mounted) {
+            setState(() => _pendingAttachments.addAll(picked));
+          }
+
+        case _AttachmentOption.articles:
+          final article = await ArchiveArticlePickerDialog.show(context);
+          if (article != null && mounted) {
+            if (widget.onSendCustom != null) {
+              widget.onSendCustom!(article.toMessageText(), const []);
+            } else {
+              nixState.sendMessage(article.toMessageText());
+            }
+          }
+
+        case _AttachmentOption.location:
+          final loc = await OfflineLocationPickerDialog.show(context);
+          if (loc != null && mounted) {
+            if (widget.onSendCustom != null) {
+              widget.onSendCustom!(loc.toMessageText(), const []);
+            } else {
+              nixState.sendMessage(loc.toMessageText());
+            }
+          }
+
+        case _AttachmentOption.music:
+          final trackName = await ChatMusicPickerDialog.show(context);
+          if (trackName != null && mounted) {
+            final text = 'Música no Pager: $trackName';
+            if (widget.onSendCustom != null) {
+              widget.onSendCustom!(text, const []);
+            } else {
+              nixState.sendMessage(text);
+            }
+          }
+
+        case _AttachmentOption.acervo:
+          final work = await pickCulturalCatalogWork(context);
+          if (work != null && mounted) {
+            final creator = (work.creators != null && work.creators!.trim().isNotEmpty)
+                ? work.creators!.split(',').first.trim()
+                : 'Autor';
+            final parsedGenres = (work.genres != null && work.genres!.trim().isNotEmpty)
+                ? work.genres!.split(',').map((s) => s.trim()).toList()
+                : const ['Geral'];
+            final workData = WorkShareData(
+              id: work.id,
+              title: work.title,
+              originalTitle: work.originalTitle ?? '',
+              creator: creator,
+              year: work.releaseYear ?? 2024,
+              kind: work.kind,
+              rating: 9.4,
+              genres: parsedGenres,
+              synopsis: work.summary ?? '',
+            );
+            if (widget.onSendCustom != null) {
+              widget.onSendCustom!(workData.toMessageText(), const []);
+            } else {
+              nixState.sendMessage(workData.toMessageText());
+            }
+          }
       }
     } on PlatformException catch (error) {
       if (mounted) {
@@ -159,6 +315,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
         nixState.sendMessage(text, attachments: attachments);
       }
       _controller.clear();
+      _hasText = false;
       _pendingAttachments.clear();
       _lastLoadedEditId = null;
       setState(() => _showEmojiPicker = false);
@@ -253,7 +410,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
     final voiceConversation = widget.scheduledConversationId;
-    final canRecordVoice = defaultTargetPlatform == TargetPlatform.android &&
+    final isSupportedVoicePlatform = defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.linux ||
+        defaultTargetPlatform == TargetPlatform.windows;
+    final canRecordVoice = isSupportedVoicePlatform &&
         voiceConversation != null && nixState.canSendVoiceNote(voiceConversation);
 
     final ephemeralTimer = nixState.selectedEphemeralTimer;
@@ -504,6 +664,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       contextMenuBuilder: buildChatFormatMenu,
                       controller: _controller,
                       focusNode: _focusNode,
+                      onChanged: (_) => _onTextChanged(),
                       minLines: 1,
                       maxLines: 4,
                       textInputAction: enterToSend ? TextInputAction.send : TextInputAction.newline,
@@ -543,53 +704,78 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                if (!compact || canRecordVoice) ...[
-                  SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: IconButton(
-                      key: const Key('voice_record_button'),
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.mic_none_rounded, size: 20),
-                      tooltip: canRecordVoice
-                          ? 'Gravar mensagem de voz'
-                          : 'Voz disponível em conversas diretas cifradas no Android',
-                      onPressed: !canRecordVoice ? null : () {
-                        _focusNode.unfocus();
-                        showDialog<void>(
-                          context: context,
-                          barrierDismissible: false,
-                          builder: (_) => VoiceNoteDialog.record(
-                            onSend: (note) => nixState.sendVoiceNote(voiceConversation, note),
+                Builder(
+                  builder: (context) {
+                    final hasText = _controller.text.trim().isNotEmpty;
+                    final hasAttachments = _pendingAttachments.isNotEmpty;
+                    final isEditing = editing != null;
+                    final showSend = isEditing || hasAttachments || hasText;
+
+                    if (showSend) {
+                      return Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: accent,
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          key: const Key('chat_send_button'),
+                          padding: EdgeInsets.zero,
+                          icon: Icon(
+                            isEditing ? Icons.check_rounded : Icons.arrow_upward_rounded,
+                            color: context.onAccentColor,
+                            size: 18,
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                ],
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: accent,
-                    shape: BoxShape.circle,
-                  ),
-                  child: IconButton(
-                    key: const Key('chat_send_button'),
-                    padding: EdgeInsets.zero,
-                    icon: Icon(
-                      editing != null
-                          ? Icons.check_rounded
-                          : Icons.arrow_upward_rounded,
-                      color: context.onAccentColor,
-                      size: 18,
-                    ),
-                    tooltip: editing != null
-                        ? 'Salvar Edição'
-                        : 'Transmitir Envelope Cifrado (Enter)',
-                    onPressed: () => _send(nixState),
-                  ),
+                          tooltip: isEditing
+                              ? 'Salvar Edição'
+                              : (hasAttachments
+                                  ? 'Enviar Anexos Cifrados'
+                                  : 'Transmitir Envelope Cifrado (Enter)'),
+                          onPressed: () => _send(nixState),
+                        ),
+                      );
+                    }
+
+                    return Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: canRecordVoice ? accent : NixColors.surfaceCard,
+                        shape: BoxShape.circle,
+                        border: canRecordVoice
+                            ? null
+                            : Border.all(color: NixColors.surfaceBorder),
+                      ),
+                      child: IconButton(
+                        key: const Key('voice_record_button'),
+                        padding: EdgeInsets.zero,
+                        icon: Icon(
+                          Icons.mic_rounded,
+                          size: 20,
+                          color: canRecordVoice
+                              ? context.onAccentColor
+                              : NixColors.textMuted,
+                        ),
+                        tooltip: canRecordVoice
+                            ? 'Gravar mensagem de voz'
+                            : 'Gravação não disponível neste canal',
+                        onPressed: !canRecordVoice
+                            ? null
+                            : () {
+                                _focusNode.unfocus();
+                                showDialog<void>(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (_) => VoiceNoteDialog.record(
+                                    onSend: (note) => nixState.sendVoiceNote(
+                                        voiceConversation, note),
+                                  ),
+                                );
+                              },
+                      ),
+                    );
+                  },
                 ),
               ],
             ),

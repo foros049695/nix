@@ -829,6 +829,7 @@ class _MoneroOrderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
     final isOwner = order.publicationState == 'local_signed' ||
+        nixState.isMyMoneroOrder(order.id) ||
         (nixState.userProfile.publicId.isNotEmpty &&
             order.traderPublicId == nixState.userProfile.publicId);
     final accent = context.accentColor;

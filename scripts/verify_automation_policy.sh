@@ -46,7 +46,7 @@ if [ -d ".github/workflows" ]; then
 fi
 
 # 3. Verificar scripts e crontabs locais no repositório
-if grep -riE --exclude-dir=".git" --exclude-dir="docs" --exclude="verify_automation_policy.sh" "0 \*/4 \* \* \*" .; then
+if grep -riE --exclude-dir=".git" --exclude-dir="docs" --exclude-dir="build" --exclude-dir=".dart_tool" --exclude="verify_automation_policy.sh" "0 \*/4 \* \* \*" .; then
   echo "❌ [VIOLAÇÃO CRÍTICA] Expressão cron de 4 horas encontrada no repositório!"
   ERRORS=$((ERRORS + 1))
 fi

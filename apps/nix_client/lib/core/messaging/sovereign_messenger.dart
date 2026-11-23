@@ -710,6 +710,13 @@ class SovereignMessenger {
     return bytes == null ? null : VoiceNote.fromWav(bytes);
   }
 
+  Future<Uint8List?> readAttachmentBytes(String messageId, int index) async {
+    return await _readAttachment(messageId, index,
+      accepts: (_, __) => true,
+      maxSize: 50 * 1024 * 1024,
+    );
+  }
+
   Future<Uint8List?> _readAttachment(String messageId, int index, {
     required bool Function(String name, String? mime) accepts,
     required int maxSize,

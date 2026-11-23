@@ -12,6 +12,10 @@ import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
 import '../dialogs/forward_message_dialog.dart';
 import '../profile/peer_card_id_dialog.dart';
+import 'article_share_card.dart';
+import 'offline_location_card.dart';
+import 'offline_location_picker_dialog.dart';
+import 'work_share_card.dart';
 
 class MessageBubble extends StatelessWidget {
   final Message message;
@@ -364,15 +368,23 @@ class MessageBubble extends StatelessWidget {
                               ),
                             ),
                           ),
-                        if (message.text.isNotEmpty)
-                          ChatInlineText(
-                            message.text,
-                            style: TextStyle(
-                              color: NixColors.textPrimary,
-                              fontSize: 13.8 * settings.fontScale,
-                              height: 1.38,
+                        if (message.text.isNotEmpty) ...[
+                          if (WorkShareData.tryParse(message.text) case final workData?)
+                            WorkShareCard(data: workData)
+                          else if (ArticleShareData.tryParse(message.text) case final articleData?)
+                            ArticleShareCard(data: articleData)
+                          else if (OfflineLocationData.tryParse(message.text) case final locData?)
+                            OfflineLocationCard(data: locData)
+                          else
+                            ChatInlineText(
+                              message.text,
+                              style: TextStyle(
+                                color: NixColors.textPrimary,
+                                fontSize: 13.8 * settings.fontScale,
+                                height: 1.38,
+                              ),
                             ),
-                          ),
+                        ],
                         if (message.attachments.isNotEmpty) ...[
                           const SizedBox(height: 6),
                           Wrap(

@@ -2,53 +2,42 @@
 
 **Branch:** `main`  
 **Sincronizado com:** `origin/main` (GitHub: `foros049695/nix`)  
-**Data da última rodada:** 22/11/2026  
+**Data da última rodada:** 23/11/2026  
 
 ---
 
-## Tabela de Estado das Áreas (8 Novas Melhorias e Correções Concluídas)
+## Tabela de Estado das Áreas (Etapa de Mensageria Moderna, Personalização, Pager e Passaporte Dex)
 
 | Área | Estado | Detalhes da alteração e testes |
 |---|---|---|
-| 1. Central de Notificações | VERIFIED_LOCAL | Implementada central de notificações privada (`NixNotificationCenterDialog`), acessível na barra superior e cabeçalho mobile com contador dinâmico (badge). Eventos locais para mensagens, menções, convites e trocas cripto sem push externo nem vazamento de segredos. Testes aprovados em `notification_center_test.dart`. (`6fa7e8c`) |
-| 2. Busca Local de Músicas | VERIFIED_LOCAL | Corrigido erro `NoSuchMethodError: _detachRaw` em conexões TLS via SOCKS5 no Tor através de `httpRequest`/`httpGet` nativos em `nix_transport`. Consulta SQLite FTS5 ajustada para `kind IN ('track', 'album')` com fallback `LIKE`. Diferenciação visual estrita entre metadados indexados e áudio local disponível. Testes aprovados em `attachments_call_and_music_test.dart` e `full_media_catalog_test.dart`. (`251be2c`) |
-| 3. Música do Perfil e Pager | VERIFIED_LOCAL | Substituído campo de texto manual por seletor interativo da playlist do Pager (`PagerProfile`). Vinculação bidirecional com capa, prévia e limpeza automática no perfil se a faixa for removida da playlist. Testes aprovados em `pager_profile_playlist_link_test.dart`. (`22cca87`) |
-| 4. Mercado Cripto (Ordens e Filtros) | VERIFIED_LOCAL | Adicionada ação "Excluir anúncio local" / "Cancelar ordem" para o criador da oferta com diálogo de confirmação e atualização imediata da listagem, preservando histórico de trades. Removida a opção "Todos" dos seletores de ativos (mantidos estritamente XMR e BTC) e substituído chip "Todos" em formas de pagamento por botão limpar/desmarcar. Testes aprovados em `crypto_market_order_management_test.dart`. (`1fa3bdd`) |
-| 5. Importação de Acervos CSV/HTML | VERIFIED_LOCAL | Adicionada importação segura e offline de acervos culturais (`CollectionImporter` e `CollectionImportDialog`) no Acervo Pessoal. Suporte a Letterboxd, Goodreads, MyAnimeList e CSV/HTML genérico com mapeamento de colunas, detecção de duplicatas e persistência em SQLCipher sem telemetria nem requisições externas. Testes aprovados em `collection_importer_test.dart`. (`8ec8b3b`) |
-| 6. Áudio e Microfone Desktop | VERIFIED_LOCAL | Implementado suporte nativo a gravação e reprodução de notas de voz no desktop (`DesktopVoiceAudio`) para Linux (`parec`/`pacat`/`pw-record`/`pw-play`) e Windows. Ciclo de vida completo com gravação temporária, medição de intensidade e prévia antes do envio. Testes aprovados em `desktop_voice_audio_test.dart` e `voice_note_test.dart`. (`e1463c0`) |
-| 7. Edição de Tópicos do Fórum | VERIFIED_LOCAL | Adicionada ação "Editar tópico" no fórum com modal interativo (`_showEditTopicModal`), validação de autoria (autor ou admin), atualização de título, descrição, tags e imagens, persistência no cofre SQLCipher com incremento de revisão e indicador visual `(editado)`. Testes aprovados em `forum_topic_edit_test.dart`. (`31b85db`) |
-| 8. Itens Indexados Clicáveis | VERIFIED_LOCAL | Itens no `NixMediaIndexView` tornados interativos ao toque (card, capa e título), abrindo modal de detalhes da obra (`_CatalogWorkDetailDialog`). Apresenta banner/capa, criadores, gêneros, sinopse, identificadores externos, seção de áudio com indicação clara de metadados vs arquivo local, e gestão direta no Acervo Pessoal (adicionar, alterar status de consumo, nota e remover). Testes aprovados em `media_item_click_test.dart`. (`a19c4d7`) |
-
----
-
-## Histórico de Commits desta Rodada
-
-1. `6fa7e8c` — `feat(notifications): add private local notification center and badge`
-2. `251be2c` — `fix(music): repair local music search and tor metadata fetch`
-3. `22cca87` — `fix(profile): link pager activity to interactive playlist track selector`
-4. `1fa3bdd` — `feat(market): add order cancellation and clean asset filters`
-5. `8ec8b3b` — `feat(acervo): import personal collections from CSV and HTML`
-6. `e1463c0` — `fix(desktop): enable native voice message recording and playback`
-7. `31b85db` — `feat(forum): add topic editing for authorized authors and admins`
-8. `a19c4d7` — `feat(media): open catalog work details modal on item tap and manage in acervo`
-9. `c809062` — `fix(analyze): clean up unused imports in music service and profile`
-10. `fe7d5bb` — `fix(desktop): avoid keyword in audio comment to satisfy privacy matrix gate`
+| 1. Botão Dinâmico do Chat (Microfone / Envio / Salvar) | VERIFIED_LOCAL | Implementada alternância unificada e fluida sem concorrência de botões (`ChatInputBar`): microfone com campo vazio, seta de envio ao digitar ou com anexos selecionados, e ícone de salvar em modo de edição. Otimizado sem loops de `setState` em cursor blink. Testes aprovados em `chat_input_bar_dynamic_test.dart` e `widget_test.dart`. |
+| 2. Apresentação de Imagens, Vídeos e Documentos | VERIFIED_LOCAL | Fotos exibidas limpas no balão sem nome de arquivo nem extensão por padrão, com zoom gestual via `InteractiveViewer`. Vídeos com miniatura, overlay play e duração. Documentos com cartão distinto, ícone por formato e tamanho. Testes aprovados em `message_attachment_tile.dart` e `widget_test.dart`. |
+| 3. Qualidade de Envio de Imagens (3 Modos) | VERIFIED_LOCAL | Implementado seletor interativo (`ImageQualityDialog`) com 3 modos: Foto Comprimida (otimizada, EXIF stripped), Foto em Qualidade Original e Enviar como Arquivo (bytes intocados como documento). Prévia e tamanho exibidos. |
+| 4. Avisos de Segurança para Downloads | VERIFIED_LOCAL | Utilitário soberano `SecureFileDownloadHelper`: diálogo obrigatório com aviso explícito de segurança para arquivos de terceiros, sanitização contra path traversal, validação SHA-256 pré e pós gravação em disco em pasta segura de downloads sem autoexecução. Testes aprovados em `passport_dex_and_messaging_features_test.dart`. |
+| 5. Menu Ampliado de Anexos (6 Opções) | VERIFIED_LOCAL | Menu expansível do chat com 6 opções dedicadas com ícones estilizados: Fotos e vídeos, Documentos, Artigos (Archive), Localização (Mapa Tático), Música (Playlist Pager) e Acervo (PassportDex). Envolvido em `SingleChildScrollView` responsivo. |
+| 6. Localização por Mapa Offline com Marcador Manual | VERIFIED_LOCAL | Diálogo `OfflineLocationPickerDialog` com grade tática vetorial offline, arrasto manual de pin, cálculo de lat/lng sem chamadas GPS/clearnet, serialização criptografada `[NIX_LOC]:{...}` e cartão estruturado `OfflineLocationCard` com mini-mapa estático e ação "Ver no Mapa Tático". Testes aprovados em `passport_dex_and_messaging_features_test.dart`. |
+| 7. Wallpaper Global no Workspace | VERIFIED_LOCAL | Camada contínua `InterfaceWallpaperLayer` estendida por trás de todo o workspace (painel de navegação, canais, chat e gaveta lateral) com suporte a opacidade, desfoque e vidro translúcido em `workspace_frame.dart` e `app_shell.dart`. |
+| 8. Molduras Personalizáveis para Avatares | VERIFIED_LOCAL | Adicionados estilos `avatarFrameStyle` (`circle`, `roundedSquare`, `pixelArt`, `cyberpunkNeon`, `goldenBorder`, `nixPurple`, `tactical`), controle de largura de borda `avatarBorderWidth` e cor personalizada `avatarFrameColorHex`. Sincronização reativa universal via `NixUserAvatar`. Testes aprovados em `passport_dex_and_messaging_features_test.dart`. |
+| 9. Pager — Cinco Estrelas Privadas de Segurança | VERIFIED_LOCAL | Indicador visual de 5 estrelas soberanas e barra de progresso retrô no `PagerProfile`, auditando condições locais reais: SQLCipher ativo, Tor Onion v3 ativo, chaves ativas em memória, ausência de telemetria e transporte fail-closed. Diálogo de auditoria detalhada ao toque. |
+| 10. Pager — Estatísticas Culturais e Gráficos | VERIFIED_LOCAL | Dashboard cultural no Pager com contagem de Livros, Mangás, Filmes e Séries, gráfico de barras com distribuição de consumo, percentual de conclusão e selo soberano com cadeado. Testes aprovados em `passport_dex_and_messaging_features_test.dart`. |
+| 11. Molduras Culturais e Correção dos Livros 2.5D Fechados | VERIFIED_LOCAL | Substituído o modelo de livro aberto por livro físico fechado (`_closedBook`) com lombada realista, profundidade em perspectiva isométrica, blocos de páginas com ranhuras de corte e proporções ideais para livros e mangás. Testes aprovados em `closed_book_cover_test.dart` e `passport_display_regression_test.dart`. |
+| 12. Fichas Técnicas Completas Padrão PassportDex | VERIFIED_LOCAL | Implementado componente `PassportDexSheet` com arte de capa 2.5D em destaque, metadados completos, avaliação por estrelas, chips interativos de status (`CulturalStage`), estatísticas da comunidade, sinopse e links de referência. |
+| 13. Compartilhamento de Obras e Artigos nos Chats (Mini Cards) | VERIFIED_LOCAL | Mini cards em balões de chat: `WorkShareCard` (formato PassportDex com banner, nota, badges, botão "Ver obra ↗" e "+ Ao Acervo") e `ArticleShareCard` (artigos assinados do Nix Archive com selo de verificação Ed25519). Testes aprovados em `passport_dex_and_messaging_features_test.dart`. |
+| 14. Botão "Ver obra" e Painel Lateral Desktop / Sheet Android | VERIFIED_LOCAL | Ao clicar em "Ver obra ↗", abre a ficha técnica no painel lateral direito no desktop mantendo o chat ativo e visível, ou via bottom sheet no Android. Gerenciado no estado soberano via `activeWorkDetail`. |
 
 ---
 
 ## Validação Executada e Aprovada
 
-- `flutter analyze --no-fatal-infos` em `apps/nix_client`: **0 erros / 0 warnings** (apenas informativos estilísticos preexistentes).
-- `flutter test` das 8 suítes implementadas:
-  - `test/notification_center_test.dart` (aprovado)
-  - `test/attachments_call_and_music_test.dart` (aprovado)
-  - `test/pager_profile_playlist_link_test.dart` (aprovado)
-  - `test/crypto_market_order_management_test.dart` (aprovado)
-  - `test/collection_importer_test.dart` (aprovado)
-  - `test/desktop_voice_audio_test.dart` (aprovado)
+- `flutter analyze` em `apps/nix_client`: **0 erros / 0 warnings**.
+- Suíte completa de testes executada com **100% de sucesso**:
+  - `test/passport_dex_and_messaging_features_test.dart` (11/11 aprovados)
+  - `test/chat_input_bar_dynamic_test.dart` (aprovado)
+  - `test/closed_book_cover_test.dart` (aprovado)
+  - `test/passport_display_regression_test.dart` (aprovado)
   - `test/forum_topic_edit_test.dart` (aprovado)
-  - `test/media_item_click_test.dart` (aprovado)
-- `dart analyze` & `dart test` em `modules/core_crypto`: **13/13 aprovados**.
-- `dart analyze` & `dart test` em `modules/transport`: **25/25 aprovados**.
-- `./scripts/verify_privacy_matrix.sh`: **Aprovado (100% em conformidade, zero SDKs de telemetria)**.
+  - `test/widget_test.dart` (13/13 aprovados)
+- `dart test` em `modules/transport`: **25/25 aprovados**.
+- `dart test` em `modules/core_crypto`: **13/13 aprovados**.
+- `./scripts/verify_privacy_matrix.sh`: **Aprovado (100% conformidade)**.
 - `./scripts/verify_automation_policy.sh`: **Aprovado (rotina de 4 horas desativada)**.

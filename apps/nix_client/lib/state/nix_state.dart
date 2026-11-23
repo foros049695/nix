@@ -221,6 +221,18 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
+  CulturalItem? _activeWorkDetail;
+  CulturalItem? get activeWorkDetail => _activeWorkDetail;
+
+  void openWorkDetail(CulturalItem item) {
+    _activeWorkDetail = item;
+    notifyListeners();
+  }
+
+  void closeWorkDetail() {
+    _activeWorkDetail = null;
+    notifyListeners();
+  }
 
   // ViewModels extraídos (Issue #35: decomposição incremental)
   final CallViewModel _calls = CallViewModel();
@@ -1847,10 +1859,11 @@ class NixState extends ChangeNotifier {
     if (rawOrders is List) {
       try {
         for (final item in rawOrders.reversed) {
-          if (item is Map<String, dynamic>) {
-            final order = MoneroP2pOrder.fromJson(item);
+          if (item is Map) {
+            final order = MoneroP2pOrder.fromJson(Map<String, dynamic>.from(item));
             final ok = await SignedMoneroAd.verifyOrderCryptographically(order);
             if (ok && !_moneroOrders.any((o) => o.id == order.id)) {
+              _myMoneroOrderIds.add(order.id);
               _moneroOrders.insert(0, order.copyWith(isSignatureVerified: true));
             }
           }
@@ -3766,6 +3779,22 @@ class NixState extends ChangeNotifier {
     }
   }
 
+  Future<Uint8List?> readMessageAttachmentBytes(Message message, int index) async {
+    if (_disposed || _panicWipe != null || index < 0 || index >= message.attachments.length) return null;
+    try {
+      final reference = message.attachments[index];
+      if (File(reference).isAbsolute) {
+        final file = File(reference);
+        if (await file.exists() && await file.length() <= 50 * 1024 * 1024) {
+          return await file.readAsBytes();
+        }
+      }
+      return await _sovereignMessenger?.readAttachmentBytes(message.id, index);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void>? _interactiveDirectSend;
 
   bool _canSendInteractiveDirect(String conversationId) =>
@@ -4412,7 +4441,12 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
+  final Set<String> _myMoneroOrderIds = <String>{};
+  bool isMyMoneroOrder(String orderId) => _myMoneroOrderIds.contains(orderId);
+
   void createMoneroOrder(MoneroP2pOrder order) {
+    _myMoneroOrderIds.add(order.id);
+    _myMoneroOrderIds.add(order.id);
     _moneroOrders.insert(0, order);
     _moneroFilters.updateOrders(_moneroOrders);
     notifyListeners();
@@ -4471,6 +4505,7 @@ class NixState extends ChangeNotifier {
       );
     }
 
+    _myMoneroOrderIds.add(order.id);
     _moneroOrders.insert(0, order);
     _moneroFilters.updateOrders(_moneroOrders);
     if (_preferencesRepo != null) {
@@ -4492,6 +4527,7 @@ class NixState extends ChangeNotifier {
   Future<bool> cancelOrDeleteMoneroOrder(String orderId) async {
     final idx = _moneroOrders.indexWhere((o) => o.id == orderId);
     if (idx == -1) return false;
+    _myMoneroOrderIds.remove(orderId);
     _moneroOrders.removeAt(idx);
     _moneroFilters.updateOrders(_moneroOrders);
     if (_preferencesRepo != null) {
