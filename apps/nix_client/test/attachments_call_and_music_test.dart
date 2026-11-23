@@ -93,7 +93,8 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 60));
     });
     await tester.pumpAndSettle();
-    expect(find.text('photo.png'), findsOneWidget);
+    // Conforme especificação moderna: fotos não expõem nome do arquivo por padrão nem o caminho
+    expect(find.text('photo.png'), findsNothing);
     expect(find.text(file.path), findsNothing);
     expect(find.byType(Image), findsOneWidget);
   });

@@ -140,14 +140,15 @@ class _ImageQualityDialogState extends State<ImageQualityDialog> {
                     'Trata como documento não renderizado diretamente, preservando nome e bytes exatos.',
               ),
               const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context, null),
                     child: const Text('Cancelar'),
                   ),
-                  const SizedBox(width: 8),
                   FilledButton(
                     key: const Key('confirm_image_quality_button'),
                     onPressed: () => Navigator.pop(context, _selected),

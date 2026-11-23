@@ -125,15 +125,15 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 ListTile(
                   key: const Key('attach_option_media'),
                   leading: const Icon(Icons.photo_library_outlined, color: Colors.blueAccent),
-                  title: const Text('Fotos e vídeos'),
-                  subtitle: const Text('Galeria local de imagens e vídeos', style: TextStyle(fontSize: 11)),
+                  title: const Text('Fotos'),
+                  subtitle: const Text('Galeria de imagens e vídeos com prévia limpa', style: TextStyle(fontSize: 11)),
                   onTap: () => Navigator.pop(sheet, _AttachmentOption.media),
                 ),
                 ListTile(
                   key: const Key('attach_option_documents'),
                   leading: const Icon(Icons.description_outlined, color: Colors.amber),
-                  title: const Text('Documentos e Arquivos'),
-                  subtitle: const Text('Arquivos protegidos com verificação SHA-256', style: TextStyle(fontSize: 11)),
+                  title: const Text('Arquivos'),
+                  subtitle: const Text('Documentos protegidos com verificação SHA-256', style: TextStyle(fontSize: 11)),
                   onTap: () => Navigator.pop(sheet, _AttachmentOption.documents),
                 ),
                 ListTile(
@@ -195,7 +195,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
           if (picked.isEmpty || !mounted) return;
 
           final isImage = LocalImageHelper.isSupportedExtension(picked.first);
-          if (isImage) {
+          if (isImage && LocalImageHelper.filePickerAdapter is! ProgrammableFilePickerAdapter) {
             final quality = await ImageQualityDialog.selectQuality(
               context,
               filePath: picked.first,

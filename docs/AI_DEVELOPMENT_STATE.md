@@ -29,13 +29,18 @@
 
 ## Validação Executada e Aprovada
 
-- `flutter analyze` em `apps/nix_client`: **0 erros / 0 warnings**.
+- `dart analyze` em `modules/transport`: **0 erros / 0 warnings**.
+- `dart analyze` em `modules/core_crypto`: **0 erros / 0 warnings**.
+- `flutter analyze --no-fatal-infos` em `apps/nix_client`: **0 erros / 0 warnings**.
 - Suíte completa de testes executada com **100% de sucesso**:
   - `test/passport_dex_and_messaging_features_test.dart` (11/11 aprovados)
   - `test/chat_input_bar_dynamic_test.dart` (aprovado)
   - `test/closed_book_cover_test.dart` (aprovado)
   - `test/passport_display_regression_test.dart` (aprovado)
-  - `test/forum_topic_edit_test.dart` (aprovado)
+  - `test/forum_topic_edit_test.dart` (3/3 aprovados)
+  - `test/mobile_layout_regression_test.dart` (11/11 aprovados)
+  - `test/attachments_call_and_music_test.dart` (6/6 aprovados)
+  - `test/pager_chat_privacy_regression_test.dart` (4/4 aprovados)
   - `test/widget_test.dart` (13/13 aprovados)
 - `dart test` em `modules/transport`: **25/25 aprovados**.
 - `dart test` em `modules/core_crypto`: **13/13 aprovados**.

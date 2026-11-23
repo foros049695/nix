@@ -556,7 +556,7 @@ class _PagerProfileState extends State<PagerProfile> {
             ],
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 2),
         Row(
           children: [
             Expanded(
@@ -569,6 +569,9 @@ class _PagerProfileState extends State<PagerProfile> {
             ),
             IconButton(
               tooltip: 'Editar nome e biografia',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
               onPressed: () => _showProfileEditor(state),
               icon: const Icon(Icons.edit_outlined, size: 17),
             ),
@@ -613,6 +616,9 @@ class _PagerProfileState extends State<PagerProfile> {
                 IconButton(
                   key: const Key('copy_public_id_button'),
                   tooltip: 'Copiar ID público',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                   onPressed: () => _copyPublicId(profile.publicId),
                   icon: const Icon(Icons.copy_rounded, size: 17),
                 ),
@@ -670,27 +676,31 @@ class _PagerProfileState extends State<PagerProfile> {
       onTap: () => _showSecurityAuditDialog(context, state),
       borderRadius: BorderRadius.circular(4),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (int i = 0; i < 5; i++)
-              Icon(
-                i < score ? Icons.star_rounded : Icons.star_border_rounded,
-                size: 15,
-                color: pagerInk,
+        padding: const EdgeInsets.symmetric(vertical: 1),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (int i = 0; i < 5; i++)
+                Icon(
+                  i < score ? Icons.star_rounded : Icons.star_border_rounded,
+                  size: 13,
+                  color: pagerInk,
+                ),
+              const SizedBox(width: 3),
+              Text(
+                '$score/5',
+                style: const TextStyle(
+                  fontFamily: pagerDisplayFont,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: pagerInk,
+                ),
               ),
-            const SizedBox(width: 4),
-            Text(
-              '$score/5',
-              style: const TextStyle(
-                fontFamily: pagerDisplayFont,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: pagerInk,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -705,13 +715,13 @@ class _PagerProfileState extends State<PagerProfile> {
     final ratio = (score / 5.0).clamp(0.0, 1.0);
 
     return Container(
-      height: 7,
-      width: 130,
+      height: 4,
+      width: 120,
       decoration: BoxDecoration(
-        border: Border.all(color: pagerInk, width: 1),
+        border: Border.all(color: pagerInk, width: 0.8),
         borderRadius: BorderRadius.circular(1),
       ),
-      padding: const EdgeInsets.all(1),
+      padding: const EdgeInsets.all(0.5),
       child: FractionallySizedBox(
         alignment: Alignment.centerLeft,
         widthFactor: ratio,
@@ -802,31 +812,35 @@ class _PagerProfileState extends State<PagerProfile> {
     final percent = totalItems == 0 ? 53 : ((totalCompleted / totalItems) * 100).round();
 
     return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      margin: const EdgeInsets.only(top: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       decoration: BoxDecoration(
         color: const Color(0x1810262D),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(4),
         border: Border.all(color: pagerInk.withValues(alpha: 0.25)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _statCell(Icons.auto_stories_outlined, '${books.length}', 'Livros'),
-              _statCell(Icons.menu_book_rounded, '${manga.length}', 'Mangá'),
-              _statCell(Icons.movie_outlined, '${movies.length}', 'Filmes'),
-              _statCell(Icons.tv_rounded, '${series.length}', 'Séries'),
-              _stampLockCell(context, percent),
-            ],
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.center,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _statCell(Icons.auto_stories_outlined, '${books.length}', 'Livros'),
+                _statCell(Icons.menu_book_rounded, '${manga.length}', 'Mangá'),
+                _statCell(Icons.movie_outlined, '${movies.length}', 'Filmes'),
+                _statCell(Icons.tv_rounded, '${series.length}', 'Séries'),
+                _stampLockCell(context, percent),
+              ],
+            ),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 3),
           ClipRRect(
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: BorderRadius.circular(1.5),
             child: SizedBox(
-              height: 4,
+              height: 3,
               child: Row(
                 children: [
                   Expanded(flex: math.max(1, books.length), child: Container(color: Colors.green.shade800)),
@@ -843,54 +857,59 @@ class _PagerProfileState extends State<PagerProfile> {
   }
 
   Widget _statCell(IconData icon, String count, String label) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: pagerInk),
-        const SizedBox(height: 2),
-        Text(
-          count,
-          style: const TextStyle(
-            fontFamily: pagerDisplayFont,
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            color: pagerInk,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: pagerInk),
+          Text(
+            count,
+            style: const TextStyle(
+              fontFamily: pagerDisplayFont,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: pagerInk,
+            ),
           ),
-        ),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 9.5, color: pagerInk),
-        ),
-      ],
+          Text(
+            label,
+            style: const TextStyle(fontSize: 8, color: pagerInk),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _stampLockCell(BuildContext context, int percent) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 26,
-          height: 26,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: pagerInk, width: 1.2),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: pagerInk, width: 1),
+            ),
+            child: const Center(
+              child: Icon(Icons.lock_outline_rounded, size: 10, color: pagerInk),
+            ),
           ),
-          child: const Center(
-            child: Icon(Icons.lock_outline_rounded, size: 13, color: pagerInk),
+          const SizedBox(height: 1),
+          Text(
+            '$percent%',
+            style: const TextStyle(
+              fontFamily: pagerDisplayFont,
+              fontSize: 9,
+              fontWeight: FontWeight.bold,
+              color: pagerInk,
+            ),
           ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          '$percent%',
-          style: const TextStyle(
-            fontFamily: pagerDisplayFont,
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            color: pagerInk,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -933,7 +952,7 @@ class _PagerPanel extends StatelessWidget {
       child: DefaultTextStyle.merge(
         style: const TextStyle(color: pagerInk),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(13, 4, 13, 5),
+          padding: const EdgeInsets.fromLTRB(13, 2, 13, 2),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -959,20 +978,23 @@ class _PagerPanel extends StatelessWidget {
                       fontSize: 13,
                     ),
                   ),
-                  if (action != null) action! else const SizedBox(height: 48),
+                  if (action != null)
+                    SizedBox(height: 36, child: action!)
+                  else
+                    const SizedBox(height: 36),
                 ],
               ),
               const Divider(color: pagerRule, height: 1),
               Expanded(
                 child: SingleChildScrollView(
                   primary: false,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.fromLTRB(0, 2, 0, 2),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       child,
                       if (footer != null && !fixedFooter) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 3),
                         footer!,
                       ],
                     ],
