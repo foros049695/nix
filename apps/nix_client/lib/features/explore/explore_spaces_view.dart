@@ -1,14 +1,13 @@
-import '../navigation/workspace_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/space.dart';
-import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_glass.dart';
+import '../navigation/interface_wallpaper_layer.dart';
+import '../navigation/workspace_image.dart';
 
-/// Tela Explorar (Discover) — Lista grupos e canais públicos do menos populoso ao mais populoso.
 class ExploreSpacesView extends StatefulWidget {
   const ExploreSpacesView({super.key});
 
@@ -17,29 +16,14 @@ class ExploreSpacesView extends StatefulWidget {
 }
 
 class _ExploreSpacesViewState extends State<ExploreSpacesView> {
-  String _selectedCategory = 'Todos';
-
-  final List<String> _categories = const [
-    'Todos',
-    'Criptografia',
-    'Cultura & Mídia',
-    'Rádio & Hardware',
-    'Infraestrutura',
-    'Finanças XMR',
-    'Arquitetura & Core',
-  ];
-
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
-    final allSpaces = nixState.filteredDiscoverableSpaces;
-
-    final displayedSpaces = _selectedCategory == 'Todos'
-        ? allSpaces
-        : allSpaces.where((s) => s.categoryTag == _selectedCategory).toList();
+    final displayedSpaces = nixState.filteredDiscoverableSpaces;
+    final wallpaperVisible = InterfaceWallpaperLayer.visibleOf(context);
 
     return Container(
-      color: NixColors.background,
+      color: wallpaperVisible ? Colors.transparent : NixColors.background,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -107,27 +91,6 @@ class _ExploreSpacesViewState extends State<ExploreSpacesView> {
                 )),
                 const SizedBox(height: 16),
 
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 4,
-                  children: [
-                    for (final category in _categories)
-                      ChoiceChip(
-                        label: Text(category),
-                        selected: category == _selectedCategory,
-                        selectedColor: context.accentColor,
-                        labelStyle: TextStyle(
-                          color: category == _selectedCategory
-                              ? context.onAccentColor
-                              : NixColors.textSecondary,
-                        ),
-                        onSelected: (_) =>
-                            setState(() => _selectedCategory = category),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
                 // Grade de Cartões de Comunidades Públicas
                 LayoutBuilder(
                   builder: (context, constraints) {
@@ -136,8 +99,9 @@ class _ExploreSpacesViewState extends State<ExploreSpacesView> {
                         : (constraints.maxWidth > 560 ? 2 : 1);
                     final width =
                         (constraints.maxWidth - (cols - 1) * 16) / cols;
-                    if (displayedSpaces.isEmpty)
+                    if (displayedSpaces.isEmpty) {
                       return const Text('Nenhuma comunidade encontrada.');
+                    }
                     return Wrap(
                       spacing: 16,
                       runSpacing: 16,

@@ -807,17 +807,24 @@ class _PagerProfileState extends State<PagerProfile> {
     final movies = items.where((i) => i.category == CulturalCategory.movies).toList();
     final series = items.where((i) => i.category == CulturalCategory.series).toList();
 
+    final booksCompleted = books.where((i) => i.tracking.stage == CulturalStage.finished).length;
+    final mangaCompleted = manga.where((i) => i.tracking.stage == CulturalStage.finished).length;
+    final moviesCompleted = movies.where((i) => i.tracking.stage == CulturalStage.finished).length;
+    final seriesCompleted = series.where((i) => i.tracking.stage == CulturalStage.finished).length;
+
     final totalItems = items.length;
     final totalCompleted = items.where((i) => i.tracking.stage == CulturalStage.finished).length;
-    final percent = totalItems == 0 ? 53 : ((totalCompleted / totalItems) * 100).round();
+    final percent = totalItems == 0 ? 0 : ((totalCompleted / totalItems) * 100).round();
+    final ink = state.settings.pagerLcdColor.inkColor;
+    final isBlack = state.settings.pagerLcdColor.isBlack;
 
     return Container(
       margin: const EdgeInsets.only(top: 2),
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       decoration: BoxDecoration(
-        color: const Color(0x1810262D),
+        color: isBlack ? const Color(0x28FFFFFF) : const Color(0x1810262D),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: pagerInk.withValues(alpha: 0.25)),
+        border: Border.all(color: ink.withValues(alpha: 0.25)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -828,11 +835,11 @@ class _PagerProfileState extends State<PagerProfile> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _statCell(Icons.auto_stories_outlined, '${books.length}', 'Livros'),
-                _statCell(Icons.menu_book_rounded, '${manga.length}', 'Mangá'),
-                _statCell(Icons.movie_outlined, '${movies.length}', 'Filmes'),
-                _statCell(Icons.tv_rounded, '${series.length}', 'Séries'),
-                _stampLockCell(context, percent),
+                _statCell(Icons.auto_stories_outlined, '$booksCompleted', 'Livros', ink),
+                _statCell(Icons.menu_book_rounded, '$mangaCompleted', 'Mangá', ink),
+                _statCell(Icons.movie_outlined, '$moviesCompleted', 'Filmes', ink),
+                _statCell(Icons.tv_rounded, '$seriesCompleted', 'Séries', ink),
+                _stampLockCell(context, percent, ink),
               ],
             ),
           ),
@@ -843,10 +850,10 @@ class _PagerProfileState extends State<PagerProfile> {
               height: 3,
               child: Row(
                 children: [
-                  Expanded(flex: math.max(1, books.length), child: Container(color: Colors.green.shade800)),
-                  Expanded(flex: math.max(1, manga.length), child: Container(color: Colors.orange.shade800)),
-                  Expanded(flex: math.max(1, movies.length), child: Container(color: Colors.blue.shade800)),
-                  Expanded(flex: math.max(1, series.length), child: Container(color: Colors.purple.shade800)),
+                  Expanded(flex: math.max(1, booksCompleted), child: Container(color: Colors.green.shade800)),
+                  Expanded(flex: math.max(1, mangaCompleted), child: Container(color: Colors.orange.shade800)),
+                  Expanded(flex: math.max(1, moviesCompleted), child: Container(color: Colors.blue.shade800)),
+                  Expanded(flex: math.max(1, seriesCompleted), child: Container(color: Colors.purple.shade800)),
                 ],
               ),
             ),
@@ -856,32 +863,32 @@ class _PagerProfileState extends State<PagerProfile> {
     );
   }
 
-  Widget _statCell(IconData icon, String count, String label) {
+  Widget _statCell(IconData icon, String count, String label, [Color ink = pagerInk]) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: pagerInk),
+          Icon(icon, size: 12, color: ink),
           Text(
             count,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: pagerDisplayFont,
               fontSize: 11,
               fontWeight: FontWeight.bold,
-              color: pagerInk,
+              color: ink,
             ),
           ),
           Text(
             label,
-            style: const TextStyle(fontSize: 8, color: pagerInk),
+            style: TextStyle(fontSize: 8, color: ink),
           ),
         ],
       ),
     );
   }
 
-  Widget _stampLockCell(BuildContext context, int percent) {
+  Widget _stampLockCell(BuildContext context, int percent, [Color ink = pagerInk]) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3),
       child: Column(
@@ -892,20 +899,20 @@ class _PagerProfileState extends State<PagerProfile> {
             height: 20,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: pagerInk, width: 1),
+              border: Border.all(color: ink, width: 1),
             ),
-            child: const Center(
-              child: Icon(Icons.lock_outline_rounded, size: 10, color: pagerInk),
+            child: Center(
+              child: Icon(Icons.lock_outline_rounded, size: 10, color: ink),
             ),
           ),
           const SizedBox(height: 1),
           Text(
             '$percent%',
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: pagerDisplayFont,
               fontSize: 9,
               fontWeight: FontWeight.bold,
-              color: pagerInk,
+              color: ink,
             ),
           ),
         ],
@@ -947,10 +954,11 @@ class _PagerPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = context.watch<NixState>().settings.pagerLcdColor.inkColor;
     return IconTheme(
-      data: const IconThemeData(color: pagerInk),
+      data: IconThemeData(color: ink),
       child: DefaultTextStyle.merge(
-        style: const TextStyle(color: pagerInk),
+        style: TextStyle(color: ink),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(13, 2, 13, 2),
           child: Column(

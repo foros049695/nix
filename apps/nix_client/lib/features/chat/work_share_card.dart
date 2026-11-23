@@ -14,55 +14,55 @@ class WorkShareData {
   final String title;
   final String originalTitle;
   final String creator;
-  final int year;
+  final int? year;
   final String kind;
-  final double rating;
-  final int reviewsCount;
-  final int passportsCount;
-  final int episodesCount;
-  final int completedPercent;
-  final String status;
-  final String tier;
+  final double? rating;
+  final int? episodesCount;
+  final int? totalEpisodes;
+  final int? completedPercent;
+  final String? status;
   final String synopsis;
   final List<String> genres;
   final String? coverPath;
+  final String? source;
+  final String? externalId;
 
   const WorkShareData({
     required this.id,
     required this.title,
     this.originalTitle = '',
-    required this.creator,
-    required this.year,
+    this.creator = '',
+    this.year,
     required this.kind,
-    this.rating = 9.4,
-    this.reviewsCount = 1700,
-    this.passportsCount = 12546,
-    this.episodesCount = 10,
-    this.completedPercent = 100,
-    this.status = 'WATCHED 🏆',
-    this.tier = 'S-TIER ⭐',
+    this.rating,
+    this.episodesCount,
+    this.totalEpisodes,
+    this.completedPercent,
+    this.status,
     this.synopsis = '',
-    this.genres = const ['Ação', 'Sci-Fi', 'Cyberpunk'],
+    this.genres = const [],
     this.coverPath,
+    this.source,
+    this.externalId,
   });
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'title': title,
-        'originalTitle': originalTitle,
-        'creator': creator,
-        'year': year,
+        if (originalTitle.isNotEmpty) 'originalTitle': originalTitle,
+        if (creator.isNotEmpty) 'creator': creator,
+        if (year != null) 'year': year,
         'kind': kind,
-        'rating': rating,
-        'reviewsCount': reviewsCount,
-        'passportsCount': passportsCount,
-        'episodesCount': episodesCount,
-        'completedPercent': completedPercent,
-        'status': status,
-        'tier': tier,
-        'synopsis': synopsis,
-        'genres': genres,
+        if (rating != null) 'rating': rating,
+        if (episodesCount != null) 'episodesCount': episodesCount,
+        if (totalEpisodes != null) 'totalEpisodes': totalEpisodes,
+        if (completedPercent != null) 'completedPercent': completedPercent,
+        if (status != null && status!.isNotEmpty) 'status': status,
+        if (synopsis.isNotEmpty) 'synopsis': synopsis,
+        if (genres.isNotEmpty) 'genres': genres,
         if (coverPath != null) 'coverPath': coverPath,
+        if (source != null) 'source': source,
+        if (externalId != null) 'externalId': externalId,
       };
 
   static WorkShareData? tryParse(String raw) {
@@ -70,24 +70,43 @@ class WorkShareData {
     try {
       final jsonStr = raw.substring('[NIX_WORK]:'.length).trim();
       final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+
+      // Sanitiza status antigos caso tenham emojis de troféus fictícios
+      String? rawStatus = map['status'] as String?;
+      if (rawStatus != null) {
+        rawStatus = rawStatus.replaceAll('🏆', '').trim();
+        if (rawStatus.toUpperCase() == 'WATCHED') {
+          rawStatus = 'Concluído';
+        }
+      }
+
+      double? parsedRating;
+      if (map['rating'] != null) {
+        parsedRating = (map['rating'] as num).toDouble();
+      }
+
+      final parsedYear = (map['year'] as num?)?.toInt();
+      final episodes = (map['episodesCount'] as num?)?.toInt();
+      final totalEps = (map['totalEpisodes'] as num?)?.toInt();
+      final percent = (map['completedPercent'] as num?)?.toInt();
+
       return WorkShareData(
         id: map['id'] as String? ?? 'work_${DateTime.now().millisecondsSinceEpoch}',
         title: map['title'] as String? ?? 'Obra Cultural',
         originalTitle: map['originalTitle'] as String? ?? '',
-        creator: map['creator'] as String? ?? 'Autor desconhecido',
-        year: (map['year'] as num?)?.toInt() ?? 2024,
+        creator: map['creator'] as String? ?? '',
+        year: parsedYear != null && parsedYear > 0 ? parsedYear : null,
         kind: map['kind'] as String? ?? 'anime',
-        rating: (map['rating'] as num?)?.toDouble() ?? 9.4,
-        reviewsCount: (map['reviewsCount'] as num?)?.toInt() ?? 1700,
-        passportsCount: (map['passportsCount'] as num?)?.toInt() ?? 12546,
-        episodesCount: (map['episodesCount'] as num?)?.toInt() ?? 10,
-        completedPercent: (map['completedPercent'] as num?)?.toInt() ?? 100,
-        status: map['status'] as String? ?? 'WATCHED 🏆',
-        tier: map['tier'] as String? ?? 'S-TIER ⭐',
+        rating: parsedRating,
+        episodesCount: episodes,
+        totalEpisodes: totalEps,
+        completedPercent: percent,
+        status: rawStatus != null && rawStatus.isNotEmpty ? rawStatus : null,
         synopsis: map['synopsis'] as String? ?? '',
-        genres: (map['genres'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
-            const ['Sci-Fi', 'Cyberpunk'],
+        genres: (map['genres'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
         coverPath: map['coverPath'] as String?,
+        source: map['source'] as String?,
+        externalId: map['externalId'] as String?,
       );
     } catch (_) {
       return null;
@@ -98,21 +117,43 @@ class WorkShareData {
 
   CulturalItem toCulturalItem() {
     final cat = switch (kind.toLowerCase()) {
-      'manga' => CulturalCategory.manga,
+      'manga' || 'mangá' => CulturalCategory.manga,
       'book' || 'livro' => CulturalCategory.books,
       'movie' || 'filme' => CulturalCategory.movies,
       'series' || 'série' => CulturalCategory.series,
-      'music' || 'música' => CulturalCategory.music,
+      'music' || 'música' || 'album' || 'track' => CulturalCategory.music,
       _ => CulturalCategory.anime,
     };
+    final stage = status != null
+        ? CulturalStage.values.where((s) =>
+            s.label.toLowerCase() == status!.toLowerCase() ||
+            s.name.toLowerCase() == status!.toLowerCase()).firstOrNull
+        : null;
+
     return CulturalItem(
       id: id,
       title: title,
-      creatorOrYear: '$creator ($year)',
-      monogram: title.isNotEmpty ? title[0] : 'W',
+      originalTitle: originalTitle.isNotEmpty ? originalTitle : null,
+      creatorOrYear: [
+        if (creator.isNotEmpty) creator,
+        if (year != null && year! > 0) '$year',
+      ].join(' · '),
+      creator: creator.isNotEmpty ? creator : null,
+      releaseYear: year,
+      synopsis: synopsis.isNotEmpty ? synopsis : null,
+      genres: genres,
       category: cat,
-      rating: rating.toStringAsFixed(1),
-      tracking: const CulturalTracking(stage: CulturalStage.finished),
+      rating: rating != null ? rating!.toStringAsFixed(1) : '',
+      monogram: title.isNotEmpty ? String.fromCharCodes(title.runes.take(2)).toUpperCase() : 'NX',
+      coverMotif: coverPath != null && coverPath!.startsWith('placeholder:') ? coverPath : null,
+      localImagePath: coverPath != null && !coverPath!.startsWith('placeholder:') ? coverPath : null,
+      source: source ?? 'shared_message',
+      provenanceConfidence: 'strong_attributes',
+      tracking: CulturalTracking(
+        stage: stage,
+        current: episodesCount,
+        total: totalEpisodes,
+      ),
     );
   }
 }
@@ -128,6 +169,15 @@ class WorkShareCard extends StatelessWidget {
         defaultTargetPlatform == TargetPlatform.windows ||
         defaultTargetPlatform == TargetPlatform.macOS ||
         MediaQuery.sizeOf(context).width >= 900;
+
+    final kindIcon = switch (data.kind.toLowerCase()) {
+      'manga' || 'mangá' => Icons.menu_book_rounded,
+      'book' || 'livro' => Icons.auto_stories_rounded,
+      'movie' || 'filme' => Icons.movie_outlined,
+      'series' || 'série' => Icons.tv_rounded,
+      'music' || 'música' || 'track' || 'album' => Icons.music_note_rounded,
+      _ => Icons.animation_rounded,
+    };
 
     return Container(
       constraints: const BoxConstraints(maxWidth: 340),
@@ -147,9 +197,9 @@ class WorkShareCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Banner com badges Cyberpunk/PassportDex
+          // Banner estilizado de cabeçalho
           Container(
-            height: 125,
+            height: 110,
             decoration: const BoxDecoration(
               borderRadius: BorderRadius.vertical(top: Radius.circular(13)),
               gradient: LinearGradient(
@@ -161,7 +211,6 @@ class WorkShareCard extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // Brilho estilizado
                 Positioned.fill(
                   child: Container(
                     decoration: BoxDecoration(
@@ -170,66 +219,41 @@ class WorkShareCard extends StatelessWidget {
                         center: const Alignment(0.4, -0.2),
                         radius: 0.9,
                         colors: [
-                          Colors.cyanAccent.withValues(alpha: 0.25),
+                          Colors.cyanAccent.withValues(alpha: 0.22),
                           Colors.transparent,
                         ],
                       ),
                     ),
                   ),
                 ),
-                // Ícone temático central
                 Center(
                   child: Icon(
-                    switch (data.kind.toLowerCase()) {
-                      'manga' => Icons.menu_book_rounded,
-                      'book' || 'livro' => Icons.auto_stories_rounded,
-                      'movie' || 'filme' => Icons.movie_outlined,
-                      'series' || 'série' => Icons.tv_rounded,
-                      _ => Icons.animation_rounded,
-                    },
-                    size: 56,
-                    color: Colors.white.withValues(alpha: 0.2),
+                    kindIcon,
+                    size: 52,
+                    color: Colors.white.withValues(alpha: 0.22),
                   ),
                 ),
-                // Badges superiores: Status e Tier
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.cyanAccent.shade700.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      data.status,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 9.5,
+                // Badge de status real (se informado pelo remetente)
+                if (data.status != null && data.status!.isNotEmpty)
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.cyanAccent.shade700.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        data.status!,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 9.5,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade700.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      data.tier,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 9.5,
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -240,7 +264,7 @@ class WorkShareCard extends StatelessWidget {
               children: [
                 // Categoria e ano
                 Text(
-                  '${data.kind.toUpperCase()} • ${data.genres.isNotEmpty ? data.genres.first.toUpperCase() : "OBRA"} (${data.year})',
+                  '${data.kind.toUpperCase()}${data.genres.isNotEmpty ? " • ${data.genres.first.toUpperCase()}" : ""}${data.year != null && data.year! > 0 ? " (${data.year})" : ""}',
                   style: TextStyle(
                     color: Colors.cyanAccent.shade200,
                     fontSize: 10,
@@ -260,60 +284,94 @@ class WorkShareCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 5),
-                // Avaliação em estrelas
-                Row(
-                  children: [
-                    Text(
-                      data.rating.toStringAsFixed(1),
-                      style: TextStyle(
-                        color: NixColors.textPrimary,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                      ),
+                if (data.creator.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    data.creator,
+                    style: TextStyle(
+                      color: NixColors.textSecondary,
+                      fontSize: 12,
                     ),
-                    const SizedBox(width: 4),
-                    for (int i = 0; i < 5; i++)
-                      Icon(
-                        Icons.star_rounded,
-                        size: 14,
-                        color: Colors.cyanAccent.shade400,
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                // Episódios e conclusão
-                Row(
-                  children: [
-                    Text(
-                      '${data.episodesCount} / ${data.episodesCount} eps',
-                      style: TextStyle(color: NixColors.textMuted, fontSize: 11),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.cyanAccent.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.4)),
-                      ),
-                      child: Text(
-                        'COMPLETED ${data.completedPercent}%',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                // Avaliação pessoal verificada (apenas se avaliada)
+                if (data.rating != null && data.rating! > 0) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text(
+                        data.rating!.toStringAsFixed(1),
                         style: TextStyle(
-                          color: Colors.cyanAccent.shade200,
-                          fontSize: 9.5,
+                          color: NixColors.textPrimary,
+                          fontSize: 12.5,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                      const SizedBox(width: 4),
+                      for (int i = 0; i < 5; i++)
+                        Icon(
+                          (data.rating! / 2) >= i + 1
+                              ? Icons.star_rounded
+                              : ((data.rating! / 2) >= i + 0.5
+                                  ? Icons.star_half_rounded
+                                  : Icons.star_border_rounded),
+                          size: 14,
+                          color: Colors.cyanAccent.shade400,
+                        ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Avaliação pessoal',
+                        style: TextStyle(color: NixColors.textMuted, fontSize: 10.5),
+                      ),
+                    ],
+                  ),
+                ],
+                // Progresso real de episódios/capítulos (somente se legítimo)
+                if (data.episodesCount != null && data.totalEpisodes != null && data.totalEpisodes! > 0) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text(
+                        '${data.episodesCount} / ${data.totalEpisodes}',
+                        style: TextStyle(color: NixColors.textMuted, fontSize: 11),
+                      ),
+                      if (data.completedPercent != null && data.completedPercent! > 0) ...[
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.cyanAccent.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.4)),
+                          ),
+                          child: Text(
+                            '${data.completedPercent}%',
+                            style: TextStyle(
+                              color: Colors.cyanAccent.shade200,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+                if (data.synopsis.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    data.synopsis,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: NixColors.textSecondary,
+                      fontSize: 11,
+                      height: 1.3,
                     ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                // Metadados da comunidade / Dex
-                Text(
-                  'In ${data.passportsCount} Passports • ${(data.reviewsCount / 1000).toStringAsFixed(1)}k Reviews • Favorite ❤️',
-                  style: TextStyle(color: NixColors.textMuted, fontSize: 10),
-                ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 // Botões de Ação
                 Row(

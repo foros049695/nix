@@ -982,7 +982,7 @@ class _SettingsCenterState extends State<SettingsCenter> {
         ),
         _dropdownCard(
           title: 'Visibilidade do Perfil e Card ID',
-          subtitle: 'Define quem pode consultar seu passaporte cultural e biografia.',
+          subtitle: 'Define quem pode consultar seu acervo cultural e biografia.',
           value: s.profileVisibility,
           options: const ['Apenas Contatos Verificados', 'Público via QR', 'Oculto'],
           onChanged: (v) => state.updateSettings(s.copyWith(profileVisibility: v)),

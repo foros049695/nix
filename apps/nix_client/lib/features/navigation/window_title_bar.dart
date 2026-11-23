@@ -5,6 +5,7 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
 import '../profile/pager_housing.dart';
+import 'interface_wallpaper_layer.dart';
 
 /// Barra de título e controles responsivos de janela Desktop (Seção 5).
 class WindowTitleBar extends StatelessWidget {
@@ -15,12 +16,13 @@ class WindowTitleBar extends StatelessWidget {
     final nixState = context.watch<NixState>();
     final settings = nixState.settings;
     final size = MediaQuery.of(context).size;
+    final wallpaperVisible = InterfaceWallpaperLayer.visibleOf(context);
 
     return Container(
       height: 32,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: NixColors.surfaceDock,
+        color: wallpaperVisible ? NixColors.surfaceDock.withValues(alpha: 0.65) : NixColors.surfaceDock,
         border: Border(bottom: BorderSide(color: NixColors.surfaceBorder, width: 1)),
       ),
       child: Row(

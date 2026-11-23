@@ -36,14 +36,18 @@ class PassportDexSheet extends StatefulWidget {
 }
 
 class _PassportDexSheetState extends State<PassportDexSheet> {
-  late CulturalStage _status;
-  late double _rating;
+  CulturalStage? _status;
+  double? _rating;
 
   @override
   void initState() {
     super.initState();
-    _status = widget.item.tracking.stage ?? CulturalStage.finished;
-    _rating = double.tryParse(widget.item.rating) ?? 9.0;
+    _status = widget.item.tracking.stage;
+    final r = double.tryParse(widget.item.rating);
+    // Só considera rating válido se for maior que zero e diferente de 0.0
+    if (r != null && r > 0) {
+      _rating = r;
+    }
   }
 
   void _updateStatus(CulturalStage newStatus, NixState state) {
@@ -54,11 +58,19 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
     state.addCulturalItem(updated);
   }
 
+  void _updateRating(double newRating, NixState state) {
+    setState(() => _rating = newRating);
+    final updated = widget.item.copyWith(
+      rating: newRating.toStringAsFixed(1),
+    );
+    state.addCulturalItem(updated);
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<NixState>();
-    final isBook = widget.item.category == CulturalCategory.books ||
-        widget.item.category == CulturalCategory.manga;
+    final isInAcervo = state.userProfile.culturalItems.any((i) => i.id == widget.item.id);
+    final synopsis = widget.item.synopsis?.trim() ?? '';
 
     return Container(
       decoration: BoxDecoration(
@@ -72,7 +84,7 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
       ),
       child: Column(
         children: [
-          // Barra de título com botão fechar
+          // Barra de título com botão fechar (Nomenclatura do projeto)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 12, 8),
             child: Row(
@@ -85,7 +97,7 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
                     border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.4)),
                   ),
                   child: Text(
-                    'PASSPORTDEX · FICHA TÉCNICA',
+                    'FICHA DA OBRA · ACERVO CULTURAL',
                     style: TextStyle(
                       color: Colors.cyanAccent.shade200,
                       fontSize: 10,
@@ -115,7 +127,7 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Capa da obra em destaque (com modelo 2.5D de livro ou pôster)
+                  // Capa da obra em destaque (2.5D ou disco ou pôster)
                   Center(
                     child: Hero(
                       tag: 'passport_cover_${widget.item.id}',
@@ -136,6 +148,20 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  if (widget.item.originalTitle != null &&
+                      widget.item.originalTitle!.isNotEmpty &&
+                      widget.item.originalTitle != widget.item.title) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.item.originalTitle!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: NixColors.textMuted,
+                        fontSize: 13,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 4),
                   // Criador / Autor e Ano
                   Text(
@@ -146,67 +172,150 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
                       fontSize: 13,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  // Avaliação e Engajamento
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.star_rounded, size: 16, color: Colors.greenAccent),
-                      const SizedBox(width: 4),
-                      Text(
-                        _rating.toStringAsFixed(1),
-                        style: const TextStyle(
-                          color: Colors.greenAccent,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13.5,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '·  133 avaliações',
-                        style: TextStyle(color: NixColors.textMuted, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  // Botões de Status de Acompanhamento Pessoal
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
+                  const SizedBox(height: 10),
+
+                  // Avaliação pessoal real (apenas se avaliada)
+                  if (_rating != null) ...[
+                    Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _statusChip(
-                          label: 'concluído',
-                          status: CulturalStage.finished,
-                          active: _status == CulturalStage.finished,
-                          onTap: () => _updateStatus(CulturalStage.finished, state),
+                        const Icon(Icons.star_rounded, size: 16, color: Colors.amber),
+                        const SizedBox(width: 4),
+                        Text(
+                          _rating!.toStringAsFixed(1),
+                          style: const TextStyle(
+                            color: Colors.amber,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13.5,
+                          ),
                         ),
                         const SizedBox(width: 6),
-                        _statusChip(
-                          label: isBook ? 'lendo' : 'assistindo',
-                          status: CulturalStage.active,
-                          active: _status == CulturalStage.active,
-                          onTap: () => _updateStatus(CulturalStage.active, state),
-                        ),
-                        const SizedBox(width: 6),
-                        _statusChip(
-                          label: 'planejado',
-                          status: CulturalStage.planned,
-                          active: _status == CulturalStage.planned,
-                          onTap: () => _updateStatus(CulturalStage.planned, state),
-                        ),
-                        const SizedBox(width: 6),
-                        _statusChip(
-                          label: 'abandonado',
-                          status: CulturalStage.dropped,
-                          active: _status == CulturalStage.dropped,
-                          onTap: () => _updateStatus(CulturalStage.dropped, state),
+                        Text(
+                          '·  Sua avaliação pessoal',
+                          style: TextStyle(color: NixColors.textMuted, fontSize: 12),
                         ),
                       ],
                     ),
+                  ] else ...[
+                    Text(
+                      'Sem avaliação pessoal',
+                      style: TextStyle(color: NixColors.textMuted, fontSize: 12),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+
+                  // Seletor rápido de avaliação em estrelas
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      for (int star = 1; star <= 10; star++)
+                        InkWell(
+                          onTap: () => _updateRating(star.toDouble(), state),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                            child: Icon(
+                              _rating != null && _rating! >= star
+                                  ? Icons.star_rounded
+                                  : Icons.star_outline_rounded,
+                              size: 16,
+                              color: _rating != null && _rating! >= star
+                                  ? Colors.amber
+                                  : Colors.white24,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Botão de Adicionar ao Acervo (caso não esteja adicionado)
+                  if (!isInAcervo) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.cyanAccent.shade700,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                        ),
+                        onPressed: () {
+                          state.addCulturalItem(widget.item);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('“${widget.item.title}” adicionado ao seu Acervo!'),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                        label: const Text('Adicionar à Minha Biblioteca / Acervo',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Botões de Status de Acompanhamento Pessoal (Responsivo com Wrap)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Estado de Acompanhamento',
+                      style: TextStyle(
+                        color: NixColors.textPrimary,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      _statusChip(
+                        label: widget.item.category.trackingLabel(CulturalStage.finished).toLowerCase(),
+                        status: CulturalStage.finished,
+                        active: _status == CulturalStage.finished,
+                        onTap: () => _updateStatus(CulturalStage.finished, state),
+                      ),
+                      _statusChip(
+                        label: widget.item.category.trackingLabel(CulturalStage.active).toLowerCase(),
+                        status: CulturalStage.active,
+                        active: _status == CulturalStage.active,
+                        onTap: () => _updateStatus(CulturalStage.active, state),
+                      ),
+                      _statusChip(
+                        label: widget.item.category.trackingLabel(CulturalStage.planned).toLowerCase(),
+                        status: CulturalStage.planned,
+                        active: _status == CulturalStage.planned,
+                        onTap: () => _updateStatus(CulturalStage.planned, state),
+                      ),
+                      _statusChip(
+                        label: widget.item.category.trackingLabel(CulturalStage.paused).toLowerCase(),
+                        status: CulturalStage.paused,
+                        active: _status == CulturalStage.paused,
+                        onTap: () => _updateStatus(CulturalStage.paused, state),
+                      ),
+                      _statusChip(
+                        label: widget.item.category.trackingLabel(CulturalStage.revisiting).toLowerCase(),
+                        status: CulturalStage.revisiting,
+                        active: _status == CulturalStage.revisiting,
+                        onTap: () => _updateStatus(CulturalStage.revisiting, state),
+                      ),
+                      _statusChip(
+                        label: widget.item.category.trackingLabel(CulturalStage.dropped).toLowerCase(),
+                        status: CulturalStage.dropped,
+                        active: _status == CulturalStage.dropped,
+                        onTap: () => _updateStatus(CulturalStage.dropped, state),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 18),
-                  // Sinopse
+
+                  // Sinopse Real da Obra
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(14),
@@ -228,62 +337,110 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Anne Shirley, uma órfã de onze anos com uma imaginação brilhante e espírito livre, '
-                          'é adotada por engano pelos irmãos Marilla e Matthew Cuthbert na fazenda Green Gables.',
+                          synopsis.isNotEmpty ? synopsis : 'Sinopse não disponível.',
                           style: TextStyle(
-                            color: NixColors.textSecondary,
+                            color: synopsis.isNotEmpty ? NixColors.textSecondary : NixColors.textMuted,
                             fontSize: 12.5,
                             height: 1.4,
+                            fontStyle: synopsis.isNotEmpty ? FontStyle.normal : FontStyle.italic,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  // Estatística social do passaporte
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.bookmark_added_rounded, size: 16, color: Colors.cyanAccent),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Em 204 passaportes  ·  2 membros lendo agora',
-                          style: TextStyle(
-                            color: NixColors.textPrimary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
+
+                  // Gêneros e Detalhes Técnicos Reais
+                  if (widget.item.genres.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Gêneros',
+                        style: TextStyle(
+                          color: NixColors.textPrimary,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Onde Encontrar / Onde Comprar (Privado)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Onde encontrar',
-                      style: TextStyle(
-                        color: NixColors.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      _storeButton('Bookshop.org', Icons.auto_stories),
-                      const SizedBox(width: 8),
-                      _storeButton('Amazon', Icons.shopping_bag_outlined),
-                    ],
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final g in widget.item.genres)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.white12),
+                              ),
+                              child: Text(
+                                g,
+                                style: const TextStyle(color: Colors.white70, fontSize: 11),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // Links Externos Verificados (Se existirem)
+                  if (widget.item.repositoryUrl != null ||
+                      (widget.item.storeLinks != null && widget.item.storeLinks!.isNotEmpty)) ...[
+                    const SizedBox(height: 18),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Links Verificados',
+                        style: TextStyle(
+                          color: NixColors.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (widget.item.repositoryUrl != null)
+                      _linkButton(
+                        'Repositório GitHub',
+                        Icons.code_rounded,
+                        widget.item.repositoryUrl!,
+                      ),
+                    if (widget.item.storeLinks != null)
+                      for (final entry in widget.item.storeLinks!.entries)
+                        _linkButton(
+                          entry.key,
+                          Icons.open_in_new_rounded,
+                          entry.value,
+                        ),
+                  ],
+
+                  // Proveniência dos Dados
+                  const SizedBox(height: 18),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.03),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.verified_outlined, size: 14, color: NixColors.textMuted),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Fonte: ${widget.item.source ?? "Registro Local"} · Categoria: ${widget.item.category.label}',
+                            style: TextStyle(color: NixColors.textMuted, fontSize: 11),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -326,24 +483,27 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
     );
   }
 
-  Widget _storeButton(String name, IconData icon) {
-    return Expanded(
+  Widget _linkButton(String name, IconData icon, String url) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: Colors.white12),
         ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 16, color: Colors.white70),
-            const SizedBox(width: 6),
-            Text(
-              name,
-              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+            Icon(icon, size: 16, color: Colors.cyanAccent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                name,
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
             ),
+            const Icon(Icons.arrow_outward_rounded, size: 14, color: Colors.white54),
           ],
         ),
       ),

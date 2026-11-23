@@ -15,6 +15,7 @@ import '../chat/conversation_info_panel.dart';
 import '../chat/conversation_surface.dart';
 import '../design/nix_surfaces.dart';
 import '../chat/message_timeline.dart';
+import '../navigation/interface_wallpaper_layer.dart';
 import '../profile/pager_profile.dart';
 import '../profile/peer_card_id_dialog.dart';
 
@@ -56,8 +57,9 @@ class _HomePrivateViewState extends State<HomePrivateView> {
             final double maxSafeLeft = (constraints.maxWidth - 295 - 260).clamp(200.0, 560.0);
             final double safeLeft = (constraints.maxWidth * 0.32).clamp(200.0, maxSafeLeft);
 
+            final wallpaperVisible = InterfaceWallpaperLayer.visibleOf(context);
             return Container(
-              color: NixColors.background,
+              color: wallpaperVisible ? Colors.transparent : NixColors.background,
               child: Stack(
                 children: [
                   AnimatedSwitcher(

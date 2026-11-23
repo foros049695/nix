@@ -17,6 +17,9 @@ import '../design/nix_surfaces.dart';
 import 'cultural_catalog_picker.dart';
 import 'cultural_cover_art.dart';
 import 'collection_import_dialog.dart';
+import 'cover_enrichment_dialog.dart';
+import 'cultural_filters_and_pagination.dart';
+import '../media/passport_dex_sheet.dart';
 
 class CulturalShowcase extends StatefulWidget {
   const CulturalShowcase({super.key});
@@ -26,34 +29,32 @@ class CulturalShowcase extends StatefulWidget {
 }
 
 class _CulturalShowcaseState extends State<CulturalShowcase> {
-  CulturalCategory? _category;
   String _query = '';
+  CulturalFilterOptions _filterOptions = const CulturalFilterOptions();
+  bool _isFilterPanelOpen = false;
+  int _currentPage = 1;
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<NixState>();
     final items = state.userProfile.culturalItems;
-    final filtered = items
-        .where((item) =>
-            (_category == null || item.category == _category) &&
-            [item.title, item.creatorOrYear, item.language ?? '',
-              item.tracking.collection, ...item.tracking.tags]
-                .any((text) => text.toLowerCase().contains(_query)))
-        .toList();
-    final vinyls = filtered.where((item) => item.isVinyl).toList();
-    final books = filtered
-        .where((item) =>
-            item.category == CulturalCategory.books ||
-            item.category == CulturalCategory.manga)
-        .toList();
-    final posters = filtered
-        .where((item) => const [
-              CulturalCategory.movies,
-              CulturalCategory.series,
-              CulturalCategory.anime
-            ].contains(item.category))
-        .toList();
-    final repos = filtered.where((item) => item.isGithubRepo).toList();
+
+    // Aplica busca textual e filtros avançados (Seção 1 & 1.1)
+    final allFiltered = items.where((item) {
+      final matchesText = _query.isEmpty ||
+          [
+            item.title,
+            item.originalTitle ?? '',
+            item.creatorOrYear,
+            item.creator ?? '',
+            item.language ?? '',
+            item.tracking.collection,
+            ...item.tracking.tags,
+            ...item.genres,
+          ].any((text) => text.toLowerCase().contains(_query));
+
+      return matchesText && _filterOptions.matches(item);
+    }).toList();
 
     return NixGlass(
       key: const Key('passport_glass'),
@@ -64,8 +65,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Passaporte cultural & acervo',
-                style: NixTokens.headingMedium()),
+            Text('Acervo Cultural', style: NixTokens.headingMedium()),
             const SizedBox(height: 12),
             Wrap(spacing: 7, runSpacing: 6, children: [
               FilledButton.icon(
@@ -85,142 +85,250 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                 icon: const Icon(Icons.file_upload_outlined, size: 18),
                 label: const Text('Importar coleção'),
               ),
+              OutlinedButton.icon(
+                key: const Key('enrich_covers_button'),
+                onPressed: () => CoverEnrichmentDialog.show(context),
+                icon: const Icon(Icons.auto_fix_high_rounded, size: 18),
+                label: const Text('Buscar capas'),
+              ),
             ]),
             if (items.isNotEmpty) ...[
               const SizedBox(height: 15),
-              TextField(
-                key: const Key('cultural_catalog_search_input'),
-                onChanged: (query) =>
-                    setState(() => _query = query.trim().toLowerCase()),
-                decoration: const InputDecoration(
-                  hintText: 'Filtrar meu acervo',
-                  prefixIcon: Icon(Icons.filter_alt_outlined),
-                  isDense: true,
+              // Barra de pesquisa com botão unificado de Filtrar
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: const Key('cultural_catalog_search_input'),
+                      onChanged: (query) => setState(() {
+                        _query = query.trim().toLowerCase();
+                        _currentPage = 1;
+                      }),
+                      decoration: InputDecoration(
+                        hintText: 'Pesquisar obras no acervo...',
+                        prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                        isDense: true,
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.05),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Badge.count(
+                    count: _filterOptions.activeFiltersCount,
+                    isLabelVisible: _filterOptions.activeFiltersCount > 0,
+                    backgroundColor: Colors.cyanAccent.shade700,
+                    textColor: Colors.black,
+                    child: OutlinedButton.icon(
+                      key: const Key('toggle_cultural_filters_button'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+                        foregroundColor: _isFilterPanelOpen || _filterOptions.activeFiltersCount > 0
+                            ? Colors.cyanAccent
+                            : Colors.white,
+                        side: BorderSide(
+                          color: _isFilterPanelOpen || _filterOptions.activeFiltersCount > 0
+                              ? Colors.cyanAccent
+                              : Colors.white24,
+                        ),
+                      ),
+                      onPressed: () => setState(() => _isFilterPanelOpen = !_isFilterPanelOpen),
+                      icon: Icon(
+                        _isFilterPanelOpen ? Icons.filter_list_off_rounded : Icons.filter_list_rounded,
+                        size: 18,
+                      ),
+                      label: const Text('Filtrar', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+              // Painel expansível de checkboxes de filtro
+              if (_isFilterPanelOpen)
+                CulturalFilterPanel(
+                  initialOptions: _filterOptions,
+                  onApply: (newOpts) => setState(() {
+                    _filterOptions = newOpts;
+                    _currentPage = 1;
+                  }),
+                  onClose: () => setState(() => _isFilterPanelOpen = false),
                 ),
-              ),
-              const SizedBox(height: 10),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: [
-                  _filter('Todos (${items.length})', null),
-                  for (final category in CulturalCategory.values) ...[
-                    const SizedBox(width: 6),
-                    _filter(
-                        '${category.label} (${items.where((item) => item.category == category).length})',
-                        category),
-                  ],
-                ]),
-              ),
+              // Indicador discreto de filtros ativos
+              if (_filterOptions.activeFiltersCount > 0 && !_isFilterPanelOpen)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.cyanAccent.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.3)),
+                        ),
+                        child: Text(
+                          '${_filterOptions.activeFiltersCount} filtro(s) ativo(s)',
+                          style: TextStyle(color: Colors.cyanAccent.shade200, fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () => setState(() {
+                          _filterOptions = const CulturalFilterOptions();
+                          _currentPage = 1;
+                        }),
+                        child: const Text('Limpar filtros',
+                            style: TextStyle(color: Colors.redAccent, fontSize: 11.5, decoration: TextDecoration.underline)),
+                      ),
+                    ],
+                  ),
+                ),
             ],
-            if (filtered.isEmpty)
+            if (allFiltered.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 26),
                 child: Text(
-                    items.isEmpty
-                        ? 'Seu acervo está vazio.'
-                        : 'Nenhuma obra neste filtro.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: context.nixScheme.textSecondary)),
+                  items.isEmpty
+                      ? 'Seu acervo está vazio.'
+                      : 'Nenhuma obra neste filtro.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: context.nixScheme.textSecondary),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: LayoutBuilder(
+                  builder: (context, box) {
+                    final cols = ((box.maxWidth + 12) / 116).floor().clamp(2, 6);
+                    final width = ((box.maxWidth - (cols - 1) * 12) / cols).clamp(1.0, 146.0);
+                    final pageSize = cols * 4; // Quatro fileiras de obras por página (Seção 2)
+                    final totalPages = (allFiltered.length / pageSize).ceil().clamp(1, 999999);
+                    final safePage = _currentPage.clamp(1, totalPages);
+                    final startIndex = (safePage - 1) * pageSize;
+                    final endIndex = (startIndex + pageSize).clamp(0, allFiltered.length);
+                    final pageItems = allFiltered.sublist(startIndex, endIndex);
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [
+                            for (final (index, item) in pageItems.indexed)
+                              SizedBox(
+                                width: item.isGithubRepo ? 190.0 : width,
+                                child: item.isGithubRepo
+                                    ? _GithubRepoAcervoCard(
+                                        item: item,
+                                        onToggleVisibility: () =>
+                                            state.toggleItemCardIdVisibility(item.id),
+                                        onDelete: () => _confirmDelete(item),
+                                      )
+                                    : _buildCoverCard(context, state, item, pageItems, index, width),
+                              ),
+                          ],
+                        ),
+                        CulturalPaginationControls(
+                          currentPage: safePage,
+                          totalPages: totalPages,
+                          totalItems: allFiltered.length,
+                          pageSize: pageSize,
+                          onPageChanged: (newPage) => setState(() => _currentPage = newPage),
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ),
-            if (vinyls.isNotEmpty) _shelf(state, 'Discos de vinil', vinyls),
-            if (books.isNotEmpty) _shelf(state, 'Livros e mangás', books),
-            if (posters.isNotEmpty)
-              _shelf(state, 'Filmes, séries e animes', posters),
-            if (repos.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              Text('Repositórios GitHub', style: NixTokens.labelUppercase()),
-              const SizedBox(height: 9),
-              Wrap(spacing: 10, runSpacing: 10, children: [
-                for (final repo in repos)
-                  _GithubRepoAcervoCard(
-                    item: repo,
-                    onToggleVisibility: () =>
-                        state.toggleItemCardIdVisibility(repo.id),
-                    onDelete: () => _confirmDelete(repo),
-                  ),
-              ]),
-            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _filter(String label, CulturalCategory? category) => ChoiceChip(
-        label: Text(label),
-        selected: _category == category,
-        onSelected: (_) => setState(() => _category = category),
-      );
-
-  Widget _shelf(NixState state, String label, List<CulturalItem> items) =>
-      Padding(
-        padding: const EdgeInsets.only(top: 20),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: NixTokens.labelUppercase()),
-          const SizedBox(height: 10),
-          LayoutBuilder(builder: (context, box) {
-            final cols = ((box.maxWidth + 12) / 116).floor().clamp(2, 7);
-            final width =
-                ((box.maxWidth - (cols - 1) * 12) / cols).clamp(1.0, 146.0);
-            return Wrap(spacing: 12, runSpacing: 12, children: [
-              for (final (index, item) in items.indexed)
-                SizedBox(
-                    width: width,
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          NixMotionCard(
-                              child: InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () => _showGallery(items, index),
-                            onLongPress: () => _confirmDelete(item),
-                            child: CulturalCoverArt(item: item, width: width),
-                          )),
-                          const SizedBox(height: 5),
-                          Text(item.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.w700)),
-                          if (item.tracking.stage case final stage?)
-                            Text(item.category.trackingLabel(stage),
-                              style: Theme.of(context).textTheme.labelSmall),
-                          if (item.tracking.fraction case final fraction?)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: LinearProgressIndicator(value: fraction,
-                                semanticsLabel: 'Progresso de ${item.title}'),
-                            ),
-                          Row(children: [
-                            Expanded(
-                                child: Text(item.creatorOrYear,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        color:
-                                            context.nixScheme.textSecondary))),
-                            IconButton(
-                              tooltip: item.isPublicInCardId
-                                  ? 'Ocultar do perfil'
-                                  : 'Mostrar no perfil',
-                              visualDensity: VisualDensity.compact,
-                              iconSize: 15,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                  minWidth: 30, minHeight: 38),
-                              onPressed: () =>
-                                  state.toggleItemCardIdVisibility(item.id),
-                              icon: Icon(item.isPublicInCardId
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined),
-                            ),
-                          ]),
-                        ])),
-            ]);
-          }),
-        ]),
-      );
+  Widget _buildCoverCard(BuildContext context, NixState state, CulturalItem item,
+      List<CulturalItem> pageItems, int index, double width) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        NixMotionCard(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () {
+              if (MediaQuery.sizeOf(context).width >= 900) {
+                state.openWorkDetail(item);
+              } else {
+                PassportDexSheet.showModal(context, item: item);
+              }
+            },
+            onLongPress: () => _confirmDelete(item),
+            child: CulturalCoverArt(item: item, width: width),
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          item.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        ),
+        if (item.tracking.stage case final stage?)
+          Text(
+            item.category.trackingLabel(stage),
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Colors.cyanAccent.shade200,
+                  fontSize: 10,
+                ),
+          ),
+        if (item.tracking.fraction case final fraction?)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: LinearProgressIndicator(
+              value: fraction,
+              semanticsLabel: 'Progresso de ${item.title}',
+            ),
+          ),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                item.creatorOrYear,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: context.nixScheme.textSecondary,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: item.isPublicInCardId
+                  ? 'Ocultar do perfil'
+                  : 'Mostrar no perfil',
+              visualDensity: VisualDensity.compact,
+              iconSize: 15,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 38),
+              onPressed: () => state.toggleItemCardIdVisibility(item.id),
+              icon: Icon(item.isPublicInCardId
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 
   Future<void> _importCatalogWork() async {
     final work = await pickCulturalCatalogWork(context);
@@ -258,7 +366,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
         builder: (dialog) => AlertDialog(
               title: const Text('Remover do Acervo?'),
               content: Text(
-                  'Deseja retirar “${item.title}” do seu passaporte cultural?'),
+                  'Deseja retirar “${item.title}” do seu Acervo Cultural?'),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(dialog),
@@ -739,33 +847,38 @@ class _GithubRepoAcervoCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: NixColors.surfaceActive,
-                  borderRadius: BorderRadius.circular(4),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: NixColors.surfaceActive,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    item.language ?? 'Código',
+                    style: TextStyle(
+                        color: NixColors.textPrimary,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.bold),
+                  ),
                 ),
-                child: Text(
-                  item.language ?? 'Código',
-                  style: TextStyle(
-                      color: NixColors.textPrimary,
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.bold),
+                const SizedBox(width: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.star_rounded, size: 13, color: Colors.amber),
+                    const SizedBox(width: 3),
+                    Text(item.rating,
+                        style: TextStyle(
+                            color: NixColors.textPrimary, fontSize: 10)),
+                  ],
                 ),
-              ),
-              Row(
-                children: [
-                  const Icon(Icons.star_rounded, size: 13, color: Colors.amber),
-                  const SizedBox(width: 3),
-                  Text(item.rating,
-                      style: TextStyle(
-                          color: NixColors.textPrimary, fontSize: 10)),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),

@@ -26,13 +26,28 @@ extension CulturalCategoryLabel on CulturalCategory {
   };
 
   String trackingLabel(CulturalStage stage) => switch ((stage, this)) {
+    (CulturalStage.planned, CulturalCategory.movies || CulturalCategory.series || CulturalCategory.anime) => 'Quero assistir',
+    (CulturalStage.planned, CulturalCategory.books || CulturalCategory.manga) => 'Quero ler',
+    (CulturalStage.planned, CulturalCategory.music) => 'Quero ouvir',
+    (CulturalStage.planned, _) => 'Pretendo',
+
+    (CulturalStage.active, CulturalCategory.movies || CulturalCategory.series || CulturalCategory.anime) => 'Assistindo',
     (CulturalStage.active, CulturalCategory.books || CulturalCategory.manga) => 'Lendo',
     (CulturalStage.active, CulturalCategory.music) => 'Ouvindo',
-    (CulturalStage.active, CulturalCategory.movies || CulturalCategory.series || CulturalCategory.anime) => 'Assistindo',
+    (CulturalStage.active, _) => 'Em andamento',
+
+    (CulturalStage.paused, _) => 'Em pausa',
+
+    (CulturalStage.finished, CulturalCategory.movies) => 'Assistido',
+    (CulturalStage.finished, CulturalCategory.books) => 'Lido',
+    (CulturalStage.finished, _) => 'Concluído',
+
+    (CulturalStage.dropped, _) => 'Abandonado',
+
+    (CulturalStage.revisiting, CulturalCategory.movies || CulturalCategory.series || CulturalCategory.anime) => 'Reassistindo',
     (CulturalStage.revisiting, CulturalCategory.books || CulturalCategory.manga) => 'Relendo',
     (CulturalStage.revisiting, CulturalCategory.music) => 'Ouvindo novamente',
-    (CulturalStage.revisiting, CulturalCategory.movies || CulturalCategory.series || CulturalCategory.anime) => 'Reassistindo',
-    _ => stage.label,
+    (CulturalStage.revisiting, _) => 'Revisitando',
   };
 
   String get label {
@@ -75,6 +90,18 @@ class CulturalItem {
   final DateTime? updatedDate;
   final CulturalTracking tracking;
 
+  // Novos campos para metadados reais, proveniência e ficha técnica rica (Seção 5, 6, 10)
+  final String? originalTitle;
+  final String? creator;
+  final int? releaseYear;
+  final String? synopsis;
+  final List<String> genres;
+  final Map<String, dynamic> externalIds;
+  final String? source; // 'manual', 'catalog', 'wikidata', 'openlibrary', 'musicbrainz', 'csv_import', 'html_import'
+  final String? provenanceConfidence; // 'exact_id', 'strong_attributes', 'ambiguous', 'not_found', 'manual'
+  final String? bannerPath;
+  final Map<String, String>? storeLinks;
+
   const CulturalItem({
     required this.id,
     required this.title,
@@ -94,6 +121,16 @@ class CulturalItem {
     this.license,
     this.updatedDate,
     this.tracking = const CulturalTracking(),
+    this.originalTitle,
+    this.creator,
+    this.releaseYear,
+    this.synopsis,
+    this.genres = const [],
+    this.externalIds = const {},
+    this.source,
+    this.provenanceConfidence,
+    this.bannerPath,
+    this.storeLinks,
   });
 
   bool get isVinyl => category == CulturalCategory.music;
@@ -119,6 +156,16 @@ class CulturalItem {
     String? license,
     DateTime? updatedDate,
     CulturalTracking? tracking,
+    String? originalTitle,
+    String? creator,
+    int? releaseYear,
+    String? synopsis,
+    List<String>? genres,
+    Map<String, dynamic>? externalIds,
+    String? source,
+    String? provenanceConfidence,
+    String? bannerPath,
+    Map<String, String>? storeLinks,
   }) {
     return CulturalItem(
       id: id ?? this.id,
@@ -139,6 +186,16 @@ class CulturalItem {
       license: license ?? this.license,
       updatedDate: updatedDate ?? this.updatedDate,
       tracking: tracking ?? this.tracking,
+      originalTitle: originalTitle ?? this.originalTitle,
+      creator: creator ?? this.creator,
+      releaseYear: releaseYear ?? this.releaseYear,
+      synopsis: synopsis ?? this.synopsis,
+      genres: genres ?? this.genres,
+      externalIds: externalIds ?? this.externalIds,
+      source: source ?? this.source,
+      provenanceConfidence: provenanceConfidence ?? this.provenanceConfidence,
+      bannerPath: bannerPath ?? this.bannerPath,
+      storeLinks: storeLinks ?? this.storeLinks,
     );
   }
 
@@ -162,6 +219,16 @@ class CulturalItem {
       'language': language,
       'license': license,
       'updatedDate': updatedDate?.toIso8601String(),
+      if (originalTitle != null) 'originalTitle': originalTitle,
+      if (creator != null) 'creator': creator,
+      if (releaseYear != null) 'releaseYear': releaseYear,
+      if (synopsis != null) 'synopsis': synopsis,
+      if (genres.isNotEmpty) 'genres': genres,
+      if (externalIds.isNotEmpty) 'externalIds': externalIds,
+      if (source != null) 'source': source,
+      if (provenanceConfidence != null) 'provenanceConfidence': provenanceConfidence,
+      if (bannerPath != null) 'bannerPath': bannerPath,
+      if (storeLinks != null) 'storeLinks': storeLinks,
     };
   }
 
@@ -194,6 +261,16 @@ class CulturalItem {
       language: json['language'] as String?,
       license: json['license'] as String?,
       updatedDate: json['updatedDate'] != null ? DateTime.tryParse(json['updatedDate'] as String) : null,
+      originalTitle: json['originalTitle'] as String?,
+      creator: json['creator'] as String?,
+      releaseYear: (json['releaseYear'] as num?)?.toInt(),
+      synopsis: json['synopsis'] as String?,
+      genres: (json['genres'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      externalIds: json['externalIds'] is Map<String, dynamic> ? json['externalIds'] as Map<String, dynamic> : const {},
+      source: json['source'] as String?,
+      provenanceConfidence: json['provenanceConfidence'] as String?,
+      bannerPath: json['bannerPath'] as String?,
+      storeLinks: json['storeLinks'] is Map ? (json['storeLinks'] as Map).cast<String, String>() : null,
     );
   }
 }

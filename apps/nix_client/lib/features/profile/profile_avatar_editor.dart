@@ -51,18 +51,19 @@ void showProfileAvatarEditor(BuildContext context, NixState state) {
                         TextStyle(color: NixColors.textSecondary, fontSize: 12),
                   ),
                   const SizedBox(height: 14),
-                  Text('Estilo da Moldura do Avatar', style: NixTokens.labelUppercase()),
+                  Text('FORMATO DA MOLDURA', style: NixTokens.labelUppercase()),
                   const SizedBox(height: 8),
                   Wrap(
-                    spacing: 6,
+                    spacing: 8,
                     runSpacing: 6,
                     children: [
                       _frameChip(
                         label: 'Circular',
                         keyName: 'circle',
-                        current: state.settings.avatarFrameStyle,
+                        current: state.settings.avatarFrameShape,
                         onSelected: () {
                           state.updateSettings(state.settings.copyWith(
+                            avatarFrameShape: 'circle',
                             avatarFrameStyle: 'circle',
                             roundedSquareAvatar: false,
                           ));
@@ -70,62 +71,190 @@ void showProfileAvatarEditor(BuildContext context, NixState state) {
                         },
                       ),
                       _frameChip(
-                        label: 'Quadrada',
-                        keyName: 'roundedSquare',
-                        current: state.settings.avatarFrameStyle,
+                        label: 'Quadrado',
+                        keyName: 'square',
+                        current: state.settings.avatarFrameShape,
                         onSelected: () {
                           state.updateSettings(state.settings.copyWith(
+                            avatarFrameShape: 'square',
                             avatarFrameStyle: 'roundedSquare',
                             roundedSquareAvatar: true,
                           ));
                           setModalState(() {});
                         },
                       ),
+                    ],
+                  ),
+                  if (state.settings.avatarFrameShape == 'square') ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Text('Raio dos cantos: ', style: TextStyle(fontSize: 12)),
+                        Expanded(
+                          child: Slider(
+                            value: state.settings.avatarCornerRadius.clamp(0.0, 24.0),
+                            min: 0.0,
+                            max: 24.0,
+                            divisions: 12,
+                            label: '${state.settings.avatarCornerRadius.toStringAsFixed(0)}px',
+                            onChanged: (val) {
+                              state.updateSettings(state.settings.copyWith(avatarCornerRadius: val));
+                              setModalState(() {});
+                            },
+                          ),
+                        ),
+                        Text('${state.settings.avatarCornerRadius.toStringAsFixed(0)}px', style: const TextStyle(fontSize: 11)),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  Text('EFEITOS INDEPENDENTES', style: NixTokens.labelUppercase()),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
                       _frameChip(
-                        label: 'Pixel Art',
+                        label: 'Sem efeito',
+                        keyName: 'none',
+                        current: state.settings.avatarFrameEffect,
+                        onSelected: () {
+                          state.updateSettings(state.settings.copyWith(avatarFrameEffect: 'none'));
+                          setModalState(() {});
+                        },
+                      ),
+                      _frameChip(
+                        label: 'Brilho',
+                        keyName: 'glow',
+                        current: state.settings.avatarFrameEffect,
+                        onSelected: () {
+                          state.updateSettings(state.settings.copyWith(avatarFrameEffect: 'glow'));
+                          setModalState(() {});
+                        },
+                      ),
+                      _frameChip(
+                        label: 'Neon',
+                        keyName: 'neon',
+                        current: state.settings.avatarFrameEffect,
+                        onSelected: () {
+                          state.updateSettings(state.settings.copyWith(avatarFrameEffect: 'neon'));
+                          setModalState(() {});
+                        },
+                      ),
+                      _frameChip(
+                        label: 'Glow suave',
+                        keyName: 'softGlow',
+                        current: state.settings.avatarFrameEffect,
+                        onSelected: () {
+                          state.updateSettings(state.settings.copyWith(avatarFrameEffect: 'softGlow'));
+                          setModalState(() {});
+                        },
+                      ),
+                      _frameChip(
+                        label: 'Borda dupla',
+                        keyName: 'doubleBorder',
+                        current: state.settings.avatarFrameEffect,
+                        onSelected: () {
+                          state.updateSettings(state.settings.copyWith(avatarFrameEffect: 'doubleBorder'));
+                          setModalState(() {});
+                        },
+                      ),
+                      _frameChip(
+                        label: 'Pixel art',
                         keyName: 'pixelArt',
-                        current: state.settings.avatarFrameStyle,
+                        current: state.settings.avatarFrameEffect,
                         onSelected: () {
-                          state.updateSettings(state.settings.copyWith(avatarFrameStyle: 'pixelArt'));
+                          state.updateSettings(state.settings.copyWith(avatarFrameEffect: 'pixelArt'));
                           setModalState(() {});
                         },
                       ),
                       _frameChip(
-                        label: 'Cyberpunk Neon',
-                        keyName: 'cyberpunkNeon',
-                        current: state.settings.avatarFrameStyle,
+                        label: 'Discreto',
+                        keyName: 'subtle',
+                        current: state.settings.avatarFrameEffect,
                         onSelected: () {
-                          state.updateSettings(state.settings.copyWith(avatarFrameStyle: 'cyberpunkNeon'));
+                          state.updateSettings(state.settings.copyWith(avatarFrameEffect: 'subtle'));
                           setModalState(() {});
                         },
                       ),
-                      _frameChip(
-                        label: 'Ouro Nobre',
-                        keyName: 'goldenBorder',
-                        current: state.settings.avatarFrameStyle,
-                        onSelected: () {
-                          state.updateSettings(state.settings.copyWith(avatarFrameStyle: 'goldenBorder'));
-                          setModalState(() {});
-                        },
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text('COR DA MOLDURA', style: NixTokens.labelUppercase()),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: state.settings.avatarFrameColorHex.isNotEmpty
+                              ? () {
+                                  try {
+                                    final hex = state.settings.avatarFrameColorHex.replaceAll('#', '');
+                                    return Color(int.parse('FF$hex', radix: 16));
+                                  } catch (_) {
+                                    return accent;
+                                  }
+                                }()
+                              : accent,
+                          border: Border.all(color: Colors.white70),
+                        ),
                       ),
-                      _frameChip(
-                        label: 'Nix Roxo',
-                        keyName: 'nixPurple',
-                        current: state.settings.avatarFrameStyle,
-                        onSelected: () {
-                          state.updateSettings(state.settings.copyWith(avatarFrameStyle: 'nixPurple'));
-                          setModalState(() {});
-                        },
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          initialValue: state.settings.avatarFrameColorHex,
+                          style: TextStyle(color: NixColors.textPrimary, fontSize: 12),
+                          decoration: InputDecoration(
+                            hintText: 'HEX: ex. #8B5CF6 ou deixe vazio para tema',
+                            hintStyle: TextStyle(color: NixColors.textMuted, fontSize: 11),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                          ),
+                          onChanged: (hex) {
+                            state.updateSettings(state.settings.copyWith(avatarFrameColorHex: hex.trim()));
+                            setModalState(() {});
+                          },
+                        ),
                       ),
-                      _frameChip(
-                        label: 'Tática',
-                        keyName: 'tactical',
-                        current: state.settings.avatarFrameStyle,
-                        onSelected: () {
-                          state.updateSettings(state.settings.copyWith(avatarFrameStyle: 'tactical'));
-                          setModalState(() {});
-                        },
-                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      for (final colorEntry in [
+                        ('Tema', ''),
+                        ('Roxo', '#8B5CF6'),
+                        ('Neon', '#06B6D4'),
+                        ('Ouro', '#F59E0B'),
+                        ('Esmeralda', '#10B981'),
+                        ('Rosa', '#EC4899'),
+                        ('Prata', '#94A3B8'),
+                        ('Branco', '#FFFFFF'),
+                      ])
+                        ActionChip(
+                          visualDensity: VisualDensity.compact,
+                          label: Text(colorEntry.$1, style: const TextStyle(fontSize: 10)),
+                          avatar: colorEntry.$2.isNotEmpty
+                              ? Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    color: Color(int.parse('FF${colorEntry.$2.replaceAll('#', '')}', radix: 16)),
+                                    shape: BoxShape.circle,
+                                  ),
+                                )
+                              : null,
+                          onPressed: () {
+                            state.updateSettings(state.settings.copyWith(avatarFrameColorHex: colorEntry.$2));
+                            setModalState(() {});
+                          },
+                        ),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -222,8 +351,9 @@ void showProfileAvatarEditor(BuildContext context, NixState state) {
                                 try {
                                   final picked = await LocalImageHelper
                                       .pickImageNativeDesktop();
-                                  if (picked == null || !context.mounted)
+                                  if (picked == null || !context.mounted) {
                                     return;
+                                  }
                                   setModalState(() {
                                     selectedPath = picked;
                                     pathRevision++;
@@ -329,7 +459,7 @@ void showProfileAvatarEditor(BuildContext context, NixState state) {
                         if (statusMsg != null) ...[
                           const SizedBox(height: 6),
                           Text(statusMsg!,
-                              style: TextStyle(
+                              style: const TextStyle(
                                   color: NixColors.accentDanger, fontSize: 11)),
                         ],
                         const SizedBox(height: 10),
@@ -389,7 +519,7 @@ void showProfileAvatarEditor(BuildContext context, NixState state) {
                                   );
                                   Navigator.pop(ctx);
                                 },
-                                child: Text(
+                                child: const Text(
                                   'Remover Foto',
                                   style: TextStyle(
                                       color: NixColors.accentDanger,

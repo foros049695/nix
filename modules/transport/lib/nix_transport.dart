@@ -453,7 +453,7 @@ class Socks5Connector {
 
   /// Executa requisição HTTP/HTTPS via proxy SOCKS5 usando [RawSocket] / [RawSecureSocket]
   /// sem chamar `_detachRaw` e sem vazar DNS local.
-  Future<({int statusCode, String body})> httpRequest(
+  Future<({int statusCode, String body, Uint8List bodyBytes})> httpRequest(
     String method,
     Uri uri, {
     Map<String, String> headers = const {},
@@ -616,7 +616,7 @@ class Socks5Connector {
 
       final payload = isChunked ? RelayClient._decodeChunked(bodyPayloadBytes) : Uint8List.fromList(bodyPayloadBytes);
       final resBody = utf8.decode(payload, allowMalformed: true);
-      return (statusCode: statusCode, body: resBody);
+      return (statusCode: statusCode, body: resBody, bodyBytes: payload);
     } finally {
       try {
         await activeSocket.close().timeout(const Duration(milliseconds: 500));
@@ -626,7 +626,7 @@ class Socks5Connector {
   }
 
   /// Conveniência para requisições GET sobre SOCKS5
-  Future<({int statusCode, String body})> httpGet(
+  Future<({int statusCode, String body, Uint8List bodyBytes})> httpGet(
     Uri uri, {
     Map<String, String> headers = const {},
     Duration timeout = const Duration(seconds: 30),
@@ -719,6 +719,31 @@ class SocksSocket extends Stream<Uint8List> implements Socket {
   InternetAddress get address => _rawSocket.address;
   @override
   InternetAddress get remoteAddress => _rawSocket.remoteAddress;
+
+  /// Delega chamadas internas do Dart SDK (ex: `_detachRaw` em `SecureSocket.secure`).
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    if (invocation.memberName == #_detachRaw ||
+        invocation.memberName == const Symbol('_detachRaw')) {
+      try {
+        // ignore: avoid_dynamic_calls
+        return (_rawSocket as dynamic)._detachRaw();
+      } catch (_) {
+        return null;
+      }
+    }
+    return super.noSuchMethod(invocation);
+  }
+
+  // ignore: unused_element
+  dynamic _detachRaw() {
+    try {
+      // ignore: avoid_dynamic_calls
+      return (_rawSocket as dynamic)._detachRaw();
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 /// Cliente para a ControlPort do daemon Tor (autenticação, bootstrap e Hidden Services v3).
@@ -1229,14 +1254,14 @@ class RelayClient {
     Duration timeout = const Duration(seconds: 30),
     int? maxResponseBytes,
     String? circuitIsolation,
-  }) {
+  }) async {
     final connector = Socks5Connector(
       proxyHost: policy.socksHost,
       proxyPort: policy.socksPort,
       username: circuitIsolation,
       password: circuitIsolation,
     );
-    return connector.httpRequest(
+    final res = await connector.httpRequest(
       method,
       uri,
       headers: headers,
@@ -1247,6 +1272,7 @@ class RelayClient {
       tlsContext: tlsContext,
       onBadCertificate: onBadCertificate,
     );
+    return (statusCode: res.statusCode, body: res.body);
   }
 
   static bool _hasCompleteHttpMessage(Uint8List fullBytes) {

@@ -147,7 +147,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   key: const Key('attach_option_location'),
                   leading: const Icon(Icons.explore_outlined, color: Colors.tealAccent),
                   title: const Text('Localização'),
-                  subtitle: const Text('Mapa tático offline com marcador manual', style: TextStyle(fontSize: 11)),
+                  subtitle: const Text('Mapa geográfico offline com marcador manual', style: TextStyle(fontSize: 11)),
                   onTap: () => Navigator.pop(sheet, _AttachmentOption.location),
                 ),
                 ListTile(
@@ -161,7 +161,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   key: const Key('attach_option_acervo'),
                   leading: const Icon(Icons.bookmark_outline_rounded, color: Colors.pinkAccent),
                   title: const Text('Acervo'),
-                  subtitle: const Text('Obras culturais e passaporte PassportDex', style: TextStyle(fontSize: 11)),
+                  subtitle: const Text('Compartilhar obra do seu Acervo Cultural', style: TextStyle(fontSize: 11)),
                   onTap: () => Navigator.pop(sheet, _AttachmentOption.acervo),
                 ),
               ],
@@ -264,20 +264,45 @@ class _ChatInputBarState extends State<ChatInputBar> {
           if (work != null && mounted) {
             final creator = (work.creators != null && work.creators!.trim().isNotEmpty)
                 ? work.creators!.split(',').first.trim()
-                : 'Autor';
+                : '';
             final parsedGenres = (work.genres != null && work.genres!.trim().isNotEmpty)
                 ? work.genres!.split(',').map((s) => s.trim()).toList()
-                : const ['Geral'];
+                : const <String>[];
+
+            // Busca se o usuário possui a obra em seu Acervo pessoal para compartilhar dados reais
+            final userItem = nixState.userProfile.culturalItems.where((i) =>
+                i.id == work.id ||
+                i.id == 'catalog:${work.id}' ||
+                (i.title.toLowerCase() == work.title.toLowerCase() &&
+                    i.creatorOrYear.contains('${work.releaseYear}'))).firstOrNull;
+
+            final userRating = userItem != null && userItem.rating.isNotEmpty
+                ? double.tryParse(userItem.rating)
+                : null;
+            final userStage = userItem?.tracking.stage?.label;
+            final userCurrent = userItem?.tracking.current;
+            final userTotal = userItem?.tracking.total;
+            final userPercent = userItem?.tracking.fraction != null
+                ? (userItem!.tracking.fraction! * 100).round()
+                : null;
+
             final workData = WorkShareData(
               id: work.id,
               title: work.title,
               originalTitle: work.originalTitle ?? '',
               creator: creator,
-              year: work.releaseYear ?? 2024,
+              year: work.releaseYear,
               kind: work.kind,
-              rating: 9.4,
+              rating: userRating,
+              status: userStage,
+              episodesCount: userCurrent,
+              totalEpisodes: userTotal,
+              completedPercent: userPercent,
               genres: parsedGenres,
               synopsis: work.summary ?? '',
+              source: 'catalog',
+              externalId: work.externalIds['wikidata'] as String? ??
+                  work.externalIds['openlibrary'] as String?,
             );
             if (widget.onSendCustom != null) {
               widget.onSendCustom!(workData.toMessageText(), const []);

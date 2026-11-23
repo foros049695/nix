@@ -11,9 +11,21 @@ CulturalItem culturalItemFromCatalog(CatalogWork work) {
     _ => CulturalCategory.movies,
   };
   final thumb = work.coverThumb;
+  final parsedGenres = (work.genres != null && work.genres!.trim().isNotEmpty)
+      ? work.genres!.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
+      : const <String>[];
+
   return CulturalItem(
     id: 'catalog:${work.id}',
     title: work.title,
+    originalTitle: work.originalTitle,
+    creator: work.creators,
+    releaseYear: work.releaseYear,
+    synopsis: work.summary,
+    genres: parsedGenres,
+    externalIds: work.externalIds,
+    source: 'catalog',
+    provenanceConfidence: 'exact_id',
     creatorOrYear: [
       if (work.creators case final creators? when creators.isNotEmpty) creators,
       if (work.kind == 'track' && work.originalTitle != null) work.originalTitle!,
@@ -25,7 +37,10 @@ CulturalItem culturalItemFromCatalog(CatalogWork work) {
         thumb != null && thumb.startsWith('placeholder:') && thumb.length < 100
             ? thumb
             : null,
+    localImagePath:
+        thumb != null && !thumb.startsWith('placeholder:')
+            ? thumb
+            : null,
     isPublicInCardId: false,
   );
 }
-

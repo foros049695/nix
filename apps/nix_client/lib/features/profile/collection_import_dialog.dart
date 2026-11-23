@@ -7,6 +7,7 @@ import '../../core/security/file_picker_adapter.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
+import 'cover_enrichment_dialog.dart';
 
 class CollectionImportDialog extends StatefulWidget {
   final String? initialContent;
@@ -126,6 +127,13 @@ class _CollectionImportDialogState extends State<CollectionImportDialog> {
               : 'Nenhuma nova obra adicionada (todas já existiam no acervo).',
         ),
         backgroundColor: NixColors.surfaceElevatedHigh,
+        action: count > 0
+            ? SnackBarAction(
+                label: 'Buscar Capas',
+                textColor: Colors.cyanAccent,
+                onPressed: () => CoverEnrichmentDialog.show(context, targetItems: itemsToImport),
+              )
+            : null,
       ),
     );
   }

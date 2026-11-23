@@ -34,9 +34,14 @@ class NixUserAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
     final profile = nixState.userProfile;
-    final frameStyle = nixState.settings.avatarFrameStyle;
+    final shape = nixState.settings.avatarFrameShape;
+    final effect = nixState.settings.avatarFrameEffect;
     final userBorderWidth = nixState.settings.avatarBorderWidth;
     final effectiveWidth = borderWidth != 1.2 ? borderWidth : userBorderWidth;
+
+    final isSquare = shape == 'square' ||
+        nixState.settings.roundedSquareAvatar ||
+        nixState.settings.avatarFrameStyle == 'roundedSquare';
 
     Color effectiveBorderColor = borderColor ?? NixColors.surfaceBorderStrong;
     if (borderColor == null && nixState.settings.avatarFrameColorHex.isNotEmpty) {
@@ -44,37 +49,60 @@ class NixUserAvatar extends StatelessWidget {
         final hex = nixState.settings.avatarFrameColorHex.replaceAll('#', '');
         effectiveBorderColor = Color(int.parse('FF$hex', radix: 16));
       } catch (_) {}
+    } else if (borderColor == null) {
+      if (effect == 'neon' || nixState.settings.avatarFrameStyle == 'cyberpunkNeon') {
+        effectiveBorderColor = Colors.cyanAccent;
+      } else if (effect == 'glow' || nixState.settings.avatarFrameStyle == 'goldenBorder') {
+        effectiveBorderColor = const Color(0xFFFFD700);
+      } else if (effect == 'softGlow' || nixState.settings.avatarFrameStyle == 'nixPurple') {
+        effectiveBorderColor = const Color(0xFFB388FF);
+      } else if (effect == 'pixelArt' || nixState.settings.avatarFrameStyle == 'pixelArt') {
+        effectiveBorderColor = NixColors.accentGreen;
+      } else if (effect == 'subtle') {
+        effectiveBorderColor = NixColors.surfaceBorder;
+      }
     }
 
-    final isSquare = frameStyle == 'roundedSquare' || nixState.settings.roundedSquareAvatar;
-    final isPixel = frameStyle == 'pixelArt';
-    final isNeon = frameStyle == 'cyberpunkNeon';
-    final isGold = frameStyle == 'goldenBorder';
-    final isPurple = frameStyle == 'nixPurple';
-    final isTactical = frameStyle == 'tactical';
-
-    if (isNeon) {
-      effectiveBorderColor = Colors.cyanAccent;
-    } else if (isGold) {
-      effectiveBorderColor = const Color(0xFFFFD700);
-    } else if (isPurple) {
-      effectiveBorderColor = const Color(0xFFB388FF);
-    } else if (isTactical) {
-      effectiveBorderColor = Colors.tealAccent;
-    }
-
+    final cornerRadiusRatio = (nixState.settings.avatarCornerRadius / 36.0).clamp(0.0, 0.5);
     final corners = BorderRadius.circular(
-      size * (isPixel ? 0.12 : (isSquare || isNeon || isTactical ? 0.26 : 0.5)),
+      size * (effect == 'pixelArt' ? 0.08 : cornerRadiusRatio),
     );
+
+    List<BoxShadow>? shadows;
+    if (effect == 'neon' || nixState.settings.avatarFrameStyle == 'cyberpunkNeon') {
+      shadows = [
+        BoxShadow(
+          color: effectiveBorderColor.withValues(alpha: 0.75),
+          blurRadius: 10,
+          spreadRadius: 1.5,
+        ),
+      ];
+    } else if (effect == 'glow' || nixState.settings.avatarFrameStyle == 'goldenBorder') {
+      shadows = [
+        BoxShadow(
+          color: effectiveBorderColor.withValues(alpha: 0.55),
+          blurRadius: 7,
+          spreadRadius: 1,
+        ),
+      ];
+    } else if (effect == 'softGlow') {
+      shadows = [
+        BoxShadow(
+          color: effectiveBorderColor.withValues(alpha: 0.35),
+          blurRadius: 5,
+        ),
+      ];
+    }
+
+    final bool isDoubleBorder = effect == 'doubleBorder';
 
     Widget avatarCore = Container(
       width: size,
       height: size,
+      padding: isDoubleBorder ? const EdgeInsets.all(2.0) : EdgeInsets.zero,
       decoration: BoxDecoration(
-        shape: (!isSquare && !isPixel && !isNeon && !isTactical)
-            ? BoxShape.circle
-            : BoxShape.rectangle,
-        borderRadius: (!isSquare && !isPixel && !isNeon && !isTactical) ? null : corners,
+        shape: isSquare ? BoxShape.rectangle : BoxShape.circle,
+        borderRadius: isSquare ? corners : null,
         color: NixColors.surfaceCard,
         border: showBorder
             ? Border.all(
@@ -82,25 +110,23 @@ class NixUserAvatar extends StatelessWidget {
                 width: effectiveWidth,
               )
             : null,
-        boxShadow: isNeon
-            ? [
-                BoxShadow(
-                  color: Colors.cyanAccent.withValues(alpha: 0.6),
-                  blurRadius: 6,
-                  spreadRadius: 1,
-                ),
-              ]
-            : (isGold
-                ? [
-                    BoxShadow(
-                      color: const Color(0xFFFFD700).withValues(alpha: 0.5),
-                      blurRadius: 5,
-                    ),
-                  ]
-                : null),
+        boxShadow: shadows,
       ),
       clipBehavior: Clip.antiAlias,
-      child: _buildAvatarContent(context, profile),
+      child: isDoubleBorder
+          ? Container(
+              decoration: BoxDecoration(
+                shape: isSquare ? BoxShape.rectangle : BoxShape.circle,
+                borderRadius: isSquare ? BorderRadius.circular(size * cornerRadiusRatio * 0.8) : null,
+                border: Border.all(
+                  color: effectiveBorderColor.withValues(alpha: 0.6),
+                  width: (effectiveWidth * 0.75).clamp(0.8, 2.0),
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: _buildAvatarContent(context, profile),
+            )
+          : _buildAvatarContent(context, profile),
     );
 
     if (showStatus) {

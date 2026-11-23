@@ -130,6 +130,9 @@ class UserSettings {
   final bool hidePagerAvatar;
   final bool roundedSquareAvatar;
   final String avatarFrameStyle;
+  final String avatarFrameShape; // 'circle' ou 'square' (Seção 11)
+  final String avatarFrameEffect; // 'none', 'glow', 'neon', 'softGlow', 'doubleBorder', 'pixelArt', 'subtle'
+  final double avatarCornerRadius; // Cantos arredondados do quadrado
   final double avatarBorderWidth;
   final String avatarFrameColorHex;
   final double pagerWallpaperShade;
@@ -240,6 +243,9 @@ class UserSettings {
     this.hidePagerAvatar = false,
     this.roundedSquareAvatar = false,
     this.avatarFrameStyle = 'circle',
+    this.avatarFrameShape = 'circle',
+    this.avatarFrameEffect = 'none',
+    this.avatarCornerRadius = 8.0,
     this.avatarBorderWidth = 1.5,
     this.avatarFrameColorHex = '',
     this.pagerWallpaperShade = 0,
@@ -309,6 +315,9 @@ class UserSettings {
     bool? hidePagerAvatar,
     bool? roundedSquareAvatar,
     String? avatarFrameStyle,
+    String? avatarFrameShape,
+    String? avatarFrameEffect,
+    double? avatarCornerRadius,
     double? avatarBorderWidth,
     String? avatarFrameColorHex,
     double? pagerWallpaperShade,
@@ -377,6 +386,9 @@ class UserSettings {
       hidePagerAvatar: hidePagerAvatar ?? this.hidePagerAvatar,
       roundedSquareAvatar: roundedSquareAvatar ?? this.roundedSquareAvatar,
       avatarFrameStyle: avatarFrameStyle ?? this.avatarFrameStyle,
+      avatarFrameShape: avatarFrameShape ?? this.avatarFrameShape,
+      avatarFrameEffect: avatarFrameEffect ?? this.avatarFrameEffect,
+      avatarCornerRadius: avatarCornerRadius ?? this.avatarCornerRadius,
       avatarBorderWidth: avatarBorderWidth ?? this.avatarBorderWidth,
       avatarFrameColorHex: avatarFrameColorHex ?? this.avatarFrameColorHex,
       pagerWallpaperShade: pagerWallpaperShade ?? this.pagerWallpaperShade,
@@ -414,6 +426,9 @@ class UserSettings {
         'hidePagerAvatar': hidePagerAvatar,
         'roundedSquareAvatar': roundedSquareAvatar,
         'avatarFrameStyle': avatarFrameStyle,
+        'avatarFrameShape': avatarFrameShape,
+        'avatarFrameEffect': avatarFrameEffect,
+        'avatarCornerRadius': avatarCornerRadius,
         'avatarBorderWidth': avatarBorderWidth,
         'avatarFrameColorHex': avatarFrameColorHex,
         'pagerWallpaperShade': pagerWallpaperShade,
@@ -574,6 +589,17 @@ class UserSettings {
       roundedSquareAvatar: json['roundedSquareAvatar'] == true,
       avatarFrameStyle: (json['avatarFrameStyle'] as String?) ??
           (json['roundedSquareAvatar'] == true ? 'roundedSquare' : 'circle'),
+      avatarFrameShape: (json['avatarFrameShape'] as String?) ??
+          ((json['roundedSquareAvatar'] == true || json['avatarFrameStyle'] == 'roundedSquare') ? 'square' : 'circle'),
+      avatarFrameEffect: (json['avatarFrameEffect'] as String?) ??
+          (json['avatarFrameStyle'] == 'cyberpunkNeon'
+              ? 'neon'
+              : json['avatarFrameStyle'] == 'pixelArt'
+                  ? 'pixelArt'
+                  : json['avatarFrameStyle'] == 'goldenBorder'
+                      ? 'glow'
+                      : 'none'),
+      avatarCornerRadius: readAvatarValue(json['avatarCornerRadius'], 8.0, 0, 32),
       avatarBorderWidth: (json['avatarBorderWidth'] as num?)?.toDouble() ?? 1.5,
       avatarFrameColorHex: (json['avatarFrameColorHex'] as String?) ?? '',
       interfaceWallpaper: InterfaceWallpaper.fromJson(json['interfaceWallpaper']),

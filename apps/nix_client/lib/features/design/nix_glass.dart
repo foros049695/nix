@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
+import '../navigation/interface_wallpaper_layer.dart';
 
 class NixGlass extends StatelessWidget {
   const NixGlass(
@@ -17,6 +18,7 @@ class NixGlass extends StatelessWidget {
     final scheme = context.nixScheme;
     final border = BorderRadius.circular(radius);
     final base = scheme.surfaceElevated;
+    final wallpaperVisible = InterfaceWallpaperLayer.visibleOf(context);
     return ClipRRect(
       borderRadius: border,
       child: BackdropFilter(
@@ -38,13 +40,17 @@ class NixGlass extends StatelessWidget {
                           context.accentColor
                               .withValues(alpha: mirror ? .21 : .09),
                           base)
-                      .withValues(alpha: scheme.isLight ? .94 : .89),
-                  base.withValues(alpha: scheme.isLight ? .77 : .70),
+                      .withValues(alpha: wallpaperVisible
+                          ? (scheme.isLight ? .72 : .60)
+                          : (scheme.isLight ? .94 : .89)),
+                  base.withValues(alpha: wallpaperVisible
+                      ? (scheme.isLight ? .55 : .45)
+                      : (scheme.isLight ? .77 : .70)),
                   Color.alphaBlend(
                           context.accentColor
                               .withValues(alpha: mirror ? .18 : .06),
                           base)
-                      .withValues(alpha: .91),
+                      .withValues(alpha: wallpaperVisible ? .65 : .91),
                 ],
                 stops: const [0, .54, 1],
               ),
