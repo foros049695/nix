@@ -79,6 +79,7 @@ enum NixActiveArea {
   github,      // GitHub Discovery (Starwire)
   moneroP2p,   // Mercado Monero P2P Não Custodial
   mediaIndex,  // Nix Media Index Offline-First (Acervo Cultural)
+  downloads,   // Nix Downloads & Torrent Index
   archive,     // Nix Archive Ambiente Dedicado
 }
 
@@ -3289,6 +3290,20 @@ class NixState extends ChangeNotifier {
     _activeArea = NixActiveArea.mediaIndex;
     _clearTransientMessageModes();
     notifyListeners();
+  }
+
+  String? _prefilledTorrentSearch;
+  String? get prefilledTorrentSearch => _prefilledTorrentSearch;
+
+  void openDownloadsArea({String? prefillSearch}) {
+    _prefilledTorrentSearch = prefillSearch;
+    _activeArea = NixActiveArea.downloads;
+    _clearTransientMessageModes();
+    notifyListeners();
+  }
+
+  void clearPrefilledTorrentSearch() {
+    _prefilledTorrentSearch = null;
   }
 
   void openArchiveArea() {

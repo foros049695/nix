@@ -23,6 +23,7 @@ enum WorkspaceTab {
       Icons.chat_bubble_rounded),
   spaces('Grupos', Icons.forum_outlined, Icons.forum_rounded),
   media('Acervo', Icons.local_library_outlined, Icons.local_library_rounded),
+  downloads('Downloads', Icons.downloading_outlined, Icons.downloading_rounded),
   archive('Arquivo', Icons.auto_stories_outlined, Icons.auto_stories_rounded),
   market('Cripto', Icons.currency_exchange_rounded,
       Icons.currency_exchange_rounded);
@@ -36,6 +37,7 @@ enum WorkspaceTab {
   static WorkspaceTab forArea(NixActiveArea area) => switch (area) {
         NixActiveArea.spaces => spaces,
         NixActiveArea.mediaIndex => media,
+        NixActiveArea.downloads => downloads,
         NixActiveArea.archive => archive,
         NixActiveArea.moneroP2p => market,
         _ => chats,
@@ -50,6 +52,8 @@ enum WorkspaceTab {
         if (state.spaces.isNotEmpty) state.selectSpace(state.currentSpace);
       case media:
         state.openMediaIndexArea();
+      case downloads:
+        state.openDownloadsArea();
       case archive:
         state.openArchiveArea();
       case market:

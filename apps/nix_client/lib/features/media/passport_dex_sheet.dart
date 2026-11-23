@@ -442,6 +442,28 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
                       ],
                     ),
                   ),
+
+                  // Ação rápida: Pesquisar referências no Nix Torrent Index
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFC084FC),
+                        side: const BorderSide(color: Color(0xFF7C3AED)),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      onPressed: () {
+                        widget.onClose?.call();
+                        state.openDownloadsArea(prefillSearch: widget.item.title);
+                      },
+                      icon: const Icon(Icons.search_rounded, size: 16),
+                      label: const Text(
+                        'Pesquisar no Torrent Index',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

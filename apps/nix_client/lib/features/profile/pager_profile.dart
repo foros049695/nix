@@ -39,7 +39,7 @@ class PagerProfile extends StatefulWidget {
 }
 
 class _PagerProfileState extends State<PagerProfile> {
-  static const _pages = ['Identidade', 'Status', 'Contemplação'];
+  static const _pages = ['Identidade', 'Status', 'Contemplação', 'Downloads'];
   final _controller = PageController();
   int _page = 0;
 
@@ -421,7 +421,7 @@ class _PagerProfileState extends State<PagerProfile> {
                     onPrevious:
                         _page > 0 ? () => _selectPage(_page - 1, state) : null,
                     onNext:
-                        _page < 2 ? () => _selectPage(_page + 1, state) : null,
+                        _page < _pages.length - 1 ? () => _selectPage(_page + 1, state) : null,
                     onMenu: () => _showPagerMenu(state),
                     minDisplayHeight: housing.maxWidth < 576 ? 442 : 386,
                     screen: LayoutBuilder(
@@ -473,6 +473,21 @@ class _PagerProfileState extends State<PagerProfile> {
                               ),
                               _ContemplationScreen(
                                   showAvatar: !state.settings.hidePagerAvatar),
+                              _PagerPanel(
+                                title: _pages[3],
+                                japanese: '受信',
+                                page: 4,
+                                totalPages: _pages.length,
+                                footer: OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: state.settings.pagerLcdColor.inkColor,
+                                    side: BorderSide(color: state.settings.pagerLcdColor.inkColor),
+                                  ),
+                                  onPressed: () => state.openDownloadsArea(),
+                                  child: const Text('Abrir Central de Downloads'),
+                                ),
+                                child: _downloadsSummary(state),
+                              ),
                             ],
                           ),
                         );
@@ -932,6 +947,55 @@ class _PagerProfileState extends State<PagerProfile> {
       ),
     );
   }
+  Widget _downloadsSummary(NixState state) {
+    final ink = state.settings.pagerLcdColor.inkColor;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 6),
+        Text(
+          'Central de Downloads & Torrents',
+          style: TextStyle(
+            color: ink,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            fontFamily: pagerDisplayFont,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _statusRow('Mecanismo de Download:', 'aria2 HTTP/HTTPS', ink),
+        _statusRow('Proteção BitTorrent:', 'Bloqueado (Anti-Leak Tor)', ink),
+        _statusRow('Range Requests:', 'Multi-Conexão (4 splits)', ink),
+        _statusRow('Buscador Torrents:', 'Online / Offline / Ao Vivo', ink),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: state.settings.pagerLcdColor.chipColor,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: state.settings.pagerLcdColor.ruleColor),
+          ),
+          child: Text(
+            'Transferências BitTorrent permanecem isoladas para garantir sua privacidade.',
+            style: TextStyle(color: ink, fontSize: 11, height: 1.3),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _statusRow(String label, String value, Color ink) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(color: ink.withValues(alpha: 0.8), fontSize: 11)),
+          Text(value, style: TextStyle(color: ink, fontSize: 11, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
 }
 
 enum _PagerMenu {
@@ -951,6 +1015,7 @@ class _PagerPanel extends StatelessWidget {
   final String title;
   final String japanese;
   final int page;
+  final int totalPages;
   final Widget? action;
   final Widget? footer;
   final bool fixedFooter;
@@ -960,6 +1025,7 @@ class _PagerPanel extends StatelessWidget {
       {required this.title,
       required this.japanese,
       required this.page,
+      this.totalPages = 4,
       this.action,
       this.footer,
       this.fixedFooter = false,
@@ -990,7 +1056,7 @@ class _PagerPanel extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    '0$page/03',
+                    '0$page/0$totalPages',
                     maxLines: 1,
                     textScaler: MediaQuery.textScalerOf(context)
                         .clamp(maxScaleFactor: 1.5),

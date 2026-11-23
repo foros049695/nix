@@ -170,6 +170,14 @@ class HomeSidebar extends StatelessWidget {
                 ),
                 _navTile(
                   context,
+                  key: const Key('home_nav_downloads'),
+                  icon: Icons.downloading_rounded,
+                  label: 'Downloads & Torrents',
+                  isSelected: nixState.activeArea == NixActiveArea.downloads,
+                  onTap: () => nixState.openDownloadsArea(),
+                ),
+                _navTile(
+                  context,
                   key: const Key('home_nav_archive'),
                   icon: Icons.auto_stories_rounded,
                   label: 'Nix Archive',

@@ -1,0 +1,1332 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../../core/downloads/aria2_download_controller.dart';
+import '../../core/downloads/models/download_task.dart';
+import '../../core/downloads/safe_file_launcher.dart';
+import '../../core/torrent_index/adapters/indexer_sources_manager.dart';
+import '../../core/torrent_index/api/nix_online_search_api.dart';
+import '../../core/torrent_index/api/torrent_online_client.dart';
+import '../../core/torrent_index/database/torrent_index_database.dart';
+import '../../core/torrent_index/models/indexer_source_config.dart';
+import '../../core/torrent_index/models/torrent_record.dart';
+import '../../core/torrent_index/models/torrent_search_query.dart';
+import '../../state/nix_state.dart';
+
+/// Central unificada do Nix Downloads & Torrent Index.
+/// Interface retrô inspirada em terminais digitais e visores analógicos estilo Pager.
+class TorrentDownloadsStage extends StatefulWidget {
+  final String? initialSearch;
+  final TorrentIndexDatabase? database;
+  final IndexerSourcesManager? sourcesManager;
+  final Aria2DownloadController? downloadController;
+
+  const TorrentDownloadsStage({
+    super.key,
+    this.initialSearch,
+    this.database,
+    this.sourcesManager,
+    this.downloadController,
+  });
+
+  @override
+  State<TorrentDownloadsStage> createState() => _TorrentDownloadsStageState();
+}
+
+class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
+  int _currentTab = 0; // 0: Buscador, 1: Downloads, 2: Fontes
+
+  // Estado do Buscador de Torrents
+  final TextEditingController _searchController = TextEditingController();
+  TorrentSearchMode _searchMode = TorrentSearchMode.local;
+  final TorrentSortOrder _sortOrder = TorrentSortOrder.relevance;
+  final Set<TorrentCategory> _selectedCategories = {};
+  bool _isFilterDrawerOpen = false;
+  bool _isSearching = false;
+  TorrentSearchResult? _searchResult;
+  String? _searchErrorMessage;
+
+  // Serviços
+  TorrentIndexDatabase? _db;
+  IndexerSourcesManager? _sourcesManager;
+  NixOnlineSearchApi? _onlineApi;
+  TorrentOnlineClient? _onlineClient;
+  Aria2DownloadController? _downloadController;
+
+  // Estado dos downloads
+  List<DownloadTask> _downloadTasks = [];
+  int _totalLocalRecords = 0;
+  DateTime? _lastSyncDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _sourcesManager = widget.sourcesManager ?? IndexerSourcesManager();
+    if (widget.initialSearch != null && widget.initialSearch!.isNotEmpty) {
+      _searchController.text = widget.initialSearch!;
+    }
+    _initializeServices();
+  }
+
+  Future<void> _initializeServices() async {
+    final nixState = context.read<NixState>();
+
+    // Inicializa banco dedicado SQLite FTS5 do índice de torrents
+    _db = widget.database ?? await TorrentIndexDatabase.open();
+    _sourcesManager ??= widget.sourcesManager ?? IndexerSourcesManager();
+    _onlineApi = NixOnlineSearchApi(
+      database: _db!,
+      sourcesManager: _sourcesManager!,
+    );
+    _onlineClient = TorrentOnlineClient(
+      localApiHandler: _onlineApi!.handleRequest,
+    );
+
+    // Inicializa controlador aria2 para downloads HTTP/HTTPS diretos
+    if (widget.downloadController != null) {
+      _downloadController = widget.downloadController;
+    } else {
+      final downloadPath = '${Directory.systemTemp.path}/nix_downloads';
+      _downloadController = Aria2DownloadController(
+        downloadDir: downloadPath,
+        onTasksUpdated: (tasks) {
+          if (mounted) setState(() => _downloadTasks = List.from(tasks));
+        },
+      );
+      await _downloadController!.startDaemon();
+    }
+
+    _totalLocalRecords = await _db!.getRecordCount();
+    _lastSyncDate = await _db!.getLastSyncDate();
+
+    // Se houver pesquisa inicial pré-preenchida pelo Acervo, dispara busca
+    final prefill = nixState.prefilledTorrentSearch ?? widget.initialSearch;
+    if (prefill != null && prefill.isNotEmpty) {
+      _searchController.text = prefill;
+      nixState.clearPrefilledTorrentSearch();
+      _executeSearch();
+    } else {
+      _executeSearch();
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _downloadController?.stopDaemon();
+    _db?.close();
+    super.dispose();
+  }
+
+  Future<void> _executeSearch({int page = 1}) async {
+    if (_db == null) return;
+    setState(() {
+      _isSearching = true;
+      _searchErrorMessage = null;
+    });
+
+    final query = TorrentSearchQuery(
+      query: _searchController.text.trim(),
+      categories: _selectedCategories,
+      mode: _searchMode,
+      sort: _sortOrder,
+      page: page,
+      pageSize: 20,
+    );
+
+    try {
+      TorrentSearchResult result;
+      switch (_searchMode) {
+        case TorrentSearchMode.local:
+          result = await _db!.search(query);
+          break;
+        case TorrentSearchMode.online:
+          result = await _onlineClient!.searchOnline(
+            query,
+            userConsent: true,
+            isTorReady: true,
+          );
+          break;
+        case TorrentSearchMode.liveFederated:
+          result = await _onlineClient!.searchLiveFederated(
+            query,
+            userConsent: true,
+            isTorReady: true,
+          );
+          break;
+      }
+
+      if (mounted) {
+        setState(() {
+          _searchResult = result;
+          _isSearching = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _searchErrorMessage = 'Falha na pesquisa: $e';
+          _isSearching = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Column(
+        children: [
+          // Barra de Cabeçalho Superior Retrô
+          _buildTerminalHeader(),
+
+          // Navegação das 3 Abas
+          _buildStageTabs(),
+
+          // Conteúdo Ativo
+          Expanded(
+            child: switch (_currentTab) {
+              0 => _buildTorrentSearchTab(),
+              1 => _buildDownloadsManagerTab(),
+              2 => _buildSourcesManagerTab(),
+              _ => const SizedBox.shrink(),
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTerminalHeader() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D0D14).withOpacity(0.85),
+        border: const Border(bottom: BorderSide(color: Color(0xFF2E2248))),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF7C3AED).withOpacity(0.2),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFF7C3AED).withOpacity(0.5)),
+            ),
+            child: const Text(
+              'TORLINK // NIX INDEX',
+              style: TextStyle(
+                color: Color(0xFFC4B5FD),
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'monospace',
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Pesquisa de metadados — online e offline (aria2 direto HTTP/HTTPS)',
+              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11.5),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          // Indicador de privacidade
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFF10B981).withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.shield_outlined, size: 12, color: Color(0xFF34D399)),
+                SizedBox(width: 4),
+                Text(
+                  'TOR SOCKS5 ISOLADO',
+                  style: TextStyle(color: Color(0xFF34D399), fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStageTabs() {
+    return Container(
+      color: const Color(0xFF11111B).withOpacity(0.7),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _tabChip(0, Icons.search_rounded, 'Buscador de Torrents'),
+            const SizedBox(width: 8),
+            _tabChip(
+              1,
+              Icons.downloading_rounded,
+              'Nix Downloads (aria2)',
+              badgeCount: _downloadTasks.where((t) => t.status == DownloadStatus.downloading).length,
+            ),
+            const SizedBox(width: 8),
+            _tabChip(2, Icons.hub_outlined, 'Fontes & Conectores'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tabChip(int tabIndex, IconData icon, String label, {int badgeCount = 0}) {
+    final isSelected = _currentTab == tabIndex;
+    return InkWell(
+      onTap: () => setState(() => _currentTab = tabIndex),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF7C3AED).withOpacity(0.25) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF8B5CF6) : const Color(0xFF334155).withOpacity(0.6),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: isSelected ? const Color(0xFFDDD6FE) : const Color(0xFF94A3B8)),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : const Color(0xFF94A3B8),
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+            if (badgeCount > 0) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$badgeCount',
+                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------
+  // ABA 1: Buscador de Torrents
+  // -------------------------------------------------------------
+  Widget _buildTorrentSearchTab() {
+    return Column(
+      children: [
+        // Barra de busca estilo prompt de terminal
+        Container(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            children: [
+              // Linha dos chips de seleção do Modo de Pesquisa
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final mode in TorrentSearchMode.values) ...[
+                      _modeChip(mode),
+                      const SizedBox(width: 6),
+                    ],
+                    const SizedBox(width: 12),
+                    // Botão de Filtros
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFC4B5FD),
+                        side: BorderSide(
+                          color: _selectedCategories.isNotEmpty ? const Color(0xFF8B5CF6) : const Color(0xFF475569),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      ),
+                      onPressed: () => setState(() => _isFilterDrawerOpen = !_isFilterDrawerOpen),
+                      icon: Icon(
+                        _isFilterDrawerOpen ? Icons.filter_alt_off_rounded : Icons.filter_alt_rounded,
+                        size: 15,
+                      ),
+                      label: Text(
+                        _selectedCategories.isEmpty ? 'Filtros' : 'Filtros (${_selectedCategories.length})',
+                        style: const TextStyle(fontSize: 11.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // Campo de texto estilo terminal
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F0E17),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF6D28D9).withOpacity(0.5)),
+                ),
+                child: Row(
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        '>',
+                        style: TextStyle(
+                          color: Color(0xFFA78BFA),
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        style: const TextStyle(color: Colors.white, fontSize: 13, fontFamily: 'monospace'),
+                        decoration: const InputDecoration(
+                          hintText: 'Pesquise obras, títulos, hashes ou palavras-chave...',
+                          hintStyle: TextStyle(color: Color(0xFF64748B), fontSize: 12.5),
+                          border: InputBorder.none,
+                          isDense: true,
+                        ),
+                        onSubmitted: (_) => _executeSearch(),
+                      ),
+                    ),
+                    if (_searchController.text.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(Icons.clear_rounded, size: 16, color: Color(0xFF94A3B8)),
+                        onPressed: () {
+                          _searchController.clear();
+                          _executeSearch();
+                        },
+                      ),
+                    Container(
+                      margin: const EdgeInsets.only(right: 6),
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF7C3AED),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        ),
+                        onPressed: _executeSearch,
+                        child: const Text('Pesquisar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Painel expansível de filtros de categorias
+              if (_isFilterDrawerOpen) _buildFilterPanel(),
+            ],
+          ),
+        ),
+
+        // Área dos resultados
+        Expanded(
+          child: _isSearching
+              ? const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: Color(0xFF8B5CF6)),
+                      SizedBox(height: 12),
+                      Text(
+                        'Consultando índice de metadados...',
+                        style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12, fontFamily: 'monospace'),
+                      ),
+                    ],
+                  ),
+                )
+              : (_searchErrorMessage != null)
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          _searchErrorMessage!,
+                          style: const TextStyle(color: Color(0xFFEF4444), fontSize: 13),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    )
+                  : (_searchResult == null || _searchResult!.records.isEmpty)
+                      ? _buildEmptyResultsView()
+                      : _buildResultsList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _modeChip(TorrentSearchMode mode) {
+    final isSelected = _searchMode == mode;
+    return ChoiceChip(
+      label: Text(
+        mode.label,
+        style: TextStyle(
+          color: isSelected ? Colors.white : const Color(0xFF94A3B8),
+          fontSize: 11,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      selected: isSelected,
+      selectedColor: const Color(0xFF7C3AED),
+      backgroundColor: const Color(0xFF1E1E2E),
+      onSelected: (_) {
+        setState(() => _searchMode = mode);
+        _executeSearch();
+      },
+    );
+  }
+
+  Widget _buildFilterPanel() {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161622),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF2D2D42)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'Filtrar por Categoria',
+                style: TextStyle(color: Color(0xFFDDD6FE), fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+              const Spacer(),
+              if (_selectedCategories.isNotEmpty)
+                TextButton(
+                  onPressed: () => setState(() => _selectedCategories.clear()),
+                  child: const Text('Limpar', style: TextStyle(color: Color(0xFFA78BFA), fontSize: 11)),
+                ),
+            ],
+          ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final cat in TorrentCategory.values)
+                FilterChip(
+                  label: Text(cat.label, style: const TextStyle(fontSize: 11)),
+                  selected: _selectedCategories.contains(cat),
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        _selectedCategories.add(cat);
+                      } else {
+                        _selectedCategories.remove(cat);
+                      }
+                    });
+                    _executeSearch();
+                  },
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyResultsView() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.search_off_rounded, size: 48, color: const Color(0xFF64748B).withOpacity(0.5)),
+          const SizedBox(height: 12),
+          const Text(
+            'Nenhum resultado encontrado.',
+            style: TextStyle(color: Color(0xFF94A3B8), fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Tente alternar para "Índice Online" ou "Ao Vivo" para consultar fontes externas via Tor.',
+            style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResultsList() {
+    final result = _searchResult!;
+    return Column(
+      children: [
+        // Barra com contagem e paginação
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: const Color(0xFF0F0E17).withOpacity(0.5),
+          child: Row(
+            children: [
+              Text(
+                'Resultados: ${result.totalCount} torrents indexados',
+                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11.5, fontFamily: 'monospace'),
+              ),
+              if (result.isCached) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF7C3AED).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text('CACHE', style: TextStyle(color: Color(0xFFC4B5FD), fontSize: 9.5, fontWeight: FontWeight.bold)),
+                ),
+              ],
+              const Spacer(),
+              // Paginação
+              if (result.hasPreviousPage)
+                IconButton(
+                  icon: const Icon(Icons.chevron_left_rounded, size: 18, color: Colors.white70),
+                  onPressed: () => _executeSearch(page: result.page - 1),
+                  tooltip: 'Página anterior',
+                ),
+              Text(
+                'Página ${result.page} de ${result.totalPages}',
+                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+              ),
+              if (result.hasNextPage)
+                IconButton(
+                  icon: const Icon(Icons.chevron_right_rounded, size: 18, color: Colors.white70),
+                  onPressed: () => _executeSearch(page: result.page + 1),
+                  tooltip: 'Próxima página',
+                ),
+            ],
+          ),
+        ),
+
+        // Lista dos cartões
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: result.records.length,
+            itemBuilder: (context, index) {
+              final rec = result.records[index];
+              return _buildTorrentCard(rec);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTorrentCard(TorrentIndexRecord rec) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF13131F),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF27273A)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Badge de Categoria
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6D28D9).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: const Color(0xFF6D28D9).withOpacity(0.4)),
+                ),
+                child: Text(
+                  rec.category.label,
+                  style: const TextStyle(color: Color(0xFFDDD6FE), fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // Título
+              Expanded(
+                child: Text(
+                  rec.title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Metadados reais (SEM DADOS FICTÍCIOS)
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            children: [
+              _metaItem(Icons.sd_card_outlined, rec.formattedSize),
+              _metaItem(Icons.calendar_today_outlined, rec.formattedDate),
+              if (rec.seeders != null)
+                _metaItem(
+                  Icons.arrow_upward_rounded,
+                  'Seeds: ${rec.seeders}',
+                  color: const Color(0xFF34D399),
+                ),
+              if (rec.leechers != null)
+                _metaItem(
+                  Icons.arrow_downward_rounded,
+                  'Peers: ${rec.leechers}',
+                  color: const Color(0xFFF87171),
+                ),
+              // Fontes
+              for (final p in rec.provenances)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    p.sourceName,
+                    style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Ações do Cartão
+          Row(
+            children: [
+              // Hash resumido
+              if (rec.infoHashV1 != null)
+                Text(
+                  'Hash: ${rec.infoHashV1!.substring(0, 10)}...',
+                  style: const TextStyle(color: Color(0xFF64748B), fontSize: 10.5, fontFamily: 'monospace'),
+                ),
+              const Spacer(),
+
+              // Copiar Magnet
+              if (rec.magnetUri != null)
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFC084FC),
+                    side: const BorderSide(color: Color(0xFF7C3AED)),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: rec.magnetUri!));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Link Magnet copiado com sucesso!'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.link_rounded, size: 14),
+                  label: const Text('Copiar Magnet', style: TextStyle(fontSize: 11)),
+                ),
+              const SizedBox(width: 8),
+
+              // Copiar Origem
+              if (rec.sourceUrl != null)
+                IconButton(
+                  icon: const Icon(Icons.open_in_new_rounded, size: 16, color: Color(0xFF94A3B8)),
+                  tooltip: 'Copiar URL de Origem',
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: rec.sourceUrl!));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('URL de origem copiada!'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metaItem(IconData icon, String text, {Color? color}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: color ?? const Color(0xFF64748B)),
+        const SizedBox(width: 3),
+        Text(
+          text,
+          style: TextStyle(
+            color: color ?? const Color(0xFF94A3B8),
+            fontSize: 11,
+            fontFamily: 'monospace',
+          ),
+        ),
+      ],
+    );
+  }
+
+  // -------------------------------------------------------------
+  // ABA 2: Nix Downloads (aria2 HTTP/HTTPS)
+  // -------------------------------------------------------------
+  Widget _buildDownloadsManagerTab() {
+    return Column(
+      children: [
+        // Barra de ação: Adicionar download direto
+        Container(
+          padding: const EdgeInsets.all(14),
+          color: const Color(0xFF0F0E17).withOpacity(0.5),
+          child: Row(
+            children: [
+              const Icon(Icons.download_rounded, color: Color(0xFFA78BFA), size: 20),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Fila de Downloads Diretos (HTTP/HTTPS com aria2)',
+                  style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF7C3AED),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+                onPressed: _showAddDownloadDialog,
+                icon: const Icon(Icons.add_rounded, size: 16),
+                label: const Text('Adicionar URL', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+        ),
+
+        // Lista de downloads com visor retrô estilo Pager
+        Expanded(
+          child: _downloadTasks.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.downloading_rounded, size: 48, color: const Color(0xFF64748B).withOpacity(0.4)),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Nenhum download ativo na fila.',
+                        style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Clique em "Adicionar URL" para iniciar uma transferência HTTP/HTTPS acelerada.',
+                        style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: _downloadTasks.length,
+                  itemBuilder: (context, index) {
+                    final task = _downloadTasks[index];
+                    return _buildDownloadVisorCard(task);
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDownloadVisorCard(DownloadTask task) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E0E18),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF4C1D95).withOpacity(0.5)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF7C3AED).withOpacity(0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Cabeçalho da tarefa
+          Row(
+            children: [
+              Icon(
+                task.isExecutable ? Icons.extension_rounded : Icons.insert_drive_file_outlined,
+                color: const Color(0xFFC4B5FD),
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  task.fileName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              // Status Badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _statusColor(task.status).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: _statusColor(task.status).withOpacity(0.5)),
+                ),
+                child: Text(
+                  task.status.label,
+                  style: TextStyle(color: _statusColor(task.status), fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Barra de progresso segmentada estilo visor digital (Pixel OLED)
+          _buildSegmentedProgressBar(task.progressFraction),
+          const SizedBox(height: 8),
+
+          // Linha de métricas: Tamanho, Velocidade e ETA
+          Row(
+            children: [
+              Text(
+                task.formattedProgressBytes,
+                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11, fontFamily: 'monospace'),
+              ),
+              const Spacer(),
+              if (task.status == DownloadStatus.downloading) ...[
+                Text(
+                  '⚡ ${task.formattedSpeed}',
+                  style: const TextStyle(color: Color(0xFF34D399), fontSize: 11, fontFamily: 'monospace'),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'ETA: ${task.formattedEta}',
+                  style: const TextStyle(color: Color(0xFFA78BFA), fontSize: 11, fontFamily: 'monospace'),
+                ),
+              ],
+            ],
+          ),
+
+          if (task.errorMessage != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              task.errorMessage!,
+              style: const TextStyle(color: Color(0xFFEF4444), fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 10),
+
+          // Botões de controle da tarefa
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (task.status == DownloadStatus.downloading)
+                IconButton(
+                  icon: const Icon(Icons.pause_rounded, size: 18, color: Colors.amber),
+                  tooltip: 'Pausar',
+                  onPressed: () => _downloadController?.pauseDownload(task.id),
+                ),
+              if (task.status == DownloadStatus.paused)
+                IconButton(
+                  icon: const Icon(Icons.play_arrow_rounded, size: 18, color: Color(0xFF34D399)),
+                  tooltip: 'Retomar',
+                  onPressed: () => _downloadController?.resumeDownload(task.id),
+                ),
+              if (task.status == DownloadStatus.completed)
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF7C3AED),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  ),
+                  icon: const Icon(Icons.folder_open_rounded, size: 14),
+                  label: const Text('Abrir Arquivo', style: TextStyle(fontSize: 11)),
+                  onPressed: () {
+                    SafeFileOpeningDialog.show(context, task, () {
+                      // Abertura segura confirmada
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Abrindo: ${task.destinationPath}')),
+                      );
+                    });
+                  },
+                ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFF94A3B8)),
+                tooltip: 'Remover da fila',
+                onPressed: () => _downloadController?.cancelDownload(task.id),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSegmentedProgressBar(double fraction) {
+    const totalSegments = 24;
+    final filledSegments = (fraction * totalSegments).round().clamp(0, totalSegments);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          for (var i = 0; i < totalSegments; i++) ...[
+            Expanded(
+              child: Container(
+                height: 8,
+                margin: const EdgeInsets.symmetric(horizontal: 1),
+                decoration: BoxDecoration(
+                  color: i < filledSegments ? const Color(0xFFA78BFA) : const Color(0xFF1F1F2E),
+                  borderRadius: BorderRadius.circular(1.5),
+                  boxShadow: i < filledSegments
+                      ? [
+                          BoxShadow(
+                            color: const Color(0xFFA78BFA).withOpacity(0.5),
+                            blurRadius: 3,
+                          ),
+                        ]
+                      : null,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(width: 8),
+          Text(
+            '${(fraction * 100).toInt()}%',
+            style: const TextStyle(
+              color: Color(0xFFDDD6FE),
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _statusColor(DownloadStatus status) {
+    switch (status) {
+      case DownloadStatus.downloading:
+        return const Color(0xFF34D399);
+      case DownloadStatus.paused:
+        return Colors.amber;
+      case DownloadStatus.completed:
+        return const Color(0xFFA78BFA);
+      case DownloadStatus.failed:
+        return const Color(0xFFEF4444);
+      case DownloadStatus.cancelled:
+        return const Color(0xFF64748B);
+      default:
+        return const Color(0xFF94A3B8);
+    }
+  }
+
+  void _showAddDownloadDialog() {
+    final urlCtrl = TextEditingController();
+    final nameCtrl = TextEditingController();
+    final hashCtrl = TextEditingController();
+    String? validationError;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF13131F),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: const Color(0xFF7C3AED).withValues(alpha: 0.4)),
+            ),
+            title: const Row(
+              children: [
+                Icon(Icons.add_link_rounded, color: Color(0xFFA78BFA), size: 22),
+                SizedBox(width: 8),
+                Text('Adicionar Download Direto', style: TextStyle(color: Colors.white, fontSize: 16)),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Insira uma URL direta com protocolo HTTP ou HTTPS. '
+                    'Downloads BitTorrent foram desabilitados para manter a privacidade do usuário.',
+                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: urlCtrl,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    decoration: const InputDecoration(
+                      labelText: 'URL de Download (HTTP/HTTPS)',
+                      labelStyle: TextStyle(color: Color(0xFF94A3B8)),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (val) {
+                      if (val.startsWith('magnet:?') || val.startsWith('torrent:')) {
+                        setDlgState(() {
+                          validationError =
+                              'O Nix Downloads utiliza aria2 exclusivamente para downloads diretos HTTP/HTTPS. '
+                              'Transferências BitTorrent/magnets via Tor foram desabilitadas para evitar vazamento de IP.';
+                        });
+                      } else {
+                        setDlgState(() => validationError = null);
+                      }
+                    },
+                  ),
+                  if (validationError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(validationError!, style: const TextStyle(color: Color(0xFFEF4444), fontSize: 11)),
+                  ],
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: nameCtrl,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    decoration: const InputDecoration(
+                      labelText: 'Nome do Arquivo (Opcional)',
+                      labelStyle: TextStyle(color: Color(0xFF94A3B8)),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: hashCtrl,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    decoration: const InputDecoration(
+                      labelText: 'Hash SHA-256 Esperado (Opcional)',
+                      labelStyle: TextStyle(color: Color(0xFF94A3B8)),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancelar', style: TextStyle(color: Colors.white70)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF7C3AED),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: validationError != null || urlCtrl.text.trim().isEmpty
+                    ? null
+                    : () async {
+                        final url = urlCtrl.text.trim();
+                        final name = nameCtrl.text.trim().isNotEmpty ? nameCtrl.text.trim() : null;
+                        final sha = hashCtrl.text.trim().isNotEmpty ? hashCtrl.text.trim() : null;
+
+                        Navigator.of(ctx).pop();
+                        try {
+                          await _downloadController?.addDownload(
+                            url: url,
+                            customFileName: name,
+                            sha256Expected: sha,
+                          );
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Falha ao adicionar download: $e')),
+                            );
+                          }
+                        }
+                      },
+                child: const Text('Iniciar Transferência'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------
+  // ABA 3: Fontes & Conectores
+  // -------------------------------------------------------------
+  Widget _buildSourcesManagerTab() {
+    final sources = _sourcesManager?.listSources() ?? [];
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Painel de Atualizações do Índice Offline
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF13131F),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFF2E2248)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.system_update_alt_rounded, color: Color(0xFFA78BFA), size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Catálogo Offline & Pacotes Assinados',
+                    style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Registros Indexados Localmente: $_totalLocalRecords',
+                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Última Sincronização: ${_lastSyncDate != null ? _lastSyncDate!.toIso8601String().substring(0, 10) : "Nunca sincronizado"}',
+                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        const Text(
+          'Conectores e Indexadores Registrados',
+          style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 10),
+
+        for (final src in sources) ...[
+          _buildSourceCard(src),
+          const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSourceCard(TorrentIndexerSourceConfig src) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF13131F),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF27273A)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        src.name,
+                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF7C3AED).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        src.type.label,
+                        style: const TextStyle(color: Color(0xFFC4B5FD), fontSize: 9.5),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  src.url,
+                  style: const TextStyle(color: Color(0xFF64748B), fontSize: 11, fontFamily: 'monospace'),
+                ),
+                if (src.statusMessage != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    src.statusMessage!,
+                    style: TextStyle(
+                      color: src.isAvailable ? const Color(0xFF34D399) : const Color(0xFFF87171),
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          // Botão Testar Conexão
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFC4B5FD),
+              side: const BorderSide(color: Color(0xFF475569)),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            ),
+            onPressed: () async {
+              final ok = await _sourcesManager?.testSource(src.id) ?? false;
+              if (mounted) {
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(ok ? 'Conexão com ${src.name} bem-sucedida!' : 'Falha na resposta de ${src.name}'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+            child: const Text('Testar', style: TextStyle(fontSize: 11)),
+          ),
+          const SizedBox(width: 8),
+          // Switch Ativo/Inativo
+          Switch(
+            value: src.isEnabled,
+            activeColor: const Color(0xFF7C3AED),
+            onChanged: (val) {
+              _sourcesManager?.setSourceEnabled(src.id, val);
+              setState(() {});
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}

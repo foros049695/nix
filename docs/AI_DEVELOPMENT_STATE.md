@@ -32,6 +32,7 @@
 | 20. Fundo com Vidro Translúcido Global e Áudio Estilo Telegram | VERIFIED_LOCAL | Wallpaper visível com acrílico translúcido no Mercado Cripto P2P, Canais de Fórum/Tópicos, Chat e Acervo, com controle opcional e slider de opacidade nas Configurações de Aparência. Gravação de nota de voz estilo Telegram no `ChatInputBar` (segurar para gravar, arrastar para cima para travar sem as mãos, arrastar para a esquerda para cancelar). Cartão de áudio enviado no balão de chat (`TelegramAudioCard`) com waveform interativo, botão circular de play/pause, duração e tamanho do arquivo inline. |
 | 21. Mídia em Vídeo para Fundos, Avatares e Banners | VERIFIED_LOCAL | Suporte a formatos de vídeo (`mp4`, `webm`, `mkv`, `mov`, `avi`) e mídias animadas (`gif`, `webp`) nas imagens de fundo da interface (`InterfaceWallpaper`), fotos de perfil (`NixUserAvatar` & `ProfileAvatarEditor`) e banners de espaços/canais (`WorkspaceBanner`). Conversão local via FFmpeg para WebP animado com loop infinito contínuo e 60fps sem sobrecarga de plugins de vídeo. Limite de tamanho de arquivo expandido para até 100 MB. Isolamento do KeyVault prevenindo condições de corrida na inicialização. Testes dedicados em `video_media_customization_test.dart`. |
 | 22. Adaptação Exclusiva do Wallpaper à Janela Principal Menor | VERIFIED_LOCAL | Confinamento do `InterfaceWallpaperLayer` à moldura interna da janela desktop (`ResizableWindowFrame` / `frameContent`), impedindo o vazamento do papel de parede para a área externa de 1920x1080. O fundo adapta-se com `BoxFit.cover` exclusivamente à tela principal menor (`currentWidth` × `currentHeight`) com recorte estrito em `ClipRRect(borderRadius)`, preservando sombras e mantendo a área externa limpa. Testes aprovados em `video_media_customization_test.dart`. |
+| 23. Nix Downloads & Torrent Index | VERIFIED_LOCAL | Arquitetura desacoplada e independente: motor local FTS5 em SQLite segregado (`torrent_index_v1.db`), normalizador canônico de magnet/InfoHash v1/Base32, desduplicação por proveniência sem dados fictícios. Três modos de busca (Local Offline, Online Onion v3 e Pesquisa Federada ao Vivo com in-flight coalescing para proteção upstream). Adaptadores reais para Nyaa RSS, YTS API, Torznab XML, 1337x e feeds genéricos sem dependência mandatória de Jackett/Prowlarr e sem evasão anti-bot. Sistema de pacotes offline assinados (SHA-256 e Ed25519) com proteção anti-rollback. Nix Downloads com gerenciador HTTP/HTTPS direto via processo local `aria2c` isolado (porta loopback efêmera, token RPC criptográfico dinâmico, sem BitTorrent/DHT e recusa estrita de magnet) e fallback de download segmentado Range Requests em puro Dart. Interface retrô inspirada em Torlink e telas OLED roxas, com visualizador no Pager e integração no Passaporte Cultural. |
 
 ---
 
@@ -39,8 +40,14 @@
 
 - `dart analyze --fatal-infos` em `modules/transport`: **0 erros / 0 warnings**.
 - `dart analyze --fatal-infos` em `modules/core_crypto`: **0 erros / 0 warnings**.
-- `flutter analyze` em `apps/nix_client`: **0 erros de compilação**.
+- `flutter analyze --no-fatal-infos` em `apps/nix_client`: **0 erros / 0 warnings**.
 - Suíte completa de testes executada com **100% de sucesso**:
+  - `test/torrent_index_engine_test.dart` (4/4 aprovados)
+  - `test/torrent_adapters_test.dart` (6/6 aprovados)
+  - `test/torrent_database_test.dart` (3/3 aprovados)
+  - `test/aria2_http_download_test.dart` (3/3 aprovados)
+  - `test/torrent_indexer_scale_test.dart` (4/4 aprovados)
+  - `test/torrent_downloads_ui_test.dart` (9/9 aprovados)
   - `test/passport_dex_and_messaging_features_test.dart` (11/11 aprovados)
   - `test/chat_input_bar_dynamic_test.dart` (aprovado)
   - `test/closed_book_cover_test.dart` (aprovado)

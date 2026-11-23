@@ -35,6 +35,7 @@ import '../profile/profile_overlay.dart';
 import '../publications/publication_room_view.dart';
 import '../media/media_index_view.dart';
 import '../archive/archive_environment_view.dart';
+import '../downloads/torrent_downloads_stage.dart';
 import 'channels_sidebar.dart';
 import 'floating_workspace_bar.dart';
 import 'spaces_dock.dart';
@@ -256,6 +257,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                                     activeArea == NixActiveArea.github ||
                                     activeArea == NixActiveArea.moneroP2p ||
                                     activeArea == NixActiveArea.mediaIndex ||
+                                    activeArea == NixActiveArea.downloads ||
                                     activeArea == NixActiveArea.archive)
                                 ? const HomeSidebar()
                                 : const ChannelsSidebar(),
@@ -385,6 +387,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         return Icons.currency_exchange_rounded;
       case NixActiveArea.mediaIndex:
         return Icons.local_library_rounded;
+      case NixActiveArea.downloads:
+        return Icons.downloading_rounded;
       case NixActiveArea.archive:
         return Icons.auto_stories_rounded;
       case NixActiveArea.spaces:
@@ -404,6 +408,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         return 'Mercado Cripto';
       case NixActiveArea.mediaIndex:
         return 'Nix Media Index (Offline-First)';
+      case NixActiveArea.downloads:
+        return 'Nix Downloads & Torrent Index';
       case NixActiveArea.archive:
         return 'Nix Archive';
       case NixActiveArea.spaces:
@@ -426,6 +432,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
     if (activeArea == NixActiveArea.mediaIndex) {
       return const NixMediaIndexView();
+    }
+    if (activeArea == NixActiveArea.downloads) {
+      return const TorrentDownloadsStage();
     }
     if (activeArea == NixActiveArea.archive) {
       return const NixArchiveEnvironmentView();
