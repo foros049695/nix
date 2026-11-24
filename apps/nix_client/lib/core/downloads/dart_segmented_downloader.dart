@@ -440,14 +440,25 @@ class DartSegmentedDownloader {
             if (_cancelledTasks[task.id] == true || _pausedTasks[task.id] == true) {
               break;
             }
-            raf.writeFromSync(chunk);
-            slice.writtenBytes += chunk.length;
-            bytesSinceFlush += chunk.length;
+
+            final remainingInSlice = slice.totalExpected - slice.writtenBytes;
+            if (remainingInSlice <= 0) {
+              break;
+            }
+
+            final bytesToWrite = chunk.length > remainingInSlice ? remainingInSlice : chunk.length;
+            raf.writeFromSync(chunk.sublist(0, bytesToWrite));
+            slice.writtenBytes += bytesToWrite;
+            bytesSinceFlush += bytesToWrite;
 
             // Backpressure: flush periódico a cada 2 MB para evitar acúmulo de memória na VM Dart
             if (bytesSinceFlush >= 2 * 1024 * 1024) {
               await raf.flush();
               bytesSinceFlush = 0;
+            }
+
+            if (slice.writtenBytes >= slice.totalExpected) {
+              break;
             }
           }
 

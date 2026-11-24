@@ -95,6 +95,9 @@ class Aria2DownloadController extends ChangeNotifier {
   }) : _downloadDir = downloadDir ?? defaultDownloadDirectory(),
        _actualRpcPort = rpcPort {
     _loadTasks();
+    if (_resolveAria2cBinary() != null) {
+      unawaited(startDaemon());
+    }
   }
 
   static String defaultDownloadDirectory() {
@@ -370,7 +373,8 @@ class Aria2DownloadController extends ChangeNotifier {
       } else {
         throw Exception('Resposta inesperada do RPC aria2: $rpcRes');
       }
-    } catch (_) {
+    } catch (e) {
+      _log('Falha ao submeter tarefa ao aria2 RPC: $e. Ativando fallback Dart...');
       _fallbackTaskIds.add(taskId);
       task = task.copyWith(downloadEngine: 'dart_range');
       _tasks[taskId] = task;
@@ -523,36 +527,32 @@ class Aria2DownloadController extends ChangeNotifier {
     );
     _notify();
 
-    // 3. Fallback Dart
-    if (_fallbackTaskIds.contains(taskId) || (task.downloadEngine == 'dart_range' && task.id.startsWith('dl_'))) {
-      _fallbackTaskIds.add(taskId);
-      _tasks[taskId] = task.copyWith(
-        status: DownloadStatus.downloading,
-        isUserPaused: false,
-        downloadEngine: 'dart_range',
-      );
-      _persistTasks();
-      _notify();
-      unawaited(_runFallbackDownload(task));
-      return;
+    // 3. Garante que o daemon nativo aria2c esteja ativo
+    if (_process == null && _resolveAria2cBinary() != null) {
+      await startDaemon();
     }
 
-    // 4. Motor aria2
+    // 4. Se o daemon aria2c estiver disponível, PRIORIZA SEMPRE O MOTOR ARIA2 (MÁXIMA VELOCIDADE)
     if (_process != null) {
-      final res = await _rpcCall('aria2.unpause', ['token:$_rpcSecret', taskId]);
-      if (res != null && res['result'] != null) {
-        _tasks[taskId] = task.copyWith(
-          status: DownloadStatus.downloading,
-          isUserPaused: false,
-          downloadEngine: 'aria2',
-        );
-        _persistTasks();
-        _notify();
-        return;
+      _fallbackTaskIds.remove(taskId);
+
+      // Se já era um GID nativo do aria2c, tenta retomar via RPC
+      if (!taskId.startsWith('dl_')) {
+        final res = await _rpcCall('aria2.unpause', ['token:$_rpcSecret', taskId]);
+        if (res != null && res['result'] != null) {
+          _tasks[taskId] = task.copyWith(
+            status: DownloadStatus.downloading,
+            isUserPaused: false,
+            downloadEngine: 'aria2',
+          );
+          _persistTasks();
+          _notify();
+          return;
+        }
       }
 
-      // Se aria2c não encontrou o GID (daemon reiniciado ou reconectado),
-      // readiciona preservando os bytes existentes com continue: true
+      // Se aria2c não encontrou o GID ou se a tarefa estava no fallback Dart,
+      // MIGRA E RETOMA NO ARIA2C com continue: true aproveitando os dados em disco
       try {
         final downloadOptions = <String, dynamic>{
           'dir': _downloadDir,
@@ -591,21 +591,26 @@ class Aria2DownloadController extends ChangeNotifier {
           _tasks[newGid] = updated;
           _persistTasks();
           _notify();
+          _log('Tarefa $taskId migrada com sucesso para aria2c nativo (GID: $newGid)');
           return;
         }
-      } catch (_) {}
+      } catch (err) {
+        _log('Erro ao retomar no aria2c: $err. Avaliando fallback...');
+      }
     }
 
-    // Fallback puro Dart caso aria2 não consiga
-    _fallbackTaskIds.add(taskId);
-    _tasks[taskId] = task.copyWith(
-      status: DownloadStatus.downloading,
-      isUserPaused: false,
-      downloadEngine: 'dart_range',
-    );
-    _persistTasks();
-    _notify();
-    unawaited(_runFallbackDownload(task));
+    // 5. Fallback Dart SOMENTE se aria2c não estiver presente ou falhar
+    if (enableFallback) {
+      _fallbackTaskIds.add(taskId);
+      _tasks[taskId] = task.copyWith(
+        status: DownloadStatus.downloading,
+        isUserPaused: false,
+        downloadEngine: 'dart_range',
+      );
+      _persistTasks();
+      _notify();
+      unawaited(_runFallbackDownload(task));
+    }
   }
 
   Future<void> cancelDownload(String taskId) async {
