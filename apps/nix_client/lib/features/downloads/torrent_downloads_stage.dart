@@ -1572,7 +1572,7 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
     final nameCtrl = TextEditingController();
     final hashCtrl = TextEditingController();
     String? validationError;
-    bool allowClearnet = false;
+    bool allowClearnet = true;
 
     showDialog(
       context: context,
@@ -1612,14 +1612,22 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                       isDense: true,
                     ),
                     onChanged: (val) {
-                      if (val.startsWith('magnet:?') || val.startsWith('torrent:')) {
+                      final clean = val.trim().toLowerCase();
+                      if (clean.startsWith('magnet:?') || clean.startsWith('torrent:')) {
                         setDlgState(() {
                           validationError =
                               'O Nix Downloads utiliza aria2 exclusivamente para downloads diretos HTTP/HTTPS. '
                               'Transferências BitTorrent/magnets via Tor foram desabilitadas para evitar vazamento de IP.';
                         });
                       } else {
-                        setDlgState(() => validationError = null);
+                        setDlgState(() {
+                          validationError = null;
+                          if (clean.contains('.onion')) {
+                            allowClearnet = false;
+                          } else if (clean.startsWith('http://') || clean.startsWith('https://')) {
+                            allowClearnet = true;
+                          }
+                        });
                       }
                     },
                   ),
@@ -1693,6 +1701,7 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                             customFileName: name,
                             sha256Expected: sha,
                             allowClearnet: allowClearnet,
+                            transportProfile: allowClearnet ? 'direct_https' : 'tor_socks5',
                           );
                         } catch (e) {
                           if (mounted) {

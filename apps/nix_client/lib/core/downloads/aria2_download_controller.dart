@@ -10,9 +10,10 @@ typedef DownloadStatusChangeNotifier = void Function(List<DownloadTask> tasks);
 
 /// Perfis de desempenho para downloads diretos HTTP/HTTPS.
 enum DownloadPerformanceProfile {
-  conservative('conservative', 'Conservador', 3, 3, 35, '2M'),
-  balanced('balanced', 'Equilibrado', 6, 6, 25, '1M'),
-  highPerformance('highPerformance', 'Alto Desempenho', 8, 8, 20, '1M');
+  conservative('conservative', 'Conservador', 4, 4, 35, '2M'),
+  balanced('balanced', 'Equilibrado', 8, 8, 20, '1M'),
+  highPerformance('highPerformance', 'Alto Desempenho', 16, 16, 15, '512K'),
+  turbo('turbo', 'Turbo Máximo', 16, 16, 10, '256K');
 
   final String slug;
   final String label;
@@ -59,7 +60,7 @@ class Aria2DownloadController extends ChangeNotifier {
   final Set<String> _manuallyPausedTaskIds = {};
   DownloadStatusChangeNotifier? onTasksUpdated;
 
-  DownloadPerformanceProfile _performanceProfile = DownloadPerformanceProfile.balanced;
+  DownloadPerformanceProfile _performanceProfile = DownloadPerformanceProfile.turbo;
   DownloadPerformanceProfile get performanceProfile => _performanceProfile;
 
   final List<String> _recentLogs = [];
@@ -190,14 +191,23 @@ class Aria2DownloadController extends ChangeNotifier {
           '--enable-peer-exchange=false',
           '--follow-torrent=false',
           '--follow-metalink=false',
+          // ACELERAÇÃO MÁXIMA DE MULTI-CONEXÕES E I/O DIRETO
           '--max-connection-per-server=${_performanceProfile.maxConnections}',
           '--split=${_performanceProfile.split}',
           '--min-split-size=${_performanceProfile.minSplitSize}',
+          '--piece-length=1M',
+          '--disk-cache=64M',
+          '--enable-mmap=true',
+          '--file-allocation=${Platform.isLinux ? "falloc" : "none"}',
+          '--stream-piece-selector=default',
+          '--connect-timeout=10',
+          '--timeout=15',
+          '--max-tries=10',
+          '--retry-wait=2',
           '--continue=true',
           '--dir=$downloadDir',
           '--check-integrity=false',
           '--summary-interval=1',
-          '--file-allocation=none',
           '--max-overall-download-limit=0',
           '--max-download-limit=0',
         ],
@@ -211,10 +221,10 @@ class Aria2DownloadController extends ChangeNotifier {
         }
       });
 
-      // Aguarda ativamente o daemon aria2c estar pronto e respondendo RPC
+      // Aguarda ativamente o daemon aria2c estar pronto e respondendo RPC (até 6s com 60 tentativas)
       bool isReady = false;
-      for (var i = 0; i < 50; i++) {
-        await Future.delayed(const Duration(milliseconds: 50));
+      for (var i = 0; i < 60; i++) {
+        await Future.delayed(const Duration(milliseconds: 100));
         if (_process == null) break;
         final res = await _rpcCall('aria2.getVersion', ['token:$_rpcSecret']);
         if (res != null && res['result'] != null) {
@@ -224,7 +234,7 @@ class Aria2DownloadController extends ChangeNotifier {
       }
 
       if (!isReady && _process != null) {
-        _log('Daemon aria2c não respondeu ao RPC em 2.5s. Ativando fallback Dart nativo.');
+        _log('Daemon aria2c não respondeu ao RPC em 6s. Ativando fallback Dart nativo.');
         try {
           _process!.kill(ProcessSignal.sigterm);
         } catch (_) {}
@@ -276,9 +286,13 @@ class Aria2DownloadController extends ChangeNotifier {
     final targetPath = '$downloadDir/$fileName';
     final taskId = 'dl_${DateTime.now().microsecondsSinceEpoch}';
 
+    final resolvedProfile = (allowClearnet && transportProfile == 'tor_socks5')
+        ? 'direct_https'
+        : transportProfile;
+
     _removedTaskIds.remove(taskId);
     _manuallyPausedTaskIds.remove(taskId);
-    _log('Download adicionado: $fileName (Perfil: $transportProfile)');
+    _log('Download adicionado: $fileName (Perfil: $resolvedProfile)');
 
     var task = DownloadTask(
       id: taskId,
@@ -290,7 +304,7 @@ class Aria2DownloadController extends ChangeNotifier {
       allowClearnet: allowClearnet,
       isUserPaused: false,
       downloadEngine: _process != null ? 'aria2' : 'dart_range',
-      transportProfile: transportProfile,
+      transportProfile: resolvedProfile,
       createdAt: DateTime.now(),
     );
 
@@ -315,9 +329,15 @@ class Aria2DownloadController extends ChangeNotifier {
         'split': '${_performanceProfile.split}',
         'max-connection-per-server': '${_performanceProfile.maxConnections}',
         'min-split-size': _performanceProfile.minSplitSize,
+        'piece-length': '1M',
+        'disk-cache': '64M',
+        'enable-mmap': 'true',
+        'file-allocation': Platform.isLinux ? 'falloc' : 'none',
+        'lowest-speed-limit': '10K',
+        'max-tries': '10',
         'continue': 'true',
       };
-      if (task.allowClearnet || transportProfile == 'direct_https') {
+      if (task.allowClearnet || resolvedProfile == 'direct_https') {
         downloadOptions['all-proxy'] = '';
       }
 
@@ -540,6 +560,12 @@ class Aria2DownloadController extends ChangeNotifier {
           'max-connection-per-server': '${_performanceProfile.maxConnections}',
           'split': '${_performanceProfile.split}',
           'min-split-size': _performanceProfile.minSplitSize,
+          'piece-length': '1M',
+          'disk-cache': '64M',
+          'enable-mmap': 'true',
+          'file-allocation': Platform.isLinux ? 'falloc' : 'none',
+          'lowest-speed-limit': '10K',
+          'max-tries': '10',
         };
         if (task.fileName.isNotEmpty) {
           downloadOptions['out'] = task.fileName;
@@ -865,7 +891,7 @@ class Aria2DownloadController extends ChangeNotifier {
       throw UnsupportedError('Métodos BitTorrent/Metalink foram desabilitados permanentemente.');
     }
 
-    final client = HttpClient();
+    final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 800);
     try {
       final req = await client.postUrl(Uri.parse('http://127.0.0.1:$_actualRpcPort/jsonrpc'));
       req.headers.contentType = ContentType.json;
@@ -876,8 +902,8 @@ class Aria2DownloadController extends ChangeNotifier {
         'params': params,
       });
       req.write(payload);
-      final res = await req.close();
-      final body = await utf8.decodeStream(res);
+      final res = await req.close().timeout(const Duration(milliseconds: 1200));
+      final body = await utf8.decodeStream(res).timeout(const Duration(milliseconds: 1200));
       return jsonDecode(body) as Map<String, dynamic>;
     } catch (_) {
       return null;

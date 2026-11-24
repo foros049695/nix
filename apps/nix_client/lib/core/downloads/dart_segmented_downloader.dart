@@ -139,7 +139,7 @@ class DartSegmentedDownloader {
     }
 
     final client = HttpClient()
-      ..maxConnectionsPerHost = 16
+      ..maxConnectionsPerHost = 32
       ..connectionTimeout = const Duration(seconds: 25);
     _activeClients[task.id] = client;
 
@@ -353,14 +353,15 @@ class DartSegmentedDownloader {
       // Cálculo de velocidade instantânea (bytes / 0.35s)
       final instSpeed = (deltaBytes / 0.35).round();
 
-      // Suavização EMA para evitar oscilações artificiais
+      // Suavização EMA e amortecimento para evitar oscilações artificiais ou quedas abruptas
       if (smoothedSpeed == 0) {
         smoothedSpeed = instSpeed.toDouble();
       } else if (instSpeed > 0) {
-        smoothedSpeed = (0.28 * instSpeed) + (0.72 * smoothedSpeed);
+        smoothedSpeed = (0.35 * instSpeed) + (0.65 * smoothedSpeed);
       } else {
-        smoothedSpeed = smoothedSpeed * 0.82;
-        if (smoothedSpeed < 512) smoothedSpeed = 0;
+        // Amortecimento gradual em jitter transitório de pacotes TCP
+        smoothedSpeed = smoothedSpeed * 0.92;
+        if (smoothedSpeed < 256) smoothedSpeed = 0;
       }
 
       final elapsedTotalSec = totalDownStopwatch.elapsedMilliseconds / 1000.0;
@@ -519,12 +520,12 @@ class DartSegmentedDownloader {
             }
           }
 
-          // Só rouba se a fatia mais lenta tiver pelo menos 8 MB restantes
-          if (slowestTarget != null && maxRemaining >= 8 * 1024 * 1024) {
+          // Só rouba se a fatia mais lenta tiver pelo menos 2 MB restantes
+          if (slowestTarget != null && maxRemaining >= 2 * 1024 * 1024) {
             final currentPos = slowestTarget.startByte + slowestTarget.writtenBytes;
             final originalEnd = slowestTarget.endByte;
             final remaining = originalEnd - currentPos;
-            if (remaining >= 8 * 1024 * 1024) {
+            if (remaining >= 2 * 1024 * 1024) {
               final half = remaining ~/ 2;
               final newTargetEnd = currentPos + half;
               final stolenStart = newTargetEnd + 1;
