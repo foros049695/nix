@@ -916,14 +916,16 @@ class Aria2DownloadController extends ChangeNotifier {
     final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 800);
     try {
       final req = await client.postUrl(Uri.parse('http://127.0.0.1:$_actualRpcPort/jsonrpc'));
-      req.headers.contentType = ContentType.json;
       final payload = jsonEncode({
         'jsonrpc': '2.0',
         'id': 'nix_${DateTime.now().microsecondsSinceEpoch}',
         'method': method,
         'params': params,
       });
-      req.write(payload);
+      final bytes = utf8.encode(payload);
+      req.headers.contentType = ContentType.json;
+      req.contentLength = bytes.length;
+      req.add(bytes);
       final res = await req.close().timeout(const Duration(milliseconds: 1200));
       final body = await utf8.decodeStream(res).timeout(const Duration(milliseconds: 1200));
       return jsonDecode(body) as Map<String, dynamic>;
