@@ -124,62 +124,32 @@ class CatalogDiagnostics {
     } catch (e) {
       torDaemon = DiagnosticStatus.failed;
       torDaemonDetails = 'Falha ao conectar na porta local $socksPort: $e. O daemon Tor embutido está inativo.';
-      return CatalogDiagnosticReport(
-        torDaemon: torDaemon,
-        torDaemonDetails: torDaemonDetails,
-        socks5Handshake: DiagnosticStatus.failed,
-        socks5HandshakeDetails: 'Daemon Tor offline',
-        remoteOnion: DiagnosticStatus.skipped,
-        remoteOnionDetails: 'Dependência Tor offline',
-        isPlaceholderOnion: isPlaceholder,
-        manifestFetch: DiagnosticStatus.skipped,
-        manifestFetchDetails: 'Dependência Tor offline',
-        ed25519Signature: DiagnosticStatus.skipped,
-        ed25519SignatureDetails: 'Não executado',
-        antiRollback: DiagnosticStatus.skipped,
-        antiRollbackDetails: 'Não executado',
-        timestamp: now,
-      );
     } finally {
       daemonSocket?.destroy();
     }
 
     // Camada 2: Handshake SOCKS5 RFC 1928
-    try {
-      final s = await Socket.connect('127.0.0.1', socksPort, timeout: const Duration(seconds: 2));
-      s.add([0x05, 0x01, 0x00]); // SOCKS5, 1 método, sem autenticação
-      final reply = await s.first.timeout(const Duration(seconds: 2));
-      s.destroy();
+    if (torDaemon == DiagnosticStatus.passed) {
+      try {
+        final s = await Socket.connect('127.0.0.1', socksPort, timeout: const Duration(seconds: 2));
+        s.add([0x05, 0x01, 0x00]); // SOCKS5, 1 método, sem autenticação
+        final reply = await s.first.timeout(const Duration(seconds: 2));
+        s.destroy();
 
-      if (reply.length >= 2 && reply[0] == 0x05 && reply[1] == 0x00) {
-        socks5 = DiagnosticStatus.passed;
-        socks5Details = 'SOCKS5 proxy respondendo conforme RFC 1928 (Handshake OK).';
-      } else {
+        if (reply.length >= 2 && reply[0] == 0x05 && reply[1] == 0x00) {
+          socks5 = DiagnosticStatus.passed;
+          socks5Details = 'SOCKS5 proxy respondendo conforme RFC 1928 (Handshake OK).';
+        } else {
+          socks5 = DiagnosticStatus.failed;
+          socks5Details = 'Resposta inesperada do SOCKS5 local: $reply.';
+        }
+      } catch (e) {
         socks5 = DiagnosticStatus.failed;
-        socks5Details = 'Resposta inesperada do SOCKS5 local: $reply.';
+        socks5Details = 'Falha no aperto de mão SOCKS5: $e.';
       }
-    } catch (e) {
+    } else {
       socks5 = DiagnosticStatus.failed;
-      socks5Details = 'Falha no aperto de mão SOCKS5: $e.';
-    }
-
-    if (socks5 != DiagnosticStatus.passed) {
-      return CatalogDiagnosticReport(
-        torDaemon: torDaemon,
-        torDaemonDetails: torDaemonDetails,
-        socks5Handshake: socks5,
-        socks5HandshakeDetails: socks5Details,
-        remoteOnion: DiagnosticStatus.skipped,
-        remoteOnionDetails: 'SOCKS5 inoperante',
-        isPlaceholderOnion: isPlaceholder,
-        manifestFetch: DiagnosticStatus.skipped,
-        manifestFetchDetails: 'SOCKS5 inoperante',
-        ed25519Signature: DiagnosticStatus.skipped,
-        ed25519SignatureDetails: 'Não executado',
-        antiRollback: DiagnosticStatus.skipped,
-        antiRollbackDetails: 'Não executado',
-        timestamp: now,
-      );
+      socks5Details = 'Daemon Tor offline.';
     }
 
     // Camada 3: Serviço Onion Remoto Acessível vs Placeholder
@@ -189,7 +159,7 @@ class CatalogDiagnostics {
       if (isPlaceholder) {
         remote = DiagnosticStatus.warning;
         remoteDetails = 'Endereço padrão de demonstração ($knownPlaceholderOnion) é um placeholder e não possui nó ativo na rede Tor.';
-      } else {
+      } else if (socks5 == DiagnosticStatus.passed) {
         try {
           final connector = Socks5Connector(proxyHost: '127.0.0.1', proxyPort: socksPort);
           final port = manifestUri.hasPort ? manifestUri.port : 80;
@@ -206,6 +176,9 @@ class CatalogDiagnostics {
           remote = DiagnosticStatus.warning;
           remoteDetails = 'Túnel SOCKS5 Tor está ativo, mas o descritor Onion (${manifestUri.host}) não foi encontrado ou o publicador está offline: $e';
         }
+      } else {
+        remote = DiagnosticStatus.skipped;
+        remoteDetails = 'Depende do túnel SOCKS5 Tor operacional.';
       }
     } else if (isHttps) {
       remote = DiagnosticStatus.passed;
