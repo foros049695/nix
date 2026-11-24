@@ -233,6 +233,7 @@ class CatalogDiagnostics {
           CatalogPublisherKeyring(
             trustedKeysHex: {
               CatalogPublisherKeyring.officialPublisherKeyHex,
+              CatalogPublisherKeyring.fixtureTestPublisherKeyHex,
             },
             allowTestFixtureKey: true,
             isProductionMode: false,

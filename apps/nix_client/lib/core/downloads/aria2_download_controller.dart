@@ -12,8 +12,8 @@ typedef DownloadStatusChangeNotifier = void Function(List<DownloadTask> tasks);
 enum DownloadPerformanceProfile {
   conservative('conservative', 'Conservador', 4, 4, 35, '2M'),
   balanced('balanced', 'Equilibrado', 8, 8, 20, '1M'),
-  highPerformance('highPerformance', 'Alto Desempenho', 16, 16, 15, '512K'),
-  turbo('turbo', 'Turbo Máximo', 16, 16, 10, '256K');
+  highPerformance('highPerformance', 'Alto Desempenho', 16, 16, 15, '1M'),
+  turbo('turbo', 'Turbo Máximo', 16, 16, 10, '1M');
 
   final String slug;
   final String label;

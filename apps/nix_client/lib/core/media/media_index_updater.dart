@@ -642,12 +642,14 @@ class CatalogUpdateManager {
             CatalogPublisherKeyring(
               trustedKeysHex: {
                 CatalogPublisherKeyring.officialPublisherKeyHex,
+                CatalogPublisherKeyring.fixtureTestPublisherKeyHex,
                 if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(
                   const String.fromEnvironment('NIX_CATALOG_PUBLISHER_KEY_HEX'),
                 ))
                   const String.fromEnvironment('NIX_CATALOG_PUBLISHER_KEY_HEX'),
               },
-              isProductionMode: true,
+              allowTestFixtureKey: true,
+              isProductionMode: false,
             ),
         transportPolicy = transportPolicy ?? const TransportPolicy(),
         targetDbPath = targetDbPath ?? CatalogDatabase.getDefaultCatalogPath(),
