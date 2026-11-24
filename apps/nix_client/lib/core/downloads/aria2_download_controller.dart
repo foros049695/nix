@@ -10,10 +10,10 @@ typedef DownloadStatusChangeNotifier = void Function(List<DownloadTask> tasks);
 
 /// Perfis de desempenho para downloads diretos HTTP/HTTPS.
 enum DownloadPerformanceProfile {
-  conservative('conservative', 'Conservador', 4, 4, 35, '2M'),
-  balanced('balanced', 'Equilibrado', 8, 8, 20, '1M'),
-  highPerformance('highPerformance', 'Alto Desempenho', 16, 16, 15, '1M'),
-  turbo('turbo', 'Turbo Máximo', 16, 16, 10, '1M');
+  conservative('conservative', 'Conservador', 2, 2, 35, '4M'),
+  balanced('balanced', 'Equilibrado (Recomendado)', 4, 4, 20, '2M'),
+  highPerformance('highPerformance', 'Alto Desempenho', 6, 6, 15, '1M'),
+  turbo('turbo', 'Turbo Sustentado', 8, 8, 10, '1M');
 
   final String slug;
   final String label;
@@ -60,7 +60,7 @@ class Aria2DownloadController extends ChangeNotifier {
   final Set<String> _manuallyPausedTaskIds = {};
   DownloadStatusChangeNotifier? onTasksUpdated;
 
-  DownloadPerformanceProfile _performanceProfile = DownloadPerformanceProfile.turbo;
+  DownloadPerformanceProfile _performanceProfile = DownloadPerformanceProfile.balanced;
   DownloadPerformanceProfile get performanceProfile => _performanceProfile;
 
   final List<String> _recentLogs = [];
@@ -183,11 +183,12 @@ class Aria2DownloadController extends ChangeNotifier {
       dir.createSync(recursive: true);
     }
 
-    if (Platform.isLinux) {
-      try {
-        Process.runSync('killall', ['-9', 'aria2c', 'aria2c-bin']);
-      } catch (_) {}
-    }
+    // Gerenciamento explícito de processo: encerra apenas o daemon anterior pertencente ao Nix
+    _terminatePreviousNixDaemon();
+
+    final sessionPath = _resolveNixDataPath('aria2.session');
+    final sessionFile = File(sessionPath);
+    final hasSession = sessionFile.existsSync() && sessionFile.lengthSync() > 0;
 
     try {
       final env = <String, String>{
@@ -208,7 +209,7 @@ class Aria2DownloadController extends ChangeNotifier {
           '--enable-peer-exchange=false',
           '--follow-torrent=false',
           '--follow-metalink=false',
-          // ACELERAÇÃO MÁXIMA DE MULTI-CONEXÕES E I/O DIRETO
+          // ACELERAÇÃO MÁXIMA SUSTENTADA DE MULTI-CONEXÕES E I/O DIRETO
           '--max-connection-per-server=${_performanceProfile.maxConnections}',
           '--split=${_performanceProfile.split}',
           '--min-split-size=${_performanceProfile.minSplitSize}',
@@ -217,19 +218,41 @@ class Aria2DownloadController extends ChangeNotifier {
           '--enable-mmap=true',
           '--file-allocation=${Platform.isLinux ? "falloc" : "none"}',
           '--stream-piece-selector=default',
-          '--connect-timeout=10',
-          '--timeout=15',
+          '--connect-timeout=15',
+          '--timeout=20',
           '--max-tries=10',
-          '--retry-wait=2',
+          '--retry-wait=3',
           '--continue=true',
           '--dir=$downloadDir',
           '--check-integrity=false',
           '--summary-interval=1',
           '--max-overall-download-limit=0',
           '--max-download-limit=0',
+          '--save-session=$sessionPath',
+          '--save-session-interval=30',
+          if (hasSession) '--input-file=$sessionPath',
         ],
         environment: env,
       );
+
+      // Registra PID do daemon isolado do Nix e credenciais RPC seguras (modo 0600)
+      try {
+        final pidFile = File(_resolveNixDataPath('aria2.pid'));
+        pidFile.writeAsStringSync('${_process!.pid}\n');
+
+        final rpcFile = File(_resolveNixDataPath('aria2_rpc.json'));
+        rpcFile.writeAsStringSync(jsonEncode({
+          'port': _actualRpcPort,
+          'pid': _process!.pid,
+          'token': _rpcSecret,
+          'updatedAt': DateTime.now().toUtc().toIso8601String(),
+        }));
+        if (Platform.isLinux || Platform.isMacOS) {
+          try {
+            Process.runSync('chmod', ['600', rpcFile.path]);
+          } catch (_) {}
+        }
+      } catch (_) {}
 
       _process!.exitCode.then((code) {
         if (_process != null) {
@@ -276,7 +299,7 @@ class Aria2DownloadController extends ChangeNotifier {
     }
   }
 
-  /// Finaliza o processo do daemon.
+  /// Finaliza o processo do daemon e limpa credenciais temporárias.
   Future<void> stopDaemon() async {
     _pollingTimer?.cancel();
     _pollingTimer = null;
@@ -284,7 +307,65 @@ class Aria2DownloadController extends ChangeNotifier {
       _process!.kill(ProcessSignal.sigterm);
       _process = null;
     }
+    try {
+      final pidFile = File(_resolveNixDataPath('aria2.pid'));
+      if (pidFile.existsSync()) pidFile.deleteSync();
+    } catch (_) {}
+    try {
+      final rpcFile = File(_resolveNixDataPath('aria2_rpc.json'));
+      if (rpcFile.existsSync()) rpcFile.deleteSync();
+    } catch (_) {}
     _isDaemonRunning = false;
+  }
+
+  static String _resolveNixDataPath(String fileName) {
+    String basePath;
+    if (Platform.isLinux || Platform.isMacOS) {
+      final home = Platform.environment['HOME'] ?? '';
+      basePath = home.isNotEmpty ? '$home/.local/share/nix' : Directory.systemTemp.path;
+    } else if (Platform.isWindows) {
+      final appData = Platform.environment['APPDATA'] ?? '';
+      basePath = appData.isNotEmpty ? '$appData\\nix' : Directory.systemTemp.path;
+    } else {
+      basePath = Directory.systemTemp.path;
+    }
+    final dir = Directory(basePath);
+    if (!dir.existsSync()) {
+      try {
+        dir.createSync(recursive: true);
+      } catch (_) {}
+    }
+    return '$basePath${Platform.pathSeparator}$fileName';
+  }
+
+  static void _terminatePreviousNixDaemon() {
+    try {
+      final pidFile = File(_resolveNixDataPath('aria2.pid'));
+      if (pidFile.existsSync()) {
+        final content = pidFile.readAsStringSync().trim();
+        final pid = int.tryParse(content);
+        if (pid != null && pid > 0) {
+          if (Platform.isLinux) {
+            final cmdlineFile = File('/proc/$pid/cmdline');
+            if (cmdlineFile.existsSync()) {
+              final cmdline = cmdlineFile.readAsStringSync();
+              if (cmdline.contains('aria2') && cmdline.contains('rpc-secret')) {
+                Process.killPid(pid, ProcessSignal.sigterm);
+                sleep(const Duration(milliseconds: 100));
+                if (cmdlineFile.existsSync()) {
+                  Process.killPid(pid, ProcessSignal.sigkill);
+                }
+              }
+            }
+          } else {
+            Process.killPid(pid, ProcessSignal.sigterm);
+          }
+        }
+        try {
+          pidFile.deleteSync();
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 
   /// Adiciona uma nova tarefa de download direto HTTP/HTTPS.
@@ -350,7 +431,6 @@ class Aria2DownloadController extends ChangeNotifier {
         'disk-cache': '64M',
         'enable-mmap': 'true',
         'file-allocation': Platform.isLinux ? 'falloc' : 'none',
-        'lowest-speed-limit': '10K',
         'max-tries': '10',
         'continue': 'true',
       };
@@ -579,7 +659,6 @@ class Aria2DownloadController extends ChangeNotifier {
           'disk-cache': '64M',
           'enable-mmap': 'true',
           'file-allocation': Platform.isLinux ? 'falloc' : 'none',
-          'lowest-speed-limit': '10K',
           'max-tries': '10',
         };
         if (task.fileName.isNotEmpty) {
@@ -817,6 +896,7 @@ class Aria2DownloadController extends ChangeNotifier {
         final totalLength = int.tryParse(item['totalLength']?.toString() ?? '') ?? 0;
         final completedLength = int.tryParse(item['completedLength']?.toString() ?? '') ?? 0;
         final downloadSpeed = int.tryParse(item['downloadSpeed']?.toString() ?? '') ?? 0;
+        final realConnections = int.tryParse(item['connections']?.toString() ?? '');
 
         // Se o usuário pausou a tarefa manualmente, o polling JAMAIS pode sobrescrever para downloading
         if (_manuallyPausedTaskIds.contains(gid) || existing.isUserPaused) {
@@ -865,6 +945,12 @@ class Aria2DownloadController extends ChangeNotifier {
             break;
         }
 
+        // Rastreamento preciso do tempo em transferência ativa
+        var activeSec = existing.activeTransferSeconds;
+        if (status == DownloadStatus.downloading && downloadSpeed > 0) {
+          activeSec += 1;
+        }
+
         // Suavização EMA para evitar oscilações instantâneas para 0 KB/s entre bursts de TCP/Tor
         final prevSpeed = existing.speedBytesPerSec.toDouble();
         double smoothedSpeed;
@@ -878,23 +964,40 @@ class Aria2DownloadController extends ChangeNotifier {
         }
         final finalSpeed = status == DownloadStatus.downloading ? smoothedSpeed.round() : 0;
 
-        // Cálculo de velocidade média com base no tempo decorrido desde o início da tarefa
-        final elapsedSec = DateTime.now().difference(existing.createdAt).inSeconds;
-        final avgSpeed = (elapsedSec > 2 && completedLength > 0)
-            ? (completedLength / elapsedSec)
+        // Velocidade média calculada EXCLUSIVAMENTE sobre o tempo de transferência ativa
+        final avgSpeed = (activeSec > 0 && completedLength > 0)
+            ? (completedLength / activeSec)
             : finalSpeed.toDouble();
+
+        // Pico real observado
+        final peakSpeed = max(existing.peakSpeedBytesPerSec, downloadSpeed);
+
+        // Amostras recentes para velocidade sustentada (janela dos últimos 20 segundos)
+        final samples = List<int>.from(existing.recentSpeedSamples);
+        if (status == DownloadStatus.downloading && downloadSpeed > 0) {
+          samples.add(downloadSpeed);
+          if (samples.length > 20) samples.removeAt(0);
+        }
 
         final remaining = totalLength - completedLength;
         final eta = (status == DownloadStatus.downloading && finalSpeed > 0 && remaining > 0)
             ? (remaining / finalSpeed).ceil()
             : null;
 
+        final realOrProfileSegments = (realConnections != null && realConnections > 0)
+            ? realConnections
+            : (status == DownloadStatus.downloading ? _performanceProfile.split : 0);
+
         _tasks[gid] = existing.copyWith(
           fileSizeBytes: totalLength > 0 ? totalLength : existing.fileSizeBytes,
           downloadedBytes: completedLength,
           speedBytesPerSec: finalSpeed,
           averageSpeedBytesPerSec: avgSpeed,
-          activeSegments: status == DownloadStatus.downloading ? _performanceProfile.split : 0,
+          peakSpeedBytesPerSec: peakSpeed,
+          activeTransferSeconds: activeSec,
+          recentSpeedSamples: samples,
+          actualConnections: realConnections,
+          activeSegments: realOrProfileSegments,
           etaSeconds: eta,
           clearEta: (status != DownloadStatus.downloading || finalSpeed <= 0),
           status: status,

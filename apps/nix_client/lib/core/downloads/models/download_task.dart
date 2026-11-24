@@ -94,7 +94,11 @@ class DownloadTask {
   final String? sha256Actual;
   final bool isRangeSupported;
   final int splitCount;
-  final int activeSegments;
+  final int? activeSegments;
+  final int? actualConnections;
+  final int peakSpeedBytesPerSec;
+  final int activeTransferSeconds;
+  final List<int> recentSpeedSamples;
   final bool allowClearnet;
   final bool isUserPaused;
   final String downloadEngine; // 'aria2' ou 'dart_range'
@@ -122,6 +126,10 @@ class DownloadTask {
     this.isRangeSupported = false,
     this.splitCount = 1,
     this.activeSegments = 0,
+    this.actualConnections,
+    this.peakSpeedBytesPerSec = 0,
+    this.activeTransferSeconds = 0,
+    this.recentSpeedSamples = const [],
     this.allowClearnet = false,
     this.isUserPaused = false,
     this.downloadEngine = 'aria2',
@@ -214,6 +222,41 @@ class DownloadTask {
     return '$bytes B';
   }
 
+  /// Velocidade sustentada estimada baseada na janela recente (últimos 15-30s).
+  double get sustainedSpeedBytesPerSec {
+    if (recentSpeedSamples.isEmpty) return speedBytesPerSec.toDouble();
+    return recentSpeedSamples.reduce((a, b) => a + b) / recentSpeedSamples.length;
+  }
+
+  /// Velocidade sustentada formatada.
+  String get formattedSustainedSpeed {
+    if (sustainedSpeedBytesPerSec <= 0) return formattedSpeed;
+    if (sustainedSpeedBytesPerSec >= 1024 * 1024) {
+      return '${(sustainedSpeedBytesPerSec / (1024 * 1024)).toStringAsFixed(2)} MB/s';
+    }
+    return '${(sustainedSpeedBytesPerSec / 1024).toStringAsFixed(0)} KB/s';
+  }
+
+  /// Pico de velocidade observado.
+  String get formattedPeakSpeed {
+    if (peakSpeedBytesPerSec <= 0) return '0 KB/s';
+    if (peakSpeedBytesPerSec >= 1024 * 1024) {
+      return '${(peakSpeedBytesPerSec / (1024 * 1024)).toStringAsFixed(2)} MB/s';
+    }
+    return '${(peakSpeedBytesPerSec / 1024).toStringAsFixed(0)} KB/s';
+  }
+
+  /// Conexões reais ativas estabelecidas com o servidor.
+  String get formattedConnections {
+    if (actualConnections != null && actualConnections! > 0) {
+      return '$actualConnections conexões';
+    }
+    if (activeSegments != null && activeSegments! > 0) {
+      return '$activeSegments seg';
+    }
+    return 'Não informado';
+  }
+
   DownloadTask copyWith({
     String? id,
     String? url,
@@ -232,6 +275,10 @@ class DownloadTask {
     bool? isRangeSupported,
     int? splitCount,
     int? activeSegments,
+    int? actualConnections,
+    int? peakSpeedBytesPerSec,
+    int? activeTransferSeconds,
+    List<int>? recentSpeedSamples,
     bool? allowClearnet,
     bool? isUserPaused,
     String? downloadEngine,
@@ -259,6 +306,10 @@ class DownloadTask {
       isRangeSupported: isRangeSupported ?? this.isRangeSupported,
       splitCount: splitCount ?? this.splitCount,
       activeSegments: activeSegments ?? this.activeSegments,
+      actualConnections: actualConnections ?? this.actualConnections,
+      peakSpeedBytesPerSec: peakSpeedBytesPerSec ?? this.peakSpeedBytesPerSec,
+      activeTransferSeconds: activeTransferSeconds ?? this.activeTransferSeconds,
+      recentSpeedSamples: recentSpeedSamples ?? this.recentSpeedSamples,
       allowClearnet: allowClearnet ?? this.allowClearnet,
       isUserPaused: isUserPaused ?? this.isUserPaused,
       downloadEngine: downloadEngine ?? this.downloadEngine,
@@ -287,7 +338,11 @@ class DownloadTask {
     if (sha256Actual != null) 'sha256Actual': sha256Actual,
     'isRangeSupported': isRangeSupported ? 1 : 0,
     'splitCount': splitCount,
-    'activeSegments': activeSegments,
+    if (activeSegments != null) 'activeSegments': activeSegments,
+    if (actualConnections != null) 'actualConnections': actualConnections,
+    'peakSpeedBytesPerSec': peakSpeedBytesPerSec,
+    'activeTransferSeconds': activeTransferSeconds,
+    'recentSpeedSamples': recentSpeedSamples,
     'allowClearnet': allowClearnet ? 1 : 0,
     'isUserPaused': isUserPaused ? 1 : 0,
     'downloadEngine': downloadEngine,
@@ -320,6 +375,10 @@ class DownloadTask {
       isRangeSupported: (map['isRangeSupported'] as int? ?? 0) == 1,
       splitCount: map['splitCount'] as int? ?? 1,
       activeSegments: map['activeSegments'] as int? ?? 0,
+      actualConnections: map['actualConnections'] as int?,
+      peakSpeedBytesPerSec: map['peakSpeedBytesPerSec'] as int? ?? 0,
+      activeTransferSeconds: map['activeTransferSeconds'] as int? ?? 0,
+      recentSpeedSamples: (map['recentSpeedSamples'] as List<dynamic>?)?.map((e) => (e as num).toInt()).toList() ?? const [],
       allowClearnet: (map['allowClearnet'] as int? ?? 0) == 1,
       isUserPaused: (map['isUserPaused'] as int? ?? 0) == 1,
       downloadEngine: map['downloadEngine'] as String? ?? 'aria2',

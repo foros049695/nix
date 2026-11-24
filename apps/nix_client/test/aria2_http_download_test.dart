@@ -313,5 +313,42 @@ void main() {
       expect(resumedResult.sha256Actual, equals(dummySha256));
       expect(File(destination).lengthSync(), equals(dummyData.length));
     });
+
+    test('Métricas avançadas: velocidade ativa, sustentada, pico e conexões reais', () {
+      final task = DownloadTask(
+        id: 'metric_test',
+        url: 'https://example.com/file.bin',
+        destinationPath: '/tmp/file.bin',
+        fileName: 'file.bin',
+        fileSizeBytes: 100 * 1024 * 1024,
+        downloadedBytes: 50 * 1024 * 1024,
+        speedBytesPerSec: 10 * 1024 * 1024,
+        averageSpeedBytesPerSec: 8.5 * 1024 * 1024,
+        peakSpeedBytesPerSec: 15 * 1024 * 1024,
+        activeTransferSeconds: 6,
+        recentSpeedSamples: [8 * 1024 * 1024, 9 * 1024 * 1024, 10 * 1024 * 1024],
+        status: DownloadStatus.downloading,
+        actualConnections: 4,
+        activeSegments: 4,
+        createdAt: DateTime.now().subtract(const Duration(hours: 2)),
+      );
+
+      expect(task.formattedSpeed, contains('10.00 MB/s'));
+      expect(task.formattedAverageSpeed, contains('8.50 MB/s'));
+      expect(task.formattedPeakSpeed, contains('15.00 MB/s'));
+      expect(task.formattedSustainedSpeed, contains('9.00 MB/s'));
+      expect(task.formattedConnections, equals('4 conexões'));
+
+      final map = task.toMap();
+      expect(map['actualConnections'], equals(4));
+      expect(map['peakSpeedBytesPerSec'], equals(15 * 1024 * 1024));
+      expect(map['activeTransferSeconds'], equals(6));
+
+      final restored = DownloadTask.fromMap(map);
+      expect(restored.actualConnections, equals(4));
+      expect(restored.peakSpeedBytesPerSec, equals(15 * 1024 * 1024));
+      expect(restored.activeTransferSeconds, equals(6));
+      expect(restored.recentSpeedSamples.length, equals(3));
+    });
   });
 }

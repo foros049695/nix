@@ -104,8 +104,10 @@ class _NetworkDownloadsDiagnosticsDialogState extends State<NetworkDownloadsDiag
         buf.writeln('  Estado: ${t.status.name}');
         buf.writeln('  Progresso: ${t.formattedProgressBytes} (${(t.progressFraction * 100).toStringAsFixed(1)}%)');
         buf.writeln('  Velocidade Instantânea: ${t.formattedSpeed}');
-        buf.writeln('  Velocidade Média: ${t.formattedAverageSpeed}');
-        buf.writeln('  Segmentos Ativos: ${t.activeSegments > 0 ? t.activeSegments : t.splitCount}');
+        buf.writeln('  Velocidade Média Ativa: ${t.formattedAverageSpeed}');
+        buf.writeln('  Velocidade Sustentada: ${t.formattedSustainedSpeed}');
+        buf.writeln('  Pico Observado: ${t.formattedPeakSpeed}');
+        buf.writeln('  Conexões Reais: ${t.formattedConnections}');
         buf.writeln('  Pausa do Usuário: ${t.isUserPaused}');
         buf.writeln('  Destino: ${_sanitizePath(t.destinationPath)}');
         if (t.errorMessage != null) {
@@ -294,7 +296,9 @@ class _NetworkDownloadsDiagnosticsDialogState extends State<NetworkDownloadsDiag
                                       Text('Progresso: ${t.formattedProgressBytes}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11)),
                                       Text('Inst.: ${t.formattedSpeed}', style: const TextStyle(color: Color(0xFF34D399), fontSize: 11)),
                                       Text('Média: ${t.formattedAverageSpeed}', style: const TextStyle(color: Color(0xFFA78BFA), fontSize: 11)),
-                                      Text('Fatias: ${t.activeSegments > 0 ? t.activeSegments : t.splitCount}', style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11)),
+                                      Text('Sustentada: ${t.formattedSustainedSpeed}', style: const TextStyle(color: Color(0xFF67E8F9), fontSize: 11)),
+                                      Text('Pico: ${t.formattedPeakSpeed}', style: const TextStyle(color: Color(0xFFFBBF24), fontSize: 11)),
+                                      Text('Conexões: ${t.formattedConnections}', style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11)),
                                     ],
                                   ),
                                 ],

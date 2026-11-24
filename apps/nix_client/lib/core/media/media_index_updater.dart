@@ -65,13 +65,14 @@ class CatalogPublisherKeyring {
     Set<String>? trustedKeysHex,
     Set<String>? revokedKeysHex,
     this.isProductionMode = false,
-    this.allowTestFixtureKey = false,
-  })  : _trustedKeysHex = {
+    bool? allowTestFixtureKey,
+  })  : allowTestFixtureKey = allowTestFixtureKey ?? !isProductionMode,
+        _trustedKeysHex = {
           if (trustedKeysHex != null)
             ...trustedKeysHex.map((k) => k.toLowerCase())
           else ...[
             officialPublisherKeyHex.toLowerCase(),
-            if (!isProductionMode || allowTestFixtureKey)
+            if (!isProductionMode || (allowTestFixtureKey ?? !isProductionMode))
               fixtureTestPublisherKeyHex.toLowerCase(),
           ],
         },

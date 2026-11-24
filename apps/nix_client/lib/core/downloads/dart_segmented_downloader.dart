@@ -418,16 +418,32 @@ class DartSegmentedDownloader {
             );
           }
 
-          // Validação do cabeçalho Content-Range (RFC 7233)
+          // Validação rigorosa do cabeçalho Content-Range (RFC 7233)
           final contentRange = res.headers.value(HttpHeaders.contentRangeHeader);
           if (contentRange != null && contentRange.startsWith('bytes ')) {
-            final spec = contentRange.substring(6);
-            final dash = spec.indexOf('-');
+            final spec = contentRange.substring(6).trim();
+            final slash = spec.indexOf('/');
+            final rangePart = slash != -1 ? spec.substring(0, slash) : spec;
+            final dash = rangePart.indexOf('-');
             if (dash != -1) {
-              final returnedStart = int.tryParse(spec.substring(0, dash));
+              final returnedStart = int.tryParse(rangePart.substring(0, dash));
+              final returnedEnd = int.tryParse(rangePart.substring(dash + 1));
               if (returnedStart != null && returnedStart != actualStart) {
                 throw SegmentValidationException(
-                  'Content-Range incoerente: esperado $actualStart mas retornado $returnedStart',
+                  'Content-Range incoerente: esperado início $actualStart mas recebido $returnedStart',
+                );
+              }
+              if (returnedEnd != null && returnedEnd < actualStart) {
+                throw SegmentValidationException(
+                  'Content-Range incoerente: fim $returnedEnd é menor que início $actualStart',
+                );
+              }
+            }
+            if (slash != -1) {
+              final returnedTotal = int.tryParse(spec.substring(slash + 1));
+              if (returnedTotal != null && returnedTotal != contentLength) {
+                throw SegmentValidationException(
+                  'Content-Range total incoerente: esperado $contentLength mas retornado $returnedTotal',
                 );
               }
             }

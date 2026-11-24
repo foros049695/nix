@@ -1334,7 +1334,7 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                 ],
                 const SizedBox(width: 8),
                 Text(
-                  '(${task.activeSegments > 0 ? task.activeSegments : task.splitCount} seg)',
+                  '(${task.formattedConnections})',
                   style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 10.5, fontFamily: 'monospace'),
                 ),
                 const SizedBox(width: 10),
