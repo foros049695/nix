@@ -136,6 +136,45 @@ class CulturalItem {
   bool get isVinyl => category == CulturalCategory.music;
   bool get isGithubRepo => category == CulturalCategory.github;
 
+  /// Formata os termos otimizados de busca para o Torrent Index conforme a Seção 6.1:
+  /// - Filme: <Título> <Ano>
+  /// - Série: <Título>
+  /// - Anime: <Título original> (ou título principal)
+  /// - Livro: <Título> <Autor>
+  /// - Música: <Artista> <Título> ou <Artista> <Álbum>
+  /// Preserva estritamente a privacidade: nenhuma avaliação, nota pessoal ou status de acompanhamento é exposto.
+  String get torrentSearchQuery {
+    switch (category) {
+      case CulturalCategory.movies:
+        if (releaseYear != null && releaseYear! > 1800) {
+          return '$title $releaseYear'.trim();
+        }
+        return title.trim();
+      case CulturalCategory.series:
+        return title.trim();
+      case CulturalCategory.anime:
+        if (originalTitle != null && originalTitle!.trim().isNotEmpty) {
+          return originalTitle!.trim();
+        }
+        return title.trim();
+      case CulturalCategory.books:
+      case CulturalCategory.manga:
+        final author = creator?.trim();
+        if (author != null && author.isNotEmpty) {
+          return '$title $author'.trim();
+        }
+        return title.trim();
+      case CulturalCategory.music:
+        final artist = creator?.trim();
+        if (artist != null && artist.isNotEmpty) {
+          return '$artist $title'.trim();
+        }
+        return title.trim();
+      case CulturalCategory.github:
+        return title.trim();
+    }
+  }
+
   CulturalItem copyWith({
     String? id,
     String? title,

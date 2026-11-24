@@ -13,6 +13,10 @@ import '../../core/torrent_index/database/torrent_index_database.dart';
 import '../../core/torrent_index/models/indexer_source_config.dart';
 import '../../core/torrent_index/models/torrent_record.dart';
 import '../../core/torrent_index/models/torrent_search_query.dart';
+import '../../core/models/cultural_item.dart';
+import '../../core/network/transport_profile.dart';
+import '../network/transport_profile_dialog.dart';
+import 'network_downloads_diagnostics_dialog.dart';
 import '../../state/nix_state.dart';
 
 /// Central unificada do Nix Downloads & Torrent Index.
@@ -133,6 +137,137 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
     super.dispose();
   }
 
+  void _showSelectFromAcervoDialog() {
+    final nixState = context.read<NixState>();
+    final items = nixState.userProfile.culturalItems;
+
+    if (items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Seu Acervo Cultural ainda não possui obras cadastradas.'),
+          backgroundColor: Color(0xFF7C3AED),
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        String filter = '';
+        return StatefulBuilder(
+          builder: (context, setDlgState) {
+            final filtered = items.where((it) {
+              if (filter.isEmpty) return true;
+              final q = filter.toLowerCase();
+              return it.title.toLowerCase().contains(q) ||
+                  (it.creator?.toLowerCase().contains(q) ?? false) ||
+                  (it.originalTitle?.toLowerCase().contains(q) ?? false);
+            }).toList();
+
+            return AlertDialog(
+              backgroundColor: const Color(0xFF131221),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: const BorderSide(color: Color(0xFF2E2248)),
+              ),
+              title: const Row(
+                children: [
+                  Icon(Icons.auto_stories_rounded, color: Color(0xFF22D3EE), size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Buscar Obra do Acervo Cultural',
+                      style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 450,
+                height: 400,
+                child: Column(
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      decoration: InputDecoration(
+                        hintText: 'Filtrar obras do acervo...',
+                        hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                        prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Color(0xFF94A3B8)),
+                        filled: true,
+                        fillColor: const Color(0xFF1B1A2C),
+                        isDense: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Color(0xFF334155)),
+                        ),
+                      ),
+                      onChanged: (val) => setDlgState(() => filter = val.trim()),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? const Center(
+                              child: Text('Nenhuma obra encontrada no acervo.',
+                                  style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+                            )
+                          : ListView.builder(
+                              itemCount: filtered.length,
+                              itemBuilder: (context, idx) {
+                                final item = filtered[idx];
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  leading: Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF7C3AED).withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        item.monogram,
+                                        style: const TextStyle(color: Color(0xFFDDD6FE), fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    item.title,
+                                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    '${item.category.label} • Termo: ${item.torrentSearchQuery}',
+                                    style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF64748B)),
+                                  onTap: () {
+                                    Navigator.of(ctx).pop();
+                                    _searchController.text = item.torrentSearchQuery;
+                                    _executeSearch();
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancelar', style: TextStyle(color: Color(0xFF94A3B8))),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _executeSearch({int page = 1}) async {
     if (_db == null) return;
     setState(() {
@@ -222,6 +357,52 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
   }
 
   Widget _buildTerminalHeader() {
+    final nixState = context.watch<NixState>();
+    final currentProfile = GlobalTransportRegistry.current.getProfile(
+      _currentTab == 0 ? TransportModule.torrents : TransportModule.downloads,
+    );
+    final isTorVerified = nixState.securityGate.torBootstrapPercent == 100 &&
+        nixState.securityGate.isTorAnonymityReady;
+
+    String badgeLabel;
+    Color badgeColor;
+    Color badgeBorder;
+    IconData badgeIcon;
+
+    switch (currentProfile) {
+      case TransportProfileType.onionV3Strict:
+        badgeLabel = 'ONION V3 ESTRITO';
+        badgeColor = const Color(0xFFA855F7);
+        badgeBorder = const Color(0xFFA855F7).withOpacity(0.5);
+        badgeIcon = Icons.shield_rounded;
+        break;
+      case TransportProfileType.torSocks5:
+        if (isTorVerified) {
+          badgeLabel = 'TOR SOCKS5 ATIVO';
+          badgeColor = const Color(0xFF34D399);
+          badgeBorder = const Color(0xFF10B981).withOpacity(0.5);
+          badgeIcon = Icons.shield_outlined;
+        } else {
+          badgeLabel = 'TOR NÃO VERIFICADO (${nixState.securityGate.torBootstrapPercent}%)';
+          badgeColor = const Color(0xFFFBBF24);
+          badgeBorder = const Color(0xFFF59E0B).withOpacity(0.5);
+          badgeIcon = Icons.hourglass_top_rounded;
+        }
+        break;
+      case TransportProfileType.customSocks5:
+        badgeLabel = 'SOCKS5 PERSONALIZADO';
+        badgeColor = const Color(0xFF38BDF8);
+        badgeBorder = const Color(0xFF0284C7).withOpacity(0.5);
+        badgeIcon = Icons.settings_ethernet_rounded;
+        break;
+      case TransportProfileType.directHttps:
+        badgeLabel = 'CLEARNET DIRETA (SEM TOR)';
+        badgeColor = const Color(0xFFF97316);
+        badgeBorder = const Color(0xFFEA580C).withOpacity(0.5);
+        badgeIcon = Icons.warning_amber_rounded;
+        break;
+    }
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
       decoration: BoxDecoration(
@@ -256,24 +437,63 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          // Indicador de privacidade
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: const Color(0xFF10B981).withOpacity(0.12),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4)),
+          const SizedBox(width: 8),
+          // Botão de Diagnóstico de Rede e Downloads (Seção 9)
+          InkWell(
+            onTap: () => NetworkDownloadsDiagnosticsDialog.show(
+              context,
+              downloadController: _downloadController,
             ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.shield_outlined, size: 12, color: Color(0xFF34D399)),
-                SizedBox(width: 4),
-                Text(
-                  'TOR SOCKS5 ISOLADO',
-                  style: TextStyle(color: Color(0xFF34D399), fontSize: 10, fontWeight: FontWeight.bold),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF38BDF8).withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.35)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.analytics_outlined, size: 13, color: Color(0xFF38BDF8)),
+                  SizedBox(width: 4),
+                  Text(
+                    'Diagnóstico',
+                    style: TextStyle(color: Color(0xFF38BDF8), fontSize: 10.5, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Indicador dinâmico de transporte e privacidade (Seção 8 e 5)
+          Tooltip(
+            message: 'Clique para alterar o perfil de transporte e privacidade deste módulo',
+            child: InkWell(
+              onTap: () => TransportProfileDialog.show(
+                context,
+                initialModule: _currentTab == 0 ? TransportModule.torrents : TransportModule.downloads,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: badgeColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: badgeBorder),
                 ),
-              ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(badgeIcon, size: 12, color: badgeColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      badgeLabel,
+                      style: TextStyle(color: badgeColor, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -391,6 +611,18 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                         _selectedCategories.isEmpty ? 'Filtros' : 'Filtros (${_selectedCategories.length})',
                         style: const TextStyle(fontSize: 11.5),
                       ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Botão Buscar Obra do Acervo (Seção 6.2)
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF22D3EE),
+                        side: const BorderSide(color: Color(0xFF0891B2)),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      ),
+                      onPressed: _showSelectFromAcervoDialog,
+                      icon: const Icon(Icons.auto_stories_rounded, size: 15),
+                      label: const Text('Buscar obra do Acervo', style: TextStyle(fontSize: 11.5)),
                     ),
                   ],
                 ),
@@ -726,6 +958,13 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
   }
 
   Widget _buildTorrentCard(TorrentIndexRecord rec) {
+    final nixState = context.watch<NixState>();
+    final matchingAcervo = nixState.userProfile.culturalItems.where((it) {
+      final t = it.title.trim().toLowerCase();
+      if (t.length < 3) return false;
+      return rec.title.toLowerCase().contains(t);
+    }).firstOrNull;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -754,6 +993,30 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                 ),
               ),
               const SizedBox(width: 8),
+
+              // Badge do Acervo Cultural (Seção 6.2)
+              if (matchingAcervo != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF06B6D4).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: const Color(0xFF06B6D4).withOpacity(0.5)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.bookmark_added_rounded, size: 11, color: Color(0xFF22D3EE)),
+                      const SizedBox(width: 3),
+                      Text(
+                        'Acervo: ${matchingAcervo.title}',
+                        style: const TextStyle(color: Color(0xFF22D3EE), fontSize: 9.5, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
 
               // Título
               Expanded(
@@ -1013,6 +1276,20 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              // Motor Badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                margin: const EdgeInsets.only(right: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF7C3AED).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFF7C3AED).withOpacity(0.4)),
+                ),
+                child: Text(
+                  task.downloadEngine,
+                  style: const TextStyle(color: Color(0xFFC4B5FD), fontSize: 9.5, fontWeight: FontWeight.bold),
+                ),
+              ),
               // Status Badge
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -1047,7 +1324,19 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
                   '⚡ ${task.formattedSpeed}',
                   style: const TextStyle(color: Color(0xFF34D399), fontSize: 11, fontFamily: 'monospace'),
                 ),
-                const SizedBox(width: 12),
+                if (task.averageSpeedBytesPerSec > 0) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    'Média: ${task.formattedAverageSpeed}',
+                    style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10.5, fontFamily: 'monospace'),
+                  ),
+                ],
+                const SizedBox(width: 8),
+                Text(
+                  '(${task.activeSegments > 0 ? task.activeSegments : task.splitCount} seg)',
+                  style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 10.5, fontFamily: 'monospace'),
+                ),
+                const SizedBox(width: 10),
                 Text(
                   'ETA: ${task.formattedEta}',
                   style: const TextStyle(color: Color(0xFFA78BFA), fontSize: 11, fontFamily: 'monospace'),
@@ -1118,16 +1407,40 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              if (task.status == DownloadStatus.downloading)
+              if (task.status == DownloadStatus.pausing)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber)),
+                      SizedBox(width: 6),
+                      Text('Pausando...', style: TextStyle(color: Colors.amber, fontSize: 11)),
+                    ],
+                  ),
+                )
+              else if (task.status == DownloadStatus.resuming)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF34D399))),
+                      SizedBox(width: 6),
+                      Text('Retomando...', style: TextStyle(color: Color(0xFF34D399), fontSize: 11)),
+                    ],
+                  ),
+                )
+              else if (task.status == DownloadStatus.downloading)
                 IconButton(
                   icon: const Icon(Icons.pause_rounded, size: 18, color: Colors.amber),
-                  tooltip: 'Pausar',
+                  tooltip: 'Pausar transferência',
                   onPressed: () => _downloadController?.pauseDownload(task.id),
-                ),
-              if (task.status == DownloadStatus.paused)
+                )
+              else if (task.status == DownloadStatus.paused)
                 IconButton(
                   icon: const Icon(Icons.play_arrow_rounded, size: 18, color: Color(0xFF34D399)),
-                  tooltip: 'Retomar',
+                  tooltip: 'Retomar transferência',
                   onPressed: () => _downloadController?.resumeDownload(task.id),
                 ),
               if (task.status == DownloadStatus.completed) ...[

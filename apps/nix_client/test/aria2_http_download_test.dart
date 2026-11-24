@@ -101,6 +101,44 @@ void main() {
       expect(notifyCount, greaterThan(countBeforeRemove));
     });
 
+    test('Máquina de Estados de Download valida transições permitidas e rejeita inválidas', () {
+      expect(DownloadStatus.queued.canTransitionTo(DownloadStatus.starting), isTrue);
+      expect(DownloadStatus.queued.canTransitionTo(DownloadStatus.downloading), isFalse);
+
+      expect(DownloadStatus.starting.canTransitionTo(DownloadStatus.downloading), isTrue);
+      expect(DownloadStatus.starting.canTransitionTo(DownloadStatus.pausing), isTrue);
+
+      expect(DownloadStatus.downloading.canTransitionTo(DownloadStatus.pausing), isTrue);
+      expect(DownloadStatus.downloading.canTransitionTo(DownloadStatus.finalizing), isTrue);
+      expect(DownloadStatus.downloading.canTransitionTo(DownloadStatus.resuming), isFalse);
+
+      expect(DownloadStatus.pausing.canTransitionTo(DownloadStatus.paused), isTrue);
+      expect(DownloadStatus.paused.canTransitionTo(DownloadStatus.resuming), isTrue);
+      expect(DownloadStatus.paused.canTransitionTo(DownloadStatus.downloading), isTrue);
+
+      expect(DownloadStatus.resuming.canTransitionTo(DownloadStatus.downloading), isTrue);
+      expect(DownloadStatus.finalizing.canTransitionTo(DownloadStatus.completed), isTrue);
+    });
+
+    test('Pausa manual pelo usuário persiste e NUNCA é retomada automaticamente', () async {
+      final task = await controller.addDownload(url: 'https://example.com/pause_test.iso');
+      expect(task.fileName, equals('pause_test.iso'));
+
+      // Pausa a tarefa
+      await controller.pauseDownload(task.id);
+      expect(controller.tasks.first.status, equals(DownloadStatus.paused));
+      expect(controller.tasks.first.isUserPaused, isTrue);
+
+      // Simula recriação do controlador recarregando o arquivo persistido
+      final restoredController = Aria2DownloadController(
+        downloadDir: tempDir.path,
+        storageFilePath: '${tempDir.path}/tasks.json',
+      );
+      expect(restoredController.tasks.first.status, equals(DownloadStatus.paused));
+      expect(restoredController.tasks.first.isUserPaused, isTrue);
+      await restoredController.stopDaemon();
+    });
+
     test('Remoção de download impede terminantemente ressurreição da tarefa', () async {
       final task = await controller.addDownload(url: 'https://example.com/test_iso.iso');
       expect(controller.tasks.length, equals(1));
@@ -153,8 +191,28 @@ void main() {
           request.response.statusCode = HttpStatus.partialContent;
           request.response.headers.add(HttpHeaders.contentRangeHeader, 'bytes $start-$end/${dummyData.length}');
           request.response.headers.add(HttpHeaders.contentLengthHeader, chunk.length.toString());
-          request.response.add(chunk);
-          request.response.close();
+
+          if (request.uri.path.contains('throttled')) {
+            () async {
+              const blockSize = 32 * 1024;
+              for (var offset = 0; offset < chunk.length; offset += blockSize) {
+                final endOffset = (offset + blockSize < chunk.length) ? offset + blockSize : chunk.length;
+                try {
+                  request.response.add(chunk.sublist(offset, endOffset));
+                  await request.response.flush();
+                  await Future.delayed(const Duration(milliseconds: 15));
+                } catch (_) {
+                  break;
+                }
+              }
+              try {
+                await request.response.close();
+              } catch (_) {}
+            }();
+          } else {
+            request.response.add(chunk);
+            request.response.close();
+          }
         } else {
           request.response.statusCode = HttpStatus.ok;
           request.response.headers.add(HttpHeaders.contentLengthHeader, dummyData.length.toString());
@@ -212,6 +270,48 @@ void main() {
       final completed = await downloader.download(task: task);
       expect(completed.status, equals(DownloadStatus.failed));
       expect(completed.errorMessage, contains('Falha de integridade'));
+    });
+
+    test('Pausa imediata congela transferência e retomada conclui com sucesso', () async {
+      final downloader = DartSegmentedDownloader();
+      final destination = '${tempDir.path}/pause_resume_test.bin';
+
+      final task = DownloadTask(
+        id: 'task_pause_resume',
+        url: 'http://127.0.0.1:${server.port}/throttled_download.bin',
+        destinationPath: destination,
+        fileName: 'pause_resume_test.bin',
+        sha256Expected: dummySha256,
+        createdAt: DateTime.now(),
+      );
+
+      // Inicia download em background e pausa aos 50ms
+      final dlFuture = downloader.download(
+        task: task,
+        splitCount: 4,
+      );
+      Future.delayed(const Duration(milliseconds: 60), () {
+        downloader.pause(task.id);
+      });
+
+      final pausedResult = await dlFuture;
+      expect(pausedResult.status, equals(DownloadStatus.paused));
+      expect(pausedResult.downloadedBytes, lessThan(dummyData.length));
+
+      final bytesAtPause = pausedResult.downloadedBytes;
+      // Garante que os bytes parciais não continuam crescendo após a confirmação da pausa
+      await Future.delayed(const Duration(milliseconds: 150));
+      expect(pausedResult.downloadedBytes, equals(bytesAtPause));
+
+      // Retoma a transferência
+      final resumedResult = await downloader.download(
+        task: pausedResult.copyWith(status: DownloadStatus.downloading),
+        splitCount: 4,
+      );
+
+      expect(resumedResult.status, equals(DownloadStatus.completed));
+      expect(resumedResult.sha256Actual, equals(dummySha256));
+      expect(File(destination).lengthSync(), equals(dummyData.length));
     });
   });
 }

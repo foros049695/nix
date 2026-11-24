@@ -15,6 +15,9 @@ import '../dialogs/sovereign_onboarding_dialog.dart';
 import '../profile/pager_appearance_dialog.dart';
 import 'relay_settings_dialog.dart';
 import 'microphone_test_card.dart';
+import '../../core/network/transport_profile.dart';
+import '../network/transport_profile_dialog.dart';
+import '../downloads/network_downloads_diagnostics_dialog.dart';
 
 /// Central de Configurações Modular (V2 — Aparência Living AMOLED, Privacidade, Dispositivos e Módulos).
 class SettingsCenter extends StatefulWidget {
@@ -1248,6 +1251,87 @@ class _SettingsCenterState extends State<SettingsCenter> {
               state.exitOffGridModeAndConnectTor();
             }
           },
+        ),
+
+        // Configuração de Perfis de Transporte por Módulo (Seção 5)
+        Container(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: NixColors.surfaceCard,
+            borderRadius: NixTokens.borderSm,
+            border: Border.all(color: NixColors.surfaceBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'PERFIS DE TRANSPORTE POR MÓDULO',
+                    style: TextStyle(color: NixColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: NixColors.textPrimary,
+                      side: BorderSide(color: NixColors.surfaceBorderStrong),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    ),
+                    onPressed: () => TransportProfileDialog.show(context),
+                    icon: const Icon(Icons.tune_rounded, size: 14),
+                    label: const Text('Configurar Perfis', style: TextStyle(fontSize: 11)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Defina independentemente o nível de isolamento Tor, proxy SOCKS5 ou clearnet para cada módulo:',
+                style: TextStyle(color: NixColors.textSecondary, fontSize: 11.5),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  for (final mod in TransportModule.values)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: NixColors.background,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: NixColors.surfaceBorder),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('${mod.label}: ', style: TextStyle(color: NixColors.textSecondary, fontSize: 11)),
+                          Text(
+                            s.moduleTransportPreferences.getProfile(mod).label,
+                            style: TextStyle(
+                              color: s.moduleTransportPreferences.getProfile(mod) == TransportProfileType.directHttps
+                                  ? Colors.orangeAccent
+                                  : Colors.greenAccent,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => NetworkDownloadsDiagnosticsDialog.show(context),
+                  icon: const Icon(Icons.analytics_outlined, size: 14),
+                  label: const Text('Abrir Painel Técnico de Diagnóstico de Rede & Downloads', style: TextStyle(fontSize: 11)),
+                ),
+              ),
+            ],
+          ),
         ),
         Material(
           type: MaterialType.transparency,

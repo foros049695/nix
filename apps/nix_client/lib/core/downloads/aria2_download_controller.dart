@@ -8,6 +8,29 @@ import 'models/download_task.dart';
 
 typedef DownloadStatusChangeNotifier = void Function(List<DownloadTask> tasks);
 
+/// Perfis de desempenho para downloads diretos HTTP/HTTPS.
+enum DownloadPerformanceProfile {
+  conservative('conservative', 'Conservador', 3, 3, 35, '2M'),
+  balanced('balanced', 'Equilibrado', 6, 6, 25, '1M'),
+  highPerformance('highPerformance', 'Alto Desempenho', 8, 8, 20, '1M');
+
+  final String slug;
+  final String label;
+  final int maxConnections;
+  final int split;
+  final int timeoutSeconds;
+  final String minSplitSize;
+
+  const DownloadPerformanceProfile(
+    this.slug,
+    this.label,
+    this.maxConnections,
+    this.split,
+    this.timeoutSeconds,
+    this.minSplitSize,
+  );
+}
+
 /// Controlador soberano do mecanismo Nix Downloads.
 ///
 /// REGRAS INEGOCIÁVEIS:
@@ -15,6 +38,7 @@ typedef DownloadStatusChangeNotifier = void Function(List<DownloadTask> tasks);
 /// 2. Proibido: BitTorrent, DHT, Peer Exchange, Trackers e Seeding através do aria2.
 /// 3. Loopback RPC estritamente protegido com token secreto aleatório gerado em tempo de execução.
 /// 4. Fallback transparente para o `DartSegmentedDownloader` caso o binário `aria2c` não esteja presente.
+/// 5. Pausa real persistente: polling, reinício ou trocas de aba NUNCA retomam downloads pausados pelo usuário.
 class Aria2DownloadController extends ChangeNotifier {
   String _downloadDir;
   final int rpcPort;
@@ -32,7 +56,28 @@ class Aria2DownloadController extends ChangeNotifier {
   final DartSegmentedDownloader _fallbackDownloader = DartSegmentedDownloader();
   final Set<String> _fallbackTaskIds = {};
   final Set<String> _removedTaskIds = {};
+  final Set<String> _manuallyPausedTaskIds = {};
   DownloadStatusChangeNotifier? onTasksUpdated;
+
+  DownloadPerformanceProfile _performanceProfile = DownloadPerformanceProfile.balanced;
+  DownloadPerformanceProfile get performanceProfile => _performanceProfile;
+
+  final List<String> _recentLogs = [];
+  List<String> get recentLogs => List.unmodifiable(_recentLogs);
+
+  void _log(String message) {
+    final entry = '[${DateTime.now().toIso8601String()}] $message';
+    _recentLogs.add(entry);
+    if (_recentLogs.length > 50) {
+      _recentLogs.removeAt(0);
+    }
+  }
+
+  void setPerformanceProfile(DownloadPerformanceProfile profile) {
+    _performanceProfile = profile;
+    _log('Perfil de desempenho alterado para ${profile.label} (${profile.split} fatias)');
+    notifyListeners();
+  }
 
   void _notify() {
     onTasksUpdated?.call(tasks);
@@ -83,6 +128,7 @@ class Aria2DownloadController extends ChangeNotifier {
 
   bool get isDaemonRunning => _isDaemonRunning;
   String get rpcSecret => _rpcSecret;
+  int get actualRpcPort => _actualRpcPort;
   List<DownloadTask> get tasks => _tasks.values.toList();
 
   static Future<int> _findAvailablePort(int preferred) async {
@@ -106,12 +152,11 @@ class Aria2DownloadController extends ChangeNotifier {
     // Localiza o binário aria2c
     final binary = _resolveAria2cBinary();
     if (binary == null) {
-      // Binário não encontrado: ativa modo de operação nativo via fallback Dart
+      // Binário não encontrado: ativa modo nativo via fallback Dart
       _isDaemonRunning = true;
       return true;
     }
 
-    // Aloca porta RPC livre e segura sem conflitos com outros serviços
     _actualRpcPort = await _findAvailablePort(rpcPort);
     _rpcSecret = _generateRandomToken(32);
 
@@ -132,9 +177,9 @@ class Aria2DownloadController extends ChangeNotifier {
         '--enable-peer-exchange=false',
         '--follow-torrent=false',
         '--follow-metalink=false',
-        '--max-connection-per-server=8',
-        '--split=8',
-        '--min-split-size=1M',
+        '--max-connection-per-server=${_performanceProfile.maxConnections}',
+        '--split=${_performanceProfile.split}',
+        '--min-split-size=${_performanceProfile.minSplitSize}',
         '--continue=true',
         '--dir=$downloadDir',
         '--check-integrity=false',
@@ -175,12 +220,12 @@ class Aria2DownloadController extends ChangeNotifier {
   }
 
   /// Adiciona uma nova tarefa de download direto HTTP/HTTPS.
-  /// Lança [ArgumentError] se a URL for magnet ou protocolo não permitido.
   Future<DownloadTask> addDownload({
     required String url,
     String? customFileName,
     String? sha256Expected,
     bool allowClearnet = false,
+    String transportProfile = 'tor_socks5',
   }) async {
     final cleanUrl = url.trim();
     _assertValidHttpUrl(cleanUrl);
@@ -189,7 +234,10 @@ class Aria2DownloadController extends ChangeNotifier {
     final fileName = customFileName ?? _extractFileName(uri);
     final targetPath = '$downloadDir/$fileName';
     final taskId = 'dl_${DateTime.now().microsecondsSinceEpoch}';
+
     _removedTaskIds.remove(taskId);
+    _manuallyPausedTaskIds.remove(taskId);
+    _log('Download adicionado: $fileName (Perfil: $transportProfile)');
 
     var task = DownloadTask(
       id: taskId,
@@ -199,6 +247,9 @@ class Aria2DownloadController extends ChangeNotifier {
       sha256Expected: sha256Expected,
       status: DownloadStatus.starting,
       allowClearnet: allowClearnet,
+      isUserPaused: false,
+      downloadEngine: _process != null ? 'aria2' : 'dart_range',
+      transportProfile: transportProfile,
       createdAt: DateTime.now(),
     );
 
@@ -206,7 +257,6 @@ class Aria2DownloadController extends ChangeNotifier {
     _persistTasks();
     _notify();
 
-    // Se o aria2c não estiver executando processo nativo, tenta iniciar daemon
     if (_process == null) {
       await startDaemon();
     }
@@ -221,15 +271,15 @@ class Aria2DownloadController extends ChangeNotifier {
       final downloadOptions = <String, String>{
         'dir': downloadDir,
         'out': fileName,
-        'split': '8',
-        'max-connection-per-server': '8',
+        'split': '${_performanceProfile.split}',
+        'max-connection-per-server': '${_performanceProfile.maxConnections}',
+        'min-split-size': _performanceProfile.minSplitSize,
         'continue': 'true',
       };
-      if (task.allowClearnet) {
+      if (task.allowClearnet || transportProfile == 'direct_https') {
         downloadOptions['all-proxy'] = '';
       }
 
-      // Submete a URL via JSON-RPC protegido
       final rpcRes = await _rpcCall('aria2.addUri', [
         'token:$_rpcSecret',
         [cleanUrl],
@@ -238,30 +288,44 @@ class Aria2DownloadController extends ChangeNotifier {
 
       if (rpcRes != null && rpcRes['result'] != null) {
         final ariaGid = rpcRes['result'].toString();
-        task = task.copyWith(id: ariaGid, status: DownloadStatus.downloading);
+        _removedTaskIds.remove(ariaGid);
+        _manuallyPausedTaskIds.remove(ariaGid);
+
+        task = task.copyWith(
+          id: ariaGid,
+          status: DownloadStatus.downloading,
+          downloadEngine: 'aria2',
+        );
         _tasks.remove(taskId);
         _tasks[ariaGid] = task;
+        _persistTasks();
         _notify();
         return task;
       } else {
         throw Exception('Resposta inesperada do RPC aria2: $rpcRes');
       }
     } catch (_) {
-      // Fallback em caso de erro no RPC
       _fallbackTaskIds.add(taskId);
+      task = task.copyWith(downloadEngine: 'dart_range');
+      _tasks[taskId] = task;
+      _persistTasks();
       unawaited(_runFallbackDownload(task));
       return task;
     }
   }
 
-  /// Retenta um download que falhou permitindo conexão fora da rede Tor (Clearnet).
+  /// Retenta um download permitindo conexão fora da rede Tor (Clearnet).
   Future<void> retryDownloadWithClearnet(String taskId) async {
     final task = _tasks[taskId];
     if (task == null) return;
+
+    _manuallyPausedTaskIds.remove(taskId);
     final updated = task.copyWith(
       status: DownloadStatus.starting,
       allowClearnet: true,
+      transportProfile: 'direct_https',
       errorMessage: null,
+      isUserPaused: false,
     );
     _tasks[taskId] = updated;
     _notify();
@@ -275,8 +339,8 @@ class Aria2DownloadController extends ChangeNotifier {
         final downloadOptions = <String, String>{
           'dir': downloadDir,
           'out': updated.fileName,
-          'split': '8',
-          'max-connection-per-server': '8',
+          'split': '${_performanceProfile.split}',
+          'max-connection-per-server': '${_performanceProfile.maxConnections}',
           'continue': 'true',
           'all-proxy': '',
         };
@@ -287,8 +351,15 @@ class Aria2DownloadController extends ChangeNotifier {
         ]);
         if (rpcRes != null && rpcRes['result'] != null) {
           final ariaGid = rpcRes['result'].toString();
+          _removedTaskIds.remove(ariaGid);
+          _manuallyPausedTaskIds.remove(ariaGid);
+
           _tasks.remove(taskId);
-          _tasks[ariaGid] = updated.copyWith(id: ariaGid, status: DownloadStatus.downloading);
+          _tasks[ariaGid] = updated.copyWith(
+            id: ariaGid,
+            status: DownloadStatus.downloading,
+            downloadEngine: 'aria2',
+          );
           _persistTasks();
           _notify();
           return;
@@ -300,20 +371,66 @@ class Aria2DownloadController extends ChangeNotifier {
     unawaited(_runFallbackDownload(updated));
   }
 
+  /// Pausa real e definitiva de uma transferência (máquina de estados: DOWNLOADING -> PAUSING -> PAUSED).
   Future<void> pauseDownload(String taskId) async {
     final task = _tasks[taskId];
-    if (task == null) return;
+    if (task == null || task.status.isTerminal || task.status.isPausedOrPausing) return;
+    _log('Pausa solicitada para a tarefa: $taskId');
 
+    // 1. Registra a intenção explícita do usuário
+    _manuallyPausedTaskIds.add(taskId);
+
+    // 2. Transiciona para PAUSING
+    _tasks[taskId] = task.copyWith(
+      status: DownloadStatus.pausing,
+      isUserPaused: true,
+      speedBytesPerSec: 0,
+      clearEta: true,
+    );
+    _notify();
+
+    // 3. Executa a pausa no motor correto
     if (_fallbackTaskIds.contains(taskId) || task.id.startsWith('dl_')) {
       _fallbackDownloader.pause(taskId);
-    } else if (_process != null) {
+      _tasks[taskId] = _tasks[taskId]?.copyWith(
+        status: DownloadStatus.paused,
+        isUserPaused: true,
+        speedBytesPerSec: 0,
+        clearEta: true,
+      ) ?? task;
+      _persistTasks();
+      _notify();
+      return;
+    }
+
+    if (_process != null) {
       try {
-        await _rpcCall('aria2.pause', ['token:$_rpcSecret', taskId]);
+        final pauseRes = await _rpcCall('aria2.pause', ['token:$_rpcSecret', taskId]);
+        if (pauseRes == null || pauseRes['error'] != null) {
+          // Se aria2.pause retornar erro de que não está ativo ou demorar, avalia forcePause
+          await _rpcCall('aria2.forcePause', ['token:$_rpcSecret', taskId]);
+        }
+      } catch (_) {
+        try {
+          await _rpcCall('aria2.forcePause', ['token:$_rpcSecret', taskId]);
+        } catch (_) {}
+      }
+
+      // Confirmação do estado no daemon
+      try {
+        final statusRes = await _rpcCall('aria2.tellStatus', ['token:$_rpcSecret', taskId]);
+        final s = statusRes?['result']?['status']?.toString();
+        if (s == 'active') {
+          // Ainda não pausou: força imediatamente
+          await _rpcCall('aria2.forcePause', ['token:$_rpcSecret', taskId]);
+        }
       } catch (_) {}
     }
 
-    _tasks[taskId] = task.copyWith(
+    // 4. Confirma estado PAUSED e persiste
+    _tasks[taskId] = (_tasks[taskId] ?? task).copyWith(
       status: DownloadStatus.paused,
+      isUserPaused: true,
       speedBytesPerSec: 0,
       clearEta: true,
     );
@@ -321,40 +438,67 @@ class Aria2DownloadController extends ChangeNotifier {
     _notify();
   }
 
+  /// Retomada explícita de uma transferência pelo usuário (PAUSED -> RESUMING -> DOWNLOADING).
   Future<void> resumeDownload(String taskId) async {
     final task = _tasks[taskId];
-    if (task == null) return;
+    if (task == null || (!task.status.isPausedOrPausing && task.status != DownloadStatus.failed)) {
+      return;
+    }
+    _log('Retomada solicitada para a tarefa: $taskId');
 
+    // 1. Remove a flag de pausa manual
+    _manuallyPausedTaskIds.remove(taskId);
+
+    // 2. Transiciona para RESUMING
+    _tasks[taskId] = task.copyWith(
+      status: DownloadStatus.resuming,
+      isUserPaused: false,
+      errorMessage: null,
+    );
+    _notify();
+
+    // 3. Fallback Dart
     if (_fallbackTaskIds.contains(taskId) || task.id.startsWith('dl_')) {
       _fallbackTaskIds.add(taskId);
-      _tasks[taskId] = task.copyWith(status: DownloadStatus.downloading);
+      _tasks[taskId] = task.copyWith(
+        status: DownloadStatus.downloading,
+        isUserPaused: false,
+        downloadEngine: 'dart_range',
+      );
+      _persistTasks();
       _notify();
       unawaited(_runFallbackDownload(task));
       return;
     }
 
+    // 4. Motor aria2
     if (_process != null) {
       final res = await _rpcCall('aria2.unpause', ['token:$_rpcSecret', taskId]);
       if (res != null && res['result'] != null) {
-        _tasks[taskId] = task.copyWith(status: DownloadStatus.downloading);
+        _tasks[taskId] = task.copyWith(
+          status: DownloadStatus.downloading,
+          isUserPaused: false,
+          downloadEngine: 'aria2',
+        );
         _persistTasks();
         _notify();
         return;
       }
 
-      // Se aria2c não encontrou o GID (ex: app reiniciado ou nova sessão do daemon),
-      // readiciona ao aria2c com opção continue: true para retomar o arquivo local
+      // Se aria2c não encontrou o GID (daemon reiniciado ou reconectado),
+      // readiciona preservando os bytes existentes com continue: true
       try {
         final downloadOptions = <String, dynamic>{
           'dir': _downloadDir,
           'continue': 'true',
-          'max-connection-per-server': '4',
-          'split': '4',
+          'max-connection-per-server': '${_performanceProfile.maxConnections}',
+          'split': '${_performanceProfile.split}',
+          'min-split-size': _performanceProfile.minSplitSize,
         };
         if (task.fileName.isNotEmpty) {
           downloadOptions['out'] = task.fileName;
         }
-        if (task.allowClearnet) {
+        if (task.allowClearnet || task.transportProfile == 'direct_https') {
           downloadOptions['all-proxy'] = '';
         }
 
@@ -366,7 +510,12 @@ class Aria2DownloadController extends ChangeNotifier {
         if (rpcRes != null && rpcRes['result'] != null) {
           final newGid = rpcRes['result'].toString();
           _tasks.remove(taskId);
-          final updated = task.copyWith(id: newGid, status: DownloadStatus.downloading);
+          final updated = task.copyWith(
+            id: newGid,
+            status: DownloadStatus.downloading,
+            isUserPaused: false,
+            downloadEngine: 'aria2',
+          );
           _tasks[newGid] = updated;
           _persistTasks();
           _notify();
@@ -377,7 +526,12 @@ class Aria2DownloadController extends ChangeNotifier {
 
     // Fallback puro Dart caso aria2 não consiga
     _fallbackTaskIds.add(taskId);
-    _tasks[taskId] = task.copyWith(status: DownloadStatus.downloading);
+    _tasks[taskId] = task.copyWith(
+      status: DownloadStatus.downloading,
+      isUserPaused: false,
+      downloadEngine: 'dart_range',
+    );
+    _persistTasks();
     _notify();
     unawaited(_runFallbackDownload(task));
   }
@@ -389,10 +543,13 @@ class Aria2DownloadController extends ChangeNotifier {
   /// Remove permanentemente uma tarefa da fila e da memória,
   /// encerrando o processo de download no aria2 ou no fallback Dart.
   Future<void> removeDownload(String taskId, {bool deleteFile = false}) async {
+    _log('Removendo tarefa da fila: $taskId (deleteFile=$deleteFile)');
     _removedTaskIds.add(taskId);
+    _manuallyPausedTaskIds.remove(taskId);
     final task = _tasks[taskId];
     if (task != null && task.id != taskId) {
       _removedTaskIds.add(task.id);
+      _manuallyPausedTaskIds.remove(task.id);
     }
 
     if (_fallbackTaskIds.contains(taskId)) {
@@ -446,11 +603,25 @@ class Aria2DownloadController extends ChangeNotifier {
         for (final item in decoded) {
           if (item is Map<String, dynamic>) {
             final t = DownloadTask.fromMap(item);
-            // Se o app foi encerrado durante transferência, recupera como pausado para permitir retomar com 1 clique
-            final restored = (t.status == DownloadStatus.downloading || t.status == DownloadStatus.starting)
-                ? t.copyWith(status: DownloadStatus.paused, speedBytesPerSec: 0)
-                : t;
-            _tasks[t.id] = restored;
+            // Nenhuma tarefa que estava pausada pode ser retomada automaticamente
+            if (t.isUserPaused || t.status.isPausedOrPausing) {
+              _manuallyPausedTaskIds.add(t.id);
+              _tasks[t.id] = t.copyWith(
+                status: DownloadStatus.paused,
+                isUserPaused: true,
+                speedBytesPerSec: 0,
+                clearEta: true,
+              );
+            } else if (t.status == DownloadStatus.downloading || t.status == DownloadStatus.starting) {
+              // Se o app foi encerrado durante transferência, recupera como pausado preservando os dados
+              _tasks[t.id] = t.copyWith(
+                status: DownloadStatus.paused,
+                speedBytesPerSec: 0,
+                clearEta: true,
+              );
+            } else {
+              _tasks[t.id] = t;
+            }
           }
         }
       }
@@ -484,17 +655,24 @@ class Aria2DownloadController extends ChangeNotifier {
     DateTime lastPersist = DateTime.now();
     await _fallbackDownloader.download(
       task: task,
-      splitCount: 4,
+      splitCount: _performanceProfile.split,
       onProgress: (updated) {
-        // Impede que downloads removidos sejam ressuscitados pelo callback assíncrono
+        // Bloqueia ressurreição de tarefas removidas
         if (_removedTaskIds.contains(updated.id) ||
             _removedTaskIds.contains(task.id) ||
             !_tasks.containsKey(updated.id)) {
           return;
         }
+
+        // Se o usuário pausou manualmente, NUNCA permite que o callback reverta para downloading
+        if (_manuallyPausedTaskIds.contains(updated.id) &&
+            updated.status == DownloadStatus.downloading) {
+          return;
+        }
+
         _tasks[updated.id] = updated;
         final now = DateTime.now();
-        if (now.difference(lastPersist).inSeconds >= 5 ||
+        if (now.difference(lastPersist).inSeconds >= 4 ||
             updated.status != DownloadStatus.downloading) {
           lastPersist = now;
           _persistTasks();
@@ -536,7 +714,8 @@ class Aria2DownloadController extends ChangeNotifier {
           continue;
         }
 
-        if (!_tasks.containsKey(gid)) {
+        var existing = _tasks[gid];
+        if (existing == null) {
           continue;
         }
 
@@ -544,6 +723,24 @@ class Aria2DownloadController extends ChangeNotifier {
         final totalLength = int.tryParse(item['totalLength']?.toString() ?? '') ?? 0;
         final completedLength = int.tryParse(item['completedLength']?.toString() ?? '') ?? 0;
         final downloadSpeed = int.tryParse(item['downloadSpeed']?.toString() ?? '') ?? 0;
+
+        // Se o usuário pausou a tarefa manualmente, o polling JAMAIS pode sobrescrever para downloading
+        if (_manuallyPausedTaskIds.contains(gid) || existing.isUserPaused) {
+          if (statusStr == 'active') {
+            try {
+              await _rpcCall('aria2.pause', ['token:$_rpcSecret', gid]);
+            } catch (_) {}
+          }
+          _tasks[gid] = existing.copyWith(
+            status: DownloadStatus.paused,
+            isUserPaused: true,
+            downloadedBytes: completedLength,
+            fileSizeBytes: totalLength > 0 ? totalLength : existing.fileSizeBytes,
+            speedBytesPerSec: 0,
+            clearEta: true,
+          );
+          continue;
+        }
 
         DownloadStatus status;
         switch (statusStr) {
@@ -574,23 +771,42 @@ class Aria2DownloadController extends ChangeNotifier {
             break;
         }
 
+        // Suavização EMA para evitar oscilações instantâneas para 0 KB/s entre bursts de TCP/Tor
+        final prevSpeed = existing.speedBytesPerSec.toDouble();
+        double smoothedSpeed;
+        if (prevSpeed == 0) {
+          smoothedSpeed = downloadSpeed.toDouble();
+        } else if (downloadSpeed > 0) {
+          smoothedSpeed = (0.35 * downloadSpeed) + (0.65 * prevSpeed);
+        } else {
+          smoothedSpeed = prevSpeed * 0.72;
+          if (smoothedSpeed < 512) smoothedSpeed = 0;
+        }
+        final finalSpeed = status == DownloadStatus.downloading ? smoothedSpeed.round() : 0;
+
+        // Cálculo de velocidade média com base no tempo decorrido desde o início da tarefa
+        final elapsedSec = DateTime.now().difference(existing.createdAt).inSeconds;
+        final avgSpeed = (elapsedSec > 2 && completedLength > 0)
+            ? (completedLength / elapsedSec)
+            : finalSpeed.toDouble();
+
         final remaining = totalLength - completedLength;
-        final eta = (status == DownloadStatus.downloading && downloadSpeed > 0 && remaining > 0)
-            ? (remaining / downloadSpeed).ceil()
+        final eta = (status == DownloadStatus.downloading && finalSpeed > 0 && remaining > 0)
+            ? (remaining / finalSpeed).ceil()
             : null;
 
-        var existing = _tasks[gid];
-        if (existing != null) {
-          _tasks[gid] = existing.copyWith(
-            fileSizeBytes: totalLength > 0 ? totalLength : existing.fileSizeBytes,
-            downloadedBytes: completedLength,
-            speedBytesPerSec: downloadSpeed,
-            etaSeconds: eta,
-            clearEta: (status != DownloadStatus.downloading || downloadSpeed <= 0),
-            status: status,
-            completedAt: status == DownloadStatus.completed ? (existing.completedAt ?? DateTime.now()) : null,
-          );
-        }
+        _tasks[gid] = existing.copyWith(
+          fileSizeBytes: totalLength > 0 ? totalLength : existing.fileSizeBytes,
+          downloadedBytes: completedLength,
+          speedBytesPerSec: finalSpeed,
+          averageSpeedBytesPerSec: avgSpeed,
+          activeSegments: status == DownloadStatus.downloading ? _performanceProfile.split : 0,
+          etaSeconds: eta,
+          clearEta: (status != DownloadStatus.downloading || finalSpeed <= 0),
+          status: status,
+          downloadEngine: 'aria2',
+          completedAt: status == DownloadStatus.completed ? (existing.completedAt ?? DateTime.now()) : null,
+        );
       }
       _persistTasks();
       _notify();
@@ -628,7 +844,6 @@ class Aria2DownloadController extends ChangeNotifier {
     if (customBinaryPath != null && File(customBinaryPath!).existsSync()) {
       return customBinaryPath;
     }
-    // Verifica caminhos comuns no Linux e PATH
     final home = Platform.environment['HOME'];
     final candidates = [
       if (home != null) '$home/.local/bin/aria2c-wrapper',
@@ -639,44 +854,37 @@ class Aria2DownloadController extends ChangeNotifier {
       '/home/gus/.local/bin/aria2c',
       '/usr/bin/aria2c',
       '/usr/local/bin/aria2c',
-      'aria2c',
     ];
     for (final c in candidates) {
-      try {
-        final res = Process.runSync(c, ['--version']);
-        if (res.exitCode == 0) return c;
-      } catch (_) {}
+      if (File(c).existsSync()) return c;
     }
     return null;
   }
 
   static void _assertValidHttpUrl(String url) {
-    if (url.startsWith('magnet:?') || url.startsWith('dht:') || url.startsWith('torrent:')) {
+    final lower = url.trim().toLowerCase();
+    if (lower.startsWith('magnet:') || lower.contains('.torrent') || lower.startsWith('dht://')) {
       throw ArgumentError(
-        'O Nix Downloads utiliza aria2 exclusivamente para downloads diretos HTTP e HTTPS.\n'
-        'Transferências BitTorrent e magnets via Tor foram desabilitadas para proteger a privacidade e evitar vazamento de IP.',
+        'Operação Proibida: O Nix Downloads utiliza aria2 exclusivamente para downloads diretos HTTP e HTTPS. '
+        'Qualquer integração com BitTorrent, DHT ou Trackers é terminantemente vedada.',
       );
     }
-    final uri = Uri.tryParse(url);
+    final uri = Uri.tryParse(url.trim());
     if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
-      throw ArgumentError('Apenas URLs com protocolo HTTP ou HTTPS são suportadas.');
+      throw ArgumentError('Apenas conexões diretas HTTP e HTTPS são permitidas no Nix Downloads.');
     }
   }
 
   static String _extractFileName(Uri uri) {
-    final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
-    if (segments.isNotEmpty) {
-      return segments.last;
+    if (uri.pathSegments.isNotEmpty && uri.pathSegments.last.trim().isNotEmpty) {
+      return Uri.decodeComponent(uri.pathSegments.last.trim());
     }
-    return 'download_${DateTime.now().millisecondsSinceEpoch}.bin';
+    return 'download_${DateTime.now().millisecondsSinceEpoch}';
   }
 
   static String _generateRandomToken(int length) {
-    final random = Random.secure();
-    final bytes = Uint8List(length ~/ 2);
-    for (var i = 0; i < bytes.length; i++) {
-      bytes[i] = random.nextInt(256);
-    }
-    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    final rand = Random.secure();
+    return List.generate(length, (_) => chars[rand.nextInt(chars.length)]).join();
   }
 }

@@ -455,7 +455,7 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
                       ),
                       onPressed: () {
                         widget.onClose?.call();
-                        state.openDownloadsArea(prefillSearch: widget.item.title);
+                        state.openDownloadsArea(prefillSearch: widget.item.torrentSearchQuery);
                       },
                       icon: const Icon(Icons.search_rounded, size: 16),
                       label: const Text(

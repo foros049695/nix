@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:nix_transport/nix_transport.dart';
 import '../../core/media/catalog_database.dart';
+import '../../core/media/catalog_diagnostics.dart';
 import '../../core/media/media_index_updater.dart';
 import '../../core/media/pager_playlist.dart';
 import '../../core/models/cultural_item.dart';
@@ -455,6 +456,91 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
     );
   }
 
+  Widget _buildDiagnosticChecklistView(CatalogDiagnosticReport report) {
+    Widget layerTile(String title, DiagnosticStatus status, String details) {
+      Color color;
+      IconData icon;
+      switch (status) {
+        case DiagnosticStatus.passed:
+          color = const Color(0xFF34D399);
+          icon = Icons.check_circle_outline_rounded;
+          break;
+        case DiagnosticStatus.warning:
+          color = const Color(0xFFFBBF24);
+          icon = Icons.warning_amber_rounded;
+          break;
+        case DiagnosticStatus.failed:
+          color = const Color(0xFFF87171);
+          icon = Icons.error_outline_rounded;
+          break;
+        case DiagnosticStatus.skipped:
+          color = const Color(0xFF94A3B8);
+          icon = Icons.schedule_rounded;
+          break;
+      }
+
+      return Container(
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: const Color(0xFF161524),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          status.label,
+                          style: TextStyle(color: color, fontSize: 9.5, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    details,
+                    style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        layerTile('1. Daemon Tor Local', report.torDaemon, report.torDaemonDetails),
+        layerTile('2. Túnel SOCKS5 (RFC 1928)', report.socks5Handshake, report.socks5HandshakeDetails),
+        layerTile('3. Serviço Onion Remoto', report.remoteOnion, report.remoteOnionDetails),
+        layerTile('4. Download do Manifesto', report.manifestFetch, report.manifestFetchDetails),
+        layerTile('5. Assinatura Ed25519', report.ed25519Signature, report.ed25519SignatureDetails),
+        layerTile('6. Integridade Anti-Rollback', report.antiRollback, report.antiRollbackDetails),
+      ],
+    );
+  }
+
   Future<void> _openCatalogUpdateDialog() async {
     final nixState = _nixState;
     final updateManager = nixState.catalogUpdateManager;
@@ -464,6 +550,8 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
       );
     }
     String? localError;
+    CatalogDiagnosticReport? diagnosticReport;
+    bool showDiagnosticDetails = false;
 
     int currentVer = 0;
     List<CatalogVersionEntry> history = [];
@@ -671,6 +759,41 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                                       ),
                                     ],
                                   ),
+                                  if (diagnosticReport != null) ...[
+                                    const SizedBox(height: 10),
+                                    InkWell(
+                                      onTap: () => setDlgState(() => showDiagnosticDetails = !showDiagnosticDetails),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(showDiagnosticDetails ? Icons.expand_less : Icons.expand_more, size: 16, color: accent),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            showDiagnosticDetails ? 'Ocultar Diagnóstico em Camadas' : 'Ver Diagnóstico em Camadas (Tor & Onion)',
+                                            style: TextStyle(color: accent, fontSize: 11, fontWeight: FontWeight.bold),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (showDiagnosticDetails) ...[
+                                      const SizedBox(height: 8),
+                                      _buildDiagnosticChecklistView(diagnosticReport!),
+                                      const SizedBox(height: 4),
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: TextButton.icon(
+                                          icon: const Icon(Icons.copy_rounded, size: 13),
+                                          label: const Text('Copiar Diagnóstico', style: TextStyle(fontSize: 10.5)),
+                                          onPressed: () {
+                                            Clipboard.setData(ClipboardData(text: diagnosticReport!.toSanitizedSummary()));
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(content: Text('Diagnóstico sanitizado copiado!'), duration: Duration(seconds: 2)),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ],
                               ),
                             ),
@@ -883,10 +1006,31 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                           try {
                             useTorPort();
                             final isHttps = manifestUri.scheme == 'https';
+
+                            CatalogDiagnosticReport? report;
+                            try {
+                              report = await CatalogDiagnostics.runDiagnostics(
+                                manifestUri: manifestUri,
+                                socksPort: state.embeddedTor.socksPort > 0 ? state.embeddedTor.socksPort : 9050,
+                                keyring: updateManager.keyring,
+                                installedVersion: currentVer,
+                              );
+                              diagnosticReport = report;
+                            } catch (_) {}
+
                             try {
                               await updateManager.checkForUpdate(manifestUri: manifestUri, allowClearnet: isHttps);
                             } catch (e) {
-                              if (manifestUri.host.endsWith('.onion')) {
+                              if (report != null && report.isPlaceholderOnion) {
+                                setDlgState(() => localError =
+                                    'Publicador Onion v3 de demonstração configurado (${manifestUri.host}).\n'
+                                    'O serviço remoto ainda não está publicado na rede Tor global.\n'
+                                    'Sua conexão Tor local e o proxy SOCKS5 estão operando com 100% de integridade.');
+                              } else if (report != null && report.socks5Handshake == DiagnosticStatus.passed && report.remoteOnion != DiagnosticStatus.passed) {
+                                setDlgState(() => localError =
+                                    'O serviço Onion (${manifestUri.host}) está offline ou seu descritor não está disponível na rede Tor.\n'
+                                    'Sua conexão Tor local está funcionando normalmente.');
+                              } else if (manifestUri.host.endsWith('.onion')) {
                                 setDlgState(() => localError =
                                     'Publicador Onion v3 offline ou sem circuito Tor ativo ($e).\n'
                                     'Você pode verificar via Espelho Seguro HTTPS ou Catálogo Integrado.');

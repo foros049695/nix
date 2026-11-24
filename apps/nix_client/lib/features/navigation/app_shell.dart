@@ -565,16 +565,55 @@ class _VaultUnlockPromptState extends State<_VaultUnlockPrompt> {
           TextField(
             controller: _ctrl,
             obscureText: true,
+            cursorColor: pagerInk,
             onSubmitted: (_) => _unlock(),
-            style: const TextStyle(color: pagerInk, fontSize: 14),
+            style: const TextStyle(
+              color: pagerInk,
+              fontSize: 14,
+              letterSpacing: 2.0,
+              fontWeight: FontWeight.w600,
+            ),
             decoration: InputDecoration(
               labelText: 'Frase-passe mestra ou PIN de coação',
               errorText: _error,
               filled: true,
-              fillColor: Colors.white.withValues(alpha: .38),
-              labelStyle: const TextStyle(color: pagerInk),
-              errorStyle: const TextStyle(color: Color(0xFF792438)),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              fillColor: pagerInk.withValues(alpha: .06),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              labelStyle: TextStyle(
+                color: pagerInk.withValues(alpha: .85),
+                fontSize: 12.5,
+              ),
+              floatingLabelStyle: const TextStyle(
+                color: pagerInk,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+              errorStyle: const TextStyle(
+                color: Color(0xFFD32F2F),
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: pagerRule.withValues(alpha: .6), width: 1.2),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: pagerRule.withValues(alpha: .6), width: 1.2),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: pagerInk, width: 1.6),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFFD32F2F), width: 1.4),
+              ),
+              focusedErrorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFFD32F2F), width: 1.8),
+              ),
             ),
           ),
           const SizedBox(height: 16),

@@ -22,6 +22,7 @@ import '../core/media/catalog_cultural_item.dart';
 import '../core/models/user_profile.dart';
 import '../core/models/direct_message.dart';
 import '../core/models/user_settings.dart';
+import '../core/network/transport_profile.dart';
 import '../core/models/crypto_market_item.dart';
 import '../core/models/monero_order.dart';
 import '../core/models/github_repo.dart';
@@ -2892,6 +2893,7 @@ class NixState extends ChangeNotifier {
       if (raw != null) {
         if (raw['settings'] is Map<String, dynamic>) {
           _settings = UserSettings.fromJson(raw['settings'] as Map<String, dynamic>);
+          GlobalTransportRegistry.update(_settings.moduleTransportPreferences);
           NixColors.sync(
             NixSurfaceScheme.resolve(_settings.themeMode),
             currentPalette,
@@ -5393,6 +5395,7 @@ class NixState extends ChangeNotifier {
 
   void updateSettings(UserSettings newSettings) {
     _settings = newSettings;
+    GlobalTransportRegistry.update(_settings.moduleTransportPreferences);
     NixColors.sync(NixSurfaceScheme.resolve(_settings.themeMode), currentPalette);
     _persistState();
     notifyListeners();

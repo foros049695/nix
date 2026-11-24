@@ -1,6 +1,7 @@
 import '../theme/nix_palette.dart';
 import 'pager_appearance.dart';
 import 'interface_wallpaper.dart';
+import '../network/transport_profile.dart';
 
 enum SettingsCategory {
   appearance,    // 5.0 Aparência: Paleta de Cores Living AMOLED
@@ -115,6 +116,7 @@ class UserSettings {
 
   // 5.5 Conexões e integrações
   final String transportProfile; // 'Tor Onion v3 (Fail-Closed)', 'Rede Local LAN/BLE', 'Off-Grid LoRa'
+  final ModuleTransportPreferences moduleTransportPreferences;
   final bool hideSensitiveNetworkInfo;
   final bool autoReconnect;
   final List<IntegrationConnector> connectors;
@@ -190,6 +192,7 @@ class UserSettings {
     this.micPermissionGranted = true,
     this.microphoneMuted = false,
     this.transportProfile = 'Tor Onion v3 (Fail-Closed)',
+    this.moduleTransportPreferences = const ModuleTransportPreferences(),
     this.hideSensitiveNetworkInfo = true,
     this.autoReconnect = true,
     this.connectors = const [
@@ -304,6 +307,7 @@ class UserSettings {
     bool? micPermissionGranted,
     bool? microphoneMuted,
     String? transportProfile,
+    ModuleTransportPreferences? moduleTransportPreferences,
     bool? hideSensitiveNetworkInfo,
     bool? autoReconnect,
     List<IntegrationConnector>? connectors,
@@ -375,6 +379,7 @@ class UserSettings {
       micPermissionGranted: micPermissionGranted ?? this.micPermissionGranted,
       microphoneMuted: microphoneMuted ?? this.microphoneMuted,
       transportProfile: transportProfile ?? this.transportProfile,
+      moduleTransportPreferences: moduleTransportPreferences ?? this.moduleTransportPreferences,
       hideSensitiveNetworkInfo: hideSensitiveNetworkInfo ?? this.hideSensitiveNetworkInfo,
       autoReconnect: autoReconnect ?? this.autoReconnect,
       connectors: connectors ?? this.connectors,
@@ -441,6 +446,7 @@ class UserSettings {
         'pagerCaseColor': pagerCaseColor.name,
         'pagerLcdColor': pagerLcdColor.name,
         'transportProfile': transportProfile,
+        'moduleTransportPreferences': moduleTransportPreferences.toJson(),
       };
 
   Map<String, dynamic> toJson() => {
@@ -534,6 +540,9 @@ class UserSettings {
       micPermissionGranted: read('micPermissionGranted', defaults.micPermissionGranted),
       microphoneMuted: read('microphoneMuted', defaults.microphoneMuted),
       hideSensitiveNetworkInfo: read('hideSensitiveNetworkInfo', defaults.hideSensitiveNetworkInfo),
+      moduleTransportPreferences: json['moduleTransportPreferences'] is Map<String, dynamic>
+          ? ModuleTransportPreferences.fromJson(json['moduleTransportPreferences'] as Map<String, dynamic>)
+          : defaults.moduleTransportPreferences,
       autoReconnect: read('autoReconnect', defaults.autoReconnect),
       blockRemoteEmbeds: read('blockRemoteEmbeds', defaults.blockRemoteEmbeds),
       duressPinConfigured: read('duressPinConfigured', defaults.duressPinConfigured),
