@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart' as std_crypto;
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:nix_transport/nix_transport.dart';
+import '../security/fail_closed_http_overrides.dart';
 import '../security/platform_runtime.dart';
 import 'catalog_database.dart';
 
@@ -941,10 +942,10 @@ class CatalogUpdateManager {
       return _downloadLoopback(uri, expectedLength: expectedLength, onProgress: onProgress);
     }
 
-    if (allowClearnet || !uri.host.endsWith('.onion')) {
-      if (allowClearnet || uri.scheme == 'https') {
-        return _downloadHttpsDirect(uri, expectedLength: expectedLength, onProgress: onProgress);
-      }
+    if (allowClearnet) {
+      return NixFailClosedHttpOverrides.runWithExplicitClearnetDownload(
+        action: () => _downloadHttpsDirect(uri, expectedLength: expectedLength, onProgress: onProgress),
+      );
     }
 
     return _downloadSocksTor(uri, expectedLength: expectedLength, onProgress: onProgress);
@@ -1092,7 +1093,12 @@ class CatalogUpdateManager {
       proxyPort: transportPolicy.socksPort,
     );
     final port = uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
-    final conn = await connector.connectRaw(uri.host, port, requireOnionV3: true, timeout: timeout);
+    final conn = await connector.connectRaw(
+      uri.host,
+      port,
+      requireOnionV3: uri.host.endsWith('.onion'),
+      timeout: timeout,
+    );
 
     RawSocket activeSocket = conn.socket;
     _activeRawSocket = activeSocket;

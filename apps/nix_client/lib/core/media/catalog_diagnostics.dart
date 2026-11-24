@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:nix_transport/nix_transport.dart';
+import '../security/fail_closed_http_overrides.dart';
 import 'media_index_updater.dart';
 
 /// Status de cada camada de diagnóstico do catálogo.
@@ -198,12 +199,23 @@ class CatalogDiagnostics {
             socksPort: socksPort,
           ),
         );
-        parsedManifest = await updateManager.fetchManifest(
-          manifestUri,
-          allowClearnet: isHttps,
-        );
+        final SignedCatalogManifest manifest;
+        if (isHttps) {
+          manifest = await NixFailClosedHttpOverrides.runWithExplicitClearnetDownload(
+            action: () => updateManager.fetchManifest(
+              manifestUri,
+              allowClearnet: true,
+            ),
+          );
+        } else {
+          manifest = await updateManager.fetchManifest(
+            manifestUri,
+            allowClearnet: false,
+          );
+        }
+        parsedManifest = manifest;
         manifestStatus = DiagnosticStatus.passed;
-        manifestDetails = 'Manifesto v${parsedManifest.version} obtido com sucesso (${parsedManifest.entryCount} obras, ${(parsedManifest.byteSize / 1024 / 1024).toStringAsFixed(1)} MB).';
+        manifestDetails = 'Manifesto v${manifest.version} obtido com sucesso (${manifest.entryCount} obras, ${(manifest.byteSize / 1024 / 1024).toStringAsFixed(1)} MB).';
       } catch (e) {
         manifestStatus = DiagnosticStatus.failed;
         manifestDetails = 'Erro ao baixar ou interpretar manifesto: $e';
