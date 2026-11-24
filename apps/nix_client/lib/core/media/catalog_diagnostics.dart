@@ -183,7 +183,8 @@ class CatalogDiagnostics {
     }
 
     // Camada 3: Serviço Onion Remoto Acessível vs Placeholder
-    final isHttps = manifestUri.scheme == 'https';
+    final isLoopback = TransportPolicy.isLoopbackHost(manifestUri.host);
+    final isHttps = manifestUri.scheme == 'https' || isLoopback;
     if (!isHttps && manifestUri.host.endsWith('.onion')) {
       if (isPlaceholder) {
         remote = DiagnosticStatus.warning;
@@ -208,7 +209,82 @@ class CatalogDiagnostics {
       }
     } else if (isHttps) {
       remote = DiagnosticStatus.passed;
-      remoteDetails = 'Espelho HTTPS seguro (${manifestUri.host}).';
+      remoteDetails = isLoopback
+          ? 'Ambiente de teste loopback local.'
+          : 'Espelho HTTPS seguro (${manifestUri.host}).';
+    }
+
+    // Camada 4: Download e parsing do Manifesto
+    SignedCatalogManifest? parsedManifest;
+    if (remote == DiagnosticStatus.passed) {
+      try {
+        final updateManager = CatalogUpdateManager(
+          keyring: keyring,
+          transportPolicy: TransportPolicy(
+            mode: isLoopback ? TransportMode.loopbackTest : TransportMode.torFailClosed,
+            socksPort: socksPort,
+          ),
+        );
+        parsedManifest = await updateManager.fetchManifest(
+          manifestUri,
+          allowClearnet: isHttps,
+        );
+        manifestStatus = DiagnosticStatus.passed;
+        manifestDetails = 'Manifesto v${parsedManifest.version} obtido com sucesso (${parsedManifest.entryCount} obras, ${(parsedManifest.byteSize / 1024 / 1024).toStringAsFixed(1)} MB).';
+      } catch (e) {
+        manifestStatus = DiagnosticStatus.failed;
+        manifestDetails = 'Erro ao baixar ou interpretar manifesto: $e';
+      }
+    } else {
+      manifestStatus = DiagnosticStatus.skipped;
+      manifestDetails = isPlaceholder
+          ? 'Publicador configurado é um endereço placeholder de exemplo.'
+          : 'Publicador Onion indisponível ou inacessível via circuito Tor.';
+    }
+
+    // Camada 5: Assinatura Ed25519
+    if (parsedManifest != null) {
+      final kr = keyring ??
+          CatalogPublisherKeyring(
+            trustedKeysHex: {
+              CatalogPublisherKeyring.officialPublisherKeyHex,
+            },
+            allowTestFixtureKey: true,
+            isProductionMode: false,
+          );
+      try {
+        final isValidSig = await parsedManifest.verifyManifest(kr);
+        if (isValidSig) {
+          ed25519 = DiagnosticStatus.passed;
+          final signerShort = parsedManifest.signerEd25519Hex.length >= 16
+              ? '${parsedManifest.signerEd25519Hex.substring(0, 16)}...'
+              : parsedManifest.signerEd25519Hex;
+          ed25519Details = 'Assinatura Ed25519 válida por autoridade confiável (Signer: $signerShort).';
+        } else {
+          ed25519 = DiagnosticStatus.failed;
+          ed25519Details = 'Assinatura Ed25519 não corresponde ao digest do manifesto.';
+        }
+      } catch (e) {
+        ed25519 = DiagnosticStatus.failed;
+        ed25519Details = 'Falha na verificação da assinatura Ed25519: $e';
+      }
+    } else {
+      ed25519 = DiagnosticStatus.skipped;
+      ed25519Details = 'Aguardando obtenção do manifesto';
+    }
+
+    // Camada 6: Proteção Anti-Rollback
+    if (parsedManifest != null) {
+      if (parsedManifest.version >= installedVersion) {
+        rollback = DiagnosticStatus.passed;
+        rollbackDetails = 'Versão remota v${parsedManifest.version} compatível com versão local v$installedVersion. Anti-Rollback verificado.';
+      } else {
+        rollback = DiagnosticStatus.failed;
+        rollbackDetails = 'Tentativa de rollback detectada: v${parsedManifest.version} < v$installedVersion!';
+      }
+    } else {
+      rollback = DiagnosticStatus.skipped;
+      rollbackDetails = 'Aguardando obtenção do manifesto';
     }
 
     return CatalogDiagnosticReport(

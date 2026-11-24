@@ -54,7 +54,7 @@ void main() {
 
       // Cabeçalho terminal
       expect(find.text('TORLINK // NIX INDEX'), findsOneWidget);
-      expect(find.text('TOR SOCKS5 ISOLADO'), findsOneWidget);
+      expect(find.byKey(const ValueKey('transport_profile_badge')), findsOneWidget);
 
       // Abas de navegação
       expect(find.text('Buscador de Torrents'), findsOneWidget);

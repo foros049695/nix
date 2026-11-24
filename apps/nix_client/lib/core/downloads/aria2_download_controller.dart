@@ -165,29 +165,44 @@ class Aria2DownloadController extends ChangeNotifier {
       dir.createSync(recursive: true);
     }
 
+    if (Platform.isLinux) {
+      try {
+        Process.runSync('killall', ['-9', 'aria2c', 'aria2c-bin']);
+      } catch (_) {}
+    }
+
     try {
-      _process = await Process.start(binary, [
-        '--enable-rpc=true',
-        '--rpc-listen-all=false',
-        '--rpc-listen-port=$_actualRpcPort',
-        '--rpc-secret=$_rpcSecret',
-        '--rpc-allow-origin-all=false',
-        // DESATIVAÇÃO COMPLETA DE BITTORRENT, DHT, PEERS E MAGNETS
-        '--enable-dht=false',
-        '--enable-peer-exchange=false',
-        '--follow-torrent=false',
-        '--follow-metalink=false',
-        '--max-connection-per-server=${_performanceProfile.maxConnections}',
-        '--split=${_performanceProfile.split}',
-        '--min-split-size=${_performanceProfile.minSplitSize}',
-        '--continue=true',
-        '--dir=$downloadDir',
-        '--check-integrity=false',
-        '--summary-interval=1',
-        '--file-allocation=none',
-        '--max-overall-download-limit=0',
-        '--max-download-limit=0',
-      ]);
+      final env = <String, String>{
+        'LD_LIBRARY_PATH': '/home/gus/.local/lib:${Platform.environment['LD_LIBRARY_PATH'] ?? ''}',
+        ...Platform.environment,
+      };
+
+      _process = await Process.start(
+        binary,
+        [
+          '--enable-rpc=true',
+          '--rpc-listen-all=false',
+          '--rpc-listen-port=$_actualRpcPort',
+          '--rpc-secret=$_rpcSecret',
+          '--rpc-allow-origin-all=false',
+          // DESATIVAÇÃO COMPLETA DE BITTORRENT, DHT, PEERS E MAGNETS
+          '--enable-dht=false',
+          '--enable-peer-exchange=false',
+          '--follow-torrent=false',
+          '--follow-metalink=false',
+          '--max-connection-per-server=${_performanceProfile.maxConnections}',
+          '--split=${_performanceProfile.split}',
+          '--min-split-size=${_performanceProfile.minSplitSize}',
+          '--continue=true',
+          '--dir=$downloadDir',
+          '--check-integrity=false',
+          '--summary-interval=1',
+          '--file-allocation=none',
+          '--max-overall-download-limit=0',
+          '--max-download-limit=0',
+        ],
+        environment: env,
+      );
 
       _process!.exitCode.then((code) {
         if (_process != null) {
@@ -196,7 +211,33 @@ class Aria2DownloadController extends ChangeNotifier {
         }
       });
 
+      // Aguarda ativamente o daemon aria2c estar pronto e respondendo RPC
+      bool isReady = false;
+      for (var i = 0; i < 50; i++) {
+        await Future.delayed(const Duration(milliseconds: 50));
+        if (_process == null) break;
+        final res = await _rpcCall('aria2.getVersion', ['token:$_rpcSecret']);
+        if (res != null && res['result'] != null) {
+          isReady = true;
+          break;
+        }
+      }
+
+      if (!isReady && _process != null) {
+        _log('Daemon aria2c não respondeu ao RPC em 2.5s. Ativando fallback Dart nativo.');
+        try {
+          _process!.kill(ProcessSignal.sigterm);
+        } catch (_) {}
+        _process = null;
+        if (enableFallback) {
+          _isDaemonRunning = true;
+          return true;
+        }
+        return false;
+      }
+
       _isDaemonRunning = true;
+      _log('Daemon aria2c pronto e operando na porta $_actualRpcPort.');
       _startPolling();
       return true;
     } catch (_) {
@@ -280,11 +321,16 @@ class Aria2DownloadController extends ChangeNotifier {
         downloadOptions['all-proxy'] = '';
       }
 
-      final rpcRes = await _rpcCall('aria2.addUri', [
-        'token:$_rpcSecret',
-        [cleanUrl],
-        downloadOptions,
-      ]);
+      Map<String, dynamic>? rpcRes;
+      for (var attempt = 0; attempt < 3; attempt++) {
+        rpcRes = await _rpcCall('aria2.addUri', [
+          'token:$_rpcSecret',
+          [cleanUrl],
+          downloadOptions,
+        ]);
+        if (rpcRes != null && rpcRes['result'] != null) break;
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
 
       if (rpcRes != null && rpcRes['result'] != null) {
         final ariaGid = rpcRes['result'].toString();
@@ -458,7 +504,7 @@ class Aria2DownloadController extends ChangeNotifier {
     _notify();
 
     // 3. Fallback Dart
-    if (_fallbackTaskIds.contains(taskId) || task.id.startsWith('dl_')) {
+    if (_fallbackTaskIds.contains(taskId) || (task.downloadEngine == 'dart_range' && task.id.startsWith('dl_'))) {
       _fallbackTaskIds.add(taskId);
       _tasks[taskId] = task.copyWith(
         status: DownloadStatus.downloading,

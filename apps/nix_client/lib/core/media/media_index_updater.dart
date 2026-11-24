@@ -688,6 +688,15 @@ class CatalogUpdateManager {
   static const String officialHttpsManifestUrl =
       'https://raw.githubusercontent.com/foros049695/nix/main/apps/nix_client/assets/catalog/seed_catalog_manifest.json';
 
+  Future<SignedCatalogManifest> fetchManifest(
+    Uri manifestUri, {
+    bool allowClearnet = false,
+  }) async {
+    final manifestBytes = await _downloadBytes(manifestUri, allowClearnet: allowClearnet);
+    final manifestJson = jsonDecode(utf8.decode(manifestBytes)) as Map<String, dynamic>;
+    return SignedCatalogManifest.fromJson(manifestJson);
+  }
+
   Future<SignedCatalogManifest?> checkForUpdate({
     required Uri manifestUri,
     bool allowClearnet = false,

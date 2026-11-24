@@ -470,6 +470,7 @@ class _TorrentDownloadsStageState extends State<TorrentDownloadsStage> {
           Tooltip(
             message: 'Clique para alterar o perfil de transporte e privacidade deste módulo',
             child: InkWell(
+              key: const ValueKey('transport_profile_badge'),
               onTap: () => TransportProfileDialog.show(
                 context,
                 initialModule: _currentTab == 0 ? TransportModule.torrents : TransportModule.downloads,
