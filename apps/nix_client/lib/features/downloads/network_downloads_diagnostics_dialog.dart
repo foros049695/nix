@@ -78,7 +78,7 @@ class _NetworkDownloadsDiagnosticsDialogState extends State<NetworkDownloadsDiag
     buf.writeln('--- [2] MOTOR DE DOWNLOADS (ARIA2 & DART RFC 7233) ---');
     final ctrl = _controller ?? nixState.downloadController;
     buf.writeln('Aria2 Daemon Ativo: ${ctrl.isDaemonRunning ? "SIM" : "NÃO"}');
-    buf.writeln('Porta RPC: 127.0.0.1:6800');
+    buf.writeln('Porta RPC: 127.0.0.1:${ctrl.actualRpcPort}');
     buf.writeln('Token RPC: [PROTEGIDO/REDACTED]');
     buf.writeln('Diretório de Downloads: ${_sanitizePath(ctrl.downloadDir)}');
     buf.writeln('Perfil de Desempenho: ${ctrl.performanceProfile.label}');
@@ -226,7 +226,7 @@ class _NetworkDownloadsDiagnosticsDialogState extends State<NetworkDownloadsDiag
                       children: [
                         _metricRow('Daemon aria2', ctrl.isDaemonRunning ? 'Em Execução' : 'Parado',
                             statusColor: ctrl.isDaemonRunning ? const Color(0xFF34D399) : const Color(0xFFEF4444)),
-                        _metricRow('Porta RPC', '127.0.0.1:6800 (Token criptográfico único)'),
+                        _metricRow('Porta RPC', '127.0.0.1:${ctrl.actualRpcPort} (Token criptográfico único)'),
                         _metricRow('Diretório de Destino', _sanitizePath(ctrl.downloadDir)),
                         _metricRow('Perfil de Desempenho', '${ctrl.performanceProfile.label.toUpperCase()} (${ctrl.performanceProfile.split} fatias)'),
                         _metricRow('Downloads na Fila', '${tasks.length} total (${tasks.where((t) => t.status == DownloadStatus.downloading).length} ativos)'),

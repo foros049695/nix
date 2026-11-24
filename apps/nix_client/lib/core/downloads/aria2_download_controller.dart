@@ -149,8 +149,22 @@ class Aria2DownloadController extends ChangeNotifier {
     }
   }
 
-  /// Inicializa o daemon local aria2c em modo isolado.
+  Future<bool>? _startingDaemonFuture;
+
+  /// Inicializa o daemon local aria2c em modo isolado com proteção contra chamadas concorrentes.
   Future<bool> startDaemon() async {
+    if (_isDaemonRunning && _process != null) return true;
+    if (_startingDaemonFuture != null) return _startingDaemonFuture!;
+
+    _startingDaemonFuture = _startDaemonInternal();
+    try {
+      return await _startingDaemonFuture!;
+    } finally {
+      _startingDaemonFuture = null;
+    }
+  }
+
+  Future<bool> _startDaemonInternal() async {
     if (_isDaemonRunning && _process != null) return true;
 
     // Localiza o binário aria2c
@@ -528,12 +542,13 @@ class Aria2DownloadController extends ChangeNotifier {
     _notify();
 
     // 3. Garante que o daemon nativo aria2c esteja ativo
-    if (_process == null && _resolveAria2cBinary() != null) {
+    if ((_process == null || !_isDaemonRunning) && _resolveAria2cBinary() != null) {
       await startDaemon();
     }
 
     // 4. Se o daemon aria2c estiver disponível, PRIORIZA SEMPRE O MOTOR ARIA2 (MÁXIMA VELOCIDADE)
     if (_process != null) {
+      _fallbackDownloader.pause(taskId);
       _fallbackTaskIds.remove(taskId);
 
       // Se já era um GID nativo do aria2c, tenta retomar via RPC
@@ -593,6 +608,8 @@ class Aria2DownloadController extends ChangeNotifier {
           _notify();
           _log('Tarefa $taskId migrada com sucesso para aria2c nativo (GID: $newGid)');
           return;
+        } else {
+          _log('aria2.addUri retornou: $rpcRes');
         }
       } catch (err) {
         _log('Erro ao retomar no aria2c: $err. Avaliando fallback...');
