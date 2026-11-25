@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/channel.dart';
+import '../../core/models/forum_post.dart';
 import '../../core/models/space.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../calls/active_call_bar.dart';
+import '../dialogs/create_channel_dialog.dart';
+import '../forum/forum_channel_view.dart';
 import '../profile/nix_user_avatar.dart';
 import 'workspace_drag_source.dart';
 import 'workspace_image.dart';
@@ -224,7 +227,15 @@ class ChannelsSidebar extends StatelessWidget {
                       nixState.joinCall(ch);
                     }
                   },
-                  onAddChannel: null,
+                  onAddChannel: space.isAnnouncementOnly
+                      ? null
+                      : () {
+                          showDialog(
+                            context: context,
+                            builder: (_) =>
+                                CreateChannelDialog(defaultCategory: entry.key),
+                          );
+                        },
                 );
               }).toList(),
             ),
@@ -366,6 +377,18 @@ class _SpaceHeader extends StatelessWidget {
               tooltip: 'Editar imagem do grupo',
               onPressed: () => _showImageEditor(context, state),
             ),
+          if (!space.isAnnouncementOnly)
+            IconButton(
+              icon: Icon(Icons.add_rounded,
+                  size: 20, color: NixColors.textSecondary),
+              tooltip: 'Adicionar Sala / Tópico',
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (_) => const CreateChannelDialog(),
+                );
+              },
+            ),
         ],
       ),
     );
@@ -389,6 +412,7 @@ class _CategoryGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<NixState>();
     final showHeader = onAddChannel != null && categoryName.trim().isNotEmpty;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -422,13 +446,149 @@ class _CategoryGroup extends StatelessWidget {
           const SizedBox(height: 2),
           ...channels.map((ch) {
             final isSelected = ch.id == currentChannelId;
-            return _ChannelItem(
-              channel: ch,
-              isSelected: isSelected,
-              onTap: () => onSelectChannel(ch),
+            final isForum = ch.type == ChannelType.forum;
+            final forumPosts = isForum ? state.forumPostsFor(ch.id) : const <ForumPost>[];
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ChannelItem(
+                  channel: ch,
+                  isSelected: isSelected,
+                  onTap: () => onSelectChannel(ch),
+                ),
+                if (isForum && isSelected) ...[
+                  ...forumPosts.map((post) {
+                    final isPostSelected = state.selectedForumPost?.id == post.id;
+                    return _TopicSidebarItem(
+                      post: post,
+                      isSelected: isPostSelected,
+                      onTap: () => state.selectForumPost(post),
+                    );
+                  }),
+                  _AddTopicSidebarButton(
+                    onTap: () => ForumChannelView.showCreateTopicModal(
+                      context,
+                      state,
+                      ch,
+                    ),
+                  ),
+                ],
+              ],
             );
           }),
         ],
+      ),
+    );
+  }
+}
+
+class _TopicSidebarItem extends StatelessWidget {
+  final ForumPost post;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _TopicSidebarItem({
+    required this.post,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.accentColor;
+    return Container(
+      margin: const EdgeInsets.only(left: 32, right: 10, top: 1, bottom: 1),
+      decoration: BoxDecoration(
+        color: isSelected ? accent.withValues(alpha: 0.16) : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+        border: isSelected ? Border.all(color: accent.withValues(alpha: 0.45), width: 1) : null,
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.chat_bubble_outline_rounded,
+                  size: 13,
+                  color: isSelected ? context.accentTextColor : NixColors.textMuted,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    post.title,
+                    style: TextStyle(
+                      color: isSelected ? NixColors.textPrimary : NixColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (post.comments.isNotEmpty) ...[
+                  const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: NixColors.surfaceElevatedHigh,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${post.comments.length}',
+                      style: TextStyle(
+                          color: NixColors.textMuted,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddTopicSidebarButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _AddTopicSidebarButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.accentColor;
+    return Container(
+      margin: const EdgeInsets.only(left: 32, right: 10, top: 2, bottom: 4),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            child: Row(
+              children: [
+                Icon(Icons.add_rounded, size: 14, color: accent),
+                const SizedBox(width: 6),
+                Text(
+                  'Novo Tópico',
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

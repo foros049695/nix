@@ -6485,7 +6485,20 @@ class NixState extends ChangeNotifier {
     return chain;
   }
 
+  List<ForumPost> forumPostsFor(String channelId) {
+    final ch = _findChannel(channelId) ??
+        (_currentChannel.id == channelId ? _currentChannel : null);
+    if (ch != null && _isLocallyBanned(ch)) return [];
+    return _forumPosts.where((p) => p.channelId == channelId).toList();
+  }
+
   void selectForumPost(ForumPost? post) {
+    if (post != null && post.channelId != _currentChannel.id) {
+      final target = _findChannel(post.channelId);
+      if (target != null) {
+        selectChannel(target);
+      }
+    }
     final canonical = post == null
         ? null
         : currentForumPosts.where((entry) => entry.id == post.id).firstOrNull;
@@ -6530,14 +6543,16 @@ class NixState extends ChangeNotifier {
       channel.bannedMembers.contains(_ownWorkspaceIdentity) ||
       channel.bannedMembers.contains(_securityContext.myFingerprint);
 
-  bool get canWriteForum =>
+  bool canWriteForumFor(Channel channel) =>
       !_disposed && _panicWipe == null &&
       (_isMockMode || _forumStore != null) &&
-      _currentChannel.type == ChannelType.forum &&
-      _currentChannel.permissions.allowMessages &&
-      !_isLocallyBanned(_currentChannel) &&
-      !_currentChannel.mutedMembers.contains(_ownWorkspaceIdentity) &&
-      !_currentChannel.mutedMembers.contains(_securityContext.myFingerprint);
+      channel.type == ChannelType.forum &&
+      channel.permissions.allowMessages &&
+      !_isLocallyBanned(channel) &&
+      !channel.mutedMembers.contains(_ownWorkspaceIdentity) &&
+      !channel.mutedMembers.contains(_securityContext.myFingerprint);
+
+  bool get canWriteForum => canWriteForumFor(_currentChannel);
 
   bool get canManageForumTags {
     if (_disposed || _panicWipe != null || _currentChannel.type != ChannelType.forum ||
@@ -6570,12 +6585,16 @@ class NixState extends ChangeNotifier {
     required String description,
     required List<String> tags,
     List<ArchiveImage> images = const [],
+    String? channelId,
   }) {
+    final targetChannelId = channelId ?? _currentChannel.id;
+    final targetChannel = _findChannel(targetChannelId) ??
+        (targetChannelId == _currentChannel.id ? _currentChannel : null);
     final cleanTitle = title.trim();
     final detail = description.trim();
-    if (!canWriteForum || cleanTitle.isEmpty || cleanTitle.length > 120 ||
+    if (targetChannel == null || !canWriteForumFor(targetChannel) || cleanTitle.isEmpty || cleanTitle.length > 120 ||
         detail.length > 8000 || tags.length > 8 ||
-        tags.any((tag) => !forumTagsFor(_currentChannel.id).containsKey(tag))) return false;
+        tags.any((tag) => !forumTagsFor(targetChannelId).containsKey(tag))) return false;
     try {
       ArchiveImage.validateLimits(images);
     } on FormatException {
@@ -6583,7 +6602,7 @@ class NixState extends ChangeNotifier {
     }
     final newPost = ForumPost(
       id: 'post_${DateTime.now().microsecondsSinceEpoch}',
-      channelId: _currentChannel.id,
+      channelId: targetChannelId,
       title: cleanTitle,
       authorName: _userProfile.effectiveDisplayName,
       authorFingerprint: _securityContext.myFingerprint,
@@ -6595,7 +6614,9 @@ class NixState extends ChangeNotifier {
       comments: const [],
     );
     _forumPosts.insert(0, newPost);
-    _selectedForumPost = newPost;
+    if (targetChannelId == _currentChannel.id) {
+      _selectedForumPost = newPost;
+    }
     _persistForum();
     notifyListeners();
     return true;
@@ -6773,7 +6794,7 @@ class NixState extends ChangeNotifier {
     required String category,
     String? customImagePath,
   }) {
-    if (_currentSpace.isSingleChat) return;
+    if (_currentSpace.isAnnouncementOnly) return;
     final cleanName = name.replaceAll(' ', '-').toLowerCase();
     final newChannel = Channel(
       id: 'ch_${DateTime.now().millisecondsSinceEpoch}',

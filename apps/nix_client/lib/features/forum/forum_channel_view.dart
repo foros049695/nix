@@ -9,7 +9,6 @@ import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
-import '../design/nix_surfaces.dart';
 import '../navigation/interface_wallpaper_layer.dart';
 import '../chat/message_header.dart';
 import '../dialogs/nix_symbol_picker.dart';
@@ -21,6 +20,19 @@ class ForumChannelView extends StatefulWidget {
 
   const ForumChannelView({super.key, required this.channel});
 
+  static void showCreateTopicModal(
+    BuildContext context,
+    NixState state,
+    Channel channel, {
+    String? initialTitle,
+  }) =>
+      _ForumChannelViewState.showCreateTopicModal(
+        context,
+        state,
+        channel,
+        initialTitle: initialTitle,
+      );
+
   @override
   State<ForumChannelView> createState() => _ForumChannelViewState();
 }
@@ -29,11 +41,22 @@ class _ForumChannelViewState extends State<ForumChannelView> {
   String _searchQuery = '';
   String _selectedTag = 'Todos';
   final TextEditingController _commentController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void dispose() {
     _commentController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  void _openCreateTopicModal({String? initialTitle}) {
+    ForumChannelView.showCreateTopicModal(
+      context,
+      context.read<NixState>(),
+      widget.channel,
+      initialTitle: initialTitle,
+    );
   }
 
   void _submitComment(NixState state, String postId) {
@@ -87,39 +110,67 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                           // Barra de Busca + Botão Novo Tópico
                           Padding(
                             padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
-                            child: NixFrame(
-                              padding: const EdgeInsets.all(5),
-                              child: Row(
+                            child: Row(
                               children: [
                                 Expanded(
                                   child: TextField(
+                                    controller: _searchController,
                                     onChanged: (v) => setState(() => _searchQuery = v),
+                                    onSubmitted: (v) {
+                                      if (v.trim().isNotEmpty) {
+                                        _openCreateTopicModal(initialTitle: v.trim());
+                                      }
+                                    },
                                     style: TextStyle(color: NixColors.textPrimary, fontSize: 13.5),
                                     decoration: InputDecoration(
                                       hintText: 'Pesquisar ou criar um tópico...',
                                       prefixIcon:
                                           Icon(Icons.search_rounded, color: NixColors.textMuted),
+                                      suffixIcon: _searchQuery.trim().isNotEmpty
+                                          ? TextButton.icon(
+                                              onPressed: () => _openCreateTopicModal(
+                                                initialTitle: _searchQuery.trim(),
+                                              ),
+                                              icon: Icon(Icons.add_rounded,
+                                                  size: 16, color: context.accentColor),
+                                              label: Text(
+                                                'Criar',
+                                                style: TextStyle(
+                                                  color: context.accentColor,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            )
+                                          : null,
                                       fillColor: NixColors.surfaceCard,
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 10),
+                                const SizedBox(width: 12),
                                 ElevatedButton.icon(
+                                  key: const Key('forum_btn_novo_topico'),
                                   style: ElevatedButton.styleFrom(
-                                    padding:
-                                        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                    backgroundColor: context.accentColor,
+                                    foregroundColor: context.onAccentColor,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 18, vertical: 14),
                                     shape: RoundedRectangleBorder(
                                         borderRadius: NixTokens.borderSm),
                                   ),
-                                  onPressed: () => _showCreateTopicModal(context, nixState),
-                                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                                  onPressed: () => _openCreateTopicModal(
+                                    initialTitle: _searchQuery.trim().isNotEmpty
+                                        ? _searchQuery.trim()
+                                        : null,
+                                  ),
+                                  icon: const Icon(Icons.add_comment_rounded, size: 16),
                                   label: const Text(
                                     'Novo Tópico',
-                                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                        fontSize: 12.5, fontWeight: FontWeight.bold),
                                   ),
                                 ),
                               ],
-                            ),
                             ),
                           ),
 
@@ -176,36 +227,136 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                           ),
                           const SizedBox(height: 12),
 
-                          // Grade de Cartões de Tópicos (Estilo Imagens 9 e 10)
+                          // Grade de Cartões de Tópicos (Estilo Imagens 9 e 10) ou Estado Vazio Amigável
                           Expanded(
-                            child: LayoutBuilder(
-                              builder: (context, gridConstraints) {
-                                final cols = gridConstraints.maxWidth > 760
-                                    ? 3
-                                    : (gridConstraints.maxWidth > 460 ? 2 : 1);
-                                return GridView.builder(
-                                  padding: const EdgeInsets.all(18),
-                                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: cols,
-                                    crossAxisSpacing: 14,
-                                    mainAxisSpacing: 14,
-                                    mainAxisExtent: 310,
+                            child: filteredPosts.isEmpty
+                                ? Center(
+                                    child: SingleChildScrollView(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 32, vertical: 36),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Container(
+                                            width: 64,
+                                            height: 64,
+                                            decoration: BoxDecoration(
+                                              color: context.accentColor
+                                                  .withValues(alpha: 0.15),
+                                              shape: BoxShape.circle,
+                                              border: Border.all(
+                                                color: context.accentColor
+                                                    .withValues(alpha: 0.35),
+                                              ),
+                                            ),
+                                            child: Icon(Icons.forum_outlined,
+                                                size: 30,
+                                                color: context.accentColor),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          Text(
+                                            _searchQuery.isNotEmpty ||
+                                                    selectedTag != 'Todos'
+                                                ? 'Nenhum tópico encontrado'
+                                                : 'Nenhum tópico criado ainda neste espaço',
+                                            style: TextStyle(
+                                              color: NixColors.textPrimary,
+                                              fontSize: 15.5,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          ConstrainedBox(
+                                            constraints: const BoxConstraints(
+                                                maxWidth: 440),
+                                            child: Text(
+                                              _searchQuery.isNotEmpty ||
+                                                      selectedTag != 'Todos'
+                                                  ? 'Não encontramos tópicos para "$_searchQuery". Deseja criá-lo agora?'
+                                                  : 'Você ativou os tópicos neste canal! Crie tópicos para organizar discussões, fotos e análises de forma estruturada.',
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                  color: NixColors.textMuted,
+                                                  fontSize: 12.5),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 20),
+                                          ElevatedButton.icon(
+                                            key: const Key(
+                                                'forum_btn_empty_create_topic'),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  context.accentColor,
+                                              foregroundColor:
+                                                  context.onAccentColor,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 22,
+                                                      vertical: 13),
+                                              shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      NixTokens.borderSm),
+                                            ),
+                                            onPressed: () =>
+                                                _openCreateTopicModal(
+                                              initialTitle: _searchQuery
+                                                      .trim()
+                                                      .isNotEmpty
+                                                  ? _searchQuery.trim()
+                                                  : null,
+                                            ),
+                                            icon: const Icon(
+                                                Icons.add_comment_rounded,
+                                                size: 18),
+                                            label: Text(
+                                              _searchQuery.trim().isNotEmpty
+                                                  ? 'Criar tópico "${_searchQuery.trim()}"'
+                                                  : 'Criar Primeiro Tópico',
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                : LayoutBuilder(
+                                    builder: (context, gridConstraints) {
+                                      final cols = gridConstraints.maxWidth > 760
+                                          ? 3
+                                          : (gridConstraints.maxWidth > 460
+                                              ? 2
+                                              : 1);
+                                      return GridView.builder(
+                                        padding: const EdgeInsets.all(18),
+                                        gridDelegate:
+                                            SliverGridDelegateWithFixedCrossAxisCount(
+                                          crossAxisCount: cols,
+                                          crossAxisSpacing: 14,
+                                          mainAxisSpacing: 14,
+                                          mainAxisExtent: 310,
+                                        ),
+                                        itemCount: filteredPosts.length,
+                                        itemBuilder: (context, idx) {
+                                          final post = filteredPosts[idx];
+                                          final isSelected =
+                                              selectedPost?.id == post.id;
+                                          final canEdit =
+                                              nixState.canEditForumPost(post);
+                                          return _ForumPostCard(
+                                            post: post,
+                                            isSelected: isSelected,
+                                            onTap: () => nixState
+                                                .selectForumPost(post),
+                                            onEdit: canEdit
+                                                ? () => _showEditTopicModal(
+                                                    context, nixState, post)
+                                                : null,
+                                          );
+                                        },
+                                      );
+                                    },
                                   ),
-                                  itemCount: filteredPosts.length,
-                                  itemBuilder: (context, idx) {
-                                    final post = filteredPosts[idx];
-                                    final isSelected = selectedPost?.id == post.id;
-                                    final canEdit = nixState.canEditForumPost(post);
-                                    return _ForumPostCard(
-                                      post: post,
-                                      isSelected: isSelected,
-                                      onTap: () => nixState.selectForumPost(post),
-                                      onEdit: canEdit ? () => _showEditTopicModal(context, nixState, post) : null,
-                                    );
-                                  },
-                                );
-                              },
-                            ),
                           ),
                         ],
                       ),
@@ -277,13 +428,19 @@ class _ForumChannelViewState extends State<ForumChannelView> {
     );
   }
 
-  void _showCreateTopicModal(BuildContext context, NixState state) {
-    var title = '';
+  static void showCreateTopicModal(
+    BuildContext context,
+    NixState state,
+    Channel channel, {
+    String? initialTitle,
+  }) {
+    var title = initialTitle ?? '';
+    final titleController = TextEditingController(text: title);
     var description = '';
     String? chosenTag;
     final images = <ArchiveImage>[];
     var picking = false;
-    final tags = state.forumTagsFor(widget.channel.id);
+    final tags = state.forumTagsFor(channel.id);
 
     showDialog(
       context: context,
@@ -322,6 +479,7 @@ class _ForumChannelViewState extends State<ForumChannelView> {
                 Text('TÍTULO DO TÓPICO', style: NixTokens.labelUppercase()),
                 const SizedBox(height: 6),
                 TextField(
+                  controller: titleController,
                   onChanged: (value) => title = value,
                   maxLength: 120,
                   decoration: const InputDecoration(hintText: 'ex: Análise de Antena 915MHz...'),
@@ -384,6 +542,7 @@ class _ForumChannelViewState extends State<ForumChannelView> {
               onPressed: picking ? null : () {
                 if (title.trim().isNotEmpty) {
                   final created = state.createForumPost(
+                    channelId: channel.id,
                     title: title,
                     description: description,
                     tags: [if (chosenTag != null) chosenTag!],
