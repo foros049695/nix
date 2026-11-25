@@ -299,16 +299,13 @@ class NixMusicPlayerController extends ChangeNotifier {
       final args = <String>[
         '--no-video',
         '--no-terminal',
-        '--volume=' + (_volume * 100).round().toString(),
-        if (_position > Duration.zero) '--start=' + (_position.inMilliseconds / 1000).toStringAsFixed(3),
+        '--volume=${(_volume * 100).round()}',
+        if (_position > Duration.zero) '--start=${(_position.inMilliseconds / 1000).toStringAsFixed(3)}',
       ];
       if (_dspSettings.autoEqEnabled && Platform.isLinux) {
         final bass = _dspSettings.bassGainDb;
         final treble = _dspSettings.trebleGainDb;
-        args.add('--af=lavfi=[equalizer=f=100:t=q:w=1:g=' +
-            bass.toString() +
-            ',equalizer=f=10000:t=q:w=1:g=' +
-            treble.toString() + ']');
+        args.add('--af=lavfi=[equalizer=f=100:t=q:w=1:g=$bass,equalizer=f=10000:t=q:w=1:g=$treble]');
       }
       args.add(file.path);
       final process = await Process.start(Platform.isWindows ? 'mpv.exe' : 'mpv', args);

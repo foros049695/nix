@@ -48,7 +48,7 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
 
   // Sem perfis de fones inventados ou detecções não verificadas.
   String? _selectedHeadphone;
-  String _selectedHeadphoneSource = 'Saída Padrão do Sistema (Automático)';
+  final String _selectedHeadphoneSource = 'Saída Padrão do Sistema (Automático)';
 
   @override
   void initState() {
@@ -250,7 +250,7 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                'Falha de reprodução: ' + widget.controller.playbackError!,
+                'Falha de reprodução: ${widget.controller.playbackError!}',
                 style: const TextStyle(color: Colors.redAccent, fontSize: 12),
               ),
             ),
@@ -832,13 +832,13 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
       await context.read<NixState>().addTracksToAudioLibrary(tracks);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Áudio local adicionado: ' + tracks.length.toString() + ' faixa(s).')),
+          SnackBar(content: Text('Áudio local adicionado: ${tracks.length} faixa(s).')),
         );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Não foi possível importar áudio: ' + error.toString())),
+          SnackBar(content: Text('Não foi possível importar áudio: $error')),
         );
       }
     }

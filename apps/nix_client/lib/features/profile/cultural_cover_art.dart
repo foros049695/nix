@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -94,21 +95,61 @@ class CulturalCoverArt extends StatelessWidget {
       }
     }
 
+    // 2.1 Verificar search_id no diretório de capas (quando adicionado via busca online)
+    final searchId = item.externalIds['search_id'] as String?;
+    if (searchId != null && searchId.isNotEmpty) {
+      final safeSearchId = searchId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      for (final ext in ['jpg', 'png', 'webp', 'jpeg']) {
+        final f = File('$coversDir/$safeSearchId.$ext');
+        if (f.existsSync() && f.lengthSync() > 0) {
+          return f.path;
+        }
+      }
+    }
+
     // 3. URLs externas persistidas em externalIds ou storeLinks
     final extUrl = item.externalIds['cover_url'] as String? ??
         item.externalIds['cover'] as String? ??
         item.storeLinks?['cover'];
     if (extUrl != null && extUrl.isNotEmpty) {
+      _cacheRemoteImageLocally(extUrl, safeId);
       return extUrl;
     }
 
     // 4. coverMotif se for URL
     if (item.coverMotif != null &&
         (item.coverMotif!.startsWith('http://') || item.coverMotif!.startsWith('https://'))) {
+      _cacheRemoteImageLocally(item.coverMotif!, safeId);
       return item.coverMotif;
     }
 
     return null;
+  }
+
+  void _cacheRemoteImageLocally(String url, String safeId) {
+    try {
+      final coversDir = Directory(NixPlatformPaths.coversDirectory);
+      if (!coversDir.existsSync()) {
+        coversDir.createSync(recursive: true);
+      }
+      final file = File('${coversDir.path}/$safeId.jpg');
+      if (file.existsSync() && file.lengthSync() > 0) return;
+
+      HttpClient().getUrl(Uri.parse(url)).then((req) {
+        req.followRedirects = true;
+        req.maxRedirects = 5;
+        return req.close();
+      }).then((res) {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          final bb = BytesBuilder();
+          res.listen((chunk) => bb.add(chunk), onDone: () async {
+            try {
+              await file.writeAsBytes(bb.toBytes());
+            } catch (_) {}
+          });
+        }
+      }).catchError((_) {});
+    } catch (_) {}
   }
 
   Widget _art() {
@@ -224,134 +265,32 @@ class CulturalCoverArt extends StatelessWidget {
     );
   }
 
-  /// Modelo 2.5D de livro físico fechado com lombada realista e bloco de páginas.
+  /// Modelo limpo e autêntico de livro ou mangá com proporções preservadas e sem páginas falsas.
   Widget _closedBook({required bool isManga}) {
-    final spineRatio = isManga ? 0.075 : 0.085;
-    final paperEdgeRatio = isManga ? 0.055 : 0.065;
-    final bottomPaperRatio = 0.035;
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // 1. Bloco de páginas e sombra física projetada
-        CustomPaint(
-          painter: _ClosedBookPagesPainter(
-            spineWidthRatio: spineRatio,
-            paperEdgeRatio: paperEdgeRatio,
-            bottomPaperRatio: bottomPaperRatio,
-            isManga: isManga,
-          ),
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.08),
+          width: 1.0,
         ),
-
-        // 2. Capa frontal com vinco da lombada e moldura física
-        Positioned(
-          left: width * spineRatio,
-          top: 0,
-          right: width * paperEdgeRatio,
-          bottom: width * (isManga ? 1.48 : 1.54) * bottomPaperRatio,
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.only(
-                topRight: const Radius.circular(3),
-                bottomRight: const Radius.circular(3),
-                topLeft: Radius.circular(isManga ? 1 : 2),
-                bottomLeft: Radius.circular(isManga ? 1 : 2),
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x35000000),
-                  offset: Offset(2, 2),
-                  blurRadius: 4,
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: const BorderRadius.only(
-                topRight: Radius.circular(3),
-                bottomRight: Radius.circular(3),
-              ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Imagem de arte da capa
-                  _art(),
-
-                  // Borda com relevo e moldura clássica de encadernação
-                  Container(
-                    margin: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.22),
-                        width: 1.0,
-                      ),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-
-                  // Vinco sutil de dobra da capa sobre a lombada (groove)
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: width * 0.035,
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Color(0x75000000),
-                            Color(0x18000000),
-                            Colors.transparent,
-                          ],
-                          stops: [0.0, 0.45, 1.0],
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Brilho acetinado diagonal na capa
-                  Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Color(0x22FFFFFF),
-                          Colors.transparent,
-                          Color(0x28000000),
-                        ],
-                        stops: [0.0, 0.45, 1.0],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x55000000),
+            offset: Offset(0, 5),
+            blurRadius: 12,
           ),
-        ),
-
-        // 3. Lombada (Spine) cilíndrica à esquerda
-        Positioned(
-          left: 0,
-          top: 0,
-          bottom: width * (isManga ? 1.48 : 1.54) * bottomPaperRatio,
-          width: width * spineRatio,
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: const BorderRadius.horizontal(left: Radius.circular(3)),
-              gradient: LinearGradient(
-                colors: [
-                  const Color(0xFF1E1B18),
-                  item.category == CulturalCategory.manga
-                      ? const Color(0xFF453D37)
-                      : const Color(0xFF332B25),
-                  const Color(0xFF181512),
-                ],
-                stops: const [0.0, 0.45, 1.0],
-              ),
-            ),
+          BoxShadow(
+            color: Color(0x22000000),
+            offset: Offset(0, 1),
+            blurRadius: 3,
           ),
-        ),
-      ],
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: _art(),
+      ),
     );
   }
 
@@ -450,100 +389,7 @@ class CulturalCoverArt extends StatelessWidget {
       );
 }
 
-/// Desenha o bloco físico de folhas de papel cortadas na borda direita e inferior do livro fechado.
-class _ClosedBookPagesPainter extends CustomPainter {
-  final double spineWidthRatio;
-  final double paperEdgeRatio;
-  final double bottomPaperRatio;
-  final bool isManga;
 
-  const _ClosedBookPagesPainter({
-    required this.spineWidthRatio,
-    required this.paperEdgeRatio,
-    required this.bottomPaperRatio,
-    required this.isManga,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final spineW = size.width * spineWidthRatio;
-    final paperW = size.width * paperEdgeRatio;
-    final bottomH = size.height * bottomPaperRatio;
-
-    // Sombra projetada do livro no plano de fundo
-    final dropShadowPath = Path()
-      ..moveTo(spineW, 6)
-      ..lineTo(size.width + 2, 6)
-      ..lineTo(size.width + 2, size.height + 2)
-      ..lineTo(spineW, size.height + 2)
-      ..close();
-    canvas.drawShadow(dropShadowPath, Colors.black, 6.0, false);
-
-    // Bloco de papel lateral direito
-    final rightPaperRect = Rect.fromLTWH(
-      size.width - paperW - 1,
-      4,
-      paperW,
-      size.height - bottomH - 4,
-    );
-    final paperGradient = const LinearGradient(
-      begin: Alignment.centerLeft,
-      end: Alignment.centerRight,
-      colors: [
-        Color(0xFFC7BBAA),
-        Color(0xFFEBE2D4),
-        Color(0xFFD4C8B5),
-      ],
-      stops: [0.0, 0.45, 1.0],
-    ).createShader(rightPaperRect);
-
-    final paperPaint = Paint()..shader = paperGradient;
-    canvas.drawRect(rightPaperRect, paperPaint);
-
-    // Linhas de páginas (folhas agrupadas) na borda direita
-    final linePaint = Paint()
-      ..color = const Color(0x608D7E6B)
-      ..strokeWidth = 0.65;
-    for (double x = rightPaperRect.left + 2; x < rightPaperRect.right; x += 2.2) {
-      canvas.drawLine(
-        Offset(x, rightPaperRect.top + 1),
-        Offset(x, rightPaperRect.bottom - 1),
-        linePaint,
-      );
-    }
-
-    // Bloco de papel inferior
-    final bottomPaperRect = Rect.fromLTWH(
-      spineW + 2,
-      size.height - bottomH,
-      size.width - spineW - paperW,
-      bottomH,
-    );
-    final bottomPaperPaint = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          Color(0xFFB5A998),
-          Color(0xFFDFD6C7),
-        ],
-      ).createShader(bottomPaperRect);
-    canvas.drawRect(bottomPaperRect, bottomPaperPaint);
-
-    // Linhas horizontais de folhas na borda inferior
-    for (double y = bottomPaperRect.top + 1.5; y < bottomPaperRect.bottom; y += 2.0) {
-      canvas.drawLine(
-        Offset(bottomPaperRect.left, y),
-        Offset(bottomPaperRect.right, y),
-        linePaint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_ClosedBookPagesPainter oldDelegate) =>
-      isManga != oldDelegate.isManga;
-}
 
 class _DesignedCoverPainter extends CustomPainter {
   const _DesignedCoverPainter(this.motif, this.category);

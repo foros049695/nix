@@ -146,13 +146,11 @@ class LocalAudioLibraryService {
     try {
       final audioFile = File(audioFilePath);
       final stat = await audioFile.stat();
-      final key = audioFile.absolute.path + '|' +
-          stat.modified.millisecondsSinceEpoch.toString() + '|' +
-          stat.size.toString();
+      final key = '${audioFile.absolute.path}|${stat.modified.millisecondsSinceEpoch}|${stat.size}';
       final safeHash = sha256.convert(utf8.encode(key)).toString();
       final coversDir = Directory(NixPlatformPaths.coversDirectory);
       await coversDir.create(recursive: true);
-      final outFile = File(coversDir.path + '/music_embedded_' + safeHash + '.jpg');
+      final outFile = File('${coversDir.path}/music_embedded_$safeHash.jpg');
       Future<bool> isValidJpeg(File file) async {
         if (!await file.exists() || await file.length() < 32) return false;
         final header = await file.openRead(0, 3).expand((bytes) => bytes).toList();
@@ -160,7 +158,7 @@ class LocalAudioLibraryService {
             header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF;
       }
       if (await isValidJpeg(outFile)) return outFile.path;
-      final tmpFile = File(outFile.path + '.part.jpg');
+      final tmpFile = File('${outFile.path}.part.jpg');
       try {
         if (await tmpFile.exists()) await tmpFile.delete();
         final proc = await Process.run('ffmpeg', [

@@ -1687,7 +1687,7 @@ class _CatalogWorkDetailDialogState extends State<_CatalogWorkDetailDialog> {
   }
 
   CulturalItem? _findInAcervo(NixState state) {
-    final draftId = 'catalog:' + widget.work.id;
+    final draftId = 'catalog:${widget.work.id}';
     final expectedCategory = culturalItemFromCatalog(widget.work).category;
     for (final item in state.userProfile.culturalItems) {
       if (item.category != expectedCategory) continue;

@@ -175,6 +175,21 @@ class _UniversalMetadataSearchDialogState
   Future<void> _addToAcervo(UniversalMetadataItem item) async {
     final nixState = context.read<NixState>();
     final localPath = await _downloadCoverFile(item);
+    final newId = 'acervo_${DateTime.now().microsecondsSinceEpoch}';
+
+    // Se a capa foi baixada, garante cópia vinculada ao newId no diretório de capas
+    String? finalLocalPath = localPath;
+    if (localPath != null && File(localPath).existsSync()) {
+      try {
+        final safeNewId = newId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+        final coversDir = NixPlatformPaths.coversDirectory;
+        final targetFile = File('$coversDir/$safeNewId.jpg');
+        if (!targetFile.existsSync()) {
+          await File(localPath).copy(targetFile.path);
+        }
+        finalLocalPath = targetFile.path;
+      } catch (_) {}
+    }
 
     final category = switch (item.kind) {
       'movie' => CulturalCategory.movies,
@@ -186,8 +201,14 @@ class _UniversalMetadataSearchDialogState
       _ => CulturalCategory.movies,
     };
 
+    final extIds = Map<String, dynamic>.from(item.externalIds);
+    extIds['search_id'] = item.id;
+    if (item.coverUrl != null && item.coverUrl!.isNotEmpty) {
+      extIds['cover_url'] = item.coverUrl;
+    }
+
     final newItem = CulturalItem(
-      id: 'acervo_${DateTime.now().microsecondsSinceEpoch}',
+      id: newId,
       title: item.title,
       originalTitle: item.originalTitle,
       creatorOrYear: item.creators ?? (item.releaseYear != null ? '${item.releaseYear}' : ''),
@@ -195,10 +216,12 @@ class _UniversalMetadataSearchDialogState
       releaseYear: item.releaseYear,
       category: category,
       monogram: item.title.isNotEmpty ? item.title.substring(0, 1).toUpperCase() : 'N',
-      localImagePath: localPath,
+      localImagePath: finalLocalPath,
       synopsis: item.synopsis,
       genres: item.genres != null ? item.genres!.split(', ') : const [],
       source: item.sourceName.toLowerCase(),
+      externalIds: extIds,
+      storeLinks: item.coverUrl != null ? {'cover': item.coverUrl!} : null,
     );
 
     await nixState.saveCulturalItem(newItem);
