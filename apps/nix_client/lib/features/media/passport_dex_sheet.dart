@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -71,56 +73,88 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
     final state = context.watch<NixState>();
     final isInAcervo = state.userProfile.culturalItems.any((i) => i.id == widget.item.id);
     final synopsis = widget.item.synopsis?.trim() ?? '';
+    final isBook = widget.item.category == CulturalCategory.books;
+    final hasImage = widget.item.localImagePath != null &&
+        File(widget.item.localImagePath!).existsSync();
 
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF100F1A),
-        borderRadius: widget.isSidebar
-            ? BorderRadius.zero
-            : const BorderRadius.vertical(top: Radius.circular(20)),
-        border: widget.isSidebar
-            ? Border(left: BorderSide(color: NixColors.surfaceBorderStrong))
-            : null,
-      ),
-      child: Column(
-        children: [
-          // Barra de título com botão fechar (Nomenclatura do projeto)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 12, 8),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.cyanAccent.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.4)),
-                  ),
-                  child: Text(
-                    'FICHA DA OBRA · ACERVO CULTURAL',
-                    style: TextStyle(
-                      color: Colors.cyanAccent.shade200,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
+    final sheetBorderRadius = widget.isSidebar
+        ? BorderRadius.zero
+        : const BorderRadius.vertical(top: Radius.circular(20));
+
+    return ClipRRect(
+      borderRadius: sheetBorderRadius,
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF100F1A),
+          border: widget.isSidebar
+              ? Border(left: BorderSide(color: NixColors.surfaceBorderStrong))
+              : null,
+        ),
+        child: Stack(
+          children: [
+            // Fundo derivado da capa com desfoque profundo (PassportDex & Fireside Folio)
+            if (hasImage)
+              Positioned.fill(
+                child: Opacity(
+                  opacity: 0.16,
+                  child: ImageFiltered(
+                    imageFilter: ui.ImageFilter.blur(sigmaX: 45, sigmaY: 45),
+                    child: Image.file(
+                      File(widget.item.localImagePath!),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),
                 ),
-                const Spacer(),
-                IconButton(
-                  key: const Key('close_passport_dex_button'),
-                  icon: const Icon(Icons.close_rounded, size: 20),
-                  onPressed: () {
-                    if (widget.onClose != null) {
-                      widget.onClose!();
-                    } else {
-                      Navigator.pop(context);
-                    }
-                  },
+              ),
+
+            Column(
+              children: [
+                // Barra de título com botão fechar (Nomenclatura do projeto)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 12, 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: isBook
+                              ? const Color(0xFFD97706).withValues(alpha: 0.15)
+                              : Colors.cyanAccent.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: isBook
+                                ? const Color(0xFFFBBF24).withValues(alpha: 0.4)
+                                : Colors.cyanAccent.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Text(
+                          isBook
+                              ? 'FICHA EDITORIAL · FIRESIDE FOLIO'
+                              : 'FICHA DA OBRA · ACERVO CULTURAL',
+                          style: TextStyle(
+                            color: isBook ? const Color(0xFFFBBF24) : Colors.cyanAccent.shade200,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        key: const Key('close_passport_dex_button'),
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                        onPressed: () {
+                          if (widget.onClose != null) {
+                            widget.onClose!();
+                          } else {
+                            Navigator.pop(context);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
-          ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
@@ -388,6 +422,11 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
                     ),
                   ],
 
+                  // Ficha Editorial Especializada para Livros (Fireside Folio)
+                  if (isBook) ...[
+                    _buildFiresideFolioEditorialSection(context, state),
+                  ],
+
                   // Links Externos Verificados (Se existirem)
                   if (widget.item.repositoryUrl != null ||
                       (widget.item.storeLinks != null && widget.item.storeLinks!.isNotEmpty)) ...[
@@ -466,6 +505,94 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFiresideFolioEditorialSection(BuildContext context, NixState state) {
+    final author = widget.item.creator ?? widget.item.creatorOrYear;
+    final otherWorksByAuthor = state.userProfile.culturalItems
+        .where((it) => it.id != widget.item.id && (it.creator == author || it.creatorOrYear.contains(author)))
+        .toList();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161520),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_stories_outlined, size: 16, color: const Color(0xFFFBBF24)),
+              const SizedBox(width: 8),
+              Text(
+                'Ficha Editorial · Fireside Folio',
+                style: TextStyle(
+                  color: const Color(0xFFFBBF24),
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _editorialRow('Autor', author),
+          if (widget.item.language != null) _editorialRow('Idioma Original', widget.item.language!),
+          if (widget.item.releaseYear != null) _editorialRow('Ano de Publicação', widget.item.releaseYear.toString()),
+          if (widget.item.license != null) _editorialRow('Disponibilidade / Licença', widget.item.license!),
+          if (widget.item.externalIds.isNotEmpty)
+            _editorialRow(
+              'Identificadores',
+              widget.item.externalIds.entries.map((e) => '${e.key}: ${e.value}').join(' · '),
+            ),
+          if (otherWorksByAuthor.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Outras obras de $author no seu Acervo:',
+              style: TextStyle(color: NixColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            for (final work in otherWorksByAuthor)
+              Padding(
+                padding: const EdgeInsets.only(left: 6, top: 2),
+                child: Text('• ${work.title}', style: TextStyle(color: NixColors.textMuted, fontSize: 11)),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _editorialRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 130,
+            child: Text(
+              label,
+              style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(color: NixColors.textPrimary, fontSize: 11.5, fontWeight: FontWeight.w500),
             ),
           ),
         ],
