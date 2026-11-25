@@ -75,6 +75,92 @@ void main() {
       expect(find.text('Responder'), findsOneWidget);
       expect(find.text('Copiar Texto'), findsOneWidget);
     });
+
+    testWidgets('Dragging across selectable text does NOT show context menu', (tester) async {
+      final nixState = NixState();
+      final message = Message(
+        id: 'msg_sel_drag',
+        channelId: 'general',
+        senderName: 'Soberano',
+        senderFingerprint: 'F123456789',
+        isMe: false,
+        text: 'Texto longo para selecao e arraste sem menu',
+        timestamp: DateTime.now(),
+      );
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<NixState>.value(
+          value: nixState,
+          child: MaterialApp(
+            home: Scaffold(
+              body: MessageBubble(message: message),
+            ),
+          ),
+        ),
+      );
+
+      // Perform a drag across the text
+      final textFinder = find.text('Texto longo para selecao e arraste sem menu');
+      final firstLocation = tester.getTopLeft(textFinder);
+      final gesture = await tester.startGesture(firstLocation, kind: PointerDeviceKind.mouse);
+      await tester.pump();
+      await gesture.moveBy(const Offset(80, 0));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      // Ensure NO context menu popped up during or after drag
+      expect(find.text('Reagir com emoji'), findsNothing);
+      expect(find.text('Copiar Seleção'), findsNothing);
+      expect(find.text('Responder'), findsNothing);
+    });
+
+    testWidgets('Multiple secondary taps do NOT stack duplicate menus', (tester) async {
+      final nixState = NixState();
+      final message = Message(
+        id: 'msg_sel_stack_guard',
+        channelId: 'general',
+        senderName: 'Soberano',
+        senderFingerprint: 'F123456789',
+        isMe: true,
+        text: 'Mensagem para teste de prevencao de menus duplicados',
+        timestamp: DateTime.now(),
+      );
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<NixState>.value(
+          value: nixState,
+          child: MaterialApp(
+            home: Scaffold(
+              body: MessageBubble(message: message),
+            ),
+          ),
+        ),
+      );
+
+      final textFinder = find.text('Mensagem para teste de prevencao de menus duplicados');
+
+      // First secondary click
+      await tester.tap(textFinder, buttons: kSecondaryMouseButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Second secondary click
+      await tester.tap(textFinder, buttons: kSecondaryMouseButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Third secondary click
+      await tester.tap(textFinder, buttons: kSecondaryMouseButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Must be EXACTLY ONE of each menu item, never stacked duplicates
+      expect(find.text('Reagir com emoji'), findsOneWidget);
+      expect(find.text('Responder'), findsOneWidget);
+      expect(find.text('Copiar Texto'), findsOneWidget);
+      expect(find.text('Editar Mensagem'), findsOneWidget);
+    });
   });
 
   group('Aria2 Performance Profiles and Daemon Launch', () {

@@ -17,186 +17,249 @@ import 'offline_location_card.dart';
 import 'offline_location_picker_dialog.dart';
 import 'work_share_card.dart';
 
-class MessageBubble extends StatelessWidget {
+class MessageBubble extends StatefulWidget {
   final Message message;
 
   const MessageBubble({super.key, required this.message});
 
+  @override
+  State<MessageBubble> createState() => _MessageBubbleState();
+}
+
+class _MessageBubbleState extends State<MessageBubble> {
+  static bool _isMenuOpen = false;
+  String? _selectedText;
+
   Future<void> _react(BuildContext context, NixState state) async {
     final emoji = await showReactionPicker(context);
-    if (context.mounted && emoji != null) state.toggleMessageReaction(message.id, emoji);
+    if (context.mounted && emoji != null) state.toggleMessageReaction(widget.message.id, emoji);
   }
 
   Member _resolveMember(NixState state) {
     return state.members.firstWhere(
-      (m) => m.name.contains(message.senderName) || m.fingerprint == message.senderFingerprint,
+      (m) => m.name.contains(widget.message.senderName) || m.fingerprint == widget.message.senderFingerprint,
       orElse: () => Member(
-        id: message.senderFingerprint,
-        name: message.senderName,
+        id: widget.message.senderFingerprint,
+        name: widget.message.senderName,
         roleName: 'Membro Soberano',
         role: MemberRole.member,
-        fingerprint: message.senderFingerprint,
+        fingerprint: widget.message.senderFingerprint,
         trustLevel: NixTrustLevel.level3Green,
         isOnline: true,
       ),
     );
   }
 
-  void _showContextMenu(
+  Widget _buildMenuItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color? textColor,
+    Color? iconColor,
+    bool bold = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: iconColor ?? NixColors.textSecondary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: textColor ?? NixColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDivider() {
+    return Container(
+      height: 1,
+      color: NixColors.surfaceBorderStrong.withValues(alpha: 0.5),
+    );
+  }
+
+  Future<void> _showContextMenu(
     BuildContext context,
     Offset position,
-    NixState nixState, {
-    VoidCallback? onCopySelection,
-  }) {
+    NixState nixState,
+  ) async {
+    if (_isMenuOpen) {
+      Navigator.of(context, rootNavigator: true).maybePop();
+    }
+    _isMenuOpen = true;
+
     final accent = context.accentColor;
     final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final currentSelectedText = _selectedText?.trim();
+    final hasSelection = currentSelectedText != null && currentSelectedText.isNotEmpty;
 
-    showMenu<String>(
-      context: context,
-      position: RelativeRect.fromRect(
-        position & const Size(40, 40),
-        Offset.zero & overlay.size,
-      ),
-      color: NixColors.surfaceCard,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: accent.withValues(alpha: 0.35)),
-      ),
-      items: [
-        if (onCopySelection != null) ...[
+    try {
+      final value = await showMenu<String>(
+        context: context,
+        position: RelativeRect.fromRect(
+          position & const Size(40, 40),
+          Offset.zero & overlay.size,
+        ),
+        color: NixColors.surfaceCard,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: accent.withValues(alpha: 0.35)),
+        ),
+        items: [
+          if (hasSelection) ...[
+            PopupMenuItem<String>(
+              value: 'copy_selection',
+              child: Row(
+                children: [
+                  Icon(Icons.content_copy_rounded, size: 16, color: context.accentTextColor),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Copiar Seleção',
+                    style: TextStyle(
+                      color: context.accentTextColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const PopupMenuDivider(height: 1),
+          ],
+          const PopupMenuItem<String>(value: 'react', child: Text('Reagir com emoji')),
+          const PopupMenuDivider(height: 1),
           PopupMenuItem<String>(
-            value: 'copy_selection',
+            value: 'reply',
             child: Row(
               children: [
-                Icon(Icons.content_copy_rounded, size: 16, color: context.accentTextColor),
+                Icon(Icons.reply_rounded, size: 16, color: NixColors.textSecondary),
+                const SizedBox(width: 10),
+                Text('Responder', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
+              ],
+            ),
+          ),
+          if (widget.message.isMe)
+            PopupMenuItem<String>(
+              value: 'edit',
+              child: Row(
+                children: [
+                  Icon(Icons.edit_outlined, size: 16, color: NixColors.textSecondary),
+                  const SizedBox(width: 10),
+                  Text('Editar Mensagem', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
+                ],
+              ),
+            ),
+          PopupMenuItem<String>(
+            value: 'pin',
+            child: Row(
+              children: [
+                Icon(Icons.push_pin_outlined, size: 16, color: NixColors.textSecondary),
                 const SizedBox(width: 10),
                 Text(
-                  'Copiar Seleção',
-                  style: TextStyle(
-                    color: context.accentTextColor,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  widget.message.isPinned ? 'Desafixar' : 'Fixar Mensagem',
+                  style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
                 ),
               ],
             ),
           ),
-          const PopupMenuDivider(height: 1),
-        ],
-        const PopupMenuItem<String>(value: 'react', child: Text('Reagir com emoji')),
-        const PopupMenuDivider(height: 1),
-        PopupMenuItem<String>(
-          value: 'reply',
-          child: Row(
-            children: [
-              Icon(Icons.reply_rounded, size: 16, color: NixColors.textSecondary),
-              const SizedBox(width: 10),
-              Text('Responder', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
-            ],
-          ),
-        ),
-        if (message.isMe)
           PopupMenuItem<String>(
-            value: 'edit',
+            value: 'copy',
             child: Row(
               children: [
-                Icon(Icons.edit_outlined, size: 16, color: NixColors.textSecondary),
+                Icon(Icons.copy_rounded, size: 16, color: NixColors.textSecondary),
                 const SizedBox(width: 10),
-                Text('Editar Mensagem', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
+                Text('Copiar Texto', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
               ],
             ),
           ),
-        PopupMenuItem<String>(
-          value: 'pin',
-          child: Row(
-            children: [
-              Icon(Icons.push_pin_outlined, size: 16, color: NixColors.textSecondary),
-              const SizedBox(width: 10),
-              Text(
-                message.isPinned ? 'Desafixar' : 'Fixar Mensagem',
-                style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-        PopupMenuItem<String>(
-          value: 'copy',
-          child: Row(
-            children: [
-              Icon(Icons.copy_rounded, size: 16, color: NixColors.textSecondary),
-              const SizedBox(width: 10),
-              Text('Copiar Texto', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
-            ],
-          ),
-        ),
-        PopupMenuItem<String>(
-          value: 'forward',
-          child: Row(
-            children: [
-              Icon(Icons.forward_rounded, size: 16, color: NixColors.textSecondary),
-              const SizedBox(width: 10),
-              Text('Encaminhar...', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
-            ],
-          ),
-        ),
-        PopupMenuItem<String>(
-          value: 'save_to_saved',
-          child: Row(
-            children: [
-              Icon(Icons.bookmark_outline_rounded, size: 16, color: context.accentTextColor),
-              const SizedBox(width: 10),
-              Text('Salvar em Mensagens Salvas',
-                  style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
-            ],
-          ),
-        ),
-        PopupMenuItem<String>(
-          value: 'select',
-          child: Row(
-            children: [
-              Icon(Icons.check_box_outlined, size: 16, color: NixColors.textSecondary),
-              const SizedBox(width: 10),
-              Text('Selecionar Mensagem', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
-            ],
-          ),
-        ),
-        const PopupMenuDivider(height: 1),
-        PopupMenuItem<String>(
-          value: 'delete_me',
-          child: Row(
-            children: [
-              const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.orangeAccent),
-              const SizedBox(width: 10),
-              Text('Apagar para mim', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
-            ],
-          ),
-        ),
-        if (message.isMe)
-          const PopupMenuItem<String>(
-            value: 'delete_all',
+          PopupMenuItem<String>(
+            value: 'forward',
             child: Row(
               children: [
-                Icon(Icons.delete_forever_rounded, size: 16, color: Colors.redAccent),
-                SizedBox(width: 10),
-                Text('Apagar para todos', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+                Icon(Icons.forward_rounded, size: 16, color: NixColors.textSecondary),
+                const SizedBox(width: 10),
+                Text('Encaminhar...', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
               ],
             ),
           ),
-      ],
-    ).then((value) {
+          PopupMenuItem<String>(
+            value: 'save_to_saved',
+            child: Row(
+              children: [
+                Icon(Icons.bookmark_outline_rounded, size: 16, color: context.accentTextColor),
+                const SizedBox(width: 10),
+                Text('Salvar em Mensagens Salvas',
+                    style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
+              ],
+            ),
+          ),
+          PopupMenuItem<String>(
+            value: 'select',
+            child: Row(
+              children: [
+                Icon(Icons.check_box_outlined, size: 16, color: NixColors.textSecondary),
+                const SizedBox(width: 10),
+                Text('Selecionar Mensagem', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
+              ],
+            ),
+          ),
+          const PopupMenuDivider(height: 1),
+          PopupMenuItem<String>(
+            value: 'delete_me',
+            child: Row(
+              children: [
+                const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.orangeAccent),
+                const SizedBox(width: 10),
+                Text('Apagar para mim', style: TextStyle(color: NixColors.textPrimary, fontSize: 13)),
+              ],
+            ),
+          ),
+          if (widget.message.isMe)
+            const PopupMenuItem<String>(
+              value: 'delete_all',
+              child: Row(
+                children: [
+                  Icon(Icons.delete_forever_rounded, size: 16, color: Colors.redAccent),
+                  SizedBox(width: 10),
+                  Text('Apagar para todos', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+                ],
+              ),
+            ),
+        ],
+      );
+
       if (!context.mounted || value == null) return;
       if (value == 'copy_selection') {
-        onCopySelection?.call();
+        if (currentSelectedText != null) {
+          Clipboard.setData(ClipboardData(text: currentSelectedText));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Texto selecionado copiado com sucesso!'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
       } else if (value == 'react') {
         _react(context, nixState);
       } else if (value == 'reply') {
-        nixState.startReplyTo(message);
+        nixState.startReplyTo(widget.message);
       } else if (value == 'edit') {
-        nixState.startEditMessage(message);
+        nixState.startEditMessage(widget.message);
       } else if (value == 'pin') {
-        nixState.togglePinMessage(message.id);
+        nixState.togglePinMessage(widget.message.id);
       } else if (value == 'copy') {
-        Clipboard.setData(ClipboardData(text: message.text));
+        Clipboard.setData(ClipboardData(text: widget.message.text));
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Texto copiado com sucesso!'),
@@ -204,28 +267,31 @@ class MessageBubble extends StatelessWidget {
           ),
         );
       } else if (value == 'forward') {
-        ForwardMessageDialog.show(context, message);
+        ForwardMessageDialog.show(context, widget.message);
       } else if (value == 'save_to_saved') {
         nixState.saveToSavedMessages(
-          message.text,
-          attachments: message.attachments,
-          forwardedFrom: message.senderName,
+          widget.message.text,
+          attachments: widget.message.attachments,
+          forwardedFrom: widget.message.senderName,
         );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Salvo em Mensagens Salvas.')),
         );
       } else if (value == 'select') {
-        nixState.toggleMessageSelection(message.id);
+        nixState.toggleMessageSelection(widget.message.id);
       } else if (value == 'delete_me') {
-        nixState.deleteMessage(message.id, forEveryone: false);
+        nixState.deleteMessage(widget.message.id, forEveryone: false);
       } else if (value == 'delete_all') {
-        nixState.deleteMessage(message.id, forEveryone: true);
+        nixState.deleteMessage(widget.message.id, forEveryone: true);
       }
-    });
+    } finally {
+      _isMenuOpen = false;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final message = widget.message;
     final nixState = context.watch<NixState>();
     final settings = nixState.settings;
     final accent = context.accentColor;
@@ -404,6 +470,9 @@ class MessageBubble extends StatelessWidget {
                             OfflineLocationCard(data: locData)
                           else
                             SelectionArea(
+                              onSelectionChanged: (content) {
+                                _selectedText = content?.plainText;
+                              },
                               contextMenuBuilder: (context, selectableRegionState) {
                                 final hasSelection = selectableRegionState.contextMenuButtonItems
                                     .any((i) => i.type == ContextMenuButtonType.copy);
@@ -412,18 +481,138 @@ class MessageBubble extends StatelessWidget {
                                         .firstWhere((i) => i.type == ContextMenuButtonType.copy)
                                     : null;
                                 final anchor = selectableRegionState.contextMenuAnchors.primaryAnchor;
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  if (!context.mounted) return;
-                                  _showContextMenu(
-                                    context,
-                                    anchor,
-                                    nixState,
-                                    onCopySelection: copyItem != null
-                                        ? () => copyItem.onPressed?.call()
-                                        : null,
-                                  );
-                                });
-                                return const SizedBox.shrink();
+
+                                return TapRegion(
+                                  onTapOutside: (_) => selectableRegionState.hideToolbar(),
+                                  child: DesktopTextSelectionToolbar(
+                                    anchor: anchor,
+                                    children: [
+                                      if (hasSelection) ...[
+                                        _buildMenuItem(
+                                          icon: Icons.content_copy_rounded,
+                                          label: 'Copiar Seleção',
+                                          textColor: accentText,
+                                          iconColor: accentText,
+                                          bold: true,
+                                          onTap: () {
+                                            selectableRegionState.hideToolbar();
+                                            copyItem?.onPressed?.call();
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(
+                                                content: Text('Texto selecionado copiado com sucesso!'),
+                                                duration: Duration(seconds: 2),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                        _buildDivider(),
+                                      ],
+                                      _buildMenuItem(
+                                        icon: Icons.add_reaction_outlined,
+                                        label: 'Reagir com emoji',
+                                        onTap: () {
+                                          selectableRegionState.hideToolbar();
+                                          _react(context, nixState);
+                                        },
+                                      ),
+                                      _buildDivider(),
+                                      _buildMenuItem(
+                                        icon: Icons.reply_rounded,
+                                        label: 'Responder',
+                                        onTap: () {
+                                          selectableRegionState.hideToolbar();
+                                          nixState.startReplyTo(message);
+                                        },
+                                      ),
+                                      if (message.isMe)
+                                        _buildMenuItem(
+                                          icon: Icons.edit_outlined,
+                                          label: 'Editar Mensagem',
+                                          onTap: () {
+                                            selectableRegionState.hideToolbar();
+                                            nixState.startEditMessage(message);
+                                          },
+                                        ),
+                                      _buildMenuItem(
+                                        icon: Icons.push_pin_outlined,
+                                        label: message.isPinned ? 'Desafixar' : 'Fixar Mensagem',
+                                        onTap: () {
+                                          selectableRegionState.hideToolbar();
+                                          nixState.togglePinMessage(message.id);
+                                        },
+                                      ),
+                                      _buildMenuItem(
+                                        icon: Icons.copy_rounded,
+                                        label: 'Copiar Texto',
+                                        onTap: () {
+                                          selectableRegionState.hideToolbar();
+                                          Clipboard.setData(ClipboardData(text: message.text));
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text('Texto copiado com sucesso!'),
+                                              duration: Duration(seconds: 2),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      _buildMenuItem(
+                                        icon: Icons.forward_rounded,
+                                        label: 'Encaminhar...',
+                                        onTap: () {
+                                          selectableRegionState.hideToolbar();
+                                          ForwardMessageDialog.show(context, message);
+                                        },
+                                      ),
+                                      _buildMenuItem(
+                                        icon: Icons.bookmark_outline_rounded,
+                                        label: 'Salvar em Mensagens Salvas',
+                                        textColor: accentText,
+                                        iconColor: accentText,
+                                        onTap: () {
+                                          selectableRegionState.hideToolbar();
+                                          nixState.saveToSavedMessages(
+                                            message.text,
+                                            attachments: message.attachments,
+                                            forwardedFrom: message.senderName,
+                                          );
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('Salvo em Mensagens Salvas.')),
+                                          );
+                                        },
+                                      ),
+                                      _buildMenuItem(
+                                        icon: Icons.check_box_outlined,
+                                        label: 'Selecionar Mensagem',
+                                        onTap: () {
+                                          selectableRegionState.hideToolbar();
+                                          nixState.toggleMessageSelection(message.id);
+                                        },
+                                      ),
+                                      _buildDivider(),
+                                      _buildMenuItem(
+                                        icon: Icons.delete_outline_rounded,
+                                        label: 'Apagar para mim',
+                                        textColor: Colors.orangeAccent,
+                                        iconColor: Colors.orangeAccent,
+                                        onTap: () {
+                                          selectableRegionState.hideToolbar();
+                                          nixState.deleteMessage(message.id, forEveryone: false);
+                                        },
+                                      ),
+                                      if (message.isMe)
+                                        _buildMenuItem(
+                                          icon: Icons.delete_forever_rounded,
+                                          label: 'Apagar para todos',
+                                          textColor: Colors.redAccent,
+                                          iconColor: Colors.redAccent,
+                                          onTap: () {
+                                            selectableRegionState.hideToolbar();
+                                            nixState.deleteMessage(message.id, forEveryone: true);
+                                          },
+                                        ),
+                                    ],
+                                  ),
+                                );
                               },
                               child: MouseRegion(
                                 cursor: SystemMouseCursors.text,
@@ -570,7 +759,7 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildDeliveryStateIcon(Color accentText) {
-    final (icon, label, keyState, color) = switch (message.deliveryState) {
+    final (icon, label, keyState, color) = switch (widget.message.deliveryState) {
       'failed' => (Icons.error_outline_rounded, 'Falhou', 'failed', Colors.redAccent),
       'waiting_route' => (Icons.schedule_rounded, 'Aguardando conexão com o destinatário', 'waiting_route', Colors.amber.shade300),
       'queued' => (Icons.schedule_rounded, 'Aguardando conexão com o destinatário', 'queued', NixColors.textMuted),
@@ -588,7 +777,7 @@ class MessageBubble extends StatelessWidget {
       excludeFromSemantics: true,
       child: Icon(
         icon,
-        key: Key('msg_state_${keyState}_${message.id}'),
+        key: Key('msg_state_${keyState}_${widget.message.id}'),
         semanticLabel: label,
         size: 13,
         color: color,
