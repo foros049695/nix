@@ -805,6 +805,10 @@ class Aria2DownloadController extends ChangeNotifier {
         if (await part.exists()) await part.delete();
         final aria2File = File('${task.destinationPath}.aria2');
         if (await aria2File.exists()) await aria2File.delete();
+        final manifestFile = File('${task.destinationPath}.parts.json');
+        if (await manifestFile.exists()) await manifestFile.delete();
+        final manifestTmpFile = File('${task.destinationPath}.parts.json.tmp');
+        if (await manifestTmpFile.exists()) await manifestTmpFile.delete();
         for (var i = 0; i < 32; i++) {
           final seg = File('${task.destinationPath}.part$i');
           if (await seg.exists()) await seg.delete();
