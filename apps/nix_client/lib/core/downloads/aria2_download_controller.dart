@@ -63,6 +63,8 @@ class Aria2DownloadController extends ChangeNotifier {
   final Set<String> _fallbackTaskIds = {};
   final Set<String> _removedTaskIds = {};
   final Set<String> _manuallyPausedTaskIds = {};
+  final Set<String> _integrityFailedTaskIds = {};
+  bool _isSyncingAria = false;
   DownloadStatusChangeNotifier? onTasksUpdated;
 
   DownloadPerformanceProfile _performanceProfile = DownloadPerformanceProfile.balanced;
@@ -536,6 +538,7 @@ class Aria2DownloadController extends ChangeNotifier {
       if (task.allowClearnet || resolvedProfile == 'direct_https') {
         downloadOptions['all-proxy'] = '';
       }
+      _applyAria2ChecksumOptions(downloadOptions, sha256Expected);
 
       Map<String, dynamic>? rpcRes;
       for (var attempt = 0; attempt < 3; attempt++) {
@@ -552,6 +555,7 @@ class Aria2DownloadController extends ChangeNotifier {
         final ariaGid = rpcRes['result'].toString();
         _removedTaskIds.remove(ariaGid);
         _manuallyPausedTaskIds.remove(ariaGid);
+        _integrityFailedTaskIds.remove(ariaGid);
 
         task = task.copyWith(
           id: ariaGid,
@@ -583,6 +587,7 @@ class Aria2DownloadController extends ChangeNotifier {
     if (task == null) return;
 
     _manuallyPausedTaskIds.remove(taskId);
+    _integrityFailedTaskIds.remove(taskId);
     final updated = task.copyWith(
       status: DownloadStatus.starting,
       allowClearnet: true,
@@ -609,6 +614,7 @@ class Aria2DownloadController extends ChangeNotifier {
           'all-proxy': '',
           'user-agent': defaultUserAgent,
         };
+        _applyAria2ChecksumOptions(downloadOptions, updated.sha256Expected);
         final rpcRes = await _rpcCall('aria2.addUri', [
           'token:$_rpcSecret',
           [updated.url],
@@ -618,6 +624,7 @@ class Aria2DownloadController extends ChangeNotifier {
           final ariaGid = rpcRes['result'].toString();
           _removedTaskIds.remove(ariaGid);
           _manuallyPausedTaskIds.remove(ariaGid);
+          _integrityFailedTaskIds.remove(ariaGid);
 
           _tasks.remove(taskId);
           _tasks[ariaGid] = updated.copyWith(
@@ -713,6 +720,7 @@ class Aria2DownloadController extends ChangeNotifier {
 
     // 1. Remove a flag de pausa manual
     _manuallyPausedTaskIds.remove(taskId);
+    _integrityFailedTaskIds.remove(taskId);
 
     // 2. Transiciona para RESUMING
     _tasks[taskId] = task.copyWith(
@@ -787,6 +795,7 @@ class Aria2DownloadController extends ChangeNotifier {
         if (task.allowClearnet || task.transportProfile == 'direct_https') {
           downloadOptions['all-proxy'] = '';
         }
+        _applyAria2ChecksumOptions(downloadOptions, task.sha256Expected);
 
         final rpcRes = await _rpcCall('aria2.addUri', [
           'token:$_rpcSecret',
@@ -795,6 +804,7 @@ class Aria2DownloadController extends ChangeNotifier {
         ]);
         if (rpcRes != null && rpcRes['result'] != null) {
           final newGid = rpcRes['result'].toString();
+          _integrityFailedTaskIds.remove(newGid);
           _tasks.remove(taskId);
           final updated = task.copyWith(
             id: newGid,
@@ -839,10 +849,12 @@ class Aria2DownloadController extends ChangeNotifier {
     _log('Removendo tarefa da fila: $taskId (deleteFile=$deleteFile)');
     _removedTaskIds.add(taskId);
     _manuallyPausedTaskIds.remove(taskId);
+    _integrityFailedTaskIds.remove(taskId);
     final task = _tasks[taskId];
     if (task != null && task.id != taskId) {
       _removedTaskIds.add(task.id);
       _manuallyPausedTaskIds.remove(task.id);
+      _integrityFailedTaskIds.remove(task.id);
     }
 
     if (_fallbackTaskIds.contains(taskId)) {
@@ -980,6 +992,8 @@ class Aria2DownloadController extends ChangeNotifier {
   }
 
   Future<void> _syncAriaTasks() async {
+    if (_isSyncingAria) return;
+    _isSyncingAria = true;
     try {
       final active = await _rpcCall('aria2.tellActive', ['token:$_rpcSecret']);
       final waiting = await _rpcCall('aria2.tellWaiting', ['token:$_rpcSecret', 0, 50]);
@@ -1005,6 +1019,11 @@ class Aria2DownloadController extends ChangeNotifier {
 
         var existing = _tasks[gid];
         if (existing == null) {
+          continue;
+        }
+
+        if (_integrityFailedTaskIds.contains(gid) &&
+            existing.status == DownloadStatus.failed) {
           continue;
         }
 
@@ -1059,6 +1078,49 @@ class Aria2DownloadController extends ChangeNotifier {
           default:
             status = DownloadStatus.downloading;
             break;
+        }
+
+        String? verifiedSha256 = existing.sha256Actual;
+        String? verifiedError = existing.errorMessage;
+        final rawExpected = existing.sha256Expected?.trim();
+
+        if (status == DownloadStatus.completed &&
+            rawExpected != null &&
+            rawExpected.isNotEmpty) {
+          final expectedLower = rawExpected.toLowerCase();
+          final alreadyVerified = existing.status == DownloadStatus.completed &&
+              existing.sha256Actual != null &&
+              existing.sha256Actual!.toLowerCase() == expectedLower;
+
+          if (!alreadyVerified) {
+            final targetFile = File(existing.destinationPath);
+            if (!await targetFile.exists()) {
+              status = DownloadStatus.failed;
+              verifiedError =
+                  'Falha de integridade: arquivo baixado não encontrado para verificação SHA-256.';
+              _integrityFailedTaskIds.add(gid);
+            } else {
+              final actualHash = await DartSegmentedDownloader.computeFileSha256(targetFile);
+              if (_removedTaskIds.contains(gid) || !_tasks.containsKey(gid)) {
+                continue;
+              }
+              existing = _tasks[gid]!;
+              verifiedSha256 = actualHash;
+              if (actualHash.toLowerCase() != expectedLower) {
+                status = DownloadStatus.failed;
+                verifiedError =
+                    'Falha de integridade: SHA-256 esperado ($expectedLower) difere do obtido ($actualHash).';
+                _integrityFailedTaskIds.add(gid);
+              }
+            }
+          }
+        } else if (status == DownloadStatus.failed &&
+            rawExpected != null &&
+            rawExpected.isNotEmpty &&
+            item['errorCode']?.toString() == '32') {
+          verifiedError = existing.errorMessage ??
+              'Falha de integridade: SHA-256 esperado (${rawExpected.toLowerCase()}) rejeitado pelo motor aria2 (código 32).';
+          _integrityFailedTaskIds.add(gid);
         }
 
         // Rastreamento preciso do tempo em transferência ativa
@@ -1117,13 +1179,18 @@ class Aria2DownloadController extends ChangeNotifier {
           etaSeconds: eta,
           clearEta: (status != DownloadStatus.downloading || finalSpeed <= 0),
           status: status,
+          sha256Actual: verifiedSha256,
+          errorMessage: verifiedError,
           downloadEngine: 'aria2',
           completedAt: status == DownloadStatus.completed ? (existing.completedAt ?? DateTime.now()) : null,
         );
       }
       _persistTasks();
       _notify();
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _isSyncingAria = false;
+    }
   }
 
   Future<Map<String, dynamic>?> _rpcCall(String method, List<dynamic> params) async {
@@ -1195,6 +1262,26 @@ class Aria2DownloadController extends ChangeNotifier {
       return Uri.decodeComponent(uri.pathSegments.last.trim());
     }
     return 'download_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  static String? _normalizeSha256Hex(String? raw) {
+    if (raw == null) return null;
+    final clean = raw.trim().toLowerCase();
+    if (RegExp(r'^[0-9a-f]{64}$').hasMatch(clean)) {
+      return clean;
+    }
+    return null;
+  }
+
+  static void _applyAria2ChecksumOptions(
+    Map<String, dynamic> options,
+    String? sha256Expected,
+  ) {
+    final hex = _normalizeSha256Hex(sha256Expected);
+    if (hex != null) {
+      options['checksum'] = 'sha-256=$hex';
+      options['check-integrity'] = 'true';
+    }
   }
 
   static String _generateRandomToken(int length) {
