@@ -145,13 +145,40 @@ class NixRichTextController extends TextEditingController {
     while (_lineBlocks.length > lines.length) {
       _lineBlocks.removeLast();
     }
+    String? fenceChar;
+    var fenceLen = 0;
     for (var i = 0; i < lines.length; i++) {
       final line = lines[i];
+      if (fenceChar != null) {
+        if (_isClosingCodeFence(line, fenceChar, fenceLen)) {
+          fenceChar = null;
+          fenceLen = 0;
+        }
+        continue;
+      }
+      final openFence = _matchOpeningCodeFence(line);
+      if (openFence != null) {
+        fenceChar = openFence.$1;
+        fenceLen = openFence.$2;
+        continue;
+      }
+      final currentType = _lineBlocks[i].type;
+      final isListOrParagraph = currentType == RichBlockType.paragraph ||
+          currentType == RichBlockType.bulletList ||
+          currentType == RichBlockType.numberedList ||
+          currentType == RichBlockType.checklist;
+      if (!isListOrParagraph) continue;
+
       if (line.startsWith('☐ ') || line.startsWith('☑ ')) {
         _lineBlocks[i].type = RichBlockType.checklist;
         _lineBlocks[i].isChecked = line.startsWith('☑ ');
       } else if (line.startsWith('• ') || line.startsWith('- ')) {
         _lineBlocks[i].type = RichBlockType.bulletList;
+      } else if (_hasNumberedListPrefix(line)) {
+        _lineBlocks[i].type = RichBlockType.numberedList;
+      } else {
+        _lineBlocks[i].type = RichBlockType.paragraph;
+        _lineBlocks[i].isChecked = false;
       }
     }
   }
@@ -807,12 +834,42 @@ class NixRichTextController extends TextEditingController {
     final lines = text.split('\n');
     final out = StringBuffer();
     var globalOffset = 0;
+    var firstSpanIdx = 0;
+    String? fenceChar;
+    var fenceLen = 0;
 
     for (var lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       final lineText = lines[lineIdx];
       final lineBlock = (lineIdx < _lineBlocks.length) ? _lineBlocks[lineIdx] : RichLineBlock();
       final lineLength = lineText.length;
       final lineEnd = globalOffset + lineLength;
+
+      var isFencedLine = false;
+      if (lineBlock.type == RichBlockType.paragraph) {
+        if (fenceChar != null) {
+          isFencedLine = true;
+          if (_isClosingCodeFence(lineText, fenceChar, fenceLen)) {
+            fenceChar = null;
+            fenceLen = 0;
+          }
+        } else {
+          final openFence = _matchOpeningCodeFence(lineText);
+          if (openFence != null) {
+            isFencedLine = true;
+            fenceChar = openFence.$1;
+            fenceLen = openFence.$2;
+          }
+        }
+      }
+
+      if (isFencedLine && !_hasAnySpanInRange(globalOffset, lineEnd, firstSpanIdx)) {
+        out.write(lineText);
+        if (lineIdx < lines.length - 1) {
+          out.write('\n');
+        }
+        globalOffset = lineEnd + 1;
+        continue;
+      }
 
       // Prefixo do bloco
       String prefix = '';
@@ -829,7 +886,7 @@ class NixRichTextController extends TextEditingController {
         case RichBlockType.bulletList:
         case RichBlockType.numberedList:
         case RichBlockType.checklist: break;
-        case RichBlockType.divider: prefix = '---\n'; break;
+        case RichBlockType.divider: prefix = '---'; break;
         case RichBlockType.paragraph: break;
       }
 
@@ -839,6 +896,10 @@ class NixRichTextController extends TextEditingController {
         var currentPos = globalOffset;
 
         while (currentPos < lineEnd) {
+          while (firstSpanIdx < _spans.length && _spans[firstSpanIdx].end <= currentPos) {
+            firstSpanIdx++;
+          }
+
           bool isBold = false;
           bool isItalic = false;
           bool isUnderline = false;
@@ -850,7 +911,9 @@ class NixRichTextController extends TextEditingController {
 
           int nextBoundary = lineEnd;
 
-          for (final s in _spans) {
+          for (var si = firstSpanIdx; si < _spans.length; si++) {
+            final s = _spans[si];
+            if (s.start >= nextBoundary) break;
             if (currentPos >= s.start && currentPos < s.end) {
               if (s.bold) isBold = true;
               if (s.italic) isItalic = true;
@@ -869,7 +932,7 @@ class NixRichTextController extends TextEditingController {
           final segmentLength = nextBoundary - currentPos;
           var seg = text.substring(currentPos, currentPos + segmentLength);
 
-          if (currentPos == globalOffset) {
+          if (!isFencedLine && currentPos == globalOffset) {
             if (seg.startsWith('• ')) {
               seg = '- ${seg.substring(2)}';
             } else if (seg.startsWith('☐ ')) {
@@ -904,6 +967,15 @@ class NixRichTextController extends TextEditingController {
     return out.toString();
   }
 
+  bool _hasAnySpanInRange(int start, int end, int fromSpanIdx) {
+    for (var i = fromSpanIdx; i < _spans.length; i++) {
+      final s = _spans[i];
+      if (s.start >= end) return false;
+      if (s.end > start) return true;
+    }
+    return false;
+  }
+
   /// Carrega conteúdo Markdown/HTML existente para o editor WYSIWYG,
   /// convertendo os marcadores em spans visuais puros.
   void loadMarkdown(String markdown) {
@@ -919,10 +991,47 @@ class NixRichTextController extends TextEditingController {
     }
 
     final rawLines = markdown.split('\n');
-    final blockCleanedLines = <String>[];
+    final pendingNonFenced = <String>[];
+    final finalChunks = <String>[];
+    var currentOffset = 0;
+    String? fenceChar;
+    var fenceLen = 0;
+
+    void flushNonFenced() {
+      if (pendingNonFenced.isEmpty) return;
+      final segment = pendingNonFenced.join('\n');
+      pendingNonFenced.clear();
+      final parsed = _parseInlineMarkdown(segment, currentOffset);
+      _spans.addAll(parsed.spans);
+      finalChunks.add(parsed.plainText);
+      currentOffset += parsed.plainText.length + 1;
+    }
 
     for (var i = 0; i < rawLines.length; i++) {
       var raw = rawLines[i];
+
+      if (fenceChar != null) {
+        _lineBlocks.add(RichLineBlock(type: RichBlockType.paragraph));
+        finalChunks.add(raw);
+        currentOffset += raw.length + 1;
+        if (_isClosingCodeFence(raw, fenceChar, fenceLen)) {
+          fenceChar = null;
+          fenceLen = 0;
+        }
+        continue;
+      }
+
+      final openFence = _matchOpeningCodeFence(raw);
+      if (openFence != null) {
+        flushNonFenced();
+        fenceChar = openFence.$1;
+        fenceLen = openFence.$2;
+        _lineBlocks.add(RichLineBlock(type: RichBlockType.paragraph));
+        finalChunks.add(raw);
+        currentOffset += raw.length + 1;
+        continue;
+      }
+
       var blockType = RichBlockType.paragraph;
       bool isChecked = false;
 
@@ -959,24 +1068,24 @@ class NixRichTextController extends TextEditingController {
       } else if (raw.startsWith('- ') || raw.startsWith('* ')) {
         blockType = RichBlockType.bulletList;
         raw = '• ${raw.substring(2)}';
-      } else if (RegExp(r'^\d+\.\s').hasMatch(raw)) {
+      } else if (_hasNumberedListPrefix(raw)) {
         blockType = RichBlockType.numberedList;
-        final match = RegExp(r'^\d+\.\s').firstMatch(raw)!;
-        raw = raw.substring(match.end);
       } else if (raw == '---' || raw == '***' || raw == '___') {
-        blockType = RichBlockType.divider;
-        raw = '──────────';
+        flushNonFenced();
+        _lineBlocks.add(RichLineBlock(type: RichBlockType.divider));
+        const dividerVisual = '──────────';
+        finalChunks.add(dividerVisual);
+        currentOffset += dividerVisual.length + 1;
+        continue;
       }
 
       _lineBlocks.add(RichLineBlock(type: blockType, isChecked: isChecked));
-      blockCleanedLines.add(raw);
+      pendingNonFenced.add(raw);
     }
 
-    final fullContent = blockCleanedLines.join('\n');
-    final parsed = _parseInlineMarkdown(fullContent, 0);
-    _spans.addAll(parsed.spans);
+    flushNonFenced();
 
-    final newPlainText = parsed.plainText;
+    final newPlainText = finalChunks.join('\n');
     _lastText = newPlainText;
     value = TextEditingValue(
       text: newPlainText,
@@ -987,170 +1096,621 @@ class NixRichTextController extends TextEditingController {
     notifyListeners();
   }
 
+  static final RegExp _nonAsciiWordCharRegex = RegExp(r'[\p{L}\p{N}]', unicode: true);
+
+  static bool _hasNumberedListPrefix(String line) {
+    var i = 0;
+    while (i < line.length) {
+      final c = line.codeUnitAt(i);
+      if (c < 0x30 || c > 0x39) break;
+      i++;
+    }
+    return i > 0 &&
+        i + 1 < line.length &&
+        line.codeUnitAt(i) == 0x2E &&
+        _isWhitespace(line, i + 1);
+  }
+
+  static (String, int)? _matchOpeningCodeFence(String line) {
+    var i = 0;
+    while (i < line.length && i < 3 && line.codeUnitAt(i) == 0x20) {
+      i++;
+    }
+    if (i >= line.length) return null;
+    final ch = line.codeUnitAt(i);
+    if (ch != 0x60 && ch != 0x7E) return null; // '`' ou '~'
+    final start = i;
+    while (i < line.length && line.codeUnitAt(i) == ch) {
+      i++;
+    }
+    final len = i - start;
+    if (len < 3) return null;
+    if (ch == 0x60 && line.indexOf('`', i) != -1) {
+      return null;
+    }
+    return (ch == 0x60 ? '`' : '~', len);
+  }
+
+  static bool _isClosingCodeFence(String line, String fenceChar, int minLen) {
+    var i = 0;
+    while (i < line.length && i < 3 && line.codeUnitAt(i) == 0x20) {
+      i++;
+    }
+    if (i >= line.length) return false;
+    final expected = fenceChar.codeUnitAt(0);
+    final start = i;
+    while (i < line.length && line.codeUnitAt(i) == expected) {
+      i++;
+    }
+    if (i - start < minLen) return false;
+    while (i < line.length) {
+      final c = line.codeUnitAt(i);
+      if (c != 0x20 && c != 0x09) return false;
+      i++;
+    }
+    return true;
+  }
+
+  static bool _isWhitespace(String s, int i) {
+    if (i < 0 || i >= s.length) return false;
+    final c = s.codeUnitAt(i);
+    return c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
+  }
+
+  static bool _isWordChar(String s, int i) {
+    if (i < 0 || i >= s.length) return false;
+    final c = s.codeUnitAt(i);
+    if (c < 0x80) {
+      return (c >= 0x30 && c <= 0x39) ||
+          (c >= 0x41 && c <= 0x5A) ||
+          (c >= 0x61 && c <= 0x7A);
+    }
+    if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length) {
+      return _nonAsciiWordCharRegex.hasMatch(s.substring(i, i + 2));
+    }
+    if (c >= 0xDC00 && c <= 0xDFFF && i > 0) {
+      return _nonAsciiWordCharRegex.hasMatch(s.substring(i - 1, i + 1));
+    }
+    return _nonAsciiWordCharRegex.hasMatch(s[i]);
+  }
+
+  static bool _startsWithAsciiIgnoreCase(String s, int index, String lowerPattern) {
+    if (index + lowerPattern.length > s.length) return false;
+    for (var i = 0; i < lowerPattern.length; i++) {
+      var c = s.codeUnitAt(index + i);
+      if (c >= 0x41 && c <= 0x5A) c += 0x20;
+      if (c != lowerPattern.codeUnitAt(i)) return false;
+    }
+    return true;
+  }
+
+  static int _indexOfAsciiIgnoreCase(String s, String lowerPattern, int startIndex) {
+    final maxIdx = s.length - lowerPattern.length;
+    final first = lowerPattern.codeUnitAt(0);
+    for (var i = startIndex; i <= maxIdx; i++) {
+      var c = s.codeUnitAt(i);
+      if (c >= 0x41 && c <= 0x5A) c += 0x20;
+      if (c == first && _startsWithAsciiIgnoreCase(s, i, lowerPattern)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  static int _skipInlineCodeIfClosed(String input, int tickPos, int limit) {
+    var endTicks = tickPos;
+    while (endTicks < limit && input.codeUnitAt(endTicks) == 0x60) {
+      endTicks++;
+    }
+    final tickLen = endTicks - tickPos;
+    final closePos = _findClosingBackticks(input, endTicks, tickLen, limit);
+    return closePos == -1 ? endTicks : closePos + tickLen;
+  }
+
+  static int _findClosingBackticks(String input, int searchStart, int tickLen, int limit) {
+    var pos = searchStart;
+    while (pos < limit) {
+      if (input.codeUnitAt(pos) == 0x60) {
+        var runEnd = pos;
+        while (runEnd < limit && input.codeUnitAt(runEnd) == 0x60) {
+          runEnd++;
+        }
+        if (runEnd - pos == tickLen) {
+          return pos;
+        }
+        pos = runEnd;
+        continue;
+      }
+      pos++;
+    }
+    return -1;
+  }
+
+  static int _findClosingAsteriskBold(
+    String input,
+    int searchStart,
+    bool openedWithTriple,
+    int limit,
+  ) {
+    final contentStart = openedWithTriple ? searchStart + 1 : searchStart;
+    var pos = contentStart;
+    while (pos < limit) {
+      final cu = input.codeUnitAt(pos);
+      if (cu == 0x60) {
+        pos = _skipInlineCodeIfClosed(input, pos, limit);
+        continue;
+      }
+      if (cu == 0x2A) {
+        var runEnd = pos;
+        while (runEnd < limit && input.codeUnitAt(runEnd) == 0x2A) {
+          runEnd++;
+        }
+        final runLen = runEnd - pos;
+        if (pos > contentStart && !_isWhitespace(input, pos - 1)) {
+          if (runLen == 2) return pos;
+          if (runLen == 3) return openedWithTriple ? pos + 1 : pos;
+        }
+        pos = runEnd;
+        continue;
+      }
+      pos++;
+    }
+    return -1;
+  }
+
+  static int _findClosingDoubleChar(
+    String input,
+    int searchStart,
+    int markerCu,
+    int limit,
+  ) {
+    var pos = searchStart;
+    while (pos < limit) {
+      final cu = input.codeUnitAt(pos);
+      if (cu == 0x60) {
+        pos = _skipInlineCodeIfClosed(input, pos, limit);
+        continue;
+      }
+      if (cu == markerCu) {
+        var runEnd = pos;
+        while (runEnd < limit && input.codeUnitAt(runEnd) == markerCu) {
+          runEnd++;
+        }
+        if (runEnd - pos == 2 && pos > searchStart && !_isWhitespace(input, pos - 1)) {
+          return pos;
+        }
+        pos = runEnd;
+        continue;
+      }
+      pos++;
+    }
+    return -1;
+  }
+
+  static int _findClosingSingleEmphasis(
+    String input,
+    int searchStart,
+    int markerCu,
+    int limit,
+  ) {
+    var pos = searchStart;
+    while (pos < limit) {
+      final cu = input.codeUnitAt(pos);
+      if (cu == 0x60) {
+        pos = _skipInlineCodeIfClosed(input, pos, limit);
+        continue;
+      }
+      if (cu == 0x5B) {
+        // Pula links [texto](url) para não confundir marcadores na URL
+        final linkEnd = _tryMatchMarkdownLinkEnd(input, pos, limit);
+        if (linkEnd != -1) {
+          pos = linkEnd;
+          continue;
+        }
+      }
+      if (cu == markerCu) {
+        var runEnd = pos;
+        while (runEnd < limit && input.codeUnitAt(runEnd) == markerCu) {
+          runEnd++;
+        }
+        if (runEnd - pos == 1 &&
+            pos > searchStart &&
+            !_isWhitespace(input, pos - 1) &&
+            !_isWordChar(input, pos + 1)) {
+          return pos;
+        }
+        pos = runEnd;
+        continue;
+      }
+      pos++;
+    }
+    return -1;
+  }
+
+  static int _tryMatchMarkdownLinkEnd(String input, int openBracket, int limit) {
+    var b = openBracket + 1;
+    while (b < limit && input.codeUnitAt(b) != 0x0A && input.codeUnitAt(b) != 0x5D) {
+      b++;
+    }
+    if (b >= limit || b == openBracket + 1 || input.codeUnitAt(b) != 0x5D) {
+      return -1;
+    }
+    if (b + 1 >= limit || input.codeUnitAt(b + 1) != 0x28) {
+      return -1;
+    }
+    var p = b + 2;
+    while (p < limit && input.codeUnitAt(p) != 0x0A && input.codeUnitAt(p) != 0x29) {
+      p++;
+    }
+    if (p >= limit || p == b + 2 || input.codeUnitAt(p) != 0x29) {
+      return -1;
+    }
+    return p + 1;
+  }
+
+  static int _scanBareUrlEnd(String input, int start) {
+    var end = start;
+    while (end < input.length) {
+      final c = input.codeUnitAt(end);
+      if (c == 0x20 ||
+          c == 0x09 ||
+          c == 0x0A ||
+          c == 0x0D ||
+          c == 0x3C ||
+          c == 0x3E ||
+          c == 0x60 ||
+          c == 0x22 ||
+          c == 0x27) {
+        break;
+      }
+      if (input.startsWith('**', end) ||
+          input.startsWith('~~', end) ||
+          input.startsWith('||', end)) {
+        break;
+      }
+      end++;
+    }
+    while (end > start) {
+      final last = input.codeUnitAt(end - 1);
+      if (last == 0x2E ||
+          last == 0x2C ||
+          last == 0x3B ||
+          last == 0x3A ||
+          last == 0x21 ||
+          last == 0x3F ||
+          last == 0x2A) {
+        end--;
+      } else {
+        break;
+      }
+    }
+    return end;
+  }
+
   static _InlineParseResult _parseInlineMarkdown(String input, int startOffset) {
     final spans = <RichInlineSpan>[];
     final buffer = StringBuffer();
+    final failedUntil = <String, int>{};
+    var cachedParaBreak = -1;
+    var cachedLineEnd = -1;
     var idx = 0;
 
+    int paragraphEndFrom(int pos) {
+      if (pos > cachedParaBreak) {
+        final p = input.indexOf('\n\n', pos);
+        cachedParaBreak = p == -1 ? input.length : p;
+      }
+      return cachedParaBreak;
+    }
+
+    int lineEndFrom(int pos) {
+      if (pos > cachedLineEnd) {
+        final nl = input.indexOf('\n', pos);
+        cachedLineEnd = nl == -1 ? input.length : nl;
+      }
+      return cachedLineEnd;
+    }
+
     while (idx < input.length) {
-      // Negrito: **texto**
-      if (input.startsWith('**', idx)) {
-        final closeIdx = input.indexOf('**', idx + 2);
-        if (closeIdx != -1) {
-          final content = input.substring(idx + 2, closeIdx);
-          final s = startOffset + buffer.length;
-          final sub = _parseInlineMarkdown(content, s);
-          buffer.write(sub.plainText);
-          final e = startOffset + buffer.length;
-          spans.add(RichInlineSpan(start: s, end: e, bold: true));
-          spans.addAll(sub.spans);
-          idx = closeIdx + 2;
-          continue;
-        } else {
-          // Descarta marcador residual sem fechamento
-          idx += 2;
+      final cu = input.codeUnitAt(idx);
+
+      // URLs diretas: preserva sublinhados e asteriscos internos sem parsear como ênfase
+      if ((cu == 0x68 || cu == 0x48) &&
+          (_startsWithAsciiIgnoreCase(input, idx, 'https://') ||
+              _startsWithAsciiIgnoreCase(input, idx, 'http://'))) {
+        final schemeLen = (input.codeUnitAt(idx + 4) == 0x73 || input.codeUnitAt(idx + 4) == 0x53) ? 8 : 7;
+        final urlEnd = _scanBareUrlEnd(input, idx + schemeLen);
+        if (urlEnd > idx + schemeLen) {
+          buffer.write(input.substring(idx, urlEnd));
+          idx = urlEnd;
           continue;
         }
       }
 
-      // Sublinhado: <u>texto</u> ou <ins>texto</ins> (case-insensitive)
-      final lowerTail = input.substring(idx).toLowerCase();
-      if (lowerTail.startsWith('<u>') || lowerTail.startsWith('<ins>')) {
-        final tag = lowerTail.startsWith('<u>') ? 'u' : 'ins';
-        final openLen = tag == 'u' ? 3 : 5;
-        final closeTag = '</$tag>';
-        final closeIdx = lowerTail.indexOf(closeTag, openLen);
-        if (closeIdx != -1) {
-          final content = input.substring(idx + openLen, idx + closeIdx);
-          final s = startOffset + buffer.length;
-          final sub = _parseInlineMarkdown(content, s);
-          buffer.write(sub.plainText);
-          final e = startOffset + buffer.length;
-          spans.add(RichInlineSpan(start: s, end: e, underline: true));
-          spans.addAll(sub.spans);
-          idx += closeIdx + closeTag.length;
-          continue;
-        } else {
-          idx += openLen;
-          continue;
+      // Negrito / Itálico com asterisco (*texto*, **texto**, ***texto***)
+      if (cu == 0x2A) {
+        var runEnd = idx;
+        while (runEnd < input.length && input.codeUnitAt(runEnd) == 0x2A) {
+          runEnd++;
         }
-      }
+        final runLen = runEnd - idx;
 
-      // Citação inline: <q>texto</q> ou <quote>texto</quote>
-      if (lowerTail.startsWith('<q>') || lowerTail.startsWith('<quote>')) {
-        final tag = lowerTail.startsWith('<q>') ? 'q' : 'quote';
-        final openLen = tag == 'q' ? 3 : 7;
-        final closeTag = '</$tag>';
-        final closeIdx = lowerTail.indexOf(closeTag, openLen);
-        if (closeIdx != -1) {
-          final content = input.substring(idx + openLen, idx + closeIdx);
-          final s = startOffset + buffer.length;
-          final sub = _parseInlineMarkdown(content, s);
-          buffer.write(sub.plainText);
-          final e = startOffset + buffer.length;
-          spans.add(RichInlineSpan(start: s, end: e, quote: true));
-          spans.addAll(sub.spans);
-          idx += closeIdx + closeTag.length;
-          continue;
-        } else {
-          idx += openLen;
-          continue;
+        if ((runLen == 2 || runLen == 3) &&
+            runEnd < input.length &&
+            !_isWhitespace(input, runEnd)) {
+          final kind = runLen == 3 ? '***' : '**';
+          final limit = paragraphEndFrom(idx + 2);
+          if ((failedUntil[kind] ?? -1) < limit) {
+            final closeIdx = _findClosingAsteriskBold(input, idx + 2, runLen == 3, limit);
+            if (closeIdx != -1) {
+              final content = input.substring(idx + 2, closeIdx);
+              final s = startOffset + buffer.length;
+              final sub = _parseInlineMarkdown(content, s);
+              buffer.write(sub.plainText);
+              final e = startOffset + buffer.length;
+              if (e > s) {
+                spans.add(RichInlineSpan(start: s, end: e, bold: true));
+              }
+              spans.addAll(sub.spans);
+              idx = closeIdx + 2;
+              continue;
+            }
+            failedUntil[kind] = limit;
+          }
+        } else if (runLen == 1 &&
+            runEnd < input.length &&
+            !_isWhitespace(input, runEnd) &&
+            !_isWordChar(input, idx - 1)) {
+          final limit = paragraphEndFrom(idx + 1);
+          if ((failedUntil['*'] ?? -1) < limit) {
+            final closeIdx = _findClosingSingleEmphasis(input, idx + 1, 0x2A, limit);
+            if (closeIdx != -1) {
+              final content = input.substring(idx + 1, closeIdx);
+              final s = startOffset + buffer.length;
+              final sub = _parseInlineMarkdown(content, s);
+              buffer.write(sub.plainText);
+              final e = startOffset + buffer.length;
+              if (e > s) {
+                spans.add(RichInlineSpan(start: s, end: e, italic: true));
+              }
+              spans.addAll(sub.spans);
+              idx = closeIdx + 1;
+              continue;
+            }
+            failedUntil['*'] = limit;
+          }
         }
-      }
 
-      // Descarta fechamentos órfãos de tags
-      if (lowerTail.startsWith('</u>') || lowerTail.startsWith('</ins>') || lowerTail.startsWith('</q>') || lowerTail.startsWith('</quote>')) {
-        final skipLen = (lowerTail.startsWith('</u>') || lowerTail.startsWith('</q>')) ? 4 : (lowerTail.startsWith('</ins>') ? 6 : 8);
-        idx += skipLen;
+        buffer.write(input.substring(idx, runEnd));
+        idx = runEnd;
         continue;
       }
 
-      // Tachado: ~~texto~~
-      if (input.startsWith('~~', idx)) {
-        final closeIdx = input.indexOf('~~', idx + 2);
-        if (closeIdx != -1) {
-          final content = input.substring(idx + 2, closeIdx);
-          final s = startOffset + buffer.length;
-          final sub = _parseInlineMarkdown(content, s);
-          buffer.write(sub.plainText);
-          final e = startOffset + buffer.length;
-          spans.add(RichInlineSpan(start: s, end: e, strikethrough: true));
-          spans.addAll(sub.spans);
-          idx = closeIdx + 2;
-          continue;
-        } else {
-          idx += 2;
-          continue;
+      // Itálico com underscore (_texto_), ignorando underscores intrapalavra (ex: my_file_name.txt)
+      if (cu == 0x5F) {
+        var runEnd = idx;
+        while (runEnd < input.length && input.codeUnitAt(runEnd) == 0x5F) {
+          runEnd++;
         }
+        final runLen = runEnd - idx;
+        if (runLen == 1 &&
+            runEnd < input.length &&
+            !_isWhitespace(input, runEnd) &&
+            !_isWordChar(input, idx - 1)) {
+          final limit = paragraphEndFrom(idx + 1);
+          if ((failedUntil['_'] ?? -1) < limit) {
+            final closeIdx = _findClosingSingleEmphasis(input, idx + 1, 0x5F, limit);
+            if (closeIdx != -1) {
+              final content = input.substring(idx + 1, closeIdx);
+              final s = startOffset + buffer.length;
+              final sub = _parseInlineMarkdown(content, s);
+              buffer.write(sub.plainText);
+              final e = startOffset + buffer.length;
+              if (e > s) {
+                spans.add(RichInlineSpan(start: s, end: e, italic: true));
+              }
+              spans.addAll(sub.spans);
+              idx = closeIdx + 1;
+              continue;
+            }
+            failedUntil['_'] = limit;
+          }
+        }
+        buffer.write(input.substring(idx, runEnd));
+        idx = runEnd;
+        continue;
+      }
+
+      // Tags HTML inline: <u>, <ins>, <q>, <quote> (case-insensitive, sem copiar a cauda)
+      if (cu == 0x3C) {
+        final isU = _startsWithAsciiIgnoreCase(input, idx, '<u>');
+        final isIns = !isU && _startsWithAsciiIgnoreCase(input, idx, '<ins>');
+        if (isU || isIns) {
+          final openLen = isU ? 3 : 5;
+          final closeTag = isU ? '</u>' : '</ins>';
+          if ((failedUntil[closeTag] ?? -1) < input.length) {
+            final closeIdx = _indexOfAsciiIgnoreCase(input, closeTag, idx + openLen);
+            if (closeIdx != -1) {
+              if (closeIdx > idx + openLen) {
+                final content = input.substring(idx + openLen, closeIdx);
+                final s = startOffset + buffer.length;
+                final sub = _parseInlineMarkdown(content, s);
+                buffer.write(sub.plainText);
+                final e = startOffset + buffer.length;
+                if (e > s) {
+                  spans.add(RichInlineSpan(start: s, end: e, underline: true));
+                }
+                spans.addAll(sub.spans);
+                idx = closeIdx + closeTag.length;
+                continue;
+              }
+            } else {
+              failedUntil[closeTag] = input.length;
+            }
+          }
+        } else {
+          final isQ = _startsWithAsciiIgnoreCase(input, idx, '<q>');
+          final isQuote = !isQ && _startsWithAsciiIgnoreCase(input, idx, '<quote>');
+          if (isQ || isQuote) {
+            final openLen = isQ ? 3 : 7;
+            final closeTag = isQ ? '</q>' : '</quote>';
+            if ((failedUntil[closeTag] ?? -1) < input.length) {
+              final closeIdx = _indexOfAsciiIgnoreCase(input, closeTag, idx + openLen);
+              if (closeIdx != -1) {
+                if (closeIdx > idx + openLen) {
+                  final content = input.substring(idx + openLen, closeIdx);
+                  final s = startOffset + buffer.length;
+                  final sub = _parseInlineMarkdown(content, s);
+                  buffer.write(sub.plainText);
+                  final e = startOffset + buffer.length;
+                  if (e > s) {
+                    spans.add(RichInlineSpan(start: s, end: e, quote: true));
+                  }
+                  spans.addAll(sub.spans);
+                  idx = closeIdx + closeTag.length;
+                  continue;
+                }
+              } else {
+                failedUntil[closeTag] = input.length;
+              }
+            }
+          }
+        }
+      }
+
+      // Tachado: ~~texto~~
+      if (cu == 0x7E) {
+        var runEnd = idx;
+        while (runEnd < input.length && input.codeUnitAt(runEnd) == 0x7E) {
+          runEnd++;
+        }
+        final runLen = runEnd - idx;
+        if (runLen == 2 && runEnd < input.length && !_isWhitespace(input, runEnd)) {
+          final limit = paragraphEndFrom(idx + 2);
+          if ((failedUntil['~~'] ?? -1) < limit) {
+            final closeIdx = _findClosingDoubleChar(input, idx + 2, 0x7E, limit);
+            if (closeIdx != -1) {
+              final content = input.substring(idx + 2, closeIdx);
+              final s = startOffset + buffer.length;
+              final sub = _parseInlineMarkdown(content, s);
+              buffer.write(sub.plainText);
+              final e = startOffset + buffer.length;
+              if (e > s) {
+                spans.add(RichInlineSpan(start: s, end: e, strikethrough: true));
+              }
+              spans.addAll(sub.spans);
+              idx = closeIdx + 2;
+              continue;
+            }
+            failedUntil['~~'] = limit;
+          }
+        }
+        buffer.write(input.substring(idx, runEnd));
+        idx = runEnd;
+        continue;
       }
 
       // Spoiler: ||texto||
-      if (input.startsWith('||', idx)) {
-        final closeIdx = input.indexOf('||', idx + 2);
-        if (closeIdx != -1) {
-          final content = input.substring(idx + 2, closeIdx);
-          final s = startOffset + buffer.length;
-          final sub = _parseInlineMarkdown(content, s);
-          buffer.write(sub.plainText);
-          final e = startOffset + buffer.length;
-          spans.add(RichInlineSpan(start: s, end: e, spoiler: true));
-          spans.addAll(sub.spans);
-          idx = closeIdx + 2;
-          continue;
+      if (cu == 0x7C) {
+        var runEnd = idx;
+        while (runEnd < input.length && input.codeUnitAt(runEnd) == 0x7C) {
+          runEnd++;
         }
+        final runLen = runEnd - idx;
+        if (runLen == 2 && runEnd < input.length && !_isWhitespace(input, runEnd)) {
+          final limit = paragraphEndFrom(idx + 2);
+          if ((failedUntil['||'] ?? -1) < limit) {
+            final closeIdx = _findClosingDoubleChar(input, idx + 2, 0x7C, limit);
+            if (closeIdx != -1) {
+              final content = input.substring(idx + 2, closeIdx);
+              final s = startOffset + buffer.length;
+              final sub = _parseInlineMarkdown(content, s);
+              buffer.write(sub.plainText);
+              final e = startOffset + buffer.length;
+              if (e > s) {
+                spans.add(RichInlineSpan(start: s, end: e, spoiler: true));
+              }
+              spans.addAll(sub.spans);
+              idx = closeIdx + 2;
+              continue;
+            }
+            failedUntil['||'] = limit;
+          }
+        }
+        buffer.write(input.substring(idx, runEnd));
+        idx = runEnd;
+        continue;
       }
 
       // Código inline: `texto`
-      if (input.startsWith('`', idx)) {
-        final closeIdx = input.indexOf('`', idx + 1);
-        if (closeIdx != -1) {
-          final content = input.substring(idx + 1, closeIdx);
-          final s = startOffset + buffer.length;
-          buffer.write(content);
-          final e = startOffset + buffer.length;
-          spans.add(RichInlineSpan(start: s, end: e, monospace: true));
-          idx = closeIdx + 1;
-          continue;
+      if (cu == 0x60) {
+        var runEnd = idx;
+        while (runEnd < input.length && input.codeUnitAt(runEnd) == 0x60) {
+          runEnd++;
         }
-      }
-
-      // Itálico: *texto* ou _texto_
-      if ((input[idx] == '*' || input[idx] == '_') && (idx + 1 < input.length)) {
-        final marker = input[idx];
-        final closeIdx = input.indexOf(marker, idx + 1);
-        if (closeIdx != -1) {
-          final content = input.substring(idx + 1, closeIdx);
-          final s = startOffset + buffer.length;
-          final sub = _parseInlineMarkdown(content, s);
-          buffer.write(sub.plainText);
-          final e = startOffset + buffer.length;
-          spans.add(RichInlineSpan(start: s, end: e, italic: true));
-          spans.addAll(sub.spans);
-          idx = closeIdx + 1;
-          continue;
+        final tickLen = runEnd - idx;
+        final limit = paragraphEndFrom(runEnd);
+        final key = '`$tickLen';
+        if ((failedUntil[key] ?? -1) < limit) {
+          final closeIdx = _findClosingBackticks(input, runEnd, tickLen, limit);
+          if (closeIdx != -1) {
+            if (closeIdx > runEnd && tickLen == 1) {
+              final content = input.substring(runEnd, closeIdx);
+              final s = startOffset + buffer.length;
+              buffer.write(content);
+              final e = startOffset + buffer.length;
+              spans.add(RichInlineSpan(start: s, end: e, monospace: true));
+              idx = closeIdx + tickLen;
+              continue;
+            } else if (closeIdx > runEnd) {
+              // Preserva inline code multi-crase literalmente caso contenha crase interna
+              final rawCode = input.substring(idx, closeIdx + tickLen);
+              buffer.write(rawCode);
+              idx = closeIdx + tickLen;
+              continue;
+            }
+          } else {
+            failedUntil[key] = limit;
+          }
         }
+        buffer.write(input.substring(idx, runEnd));
+        idx = runEnd;
+        continue;
       }
 
       // Links: [texto](url)
-      if (input[idx] == '[') {
-        final bracketEnd = input.indexOf(']', idx + 1);
-        if (bracketEnd != -1 && bracketEnd + 1 < input.length && input[bracketEnd + 1] == '(') {
-          final parenEnd = input.indexOf(')', bracketEnd + 2);
-          if (parenEnd != -1) {
-            final linkText = input.substring(idx + 1, bracketEnd);
-            final linkUrl = input.substring(bracketEnd + 2, parenEnd);
-            final s = startOffset + buffer.length;
-            buffer.write(linkText);
-            final e = startOffset + buffer.length;
-            spans.add(RichInlineSpan(start: s, end: e, linkUrl: linkUrl));
-            idx = parenEnd + 1;
-            continue;
+      if (cu == 0x5B) {
+        final lineEnd = lineEndFrom(idx + 1);
+        if ((failedUntil[']'] ?? -1) < lineEnd) {
+          var bracketEnd = idx + 1;
+          while (bracketEnd < lineEnd && input.codeUnitAt(bracketEnd) != 0x5D) {
+            bracketEnd++;
+          }
+          if (bracketEnd >= lineEnd) {
+            failedUntil[']'] = lineEnd;
+          } else if (bracketEnd > idx + 1 &&
+              bracketEnd + 1 < lineEnd &&
+              input.codeUnitAt(bracketEnd + 1) == 0x28) {
+            var parenEnd = bracketEnd + 2;
+            while (parenEnd < lineEnd && input.codeUnitAt(parenEnd) != 0x29) {
+              parenEnd++;
+            }
+            if (parenEnd < lineEnd && parenEnd > bracketEnd + 2) {
+              final linkText = input.substring(idx + 1, bracketEnd);
+              final linkUrl = input.substring(bracketEnd + 2, parenEnd);
+              final s = startOffset + buffer.length;
+              buffer.write(linkText);
+              final e = startOffset + buffer.length;
+              spans.add(RichInlineSpan(start: s, end: e, linkUrl: linkUrl));
+              idx = parenEnd + 1;
+              continue;
+            }
           }
         }
       }
 
       // Caractere normal
-      buffer.write(input[idx]);
+      buffer.writeCharCode(cu);
       idx++;
     }
 
