@@ -159,14 +159,29 @@ class _PagerHousingState extends State<PagerHousing> {
                         rule: widget.lcdColor.ruleColor,
                         chipBg: widget.lcdColor.chipColor,
                         isDark: widget.lcdColor.isDark,
-                        child: Material(
-                          type: MaterialType.transparency,
-                          child: widget.wallpaper == null
-                              ? widget.screen
-                              : Stack(
-                                  fit: StackFit.expand,
-                                  children: [widget.wallpaper!, widget.screen],
-                                ),
+                        // As cores de interação do tema do app são superfícies
+                        // opacas; sobre o LCD elas cobririam ícone e nome dos
+                        // itens em hover/foco. Usa a tinta do LCD translúcida.
+                        child: Theme(
+                          data: Theme.of(context).copyWith(
+                            hoverColor:
+                                widget.lcdColor.inkColor.withValues(alpha: 0.10),
+                            focusColor:
+                                widget.lcdColor.inkColor.withValues(alpha: 0.14),
+                            highlightColor:
+                                widget.lcdColor.inkColor.withValues(alpha: 0.12),
+                            splashColor:
+                                widget.lcdColor.inkColor.withValues(alpha: 0.16),
+                          ),
+                          child: Material(
+                            type: MaterialType.transparency,
+                            child: widget.wallpaper == null
+                                ? widget.screen
+                                : Stack(
+                                    fit: StackFit.expand,
+                                    children: [widget.wallpaper!, widget.screen],
+                                  ),
+                          ),
                         ),
                       ),
                     ),
