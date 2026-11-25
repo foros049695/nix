@@ -2368,6 +2368,16 @@ class NixState extends ChangeNotifier {
       return false;
     }
 
+    final targetChannel = _spaces.expand((s) => s.channels).where((c) => c.id == conversationId).firstOrNull;
+    if (targetChannel != null && targetChannel.type == ChannelType.announcement) {
+      final isAdmin = targetChannel.ownerFingerprint == senderId ||
+          targetChannel.admins.contains(senderId);
+      if (!isAdmin) {
+        debugPrint('[NixState] Fail-Closed: mensagem rejeitada em canal de transmissão (remetente $senderId não é admin).');
+        return false;
+      }
+    }
+
     // 3. Commit-before-ACK: persiste mensagem e registra dedup atomicamente no banco local
     final msgId = 'in_${now.millisecondsSinceEpoch}_$deliveryId';
     if (_localDatabase != null && _messageRepo != null && _outboxRepo != null) {
@@ -5808,6 +5818,16 @@ class NixState extends ChangeNotifier {
       return false;
     }
 
+    if (_currentChannel.type == ChannelType.announcement) {
+      final isAdmin = _currentChannel.ownerFingerprint == myFp ||
+          (myId.isNotEmpty && _currentChannel.ownerFingerprint == myId) ||
+          _currentChannel.admins.contains(myFp) ||
+          (myId.isNotEmpty && _currentChannel.admins.contains(myId));
+      if (!isAdmin) {
+        return false;
+      }
+    }
+
     if (_editingMessage != null) {
       editMessage(_editingMessage!.id, text);
       return true;
@@ -6701,6 +6721,7 @@ class NixState extends ChangeNotifier {
       type: type,
       category: category,
       ownerFingerprint: _ownWorkspaceIdentity,
+      admins: type == ChannelType.announcement ? [_ownWorkspaceIdentity] : const [],
       customImagePath: customImagePath,
     );
 
@@ -6718,12 +6739,24 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void addSpace(Space space) {
+    _spaces.add(space);
+    _currentSpace = space;
+    if (space.channels.isNotEmpty) {
+      _currentChannel = space.channels.first;
+    }
+    _activeArea = NixActiveArea.spaces;
+    _persistState(workspaceChanged: true);
+    notifyListeners();
+  }
+
   void createSpace({
     required String name,
     required String description,
     required String emoji,
     String? customImagePath,
     bool? withTopics,
+    bool isAnnouncementChannel = false,
   }) {
     final initials = name
         .trim()
@@ -6739,7 +6772,7 @@ class NixState extends ChangeNotifier {
       initials: initials.isNotEmpty ? initials : 'NX',
       description: description,
       isPublic: false,
-      usesGroupFormat: withTopics != null,
+      usesGroupFormat: withTopics != null || isAnnouncementChannel,
       iconEmoji: emoji.isNotEmpty ? emoji : 'NX',
       customImagePath: customImagePath,
       ownerFingerprint: _ownWorkspaceIdentity,
@@ -6747,11 +6780,16 @@ class NixState extends ChangeNotifier {
         Channel(
           id: 'ch_geral_${DateTime.now().millisecondsSinceEpoch}',
           spaceId: spaceId,
-          name: 'geral',
-          topic: 'Tópico principal deste espaço.',
-          type: withTopics == true ? ChannelType.forum : ChannelType.text,
-          category: 'COMUNIDADE',
+          name: isAnnouncementChannel ? 'comunicados' : 'geral',
+          topic: isAnnouncementChannel
+              ? 'Canal oficial de transmissão e comunicados.'
+              : 'Tópico principal deste espaço.',
+          type: isAnnouncementChannel
+              ? ChannelType.announcement
+              : (withTopics == true ? ChannelType.forum : ChannelType.text),
+          category: isAnnouncementChannel ? 'TRANSMISSÃO' : 'COMUNIDADE',
           ownerFingerprint: _ownWorkspaceIdentity,
+          admins: isAnnouncementChannel ? [_ownWorkspaceIdentity] : const [],
         ),
       ],
     );

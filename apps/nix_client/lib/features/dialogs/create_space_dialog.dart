@@ -14,7 +14,7 @@ class CreateSpaceDialog extends StatefulWidget {
 
 class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
   String? _imagePath;
-  bool _withTopics = false;
+  String _format = 'conventional';
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
   String _selectedEmoji = 'i:shield';
@@ -39,15 +39,39 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              DropdownButtonFormField<bool>(
-                value: _withTopics,
-                decoration: const InputDecoration(labelText: 'Formato do grupo'),
+              DropdownButtonFormField<String>(
+                value: _format,
+                decoration: const InputDecoration(labelText: 'Formato do espaço'),
                 items: const [
-                  DropdownMenuItem(value: false, child: Text('Grupo convencional')),
-                  DropdownMenuItem(value: true, child: Text('Grupo com tópicos')),
+                  DropdownMenuItem(value: 'conventional', child: Text('Grupo convencional')),
+                  DropdownMenuItem(value: 'topics', child: Text('Grupo com tópicos')),
+                  DropdownMenuItem(value: 'announcement', child: Text('Canal de transmissão')),
                 ],
-                onChanged: (value) => setState(() => _withTopics = value ?? false),
+                onChanged: (value) => setState(() => _format = value ?? 'conventional'),
               ),
+              if (_format == 'announcement') ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: NixColors.accentCyan.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: NixColors.accentCyan.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.campaign_outlined, size: 16, color: NixColors.accentCyan),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Canal estilo Telegram: somente administradores autorizados publicam. Membros acompanham e reagem.',
+                          style: TextStyle(color: NixColors.accentCyan, fontSize: 11),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               Text(
                 'ÍCONE DO ESPAÇO',
@@ -119,7 +143,8 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
             if (_nameController.text.trim().isNotEmpty) {
               nixState.createSpace(
                 customImagePath: _imagePath,
-                withTopics: _withTopics,
+                withTopics: _format == 'topics',
+                isAnnouncementChannel: _format == 'announcement',
                 name: _nameController.text.trim(),
                 description: _descController.text.trim(),
                 emoji: _selectedEmoji,
