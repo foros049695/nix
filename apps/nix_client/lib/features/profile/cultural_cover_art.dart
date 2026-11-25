@@ -20,11 +20,13 @@ class CulturalCoverArt extends StatelessWidget {
     required this.item,
     required this.width,
     this.frameType = CulturalFrameType.auto,
+    this.fit,
   });
 
   final CulturalItem item;
   final double width;
   final CulturalFrameType frameType;
+  final BoxFit? fit;
 
   CulturalFrameType get effectiveFrame {
     if (frameType != CulturalFrameType.auto) return frameType;
@@ -84,12 +86,13 @@ class CulturalCoverArt extends StatelessWidget {
     );
     final path = item.localImagePath;
     if (path == null || path.isEmpty) return fallback;
+    final effectiveFit = fit ?? (item.coverMotif == 'contain' ? BoxFit.contain : BoxFit.cover);
     return ClipRect(
       child: Transform.scale(
         scale: item.cropScale.clamp(1, 2.2),
         child: Image.file(
           File(path),
-          fit: BoxFit.cover,
+          fit: effectiveFit,
           cacheWidth: 600,
           errorBuilder: (_, __, ___) => fallback,
         ),

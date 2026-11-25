@@ -428,11 +428,11 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(
                   maxWidth: 320,
-                  maxHeight: 260,
+                  maxHeight: 280,
                 ),
                 child: Image.memory(
                   bytes,
-                  fit: BoxFit.cover,
+                  fit: BoxFit.contain,
                   cacheWidth: Platform.environment.containsKey('FLUTTER_TEST') ? null : 640,
                   errorBuilder: (_, __, ___) => Container(
                     padding: const EdgeInsets.all(16),

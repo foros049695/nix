@@ -400,7 +400,15 @@ class _NixBrandProfileTriggerState extends State<_NixBrandProfileTrigger> {
 
   @override
   Widget build(BuildContext context) {
+    final nixState = context.watch<NixState>();
     final accent = context.accentColor;
+    final shape = nixState.settings.avatarFrameShape;
+    final isSquare = shape == 'square' ||
+        nixState.settings.roundedSquareAvatar ||
+        nixState.settings.avatarFrameStyle == 'roundedSquare';
+    final cornerRadiusRatio = (nixState.settings.avatarCornerRadius / 36.0).clamp(0.0, 0.5);
+    final dockBorderRadius = isSquare ? BorderRadius.circular(48 * cornerRadiusRatio) : null;
+
     return Tooltip(
       message: 'Pager e configurações',
       child: MouseRegion(
@@ -416,7 +424,8 @@ class _NixBrandProfileTriggerState extends State<_NixBrandProfileTrigger> {
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               color: NixColors.surfaceCard,
-              shape: BoxShape.circle,
+              shape: isSquare ? BoxShape.rectangle : BoxShape.circle,
+              borderRadius: dockBorderRadius,
               border: Border.all(
                 color: widget.isOverlayOpen || _hovered
                     ? accent

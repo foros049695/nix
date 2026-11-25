@@ -147,9 +147,23 @@ class NixUserAvatar extends StatelessWidget {
                 ),
               ),
               clipBehavior: Clip.antiAlias,
-              child: _buildAvatarContent(context, profile),
+              child: _buildAvatarContent(
+                context,
+                profile,
+                isSquare: isSquare,
+                corners: corners,
+                cornerRadiusRatio: cornerRadiusRatio,
+                isDoubleBorder: true,
+              ),
             )
-          : _buildAvatarContent(context, profile),
+          : _buildAvatarContent(
+              context,
+              profile,
+              isSquare: isSquare,
+              corners: corners,
+              cornerRadiusRatio: cornerRadiusRatio,
+              isDoubleBorder: false,
+            ),
     );
 
     if (showStatus) {
@@ -186,7 +200,14 @@ class NixUserAvatar extends StatelessWidget {
     return avatarCore;
   }
 
-  Widget _buildAvatarContent(BuildContext context, UserProfile profile) {
+  Widget _buildAvatarContent(
+    BuildContext context,
+    UserProfile profile, {
+    bool isSquare = false,
+    BorderRadius? corners,
+    double cornerRadiusRatio = 0.1,
+    bool isDoubleBorder = false,
+  }) {
     final style = profile.avatarStyle;
     final customPath = profile.customAvatarPath;
 
@@ -234,27 +255,43 @@ class NixUserAvatar extends StatelessWidget {
       final file = File(customPath);
       if (file.existsSync()) {
         final offsetFactor = size * 0.25;
-        return Transform.translate(
-          offset: Offset(
-            profile.avatarCropOffsetX * offsetFactor,
-            profile.avatarCropOffsetY * offsetFactor,
-          ),
-          child: Transform.scale(
-            scale: profile.avatarCropScale.clamp(1.0, 2.5),
-            child: Image.file(
-              file,
-              fit: BoxFit.cover,
-              width: size,
-              height: size,
-              errorBuilder: (_, __, ___) => Center(
-                child: Icon(
-                  Icons.broken_image_outlined,
-                  color: NixColors.textMuted,
-                  size: size * 0.5,
-                ),
-              ),
+        final innerCorners = isSquare
+            ? (corners ?? BorderRadius.circular(size * cornerRadiusRatio))
+            : BorderRadius.circular(size);
+
+        Widget imageWidget = Image.file(
+          file,
+          fit: BoxFit.cover,
+          width: size,
+          height: size,
+          errorBuilder: (_, __, ___) => Center(
+            child: Icon(
+              Icons.broken_image_outlined,
+              color: NixColors.textMuted,
+              size: size * 0.5,
             ),
           ),
+        );
+
+        if (profile.avatarCropScale != 1.0 ||
+            profile.avatarCropOffsetX != 0.0 ||
+            profile.avatarCropOffsetY != 0.0) {
+          imageWidget = Transform.translate(
+            offset: Offset(
+              profile.avatarCropOffsetX * offsetFactor,
+              profile.avatarCropOffsetY * offsetFactor,
+            ),
+            child: Transform.scale(
+              scale: profile.avatarCropScale.clamp(1.0, 2.5),
+              child: imageWidget,
+            ),
+          );
+        }
+
+        return ClipRRect(
+          borderRadius: innerCorners,
+          clipBehavior: Clip.antiAlias,
+          child: imageWidget,
         );
       }
     }
