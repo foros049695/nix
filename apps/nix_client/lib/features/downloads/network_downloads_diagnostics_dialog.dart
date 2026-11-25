@@ -404,15 +404,27 @@ class _NetworkDownloadsDiagnosticsDialogState extends State<NetworkDownloadsDiag
       padding: const EdgeInsets.symmetric(vertical: 2.5),
       child: Row(
         children: [
-          Text(label, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11.5)),
-          const Spacer(),
-          Text(
-            value,
-            style: TextStyle(
-              color: statusColor ?? Colors.white,
-              fontSize: 11.5,
-              fontWeight: FontWeight.bold,
-              fontFamily: 'monospace',
+          Expanded(
+            flex: 2,
+            child: Text(
+              label,
+              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11.5),
+              softWrap: true,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 3,
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              softWrap: true,
+              style: TextStyle(
+                color: statusColor ?? Colors.white,
+                fontSize: 11.5,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'monospace',
+              ),
             ),
           ),
         ],
