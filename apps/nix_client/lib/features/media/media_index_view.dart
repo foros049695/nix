@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:nix_transport/nix_transport.dart';
 import '../../core/media/catalog_database.dart';
+import '../../core/media/catalog_cultural_item.dart';
 import '../../core/media/catalog_diagnostics.dart';
 import '../../core/media/media_index_updater.dart';
 import '../../core/media/pager_playlist.dart';
@@ -22,6 +23,7 @@ import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
 import '../profile/cultural_showcase.dart';
+import '../profile/cultural_cover_art.dart';
 import '../profile/desktop_pager_audio.dart';
 import '../navigation/interface_wallpaper_layer.dart';
 
@@ -1685,10 +1687,22 @@ class _CatalogWorkDetailDialogState extends State<_CatalogWorkDetailDialog> {
   }
 
   CulturalItem? _findInAcervo(NixState state) {
-    final draftId = 'catalog:${widget.work.id}';
+    final draftId = 'catalog:' + widget.work.id;
+    final expectedCategory = culturalItemFromCatalog(widget.work).category;
     for (final item in state.userProfile.culturalItems) {
+      if (item.category != expectedCategory) continue;
       if (item.id == draftId || item.id == widget.work.id) return item;
-      if (item.title.trim().toLowerCase() == widget.work.title.trim().toLowerCase()) return item;
+      // Título isolado não é identidade: Bleach mangá ≠ Bleach anime.
+      if (item.title.trim().toLowerCase() !=
+          widget.work.title.trim().toLowerCase()) continue;
+      if (widget.work.releaseYear != null &&
+          item.releaseYear != null &&
+          widget.work.releaseYear != item.releaseYear) continue;
+      if (widget.work.creators != null &&
+          item.creator != null &&
+          widget.work.creators!.trim().toLowerCase() !=
+              item.creator!.trim().toLowerCase()) continue;
+      return item;
     }
     return null;
   }
@@ -1731,6 +1745,9 @@ class _CatalogWorkDetailDialogState extends State<_CatalogWorkDetailDialog> {
         final work = widget.work;
         final acervoItem = _findInAcervo(nixState);
         final inAcervo = acervoItem != null;
+        final displayItem = acervoItem ?? culturalItemFromCatalog(work);
+        final localCover = displayItem.localImagePath;
+        final hasVerifiedCover = localCover != null && File(localCover).existsSync();
 
     final kindIcon = switch (work.kind) {
       'movie' || 'film' => Icons.movie_outlined,
@@ -1828,9 +1845,11 @@ class _CatalogWorkDetailDialogState extends State<_CatalogWorkDetailDialog> {
                           borderRadius: NixTokens.borderSm,
                           border: Border.all(color: kindColor.withValues(alpha: 0.3)),
                         ),
-                        child: Center(
-                          child: Icon(kindIcon, size: 40, color: kindColor),
-                        ),
+                        child: hasVerifiedCover
+                            ? Center(child: CulturalCoverArt(item: displayItem, width: 70))
+                            : Center(
+                                child: Icon(kindIcon, size: 40, color: kindColor),
+                              ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
