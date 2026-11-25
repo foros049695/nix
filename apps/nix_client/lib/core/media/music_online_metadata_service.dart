@@ -124,6 +124,10 @@ class MusicOnlineMetadataService {
           }
         }
 
+        final rg = rec['release-group'] as Map<String, dynamic>?;
+        final rgId = rg?['id'] as String?;
+        final coverUrl = rgId != null ? 'https://coverartarchive.org/release-group/$rgId/front-250' : null;
+
         results.add(CatalogWork(
           id: 'mb_rec_$id',
           kind: 'track',
@@ -132,8 +136,8 @@ class MusicOnlineMetadataService {
           creators: artist.isNotEmpty ? artist : null,
           genres: 'Music',
           releaseYear: releaseYear,
-          summary: 'Metadado obtido sob consentimento via MusicBrainz (Tor).',
-          coverThumb: null,
+          summary: null,
+          coverThumb: coverUrl,
           externalIds: {'musicbrainz': id},
           updatedAt: now,
         ));

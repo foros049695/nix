@@ -86,12 +86,14 @@ class CulturalCoverArt extends StatelessWidget {
     );
     final path = item.localImagePath;
     if (path == null || path.isEmpty) return fallback;
+    final file = File(path);
+    if (!file.existsSync()) return fallback;
     final effectiveFit = fit ?? (item.coverMotif == 'contain' ? BoxFit.contain : BoxFit.cover);
     return ClipRect(
       child: Transform.scale(
         scale: item.cropScale.clamp(1, 2.2),
         child: Image.file(
-          File(path),
+          file,
           fit: effectiveFit,
           cacheWidth: 600,
           errorBuilder: (_, __, ___) => fallback,
@@ -231,26 +233,41 @@ class CulturalCoverArt extends StatelessWidget {
     );
   }
 
-  Widget _vinyl() => Stack(
-        fit: StackFit.expand,
-        children: [
-          const CustomPaint(painter: _VinylPainter()),
-          Center(
-            child: ClipOval(
-              child: SizedBox.square(dimension: width * .43, child: _art()),
+  Widget _vinyl() => Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.55),
+              offset: const Offset(0, 5),
+              blurRadius: 10,
             ),
+          ],
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.9),
+            width: 2.2,
           ),
-          Center(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF100F16),
-                border: Border.all(color: Colors.white54),
+        ),
+        child: ClipOval(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _art(),
+              const CustomPaint(painter: _VinylGrooveOverlayPainter()),
+              Center(
+                child: Container(
+                  width: width * 0.12,
+                  height: width * 0.12,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF100F16),
+                    border: Border.all(color: Colors.white70, width: 1.5),
+                  ),
+                ),
               ),
-              child: SizedBox.square(dimension: width * .055),
-            ),
+            ],
           ),
-        ],
+        ),
       );
 
   Widget _cinemaPoster() => DecoratedBox(
@@ -400,44 +417,6 @@ class _ClosedBookPagesPainter extends CustomPainter {
       isManga != oldDelegate.isManga;
 }
 
-class _VinylPainter extends CustomPainter {
-  const _VinylPainter();
-
-  @override
-  void paint(Canvas canvas, Size s) {
-    final center = s.center(Offset.zero);
-    final radius = s.shortestSide / 2 - 3;
-    final rect = Rect.fromCircle(center: center, radius: radius);
-    canvas.drawShadow(Path()..addOval(rect), const Color(0x9F100B17), 5, false);
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..shader = const SweepGradient(
-          colors: [
-            Color(0xFF080A11),
-            Color(0xFF272B37),
-            Color(0xFF11121C),
-            Color(0xFF393C49),
-            Color(0xFF080A11),
-          ],
-          stops: [0, .18, .48, .72, 1],
-        ).createShader(rect),
-    );
-    final groove = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = .6;
-    for (var i = 0; i < 25; i++) {
-      groove.color =
-          i % 5 == 0 ? const Color(0x4A9399AD) : const Color(0x25838A9E);
-      canvas.drawCircle(center, radius * (.47 + i * .021), groove);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_VinylPainter oldDelegate) => false;
-}
-
 class _DesignedCoverPainter extends CustomPainter {
   const _DesignedCoverPainter(this.motif, this.category);
   final String motif;
@@ -493,4 +472,38 @@ class _DesignedCoverPainter extends CustomPainter {
   @override
   bool shouldRepaint(_DesignedCoverPainter oldDelegate) =>
       motif != oldDelegate.motif || category != oldDelegate.category;
+}
+
+class _VinylGrooveOverlayPainter extends CustomPainter {
+  const _VinylGrooveOverlayPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxR = size.width / 2;
+
+    final paintGroove = Paint()
+      ..color = Colors.black.withValues(alpha: 0.12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    for (double r = maxR * 0.35; r < maxR * 0.95; r += 7.0) {
+      canvas.drawCircle(center, r, paintGroove);
+    }
+
+    final shinePaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Colors.white.withValues(alpha: 0.18),
+          Colors.transparent,
+          Colors.black.withValues(alpha: 0.22),
+        ],
+      ).createShader(Offset.zero & size);
+    canvas.drawCircle(center, maxR, shinePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

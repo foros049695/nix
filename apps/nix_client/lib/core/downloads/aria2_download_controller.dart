@@ -10,10 +10,10 @@ typedef DownloadStatusChangeNotifier = void Function(List<DownloadTask> tasks);
 
 /// Perfis de desempenho para downloads diretos HTTP/HTTPS.
 enum DownloadPerformanceProfile {
-  conservative('conservative', 'Conservador', 2, 2, 35, '2M'),
-  balanced('balanced', 'Equilibrado (Recomendado)', 4, 4, 20, '1M'),
-  highPerformance('highPerformance', 'Alto Desempenho', 6, 6, 15, '1M'),
-  turbo('turbo', 'Turbo Sustentado', 8, 8, 10, '1M');
+  conservative('conservative', 'Conservador', 2, 2, 35, '512K'),
+  balanced('balanced', 'Equilibrado (Recomendado)', 4, 4, 20, '256K'),
+  highPerformance('highPerformance', 'Alto Desempenho', 8, 8, 15, '256K'),
+  turbo('turbo', 'Turbo Sustentado', 16, 16, 10, '128K');
 
   final String slug;
   final String label;
@@ -230,6 +230,11 @@ class Aria2DownloadController extends ChangeNotifier {
           '--max-connection-per-server=${_performanceProfile.maxConnections}',
           '--split=${_performanceProfile.split}',
           '--min-split-size=${_performanceProfile.minSplitSize}',
+          '--optimize-concurrent-downloads=true',
+          '--conditional-get=true',
+          '--remote-time=true',
+          '--auto-file-renaming=false',
+          '--allow-overwrite=true',
           '--piece-length=1M',
           '--disk-cache=64M',
           '--enable-mmap=true',
@@ -237,11 +242,11 @@ class Aria2DownloadController extends ChangeNotifier {
           '--stream-piece-selector=default',
           '--uri-selector=adaptive',
           '--lowest-speed-limit=10K',
-          '--max-resume-failure-tries=5',
+          '--max-resume-failure-tries=10',
           '--connect-timeout=15',
           '--timeout=20',
           '--max-tries=10',
-          '--retry-wait=3',
+          '--retry-wait=2',
           '--continue=true',
           '--dir=$downloadDir',
           '--check-integrity=false',
@@ -447,6 +452,11 @@ class Aria2DownloadController extends ChangeNotifier {
         'split': '${_performanceProfile.split}',
         'max-connection-per-server': '${_performanceProfile.maxConnections}',
         'min-split-size': _performanceProfile.minSplitSize,
+        'optimize-concurrent-downloads': 'true',
+        'conditional-get': 'true',
+        'remote-time': 'true',
+        'auto-file-renaming': 'false',
+        'allow-overwrite': 'true',
         'piece-length': '1M',
         'disk-cache': '64M',
         'enable-mmap': 'true',
@@ -691,6 +701,11 @@ class Aria2DownloadController extends ChangeNotifier {
           'max-connection-per-server': '${_performanceProfile.maxConnections}',
           'split': '${_performanceProfile.split}',
           'min-split-size': _performanceProfile.minSplitSize,
+          'optimize-concurrent-downloads': 'true',
+          'conditional-get': 'true',
+          'remote-time': 'true',
+          'auto-file-renaming': 'false',
+          'allow-overwrite': 'true',
           'piece-length': '1M',
           'disk-cache': '64M',
           'enable-mmap': 'true',

@@ -74,8 +74,15 @@ class Space {
   final bool isDirectMessages;
   final bool usesGroupFormat;
 
-  bool get isSingleChat => usesGroupFormat && channels.length == 1 &&
-      channels.single.type == ChannelType.text;
+  bool get isSingleChat =>
+      (usesGroupFormat &&
+          channels.length == 1 &&
+          (channels.single.type == ChannelType.text ||
+              channels.single.type == ChannelType.announcement)) ||
+      (channels.length == 1 &&
+          channels.single.type == ChannelType.announcement);
+  bool get isAnnouncementOnly =>
+      channels.length == 1 && channels.single.type == ChannelType.announcement;
   final String? iconEmoji;
   final String? customImagePath;
   final WorkspaceBanner? banner;

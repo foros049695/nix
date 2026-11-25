@@ -84,7 +84,7 @@ class _CreateChannelDialogState extends State<CreateChannelDialog> {
               const SizedBox(height: 6),
               _buildTypeOption(
                 type: ChannelType.announcement,
-                title: 'Canal de Transmissão (Estilo Telegram)',
+                title: 'Canal de Transmissão',
                 subtitle: 'Somente administradores autorizados publicam comunicados, áudios e arquivos. Membros acompanham e reagem.',
                 icon: Icons.campaign_outlined,
                 categoryDefault: 'TRANSMISSÃO',

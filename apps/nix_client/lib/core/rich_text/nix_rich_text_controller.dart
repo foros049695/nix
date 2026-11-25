@@ -550,9 +550,9 @@ class NixRichTextController extends TextEditingController {
         case RichBlockType.blockquote:
           lineStyle = baseStyle.copyWith(
             fontStyle: FontStyle.italic,
-            color: const Color(0xFF94A3B8),
+            color: const Color(0xFFCBD5E1),
           );
-          linePrefix = '▎ ';
+          linePrefix = '❝ ';
           break;
         case RichBlockType.codeBlock:
           lineStyle = baseStyle.copyWith(
@@ -872,9 +872,11 @@ class NixRichTextController extends TextEditingController {
         if (closeIdx != -1) {
           final content = input.substring(idx + 2, closeIdx);
           final s = startOffset + buffer.length;
-          buffer.write(content);
+          final sub = _parseInlineMarkdown(content, s);
+          buffer.write(sub.plainText);
           final e = startOffset + buffer.length;
           spans.add(RichInlineSpan(start: s, end: e, bold: true));
+          spans.addAll(sub.spans);
           idx = closeIdx + 2;
           continue;
         }
@@ -886,9 +888,11 @@ class NixRichTextController extends TextEditingController {
         if (closeIdx != -1) {
           final content = input.substring(idx + 3, closeIdx);
           final s = startOffset + buffer.length;
-          buffer.write(content);
+          final sub = _parseInlineMarkdown(content, s);
+          buffer.write(sub.plainText);
           final e = startOffset + buffer.length;
           spans.add(RichInlineSpan(start: s, end: e, underline: true));
+          spans.addAll(sub.spans);
           idx = closeIdx + 4;
           continue;
         }
@@ -900,9 +904,11 @@ class NixRichTextController extends TextEditingController {
         if (closeIdx != -1) {
           final content = input.substring(idx + 2, closeIdx);
           final s = startOffset + buffer.length;
-          buffer.write(content);
+          final sub = _parseInlineMarkdown(content, s);
+          buffer.write(sub.plainText);
           final e = startOffset + buffer.length;
           spans.add(RichInlineSpan(start: s, end: e, strikethrough: true));
+          spans.addAll(sub.spans);
           idx = closeIdx + 2;
           continue;
         }
@@ -914,9 +920,11 @@ class NixRichTextController extends TextEditingController {
         if (closeIdx != -1) {
           final content = input.substring(idx + 2, closeIdx);
           final s = startOffset + buffer.length;
-          buffer.write(content);
+          final sub = _parseInlineMarkdown(content, s);
+          buffer.write(sub.plainText);
           final e = startOffset + buffer.length;
           spans.add(RichInlineSpan(start: s, end: e, spoiler: true));
+          spans.addAll(sub.spans);
           idx = closeIdx + 2;
           continue;
         }
@@ -943,9 +951,11 @@ class NixRichTextController extends TextEditingController {
         if (closeIdx != -1) {
           final content = input.substring(idx + 1, closeIdx);
           final s = startOffset + buffer.length;
-          buffer.write(content);
+          final sub = _parseInlineMarkdown(content, s);
+          buffer.write(sub.plainText);
           final e = startOffset + buffer.length;
           spans.add(RichInlineSpan(start: s, end: e, italic: true));
+          spans.addAll(sub.spans);
           idx = closeIdx + 1;
           continue;
         }

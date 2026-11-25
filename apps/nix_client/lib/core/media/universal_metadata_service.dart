@@ -159,6 +159,68 @@ class UniversalMetadataService {
     return res.body;
   }
 
+  /// Baixa os bytes reais de uma capa através do perfil de transporte configurado (Tor SOCKS5 ou Clearnet).
+  Future<Uint8List?> downloadImageBytes(
+    String url, {
+    required bool allowClearnet,
+    required bool isTorReady,
+    int socksPort = 9050,
+  }) async {
+    try {
+      final uri = Uri.parse(url);
+      final reqHeaders = <String, String>{
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      };
+
+      if (allowClearnet && !uri.host.endsWith('.onion')) {
+        return await NixFailClosedHttpOverrides.runWithExplicitClearnetDownload(action: () async {
+          final client = HttpClient();
+          client.connectionTimeout = const Duration(seconds: 15);
+          try {
+            final req = await client.getUrl(uri);
+            reqHeaders.forEach((k, v) => req.headers.set(k, v));
+            final res = await req.close().timeout(const Duration(seconds: 25));
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              final bytesBuilder = BytesBuilder();
+              await for (final chunk in res) {
+                bytesBuilder.add(chunk);
+              }
+              return bytesBuilder.toBytes();
+            }
+            return null;
+          } finally {
+            client.close();
+          }
+        });
+      }
+
+      if (!isTorReady) return null;
+
+      final isolation = _generateCircuitIsolation();
+      final connector = Socks5Connector(
+        proxyHost: '127.0.0.1',
+        proxyPort: socksPort,
+        username: isolation,
+        password: isolation,
+      );
+
+      final res = await connector.httpRequest(
+        'GET',
+        uri,
+        headers: reqHeaders,
+        requireOnionV3: uri.host.endsWith('.onion'),
+        timeout: const Duration(seconds: 25),
+      );
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return res.bodyBytes;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Busca universal agregada ou específica por fonte.
   Future<List<UniversalMetadataItem>> search({
     required String query,

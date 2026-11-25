@@ -225,13 +225,17 @@ class ChannelsSidebar extends StatelessWidget {
                       nixState.joinCall(ch);
                     }
                   },
-                  onAddChannel: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) =>
-                          CreateChannelDialog(defaultCategory: entry.key),
-                    );
-                  },
+                  onAddChannel: (nixState.currentSpace.isSingleChat ||
+                          nixState.currentSpace.isAnnouncementOnly ||
+                          nixState.currentSpace.channels.any((c) => c.type == ChannelType.announcement))
+                      ? null
+                      : () {
+                          showDialog(
+                            context: context,
+                            builder: (_) =>
+                                CreateChannelDialog(defaultCategory: entry.key),
+                          );
+                        },
                 );
               }).toList(),
             ),
@@ -373,17 +377,20 @@ class _SpaceHeader extends StatelessWidget {
               tooltip: 'Editar imagem do grupo',
               onPressed: () => _showImageEditor(context, state),
             ),
-          IconButton(
-            icon: Icon(Icons.add_rounded,
-                size: 20, color: NixColors.textSecondary),
-            tooltip: 'Adicionar Sala / Tópico',
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (_) => const CreateChannelDialog(),
-              );
-            },
-          ),
+          if (!space.isSingleChat &&
+              !space.isAnnouncementOnly &&
+              !space.channels.any((c) => c.type == ChannelType.announcement))
+            IconButton(
+              icon: Icon(Icons.add_rounded,
+                  size: 20, color: NixColors.textSecondary),
+              tooltip: 'Adicionar Sala / Tópico',
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (_) => const CreateChannelDialog(),
+                );
+              },
+            ),
         ],
       ),
     );
@@ -395,14 +402,14 @@ class _CategoryGroup extends StatelessWidget {
   final List<Channel> channels;
   final String currentChannelId;
   final Function(Channel) onSelectChannel;
-  final VoidCallback onAddChannel;
+  final VoidCallback? onAddChannel;
 
   const _CategoryGroup({
     required this.categoryName,
     required this.channels,
     required this.currentChannelId,
     required this.onSelectChannel,
-    required this.onAddChannel,
+    this.onAddChannel,
   });
 
   @override
@@ -423,15 +430,16 @@ class _CategoryGroup extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                InkWell(
-                  onTap: onAddChannel,
-                  borderRadius: BorderRadius.circular(4),
-                  child: Padding(
-                    padding: const EdgeInsets.all(2),
-                    child:
-                        Icon(Icons.add, size: 14, color: NixColors.textMuted),
+                if (onAddChannel != null)
+                  InkWell(
+                    onTap: onAddChannel,
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child:
+                          Icon(Icons.add, size: 14, color: NixColors.textMuted),
+                    ),
                   ),
-                ),
               ],
             ),
           ),

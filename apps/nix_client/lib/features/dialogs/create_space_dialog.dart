@@ -49,29 +49,6 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
                 ],
                 onChanged: (value) => setState(() => _format = value ?? 'conventional'),
               ),
-              if (_format == 'announcement') ...[
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: NixColors.accentCyan.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: NixColors.accentCyan.withValues(alpha: 0.25)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.campaign_outlined, size: 16, color: NixColors.accentCyan),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Canal estilo Telegram: somente administradores autorizados publicam. Membros acompanham e reagem.',
-                          style: TextStyle(color: NixColors.accentCyan, fontSize: 11),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
               const SizedBox(height: 12),
               Text(
                 'ÍCONE DO ESPAÇO',

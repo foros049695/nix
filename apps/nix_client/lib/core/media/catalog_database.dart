@@ -33,6 +33,34 @@ class CatalogWork {
     required this.updatedAt,
   });
 
+  CatalogWork copyWith({
+    String? id,
+    String? kind,
+    String? title,
+    String? originalTitle,
+    String? creators,
+    String? genres,
+    int? releaseYear,
+    String? summary,
+    String? coverThumb,
+    Map<String, dynamic>? externalIds,
+    int? updatedAt,
+  }) {
+    return CatalogWork(
+      id: id ?? this.id,
+      kind: kind ?? this.kind,
+      title: title ?? this.title,
+      originalTitle: originalTitle ?? this.originalTitle,
+      creators: creators ?? this.creators,
+      genres: genres ?? this.genres,
+      releaseYear: releaseYear ?? this.releaseYear,
+      summary: summary ?? this.summary,
+      coverThumb: coverThumb ?? this.coverThumb,
+      externalIds: externalIds ?? this.externalIds,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
   factory CatalogWork.fromRow(Map<String, dynamic> row) {
     Map<String, dynamic> parsedIds = {};
     try {

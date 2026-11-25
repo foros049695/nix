@@ -54,4 +54,22 @@ void main() {
     // Agora o texto revelado está visível
     expect(find.text('segredo confidencial'), findsOneWidget);
   });
+
+  testWidgets('ChatInlineText renderiza citação estilo Telegram em bloco sem caractere ">" bruto', (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(
+        body: ChatInlineText('> kkkkkk\n> kkkkkkkk', style: TextStyle()),
+      ),
+    ));
+
+    await tester.pumpAndSettle();
+
+    // Encontra o cabeçalho "Citação" do bloco estilizado
+    expect(find.text('Citação'), findsOneWidget);
+    expect(find.byIcon(Icons.format_quote_rounded), findsOneWidget);
+
+    // O texto citado é renderizado sem o prefixo ">"
+    expect(find.textContaining('kkkkkk'), findsOneWidget);
+    expect(find.textContaining('> kkkkkk'), findsNothing);
+  });
 }

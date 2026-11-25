@@ -1046,8 +1046,8 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
               maxLines: 8,
               style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
               decoration: InputDecoration(
-                labelText: 'Conteúdo em Markdown / Rich Text',
-                hintText: 'Escreva seu artigo aqui. Suporta cabeçalhos (#), listas (-) e citações (>).',
+                labelText: 'Conteúdo do Artigo (Editor Visual WYSIWYG)',
+                hintText: 'Escreva seu artigo aqui. Use a barra de ferramentas acima para formatar visualmente.',
                 filled: true,
                 fillColor: NixColors.surfaceCard,
                 border: OutlineInputBorder(borderRadius: NixTokens.borderSm),

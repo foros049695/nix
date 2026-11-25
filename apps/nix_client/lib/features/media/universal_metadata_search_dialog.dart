@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/media/universal_metadata_service.dart';
@@ -109,13 +111,48 @@ class _UniversalMetadataSearchDialogState
     }
   }
 
+  Future<String?> _downloadCoverFile(UniversalMetadataItem item) async {
+    if (item.coverUrl == null || item.coverUrl!.isEmpty) return null;
+    final nixState = context.read<NixState>();
+    final profile = GlobalTransportRegistry.current.getProfile(TransportModule.music);
+    final isClearnet = profile == TransportProfileType.directHttps;
+    final isTorReady = nixState.embeddedTor.isReady ||
+        nixState.securityGate.torOnionV3Ready ||
+        nixState.embeddedTor.socksPort > 0;
+    final socksPort = nixState.embeddedTor.socksPort > 0 ? nixState.embeddedTor.socksPort : 9050;
+
+    try {
+      final bytes = await _service.downloadImageBytes(
+        item.coverUrl!,
+        allowClearnet: isClearnet,
+        isTorReady: isTorReady,
+        socksPort: socksPort,
+      );
+      if (bytes != null && bytes.isNotEmpty) {
+        final home = Platform.environment['HOME'] ?? Directory.systemTemp.path;
+        final coversDir = Directory('$home/.local/share/nix/covers');
+        if (!coversDir.existsSync()) {
+          coversDir.createSync(recursive: true);
+        }
+        final safeName = item.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+        final file = File('${coversDir.path}/$safeName.jpg');
+        await file.writeAsBytes(bytes);
+        return file.path;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> _addToCatalog(UniversalMetadataItem item) async {
     final nixState = context.read<NixState>();
+    final localPath = await _downloadCoverFile(item);
     try {
       await nixState.ensureCatalogDatabaseOpened();
       final db = nixState.catalogDatabase;
       if (db != null) {
-        await db.insertWork(item.toCatalogWork());
+        final work = item.toCatalogWork();
+        final finalWork = localPath != null ? work.copyWith(coverThumb: localPath) : work;
+        await db.insertWork(finalWork);
         setState(() => _addedCatalogIds.add(item.id));
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -134,6 +171,8 @@ class _UniversalMetadataSearchDialogState
 
   Future<void> _addToAcervo(UniversalMetadataItem item) async {
     final nixState = context.read<NixState>();
+    final localPath = await _downloadCoverFile(item);
+
     final category = switch (item.kind) {
       'movie' => CulturalCategory.movies,
       'series' => CulturalCategory.series,
@@ -153,7 +192,7 @@ class _UniversalMetadataSearchDialogState
       releaseYear: item.releaseYear,
       category: category,
       monogram: item.title.isNotEmpty ? item.title.substring(0, 1).toUpperCase() : 'N',
-      localImagePath: item.coverUrl,
+      localImagePath: localPath,
       synopsis: item.synopsis,
       genres: item.genres != null ? item.genres!.split(', ') : const [],
       source: item.sourceName.toLowerCase(),
@@ -163,7 +202,7 @@ class _UniversalMetadataSearchDialogState
     setState(() => _addedAcervoIds.add(item.id));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('"${item.title}" adicionado ao seu Acervo Pessoal.')),
+        SnackBar(content: Text('"${item.title}" adicionado com capa local ao seu Acervo.')),
       );
     }
   }
@@ -402,21 +441,13 @@ class _UniversalMetadataSearchDialogState
                                             width: 54,
                                             height: 74,
                                             color: NixColors.surfaceElevated,
-                                            child: item.coverUrl != null
-                                                ? Image.network(
-                                                    item.coverUrl!,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (_, __, ___) => Icon(
-                                                      _kindIcon(item.kind),
-                                                      size: 28,
-                                                      color: NixColors.textSecondary,
-                                                    ),
-                                                  )
-                                                : Icon(
-                                                    _kindIcon(item.kind),
-                                                    size: 28,
-                                                    color: NixColors.textSecondary,
-                                                  ),
+                                            child: _SearchResultCover(
+                                              item: item,
+                                              service: _service,
+                                              allowClearnet: isClearnet,
+                                              isTorReady: isTorReady,
+                                              socksPort: nixState.embeddedTor.socksPort > 0 ? nixState.embeddedTor.socksPort : 9050,
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(width: 12),
@@ -531,7 +562,7 @@ class _UniversalMetadataSearchDialogState
     );
   }
 
-  IconData _kindIcon(String kind) {
+  static IconData kindIcon(String kind) {
     return switch (kind) {
       'movie' => Icons.movie_outlined,
       'series' => Icons.tv_rounded,
@@ -542,5 +573,86 @@ class _UniversalMetadataSearchDialogState
       'track' => Icons.music_note_outlined,
       _ => Icons.category_outlined,
     };
+  }
+}
+
+class _SearchResultCover extends StatefulWidget {
+  final UniversalMetadataItem item;
+  final UniversalMetadataService service;
+  final bool allowClearnet;
+  final bool isTorReady;
+  final int socksPort;
+
+  const _SearchResultCover({
+    required this.item,
+    required this.service,
+    required this.allowClearnet,
+    required this.isTorReady,
+    required this.socksPort,
+  });
+
+  @override
+  State<_SearchResultCover> createState() => _SearchResultCoverState();
+}
+
+class _SearchResultCoverState extends State<_SearchResultCover> {
+  static final Map<String, Uint8List> _thumbCache = {};
+  Uint8List? _bytes;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadThumb();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SearchResultCover oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.coverUrl != widget.item.coverUrl) {
+      _loadThumb();
+    }
+  }
+
+  Future<void> _loadThumb() async {
+    final url = widget.item.coverUrl;
+    if (url == null || url.isEmpty) return;
+    if (_thumbCache.containsKey(url)) {
+      setState(() => _bytes = _thumbCache[url]);
+      return;
+    }
+
+    _isLoading = true;
+    final b = await widget.service.downloadImageBytes(
+      url,
+      allowClearnet: widget.allowClearnet,
+      isTorReady: widget.isTorReady,
+      socksPort: widget.socksPort,
+    );
+    if (!mounted) return;
+    if (b != null) {
+      _thumbCache[url] = b;
+      setState(() {
+        _bytes = b;
+        _isLoading = false;
+      });
+    } else {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_bytes != null) {
+      return Image.memory(_bytes!, fit: BoxFit.cover);
+    }
+    if (_isLoading) {
+      return const Center(child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.5)));
+    }
+    return Icon(
+      _UniversalMetadataSearchDialogState.kindIcon(widget.item.kind),
+      size: 28,
+      color: NixColors.textSecondary,
+    );
   }
 }

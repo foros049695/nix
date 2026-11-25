@@ -210,48 +210,12 @@ class ChatInlineText extends StatelessWidget {
   final String source;
   final TextStyle style;
 
-  static final _document = md.Document(
-    extensionSet: md.ExtensionSet.gitHubFlavored,
-    encodeHtml: false,
-  );
   static final _urlRegex = RegExp(
     r'(https?://[^\s<>]+|[a-z0-9]{16,56}\.onion(/[^\s<>]*)?)',
     caseSensitive: false,
   );
-  static final _spoilerRegex = RegExp(r'\|\|(.*?)\|\|');
-  static final _marker = RegExp(
-    r'[*_`~]|https?://|[a-z0-9]+\.onion|\[.*?\]\(.*?\)|\<\/?(u|ins)\>|\|\||>',
-    caseSensitive: false,
-  );
-
-  static List<InlineSpan> _parseTextWithUrls(BuildContext context, String text, [TextStyle? baseStyle]) {
-    final spans = <InlineSpan>[];
-
-    // Verifica se há spoilers inline no texto
-    final spoilerMatches = _spoilerRegex.allMatches(text);
-    if (spoilerMatches.isNotEmpty) {
-      var lastSpoilerIdx = 0;
-      for (final sm in spoilerMatches) {
-        if (sm.start > lastSpoilerIdx) {
-          spans.addAll(_parseUrlsOnly(context, text.substring(lastSpoilerIdx, sm.start), baseStyle));
-        }
-        final spoilerContent = sm.group(1) ?? '';
-        spans.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: ChatSpoilerText(text: spoilerContent, style: baseStyle),
-          ),
-        );
-        lastSpoilerIdx = sm.end;
-      }
-      if (lastSpoilerIdx < text.length) {
-        spans.addAll(_parseUrlsOnly(context, text.substring(lastSpoilerIdx), baseStyle));
-      }
-      return spans;
-    }
-
-    return _parseUrlsOnly(context, text, baseStyle);
-  }
+  static final _underlineRegex = RegExp(r'<(u|ins)>(.*?)</\1>', caseSensitive: false, dotAll: true);
+  static final _spoilerRegex = RegExp(r'\|\|(.*?)\|\|', dotAll: true);
 
   static List<InlineSpan> _parseUrlsOnly(BuildContext context, String text, [TextStyle? baseStyle]) {
     final spans = <InlineSpan>[];
@@ -288,6 +252,61 @@ class ChatInlineText extends StatelessWidget {
     return spans;
   }
 
+  static List<InlineSpan> _parseUnderlines(BuildContext context, String text, [TextStyle? baseStyle]) {
+    final spans = <InlineSpan>[];
+    final matches = _underlineRegex.allMatches(text);
+    if (matches.isEmpty) {
+      return _parseUrlsOnly(context, text, baseStyle);
+    }
+
+    var lastIndex = 0;
+    for (final match in matches) {
+      if (match.start > lastIndex) {
+        spans.addAll(_parseUrlsOnly(context, text.substring(lastIndex, match.start), baseStyle));
+      }
+      final inner = match.group(2) ?? '';
+      final underStyle = (baseStyle ?? const TextStyle()).copyWith(
+        decoration: TextDecoration.underline,
+        decorationColor: baseStyle?.color ?? Colors.white,
+      );
+      spans.addAll(_parseUrlsOnly(context, inner, underStyle));
+      lastIndex = match.end;
+    }
+    if (lastIndex < text.length) {
+      spans.addAll(_parseUrlsOnly(context, text.substring(lastIndex), baseStyle));
+    }
+    return spans;
+  }
+
+  static List<InlineSpan> _parseTextWithUrls(BuildContext context, String text, [TextStyle? baseStyle]) {
+    final spans = <InlineSpan>[];
+
+    // 1. Spoilers inline
+    final spoilerMatches = _spoilerRegex.allMatches(text);
+    if (spoilerMatches.isNotEmpty) {
+      var lastSpoilerIdx = 0;
+      for (final sm in spoilerMatches) {
+        if (sm.start > lastSpoilerIdx) {
+          spans.addAll(_parseUnderlines(context, text.substring(lastSpoilerIdx, sm.start), baseStyle));
+        }
+        final spoilerContent = sm.group(1) ?? '';
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: ChatSpoilerText(text: spoilerContent, style: baseStyle),
+          ),
+        );
+        lastSpoilerIdx = sm.end;
+      }
+      if (lastSpoilerIdx < text.length) {
+        spans.addAll(_parseUnderlines(context, text.substring(lastSpoilerIdx), baseStyle));
+      }
+      return spans;
+    }
+
+    return _parseUnderlines(context, text, baseStyle);
+  }
+
   static List<InlineSpan>? _spans(BuildContext context, List<md.Node> nodes, [TextStyle? currentStyle]) {
     final spans = <InlineSpan>[];
     for (final node in nodes) {
@@ -322,7 +341,7 @@ class ChatInlineText extends StatelessWidget {
         'em' => const TextStyle(fontStyle: FontStyle.italic),
         'u' || 'ins' => const TextStyle(decoration: TextDecoration.underline),
         'del' => const TextStyle(decoration: TextDecoration.lineThrough),
-        'code' => const TextStyle(fontFamily: 'monospace'),
+        'code' => const TextStyle(fontFamily: 'monospace', backgroundColor: Color(0x33A855F7), color: Color(0xFFF472B6)),
         'blockquote' => const TextStyle(fontStyle: FontStyle.italic, color: Color(0xFF94A3B8)),
         _ => null,
       };
@@ -341,17 +360,128 @@ class ChatInlineText extends StatelessWidget {
     return spans;
   }
 
+  static List<InlineSpan> _parseInlineContent(BuildContext context, String content, TextStyle baseStyle) {
+    final doc = md.Document(extensionSet: md.ExtensionSet.gitHubFlavored, encodeHtml: false);
+    final nodes = doc.parseInline(content);
+    return _spans(context, nodes, baseStyle) ?? [TextSpan(text: content, style: baseStyle)];
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (source.length > 16000 || !_marker.hasMatch(source)) {
+    if (source.length > 16000) {
       return Text(source, style: style);
     }
-    final nodes = _document.parseInline(source);
-    if (nodes.any((node) => node is md.Element && node.tag == 'img')) {
+
+    final doc = md.Document(extensionSet: md.ExtensionSet.gitHubFlavored, encodeHtml: false);
+    final probeNodes = doc.parseInline(source);
+    if (probeNodes.any((node) => node is md.Element && node.tag == 'img')) {
       return Text(source, style: style);
     }
-    final formatted = _spans(context, nodes);
-    if (formatted == null || formatted.isEmpty) return Text(source, style: style);
-    return Text.rich(TextSpan(children: formatted), style: style);
+
+    // Detecta se a mensagem possui linhas de citação (> texto ou | texto)
+    final lines = source.split('\n');
+    final hasQuoteLines = lines.any((l) => l.trimLeft().startsWith('>') || l.trimLeft().startsWith('| '));
+
+    if (!hasQuoteLines) {
+      final spans = _parseInlineContent(context, source, style);
+      return Text.rich(TextSpan(children: spans), style: style);
+    }
+
+    // Agrupa linhas em blocos: texto comum vs bloco de citação estilizado
+    final widgets = <Widget>[];
+    final currentTextLines = <String>[];
+    final currentQuoteLines = <String>[];
+
+    void flushText() {
+      if (currentTextLines.isNotEmpty) {
+        final textBlock = currentTextLines.join('\n');
+        final spans = _parseInlineContent(context, textBlock, style);
+        widgets.add(Text.rich(TextSpan(children: spans), style: style));
+        currentTextLines.clear();
+      }
+    }
+
+    void flushQuote() {
+      if (currentQuoteLines.isNotEmpty) {
+        final quoteBody = currentQuoteLines.join('\n');
+        final quoteSpans = _parseInlineContent(
+          context,
+          quoteBody,
+          style.copyWith(
+            color: const Color(0xFFCBD5E1),
+            fontStyle: FontStyle.italic,
+          ),
+        );
+
+        widgets.add(
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(6),
+              border: const Border(
+                left: BorderSide(color: Color(0xFF38BDF8), width: 3.5),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.format_quote_rounded, size: 14, color: Color(0xFF38BDF8)),
+                    SizedBox(width: 4),
+                    Text(
+                      'Citação',
+                      style: TextStyle(
+                        color: Color(0xFF38BDF8),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                        fontStyle: FontStyle.normal,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text.rich(TextSpan(children: quoteSpans), style: style),
+              ],
+            ),
+          ),
+        );
+        currentQuoteLines.clear();
+      }
+    }
+
+    for (final line in lines) {
+      final trimmed = line.trimLeft();
+      if (trimmed.startsWith('>')) {
+        flushText();
+        var clean = trimmed.substring(1);
+        if (clean.startsWith(' ')) clean = clean.substring(1);
+        currentQuoteLines.add(clean);
+      } else if (trimmed.startsWith('| ')) {
+        flushText();
+        currentQuoteLines.add(trimmed.substring(2));
+      } else {
+        if (currentQuoteLines.isNotEmpty) {
+          flushQuote();
+        }
+        currentTextLines.add(line);
+      }
+    }
+    flushText();
+    flushQuote();
+
+    if (widgets.length == 1) {
+      return widgets.first;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: widgets,
+    );
   }
 }

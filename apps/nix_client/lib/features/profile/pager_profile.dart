@@ -18,6 +18,7 @@ import 'cultural_showcase.dart';
 import 'nix_user_avatar.dart';
 import 'pager_housing.dart';
 import 'pager_playlist_dialog.dart';
+import '../media/lastwave_music_player_screen.dart';
 import 'pager_wallpaper_layer.dart';
 import 'pager_appearance_dialog.dart';
 import 'pager_shortcuts.dart';
@@ -365,13 +366,7 @@ class _PagerProfileState extends State<PagerProfile> {
       case _PagerMenu.profile:
         _showProfileEditor(state);
       case _PagerMenu.playlist:
-        final activePlaylist = state.pagerPlaylist;
-        if (activePlaylist != null) {
-          await showDialog<void>(
-            context: context,
-            builder: (_) => PagerPlaylistDialog(playlist: activePlaylist, enableCatalog: true),
-          );
-        }
+        await LastWaveMusicPlayerScreen.open(context, state.musicPlayer);
       case _PagerMenu.wallpaper:
         _selectPage(2, state);
         _showContemplationSettings();
@@ -601,23 +596,18 @@ class _PagerProfileState extends State<PagerProfile> {
             ),
           ],
         ),
-        if (profile.currentActivity.trim().isNotEmpty)
+        if (profile.currentActivity.trim().isNotEmpty || state.musicPlayer.currentTrack != null)
           InkWell(
-            onTap: () async {
-              final activePlaylist = state.pagerPlaylist;
-              if (activePlaylist != null) {
-                await showDialog<void>(
-                  context: context,
-                  builder: (_) => PagerPlaylistDialog(playlist: activePlaylist, enableCatalog: true),
-                );
-              }
-            },
+            onTap: () => LastWaveMusicPlayerScreen.open(context, state.musicPlayer),
             borderRadius: BorderRadius.circular(4),
             child: Row(children: [
               Icon(Icons.music_note_outlined, color: state.settings.pagerLcdColor.inkColor, size: 15),
               const SizedBox(width: 6),
               Expanded(
-                  child: Text(profile.currentActivity,
+                  child: Text(
+                      state.musicPlayer.currentTrack != null
+                          ? '${state.musicPlayer.isPlaying ? "▶ " : "⏸ "}${state.musicPlayer.currentTrack!.name} · ${state.musicPlayer.currentTrack!.artist}'
+                          : profile.currentActivity,
                       style: const TextStyle(fontSize: 12),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis)),
@@ -675,6 +665,8 @@ class _PagerProfileState extends State<PagerProfile> {
         ),
         const SizedBox(height: 9),
         _PagerStatusStrip(gate: gate),
+        const SizedBox(height: 9),
+        _PagerMusicPlayerStrip(state: state),
         const SizedBox(height: 9),
         if (wideDisplay)
           Wrap(spacing: 16, runSpacing: 3, children: [
@@ -1155,6 +1147,145 @@ class _PagerStatusStrip extends StatelessWidget {
           ),
         ],
       );
+}
+
+class _PagerMusicPlayerStrip extends StatelessWidget {
+  final NixState state;
+
+  const _PagerMusicPlayerStrip({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final player = state.musicPlayer;
+    final ink = state.settings.pagerLcdColor.inkColor;
+
+    return ListenableBuilder(
+      listenable: player,
+      builder: (context, _) {
+        final track = player.currentTrack;
+        final isPlaying = player.isPlaying;
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: ink.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: ink.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    isPlaying ? Icons.music_note_rounded : Icons.pause_circle_outline_rounded,
+                    size: 16,
+                    color: ink,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          track != null ? track.name : 'Nenhuma música tocando',
+                          style: TextStyle(
+                            color: ink,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (track != null)
+                          Text(
+                            '${track.artist} · ${track.audioFormat}',
+                            style: TextStyle(
+                              color: ink.withValues(alpha: 0.75),
+                              fontSize: 10,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  InkWell(
+                    onTap: () => player.previous(),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(Icons.skip_previous_rounded, size: 16, color: ink),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => player.togglePlayPause(),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(
+                        isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                        size: 20,
+                        color: ink,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => player.next(),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(Icons.skip_next_rounded, size: 16, color: ink),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  InkWell(
+                    onTap: () => LastWaveMusicPlayerScreen.open(context, player),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Tooltip(
+                      message: 'Abrir Player LastWave',
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(Icons.open_in_new_rounded, size: 15, color: ink),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (track != null && player.duration.inSeconds > 0) ...[
+                const SizedBox(height: 5),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: (player.position.inMilliseconds / player.duration.inMilliseconds).clamp(0.0, 1.0),
+                    backgroundColor: ink.withValues(alpha: 0.15),
+                    valueColor: AlwaysStoppedAnimation(ink),
+                    minHeight: 3,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${player.position.inMinutes}:${(player.position.inSeconds % 60).toString().padLeft(2, '0')}',
+                      style: TextStyle(color: ink.withValues(alpha: 0.7), fontSize: 9),
+                    ),
+                    Text(
+                      '${player.duration.inMinutes}:${(player.duration.inSeconds % 60).toString().padLeft(2, '0')}',
+                      style: TextStyle(color: ink.withValues(alpha: 0.7), fontSize: 9),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _ContemplationScreen extends StatefulWidget {

@@ -119,7 +119,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
     if (work.kind == 'book' || work.kind == 'manga') {
       status = 'want_to_read';
     }
-    double rating = 80;
+    double rating = 0;
     final notesCtrl = TextEditingController();
 
     final confirmed = await showDialog<bool>(
@@ -221,7 +221,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      'Sua Avaliação: ${rating.toInt()}/100',
+                      rating > 0 ? 'Sua Avaliação: ${rating.toInt()}/100' : 'Sua Avaliação: Sem avaliação inicial',
                       style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
                     ),
                     Slider(
@@ -2172,7 +2172,7 @@ class _CatalogWorkDetailDialogState extends State<_CatalogWorkDetailDialog> {
                                     await nixState.saveCatalogWork(
                                       work,
                                       status: work.kind == 'book' || work.kind == 'manga' ? 'want_to_read' : 'want_to_watch',
-                                      rating: 80,
+                                      rating: 0,
                                       notes: '',
                                     );
                                     if (context.mounted) {

@@ -72,7 +72,8 @@ class _CulturalWorkSheetState extends State<CulturalWorkSheet> {
   Widget build(BuildContext context) {
     final state = context.watch<NixState>();
     final isInAcervo = state.userProfile.culturalItems.any((i) => i.id == widget.item.id);
-    final synopsis = widget.item.synopsis?.trim() ?? '';
+    final rawSynopsis = widget.item.synopsis?.trim() ?? '';
+    final synopsis = rawSynopsis.contains('Metadado obtido sob consentimento') ? '' : rawSynopsis;
     final isBook = widget.item.category == CulturalCategory.books;
     final hasImage = widget.item.localImagePath != null &&
         File(widget.item.localImagePath!).existsSync();
