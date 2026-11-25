@@ -378,7 +378,7 @@ class WorkShareCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        key: Key('view_passport_button_${data.id}'),
+                        key: Key('view_cultural_button_${data.id}'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.white,
                           side: BorderSide(color: Colors.white.withValues(alpha: 0.25)),

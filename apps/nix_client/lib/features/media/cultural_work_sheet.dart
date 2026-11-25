@@ -165,7 +165,7 @@ class _CulturalWorkSheetState extends State<CulturalWorkSheet> {
                   // Capa da obra em destaque (2.5D ou disco ou pôster)
                   Center(
                     child: Hero(
-                      tag: 'passport_cover_${widget.item.id}',
+                      tag: 'cultural_cover_${widget.item.id}',
                       child: CulturalCoverArt(
                         item: widget.item,
                         width: widget.isSidebar ? 140 : 160,
@@ -608,7 +608,7 @@ class _CulturalWorkSheetState extends State<CulturalWorkSheet> {
     required VoidCallback onTap,
   }) {
     return InkWell(
-      key: Key('passport_status_chip_${status.name}'),
+      key: Key('cultural_status_chip_${status.name}'),
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(

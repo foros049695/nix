@@ -2702,22 +2702,7 @@ class NixState extends ChangeNotifier {
         isSavedMessages: true,
         isPinned: true,
         unreadCount: 0,
-        messages: [
-          Message(
-            id: 'saved_welcome',
-            channelId: 'dm_saved_messages',
-            senderName: _userProfile.effectiveDisplayName,
-            senderFingerprint: _securityContext.myFingerprint,
-            isMe: true,
-            isPinned: true,
-            text: 'Bem-vindo ao seu cofre de Mensagens Salvas do Projeto Nix.\n\n'
-                '• Todas as notas e arquivos salvos aqui são cifrados localmente no banco SQLCipher.\n'
-                '• Roteamento Tor Onion v3 ativo e fail-closed por padrão.\n'
-                '• Suas mensagens não passam por servidores nem coletam telemetria.',
-            timestamp: DateTime.now().toUtc(),
-            attachments: const [],
-          ),
-        ],
+        messages: const [],
       ),
     ];
     _selectedDm = _directMessages.first;
@@ -5063,7 +5048,7 @@ class NixState extends ChangeNotifier {
     if (status == 'favorite') tracking['favorite'] = true;
     if (notes.isNotEmpty) tracking['privateNotes'] = notes;
     await saveCulturalItem((existing ?? draft).copyWith(
-      rating: (rating / 10).toStringAsFixed(1),
+      rating: rating > 0 ? (rating / 10).toStringAsFixed(1) : null,
       tracking: CulturalTracking.fromJson(tracking),
     ));
   }

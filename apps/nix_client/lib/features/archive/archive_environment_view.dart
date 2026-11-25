@@ -307,10 +307,14 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
           _scheduleAutoSave();
         }),
         _formatAction('Citação', Icons.format_quote, () {
-          _contentCtrl.toggleBlockquote();
+          if (_contentCtrl.selection.isValid && !_contentCtrl.selection.isCollapsed) {
+            _contentCtrl.toggleQuote();
+          } else {
+            _contentCtrl.toggleBlockquote();
+          }
           _editorFocus.requestFocus();
           _scheduleAutoSave();
-        }),
+        }, isActive: _contentCtrl.activeQuote),
         _formatAction('Lista', Icons.format_list_bulleted, () {
           _contentCtrl.toggleBulletList();
           _editorFocus.requestFocus();

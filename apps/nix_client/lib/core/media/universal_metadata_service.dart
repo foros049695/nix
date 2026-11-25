@@ -177,8 +177,11 @@ class UniversalMetadataService {
         return await NixFailClosedHttpOverrides.runWithExplicitClearnetDownload(action: () async {
           final client = HttpClient();
           client.connectionTimeout = const Duration(seconds: 15);
+          client.autoUncompress = true;
           try {
             final req = await client.getUrl(uri);
+            req.followRedirects = true;
+            req.maxRedirects = 5;
             reqHeaders.forEach((k, v) => req.headers.set(k, v));
             final res = await req.close().timeout(const Duration(seconds: 25));
             if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -211,6 +214,7 @@ class UniversalMetadataService {
         headers: reqHeaders,
         requireOnionV3: uri.host.endsWith('.onion'),
         timeout: const Duration(seconds: 25),
+        followRedirects: true,
       );
       if (res.statusCode >= 200 && res.statusCode < 300) {
         return res.bodyBytes;

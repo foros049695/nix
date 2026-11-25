@@ -27,12 +27,12 @@ import 'qr_code_painter.dart';
 
 class PagerProfile extends StatefulWidget {
   final VoidCallback? onOpenSettings;
-  final bool showCulturalPassport;
+  final bool showCulturalShowcase;
 
   const PagerProfile({
     super.key,
     this.onOpenSettings,
-    this.showCulturalPassport = true,
+    this.showCulturalShowcase = true,
   });
 
   @override
@@ -493,7 +493,7 @@ class _PagerProfileState extends State<PagerProfile> {
                   ),
                 ),
               ),
-              if (widget.showCulturalPassport) ...[
+              if (widget.showCulturalShowcase) ...[
                 const SizedBox(height: 27),
                 const CulturalShowcase(),
               ],

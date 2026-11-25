@@ -38,12 +38,11 @@ enum ChatInlineFormat {
       return null;
     }
     if (this == ChatInlineFormat.quote) {
-      final lineStart = value.text.lastIndexOf('\n', start - 1) + 1;
       return value.copyWith(
-        text: value.text.replaceRange(lineStart, lineStart, '> '),
+        text: value.text.replaceRange(start, end, '<q>$body</q>'),
         selection: TextSelection(
-          baseOffset: selection.baseOffset + 2,
-          extentOffset: selection.extentOffset + 2,
+          baseOffset: start + 3,
+          extentOffset: end + 3,
         ),
         composing: TextRange.empty,
       );
@@ -116,7 +115,7 @@ Widget buildChatFormatMenu(BuildContext context, EditableTextState editable) {
         ContextMenuButtonItem(
           label: 'Citação',
           onPressed: () {
-            controller.toggleBlockquote();
+            controller.toggleQuote();
             editable.hideToolbar();
           },
         ),
@@ -216,14 +215,27 @@ class _ChatSpoilerTextState extends State<ChatSpoilerText> {
 }
 
 class UnderlineSyntax extends md.InlineSyntax {
-  UnderlineSyntax() : super(r'<(?:u|ins)>(.*?)</(?:u|ins)>', caseSensitive: false);
+  UnderlineSyntax() : super(r'<(?:u|ins)(?:\s+[^>]*)?>([\s\S]*?)</(?:u|ins)>', caseSensitive: false);
 
   @override
   bool onMatch(md.InlineParser parser, Match match) {
     final inner = match.group(1)!;
-    final children = md.Document(extensionSet: md.ExtensionSet.gitHubFlavored, inlineSyntaxes: [UnderlineSyntax()])
+    final children = md.Document(extensionSet: md.ExtensionSet.gitHubFlavored, inlineSyntaxes: [UnderlineSyntax(), QuoteSyntax()])
         .parseInline(inner);
     parser.addNode(md.Element('u', children));
+    return true;
+  }
+}
+
+class QuoteSyntax extends md.InlineSyntax {
+  QuoteSyntax() : super(r'<(?:q|quote)(?:\s+[^>]*)?>([\s\S]*?)</(?:q|quote)>', caseSensitive: false);
+
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final inner = match.group(1)!;
+    final children = md.Document(extensionSet: md.ExtensionSet.gitHubFlavored, inlineSyntaxes: [UnderlineSyntax(), QuoteSyntax()])
+        .parseInline(inner);
+    parser.addNode(md.Element('q', children));
     return true;
   }
 }
@@ -363,10 +375,19 @@ class ChatInlineText extends StatelessWidget {
       final elemStyle = switch (node.tag) {
         'strong' => const TextStyle(fontWeight: FontWeight.bold),
         'em' => const TextStyle(fontStyle: FontStyle.italic),
-        'u' || 'ins' => const TextStyle(decoration: TextDecoration.underline),
+        'u' || 'ins' => const TextStyle(
+            decoration: TextDecoration.underline,
+            decorationColor: Color(0xFF64B5F6),
+            decorationThickness: 1.5,
+          ),
         'del' => const TextStyle(decoration: TextDecoration.lineThrough),
         'code' => const TextStyle(fontFamily: 'monospace', backgroundColor: Color(0x33A855F7), color: Color(0xFFF472B6)),
         'blockquote' => const TextStyle(fontStyle: FontStyle.italic, color: Color(0xFF94A3B8)),
+        'q' || 'quote' => const TextStyle(
+            fontStyle: FontStyle.italic,
+            color: Color(0xFF38BDF8),
+            backgroundColor: Color(0x2238BDF8),
+          ),
         _ => null,
       };
 
@@ -387,7 +408,7 @@ class ChatInlineText extends StatelessWidget {
   static List<InlineSpan> _parseInlineContent(BuildContext context, String content, TextStyle baseStyle) {
     final doc = md.Document(
       extensionSet: md.ExtensionSet.gitHubFlavored,
-      inlineSyntaxes: [UnderlineSyntax()],
+      inlineSyntaxes: [UnderlineSyntax(), QuoteSyntax()],
       encodeHtml: false,
     );
     final nodes = doc.parseInline(content);
@@ -402,7 +423,7 @@ class ChatInlineText extends StatelessWidget {
 
     final doc = md.Document(
       extensionSet: md.ExtensionSet.gitHubFlavored,
-      inlineSyntaxes: [UnderlineSyntax()],
+      inlineSyntaxes: [UnderlineSyntax(), QuoteSyntax()],
       encodeHtml: false,
     );
     final probeNodes = doc.parseInline(source);

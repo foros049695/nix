@@ -267,7 +267,7 @@ class CollectionImporter {
         title: title,
         creatorOrYear: totalEpisodes != null && totalEpisodes > 0 ? '$totalEpisodes eps' : 'Anime',
         category: CulturalCategory.anime,
-        rating: myScore.isNotEmpty && myScore != '0' ? myScore : '8.5',
+        rating: (myScore.isNotEmpty && myScore != '0') ? myScore : '',
         stage: stage,
         current: episodesWatched,
         total: totalEpisodes,
@@ -334,7 +334,7 @@ class CollectionImporter {
       title: title,
       creatorOrYear: creatorOrYear.isNotEmpty ? creatorOrYear : 'Livro',
       category: CulturalCategory.books,
-      rating: normalizedRating != '0.0' ? normalizedRating : '8.0',
+      rating: (normalizedRating != '0.0' && normalizedRating.isNotEmpty) ? normalizedRating : '',
       stage: stage,
       total: pages,
       review: row['my review'] ?? '',
@@ -347,7 +347,7 @@ class CollectionImporter {
     if (title.isEmpty) return null;
 
     final eps = int.tryParse(row['my_watched_episodes'] ?? '');
-    final rating = row['my_score'] ?? '8.0';
+    final rating = row['my_score'] ?? '';
     final status = (row['my_status'] ?? '').toLowerCase();
 
     final stage = status.contains('watching')
@@ -364,7 +364,7 @@ class CollectionImporter {
       title: title,
       creatorOrYear: 'Anime',
       category: CulturalCategory.anime,
-      rating: rating != '0' ? rating : '8.0',
+      rating: (rating != '0' && rating.isNotEmpty) ? rating : '',
       stage: stage,
       current: eps,
       isPotentialDuplicate: isDup,
@@ -417,7 +417,7 @@ class CollectionImporter {
       title: title,
       creatorOrYear: creatorOrYear.isNotEmpty ? creatorOrYear : category.label,
       category: category,
-      rating: ratingVal.isNotEmpty ? ratingVal : '8.5',
+      rating: (ratingVal.isNotEmpty && ratingVal != '0' && ratingVal != '0.0') ? ratingVal : '',
       stage: CulturalStage.finished,
       review: reviewVal,
       isPotentialDuplicate: isDup,

@@ -287,7 +287,7 @@ class CulturalItem {
           ? CulturalTracking.fromJson(json['tracking'] as Map<String, dynamic>)
           : const CulturalTracking(),
       category: cat,
-      rating: json['rating'] as String? ?? '9.5',
+      rating: json['rating'] as String? ?? '',
       monogram: json['monogram'] as String? ?? 'NX',
       toneShade: json['toneShade'] as int? ?? 42,
       isFeatured: json['isFeatured'] as bool? ?? false,

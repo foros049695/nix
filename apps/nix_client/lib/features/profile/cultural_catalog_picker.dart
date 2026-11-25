@@ -147,7 +147,7 @@ class _CulturalCatalogPickerState extends State<_CulturalCatalogPicker> {
           height: MediaQuery.sizeOf(context).height * .45,
           child: Column(children: [
             TextField(
-              key: const Key('passport_catalog_query'),
+              key: const Key('cultural_catalog_query'),
               textInputAction: TextInputAction.search,
               onChanged: _search,
               onSubmitted: _search,

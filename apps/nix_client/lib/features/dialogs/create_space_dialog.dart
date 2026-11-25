@@ -43,8 +43,7 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
                 value: _format,
                 decoration: const InputDecoration(labelText: 'Formato do espaço'),
                 items: const [
-                  DropdownMenuItem(value: 'conventional', child: Text('Grupo convencional')),
-                  DropdownMenuItem(value: 'topics', child: Text('Grupo com tópicos')),
+                  DropdownMenuItem(value: 'conventional', child: Text('Grupo soberano')),
                   DropdownMenuItem(value: 'announcement', child: Text('Canal de transmissão')),
                 ],
                 onChanged: (value) => setState(() => _format = value ?? 'conventional'),

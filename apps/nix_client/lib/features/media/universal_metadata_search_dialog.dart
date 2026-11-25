@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -434,21 +435,13 @@ class _UniversalMetadataSearchDialogState
                                     child: Row(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        // Miniatura da Capa
-                                        ClipRRect(
-                                          borderRadius: NixTokens.borderSm,
-                                          child: Container(
-                                            width: 54,
-                                            height: 74,
-                                            color: NixColors.surfaceElevated,
-                                            child: _SearchResultCover(
-                                              item: item,
-                                              service: _service,
-                                              allowClearnet: isClearnet,
-                                              isTorReady: isTorReady,
-                                              socksPort: nixState.embeddedTor.socksPort > 0 ? nixState.embeddedTor.socksPort : 9050,
-                                            ),
-                                          ),
+                                        // Miniatura da Capa Cultural Distinta (Vinil, Livro 2.5D ou Pôster)
+                                        _SearchResultCover(
+                                          item: item,
+                                          service: _service,
+                                          allowClearnet: isClearnet,
+                                          isTorReady: isTorReady,
+                                          socksPort: nixState.embeddedTor.socksPort > 0 ? nixState.embeddedTor.socksPort : 9050,
                                         ),
                                         const SizedBox(width: 12),
 
@@ -643,16 +636,224 @@ class _SearchResultCoverState extends State<_SearchResultCover> {
 
   @override
   Widget build(BuildContext context) {
-    if (_bytes != null) {
-      return Image.memory(_bytes!, fit: BoxFit.cover);
+    final isMusic = widget.item.kind == 'track' || widget.item.kind == 'album';
+    final isBook = widget.item.kind == 'book';
+    final isManga = widget.item.kind == 'manga';
+
+    if (isMusic) {
+      // Disco de vinil soberano 1:1 circular
+      return Container(
+        width: 58,
+        height: 58,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.55),
+              blurRadius: 6,
+              offset: const Offset(0, 3),
+            ),
+          ],
+          border: Border.all(color: Colors.white70, width: 1.5),
+        ),
+        child: ClipOval(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (_bytes != null)
+                Image.memory(_bytes!, fit: BoxFit.cover)
+              else if (_isLoading)
+                Container(
+                  color: const Color(0xFF16151F),
+                  child: const Center(
+                    child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.5)),
+                  ),
+                )
+              else
+                Container(
+                  color: const Color(0xFF16151F),
+                  child: Center(
+                    child: Text(
+                      widget.item.title.isNotEmpty
+                          ? widget.item.title.substring(0, math.min(2, widget.item.title.length)).toUpperCase()
+                          : '♪',
+                      style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                  ),
+                ),
+              const CustomPaint(painter: _MiniSearchVinylPainter()),
+              Center(
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF0F0E17),
+                    border: Border.all(color: Colors.white60, width: 1.0),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
-    if (_isLoading) {
-      return const Center(child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.5)));
+
+    if (isBook || isManga) {
+      // 2.5D Livro / Volume Manga com lombada física e páginas
+      return SizedBox(
+        width: 54,
+        height: 76,
+        child: Stack(
+          children: [
+            Positioned(
+              right: 0,
+              top: 2,
+              bottom: 2,
+              width: 5,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5DDD0),
+                  borderRadius: const BorderRadius.horizontal(right: Radius.circular(2)),
+                  border: Border.all(color: const Color(0xFFB5A998), width: 0.5),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 4,
+              top: 0,
+              bottom: 0,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(2),
+                    bottomLeft: const Radius.circular(2),
+                    topRight: Radius.circular(isManga ? 2 : 3),
+                    bottomRight: Radius.circular(isManga ? 2 : 3),
+                  ),
+                  border: Border.all(color: Colors.deepPurple.withValues(alpha: 0.4)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      blurRadius: 4,
+                      offset: const Offset(1, 2),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (_bytes != null)
+                        Image.memory(_bytes!, fit: BoxFit.cover)
+                      else if (_isLoading)
+                        const Center(
+                          child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.5)),
+                        )
+                      else
+                        Center(
+                          child: Icon(
+                            isManga ? Icons.menu_book_rounded : Icons.auto_stories_rounded,
+                            size: 24,
+                            color: Colors.white54,
+                          ),
+                        ),
+                      // Vinco da lombada
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: 3.5,
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Color(0x60000000), Colors.transparent],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
     }
-    return Icon(
-      _UniversalMetadataSearchDialogState.kindIcon(widget.item.kind),
-      size: 28,
-      color: NixColors.textSecondary,
+
+    // Pôster Cinematográfico Vertical 2:3 (Filmes, Séries, Anime)
+    return Container(
+      width: 54,
+      height: 76,
+      decoration: BoxDecoration(
+        color: NixColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: Colors.white12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (_bytes != null)
+              Image.memory(_bytes!, fit: BoxFit.cover)
+            else if (_isLoading)
+              const Center(
+                child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.5)),
+              )
+            else
+              Center(
+                child: Icon(
+                  _UniversalMetadataSearchDialogState.kindIcon(widget.item.kind),
+                  size: 26,
+                  color: NixColors.textSecondary,
+                ),
+              ),
+            // Brilho acetinado diagonal
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0x18FFFFFF), Colors.transparent],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
+}
+
+class _MiniSearchVinylPainter extends CustomPainter {
+  const _MiniSearchVinylPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+    final groovePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+
+    for (final factor in [0.45, 0.60, 0.75, 0.88]) {
+      canvas.drawCircle(center, radius * factor, groovePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

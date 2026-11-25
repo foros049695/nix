@@ -1993,15 +1993,28 @@ class _CatalogWorkDetailDialogState extends State<_CatalogWorkDetailDialog> {
                           borderRadius: NixTokens.borderSm,
                           border: Border.all(color: NixColors.surfaceBorder),
                         ),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.info_outline_rounded, size: 16, color: NixColors.textMuted),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Apenas metadados indexados. Para reprodução nesta versão, adicione e vincule um arquivo de áudio (.wav) na playlist do Pager.',
-                                style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
-                              ),
+                            Row(
+                              children: [
+                                Icon(Icons.info_outline_rounded, size: 16, color: NixColors.textMuted),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Metadados indexados. Para reproduzir no Player do Pager, vincule ou abra o player.',
+                                    style: TextStyle(color: NixColors.textMuted, fontSize: 11.5),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.queue_music_rounded, size: 16),
+                              label: const Text('Abrir Player de Música do Pager'),
+                              onPressed: () {
+                                LastWaveMusicPlayerScreen.open(context, context.read<NixState>().musicPlayer);
+                              },
                             ),
                           ],
                         ),
@@ -2234,7 +2247,7 @@ class _CatalogThumbnail extends StatelessWidget {
     final fileExists = file != null && file.existsSync();
 
     if (isMusic) {
-      // Disco de vinil 1:1 circular completo estilo PassportDex
+      // Disco de vinil 1:1 circular soberano do Acervo
       return Container(
         width: 58,
         height: 58,

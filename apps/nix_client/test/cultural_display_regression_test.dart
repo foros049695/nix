@@ -101,10 +101,10 @@ void main() {
           home:
               Scaffold(body: SingleChildScrollView(child: CulturalShowcase()))),
     ));
-    await tester.tap(find.byKey(const Key('passport_search_catalog')));
+    await tester.tap(find.byKey(const Key('cultural_search_catalog')));
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.byKey(const Key('passport_catalog_query')), 'Duna');
+        find.byKey(const Key('cultural_catalog_query')), 'Duna');
     await tester.pump(const Duration(milliseconds: 240));
     await tester.pumpAndSettle();
     expect(db.lastQuery, 'Duna');

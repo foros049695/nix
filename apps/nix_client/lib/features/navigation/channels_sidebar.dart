@@ -414,23 +414,24 @@ class _CategoryGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showHeader = onAddChannel != null && categoryName.trim().isNotEmpty;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    categoryName,
-                    style: NixTokens.labelUppercase(),
-                    overflow: TextOverflow.ellipsis,
+          if (showHeader)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      categoryName,
+                      style: NixTokens.labelUppercase(),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-                if (onAddChannel != null)
                   InkWell(
                     onTap: onAddChannel,
                     borderRadius: BorderRadius.circular(4),
@@ -440,9 +441,9 @@ class _CategoryGroup extends StatelessWidget {
                           Icon(Icons.add, size: 14, color: NixColors.textMuted),
                     ),
                   ),
-              ],
+                ],
+              ),
             ),
-          ),
           const SizedBox(height: 2),
           ...channels.map((ch) {
             final isSelected = ch.id == currentChannelId;

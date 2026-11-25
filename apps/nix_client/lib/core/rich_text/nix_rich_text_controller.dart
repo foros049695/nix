@@ -28,6 +28,7 @@ class RichInlineSpan {
   bool strikethrough;
   bool monospace;
   bool spoiler;
+  bool quote;
   String? linkUrl;
 
   RichInlineSpan({
@@ -39,11 +40,12 @@ class RichInlineSpan {
     this.strikethrough = false,
     this.monospace = false,
     this.spoiler = false,
+    this.quote = false,
     this.linkUrl,
   });
 
   bool get hasAnyStyle =>
-      bold || italic || underline || strikethrough || monospace || spoiler || (linkUrl != null && linkUrl!.isNotEmpty);
+      bold || italic || underline || strikethrough || monospace || spoiler || quote || (linkUrl != null && linkUrl!.isNotEmpty);
 
   RichInlineSpan copyWith({
     int? start,
@@ -54,6 +56,7 @@ class RichInlineSpan {
     bool? strikethrough,
     bool? monospace,
     bool? spoiler,
+    bool? quote,
     String? linkUrl,
     bool clearLink = false,
   }) {
@@ -66,6 +69,7 @@ class RichInlineSpan {
       strikethrough: strikethrough ?? this.strikethrough,
       monospace: monospace ?? this.monospace,
       spoiler: spoiler ?? this.spoiler,
+      quote: quote ?? this.quote,
       linkUrl: clearLink ? null : (linkUrl ?? this.linkUrl),
     );
   }
@@ -107,6 +111,7 @@ class NixRichTextController extends TextEditingController {
   bool activeStrikethrough = false;
   bool activeMonospace = false;
   bool activeSpoiler = false;
+  bool activeQuote = false;
   String? activeLinkUrl;
 
   String _lastText = '';
@@ -186,6 +191,7 @@ class NixRichTextController extends TextEditingController {
           strikethrough: activeStrikethrough,
           monospace: activeMonospace,
           spoiler: activeSpoiler,
+          quote: activeQuote,
           linkUrl: activeLinkUrl,
         ));
       }
@@ -233,6 +239,7 @@ class NixRichTextController extends TextEditingController {
       activeStrikethrough ||
       activeMonospace ||
       activeSpoiler ||
+      activeQuote ||
       (activeLinkUrl != null && activeLinkUrl!.isNotEmpty);
 
   void _updateActiveStylesFromCursor() {
@@ -245,7 +252,7 @@ class NixRichTextController extends TextEditingController {
 
     // Herda estilos do caractere imediatamente anterior
     final prevPos = pos - 1;
-    bool b = false, it = false, u = false, st = false, mono = false, sp = false;
+    bool b = false, it = false, u = false, st = false, mono = false, sp = false, q = false;
     String? lk;
 
     for (final s in _spans) {
@@ -256,6 +263,7 @@ class NixRichTextController extends TextEditingController {
         if (s.strikethrough) st = true;
         if (s.monospace) mono = true;
         if (s.spoiler) sp = true;
+        if (s.quote) q = true;
         if (s.linkUrl != null) lk = s.linkUrl;
       }
     }
@@ -265,6 +273,7 @@ class NixRichTextController extends TextEditingController {
     activeStrikethrough = st;
     activeMonospace = mono;
     activeSpoiler = sp;
+    activeQuote = q;
     activeLinkUrl = lk;
   }
 
@@ -299,6 +308,10 @@ class NixRichTextController extends TextEditingController {
 
   void toggleSpoiler() {
     _toggleInlineStyle((s) => s.spoiler, (s, v) => s.spoiler = v, (v) => activeSpoiler = v, activeSpoiler);
+  }
+
+  void toggleQuote() {
+    _toggleInlineStyle((s) => s.quote, (s, v) => s.quote = v, (v) => activeQuote = v, activeQuote);
   }
 
   void setLink(String? url) {
@@ -638,6 +651,7 @@ class NixRichTextController extends TextEditingController {
           bool isStrike = false;
           bool isMono = false;
           bool isSpoiler = false;
+          bool isQuote = false;
           String? linkUrl;
 
           int nextBoundary = lineEnd;
@@ -650,6 +664,7 @@ class NixRichTextController extends TextEditingController {
               if (s.strikethrough) isStrike = true;
               if (s.monospace) isMono = true;
               if (s.spoiler) isSpoiler = true;
+              if (s.quote) isQuote = true;
               if (s.linkUrl != null) linkUrl = s.linkUrl;
               nextBoundary = min<int>(nextBoundary, s.end);
             } else if (s.start > currentPos) {
@@ -661,6 +676,13 @@ class NixRichTextController extends TextEditingController {
           final segmentText = text.substring(currentPos, currentPos + segmentLength);
 
           TextStyle segStyle = lineStyle;
+          if (lineText.trim().startsWith('|') && lineText.trim().endsWith('|')) {
+            segStyle = segStyle.copyWith(
+              fontFamily: 'monospace',
+              color: const Color(0xFFE2E8F0),
+              backgroundColor: const Color(0x1A64748B),
+            );
+          }
           if (isBold) {
             segStyle = segStyle.copyWith(fontWeight: FontWeight.bold);
           }
@@ -668,11 +690,24 @@ class NixRichTextController extends TextEditingController {
             segStyle = segStyle.copyWith(fontStyle: FontStyle.italic);
           }
           if (isUnderline && isStrike) {
-            segStyle = segStyle.copyWith(decoration: TextDecoration.combine([TextDecoration.underline, TextDecoration.lineThrough]));
+            segStyle = segStyle.copyWith(
+              decoration: TextDecoration.combine([TextDecoration.underline, TextDecoration.lineThrough]),
+              decorationColor: const Color(0xFF64B5F6),
+            );
           } else if (isUnderline) {
-            segStyle = segStyle.copyWith(decoration: TextDecoration.underline);
+            segStyle = segStyle.copyWith(
+              decoration: TextDecoration.underline,
+              decorationColor: const Color(0xFF64B5F6),
+            );
           } else if (isStrike) {
             segStyle = segStyle.copyWith(decoration: TextDecoration.lineThrough);
+          }
+          if (isQuote) {
+            segStyle = segStyle.copyWith(
+              fontStyle: FontStyle.italic,
+              color: const Color(0xFF38BDF8),
+              backgroundColor: const Color(0x2238BDF8),
+            );
           }
           if (isMono) {
             segStyle = segStyle.copyWith(
@@ -758,6 +793,7 @@ class NixRichTextController extends TextEditingController {
           bool isStrike = false;
           bool isMono = false;
           bool isSpoiler = false;
+          bool isQuote = false;
           String? linkUrl;
 
           int nextBoundary = lineEnd;
@@ -770,6 +806,7 @@ class NixRichTextController extends TextEditingController {
               if (s.strikethrough) isStrike = true;
               if (s.monospace) isMono = true;
               if (s.spoiler) isSpoiler = true;
+              if (s.quote) isQuote = true;
               if (s.linkUrl != null) linkUrl = s.linkUrl;
               nextBoundary = min<int>(nextBoundary, s.end);
             } else if (s.start > currentPos) {
@@ -794,6 +831,7 @@ class NixRichTextController extends TextEditingController {
           if (isItalic) seg = '*$seg*';
           if (isUnderline) seg = '<u>$seg</u>';
           if (isStrike) seg = '~~$seg~~';
+          if (isQuote) seg = '<q>$seg</q>';
           if (isMono) seg = '`$seg`';
           if (isSpoiler) seg = '||$seg||';
           if (linkUrl != null && linkUrl.isNotEmpty) seg = '[$seg]($linkUrl)';
@@ -829,8 +867,7 @@ class NixRichTextController extends TextEditingController {
     }
 
     final rawLines = markdown.split('\n');
-    final plainLines = <String>[];
-    var globalCharCount = 0;
+    final blockCleanedLines = <String>[];
 
     for (var i = 0; i < rawLines.length; i++) {
       var raw = rawLines[i];
@@ -880,21 +917,20 @@ class NixRichTextController extends TextEditingController {
       }
 
       _lineBlocks.add(RichLineBlock(type: blockType, isChecked: isChecked));
-
-      // Parsing de formatações inline nesta linha
-      final parsed = _parseInlineMarkdown(raw, globalCharCount);
-      plainLines.add(parsed.plainText);
-      _spans.addAll(parsed.spans);
-
-      globalCharCount += parsed.plainText.length + 1; // +1 para \n
+      blockCleanedLines.add(raw);
     }
 
-    final newPlainText = plainLines.join('\n');
+    final fullContent = blockCleanedLines.join('\n');
+    final parsed = _parseInlineMarkdown(fullContent, 0);
+    _spans.addAll(parsed.spans);
+
+    final newPlainText = parsed.plainText;
     _lastText = newPlainText;
     value = TextEditingValue(
       text: newPlainText,
       selection: TextSelection.collapsed(offset: newPlainText.length),
     );
+    _recalculateLineBlocks();
     _normalizeSpans();
     notifyListeners();
   }
@@ -918,6 +954,10 @@ class NixRichTextController extends TextEditingController {
           spans.addAll(sub.spans);
           idx = closeIdx + 2;
           continue;
+        } else {
+          // Descarta marcador residual sem fechamento
+          idx += 2;
+          continue;
         }
       }
 
@@ -938,7 +978,39 @@ class NixRichTextController extends TextEditingController {
           spans.addAll(sub.spans);
           idx += closeIdx + closeTag.length;
           continue;
+        } else {
+          idx += openLen;
+          continue;
         }
+      }
+
+      // Citação inline: <q>texto</q> ou <quote>texto</quote>
+      if (lowerTail.startsWith('<q>') || lowerTail.startsWith('<quote>')) {
+        final tag = lowerTail.startsWith('<q>') ? 'q' : 'quote';
+        final openLen = tag == 'q' ? 3 : 7;
+        final closeTag = '</$tag>';
+        final closeIdx = lowerTail.indexOf(closeTag, openLen);
+        if (closeIdx != -1) {
+          final content = input.substring(idx + openLen, idx + closeIdx);
+          final s = startOffset + buffer.length;
+          final sub = _parseInlineMarkdown(content, s);
+          buffer.write(sub.plainText);
+          final e = startOffset + buffer.length;
+          spans.add(RichInlineSpan(start: s, end: e, quote: true));
+          spans.addAll(sub.spans);
+          idx += closeIdx + closeTag.length;
+          continue;
+        } else {
+          idx += openLen;
+          continue;
+        }
+      }
+
+      // Descarta fechamentos órfãos de tags
+      if (lowerTail.startsWith('</u>') || lowerTail.startsWith('</ins>') || lowerTail.startsWith('</q>') || lowerTail.startsWith('</quote>')) {
+        final skipLen = (lowerTail.startsWith('</u>') || lowerTail.startsWith('</q>')) ? 4 : (lowerTail.startsWith('</ins>') ? 6 : 8);
+        idx += skipLen;
+        continue;
       }
 
       // Tachado: ~~texto~~
@@ -953,6 +1025,9 @@ class NixRichTextController extends TextEditingController {
           spans.add(RichInlineSpan(start: s, end: e, strikethrough: true));
           spans.addAll(sub.spans);
           idx = closeIdx + 2;
+          continue;
+        } else {
+          idx += 2;
           continue;
         }
       }

@@ -463,6 +463,8 @@ class Socks5Connector {
     bool requireOnionV3 = true,
     SecurityContext? tlsContext,
     bool Function(X509Certificate)? onBadCertificate,
+    bool followRedirects = true,
+    int redirectCount = 0,
   }) async {
     if (uri.scheme != 'http' && uri.scheme != 'https') {
       throw UnsupportedTransportSchemeException(uri.scheme);
@@ -602,16 +604,40 @@ class Socks5Connector {
       final parts = statusLine.split(' ');
       final statusCode = parts.length >= 2 ? (int.tryParse(parts[1]) ?? 500) : 500;
 
+      String? redirectLocation;
       bool isChunked = false;
       for (final line in headerLines.skip(1)) {
         final colon = line.indexOf(':');
         if (colon != -1) {
           final key = line.substring(0, colon).trim().toLowerCase();
-          final val = line.substring(colon + 1).trim().toLowerCase();
-          if (key == 'transfer-encoding' && val.contains('chunked')) {
+          final val = line.substring(colon + 1).trim();
+          if (key == 'transfer-encoding' && val.toLowerCase().contains('chunked')) {
             isChunked = true;
+          } else if (key == 'location') {
+            redirectLocation = val;
           }
         }
+      }
+
+      if (followRedirects &&
+          redirectCount < 5 &&
+          redirectLocation != null &&
+          redirectLocation.isNotEmpty &&
+          (statusCode == 301 || statusCode == 302 || statusCode == 303 || statusCode == 307 || statusCode == 308)) {
+        final redirectUri = uri.resolve(redirectLocation);
+        return httpRequest(
+          (statusCode == 303) ? 'GET' : method,
+          redirectUri,
+          headers: headers,
+          body: (statusCode == 303) ? null : body,
+          timeout: timeout,
+          maxResponseBytes: maxResponseBytes,
+          requireOnionV3: redirectUri.host.endsWith('.onion'),
+          tlsContext: tlsContext,
+          onBadCertificate: onBadCertificate,
+          followRedirects: true,
+          redirectCount: redirectCount + 1,
+        );
       }
 
       final payload = isChunked ? RelayClient._decodeChunked(bodyPayloadBytes) : Uint8List.fromList(bodyPayloadBytes);

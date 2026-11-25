@@ -57,7 +57,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
     }).toList();
 
     return NixGlass(
-      key: const Key('passport_glass'),
+      key: const Key('cultural_glass'),
       radius: 26,
       mirror: true,
       child: Padding(
@@ -69,7 +69,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
             const SizedBox(height: 12),
             Wrap(spacing: 7, runSpacing: 6, children: [
               FilledButton.icon(
-                key: const Key('passport_search_catalog'),
+                key: const Key('cultural_search_catalog'),
                 onPressed: _importCatalogWork,
                 icon: const Icon(Icons.search_rounded, size: 18),
                 label: const Text('Buscar no catálogo'),
@@ -576,7 +576,7 @@ class _CulturalItemEditorState extends State<_CulturalItemEditor> {
             ? 'Acervo Pessoal'
             : _creator.text.trim(),
         category: _category,
-        rating: _rating.text.trim().isEmpty ? '9.5' : _rating.text.trim(),
+        rating: _rating.text.trim().isEmpty ? null : _rating.text.trim(),
         monogram: title.characters.take(2).toString().toUpperCase(),
         localImagePath: path,
         clearLocalImage: path == null,
