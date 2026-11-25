@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'pager_playlist.dart';
 
 /// Configurações do processador de sinal digital (DSP) e AutoEQ do Nix.
@@ -72,8 +73,13 @@ class NixMusicPlayerController extends ChangeNotifier {
   double _volume = 0.85;
 
   Duration _position = Duration.zero;
-  final Duration _duration = const Duration(minutes: 3, seconds: 20);
   Timer? _playbackTicker;
+  Duration? _backendDuration;
+  int _session = 0;
+  bool _androidPrepared = false;
+  bool _pollingAndroid = false;
+  String? _playbackError;
+  static const MethodChannel _androidAudio = MethodChannel('com.projetonix.nix/pager_audio');
 
   AudioDspSettings _dspSettings = const AudioDspSettings();
   Process? _activeAudioProcess;
@@ -96,13 +102,22 @@ class NixMusicPlayerController extends ChangeNotifier {
   double get volume => _volume;
 
   Duration get position => _position;
-  Duration get duration => currentTrack != null && currentTrack!.durationSeconds > 0
-      ? Duration(seconds: currentTrack!.durationSeconds)
-      : _duration;
+  Duration get duration => _backendDuration ??
+      (currentTrack != null && currentTrack!.durationSeconds > 0
+          ? Duration(seconds: currentTrack!.durationSeconds)
+          : Duration.zero);
+  String? get playbackError => _playbackError;
 
   AudioDspSettings get dspSettings => _dspSettings;
 
   void setPlaylist(List<PagerTrack> tracks, {int startIndex = 0}) {
+    _session++;
+    _playbackTicker?.cancel();
+    _stopNativeProcess();
+    if (Platform.isAndroid) unawaited(_androidAudio.invokeMethod<void>('stop').catchError((Object _) {}));
+    _androidPrepared = false;
+    _isPlaying = false;
+    _backendDuration = null;
     _playlist = List.of(tracks);
     _currentIndex = tracks.isNotEmpty ? startIndex.clamp(0, tracks.length - 1) : -1;
     _position = Duration.zero;
@@ -117,6 +132,12 @@ class NixMusicPlayerController extends ChangeNotifier {
 
   void removeTrackAt(int index) {
     if (index < 0 || index >= _playlist.length) return;
+    if (_currentIndex == index) {
+      pause();
+      if (Platform.isAndroid) unawaited(_androidAudio.invokeMethod<void>('stop').catchError((Object _) {}));
+      _androidPrepared = false;
+      _session++;
+    }
     _playlist.removeAt(index);
     if (_currentIndex >= _playlist.length) {
       _currentIndex = _playlist.length - 1;
@@ -145,6 +166,10 @@ class NixMusicPlayerController extends ChangeNotifier {
   }
 
   void pause() {
+    if (Platform.isAndroid && _androidPrepared) {
+      unawaited(_setAndroidPaused(true));
+      return;
+    }
     _isPlaying = false;
     _playbackTicker?.cancel();
     _stopNativeProcess();
@@ -152,10 +177,11 @@ class NixMusicPlayerController extends ChangeNotifier {
   }
 
   void resume() {
-    if (_currentIndex == -1 && _playlist.isNotEmpty) {
-      _currentIndex = 0;
-    }
-    if (_currentIndex != -1) {
+    if (_currentIndex == -1 && _playlist.isNotEmpty) _currentIndex = 0;
+    if (_currentIndex == -1) return;
+    if (Platform.isAndroid && _androidPrepared) {
+      unawaited(_setAndroidPaused(false));
+    } else {
       _startPlayback();
     }
   }
@@ -183,8 +209,14 @@ class NixMusicPlayerController extends ChangeNotifier {
   }
 
   void seek(Duration newPosition) {
-    _position = newPosition;
-    if (_position > duration) _position = duration;
+    final pos = newPosition < Duration.zero ? Duration.zero :
+        (duration > Duration.zero && newPosition > duration ? duration : newPosition);
+    if (Platform.isAndroid && _androidPrepared) {
+      unawaited(_seekAndroid(pos));
+      return;
+    }
+    _position = pos;
+    if (_isPlaying && (Platform.isLinux || Platform.isWindows)) _startPlayback();
     notifyListeners();
   }
 
@@ -200,6 +232,12 @@ class NixMusicPlayerController extends ChangeNotifier {
 
   void setVolume(double val) {
     _volume = val.clamp(0.0, 1.0);
+    if (Platform.isAndroid && _androidPrepared) {
+      unawaited(_androidAudio.invokeMethod<void>('volume', {'value': _volume})
+          .catchError((Object _) {}));
+    } else if (_isPlaying && (Platform.isLinux || Platform.isWindows)) {
+      _startPlayback();
+    }
     notifyListeners();
   }
 
@@ -213,67 +251,172 @@ class NixMusicPlayerController extends ChangeNotifier {
   }
 
   void _startPlayback() {
-    _isPlaying = true;
+    final session = ++_session;
     _playbackTicker?.cancel();
-    _playbackTicker = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!_isPlaying) {
-        timer.cancel();
+    _stopNativeProcess();
+    _androidPrepared = false;
+    _playbackError = null;
+    _isPlaying = false;
+    notifyListeners();
+    unawaited(_spawnNativePlayback(session));
+  }
+
+  Future<void> _spawnNativePlayback(int session) async {
+    try {
+      final track = currentTrack;
+      if (track == null) throw StateError('Nenhuma faixa selecionada.');
+      final uri = Uri.tryParse(track.uri);
+      if (uri == null) throw StateError('URI de áudio inválida.');
+      if (Platform.isAndroid) {
+        if (uri.scheme != 'content') {
+          throw StateError('Selecione um arquivo local com o seletor de áudio do Android.');
+        }
+        await _androidAudio.invokeMethod<void>('play', {'uri': track.uri});
+        if (session != _session) {
+          await _androidAudio.invokeMethod<void>('stop');
+          return;
+        }
+        _androidPrepared = true;
+        await _androidAudio.invokeMethod<void>('volume', {'value': _volume});
+        await _pollAndroid(session);
+        _playbackTicker = Timer.periodic(
+          const Duration(milliseconds: 500),
+          (_) => unawaited(_pollAndroid(session)),
+        );
         return;
       }
-      if (_position.inSeconds < duration.inSeconds) {
-        _position += const Duration(seconds: 1);
+
+      if (!Platform.isLinux && !Platform.isWindows) {
+        throw UnsupportedError('Reprodução não suportada nesta plataforma.');
+      }
+      if (uri.scheme != 'file') {
+        throw StateError('É necessário um arquivo local válido para reprodução desktop.');
+      }
+      final file = File.fromUri(uri);
+      if (!await file.exists()) throw StateError('Arquivo de música não encontrado.');
+      final args = <String>[
+        '--no-video',
+        '--no-terminal',
+        '--volume=' + (_volume * 100).round().toString(),
+        if (_position > Duration.zero) '--start=' + (_position.inMilliseconds / 1000).toStringAsFixed(3),
+      ];
+      if (_dspSettings.autoEqEnabled && Platform.isLinux) {
+        final bass = _dspSettings.bassGainDb;
+        final treble = _dspSettings.trebleGainDb;
+        args.add('--af=lavfi=[equalizer=f=100:t=q:w=1:g=' +
+            bass.toString() +
+            ',equalizer=f=10000:t=q:w=1:g=' +
+            treble.toString() + ']');
+      }
+      args.add(file.path);
+      final process = await Process.start(Platform.isWindows ? 'mpv.exe' : 'mpv', args);
+      if (session != _session) {
+        process.kill();
+        return;
+      }
+      _activeAudioProcess = process;
+      _isPlaying = true;
+      notifyListeners();
+      unawaited(process.stdout.drain<void>());
+      unawaited(process.stderr.drain<void>());
+      unawaited(process.exitCode.then((exitCode) {
+        if (session != _session || !identical(_activeAudioProcess, process)) return;
+        _activeAudioProcess = null;
+        _playbackTicker?.cancel();
+        _isPlaying = false;
+        if (exitCode != 0) _playbackError = 'O reprodutor mpv terminou com erro.';
         notifyListeners();
-      } else {
-        if (_isRepeat) {
-          _position = Duration.zero;
-          notifyListeners();
-        } else {
+      }));
+      // Desktop ainda depende de posição real via IPC do mpv. Não inventar
+      // progresso a partir de um cronômetro enquanto essa conexão não existir.
+    } catch (error) {
+      if (session != _session) return;
+      _playbackTicker?.cancel();
+      _activeAudioProcess = null;
+      _androidPrepared = false;
+      _isPlaying = false;
+      _playbackError = error.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> _pollAndroid(int session) async {
+    if (_pollingAndroid || session != _session) return;
+    _pollingAndroid = true;
+    try {
+      final status = await _androidAudio.invokeMapMethod<String, dynamic>('position');
+      if (session != _session || status == null) return;
+      final isActuallyPlaying = status['isPlaying'] == true;
+      final positionMs = (status['positionMs'] as num?)?.toInt() ?? 0;
+      final durationMs = (status['durationMs'] as num?)?.toInt() ?? 0;
+      _position = Duration(milliseconds: positionMs.clamp(0, 2147483647));
+      if (durationMs > 0) _backendDuration = Duration(milliseconds: durationMs);
+      final completed = _isPlaying && !isActuallyPlaying;
+      _isPlaying = isActuallyPlaying;
+      notifyListeners();
+      if (completed) {
+        _playbackTicker?.cancel();
+        _androidPrepared = false;
+        if (_playlist.length > 1 || _isRepeat) {
           next();
         }
       }
-    });
-
-    _spawnNativePlayback();
-    notifyListeners();
+    } catch (error) {
+      if (session != _session) return;
+      _playbackTicker?.cancel();
+      _androidPrepared = false;
+      _isPlaying = false;
+      _playbackError = error.toString();
+      notifyListeners();
+    } finally {
+      _pollingAndroid = false;
+    }
   }
 
-  Future<void> _spawnNativePlayback() async {
-    _stopNativeProcess();
-    final track = currentTrack;
-    if (track == null) return;
+  Future<void> _setAndroidPaused(bool paused) async {
+    final session = _session;
+    try {
+      final status = await _androidAudio.invokeMapMethod<String, dynamic>(
+        paused ? 'pause' : 'resume',
+      );
+      if (session != _session) return;
+      _isPlaying = status?['isPlaying'] == true;
+      if (!paused && _playbackTicker == null) {
+        _playbackTicker = Timer.periodic(
+          const Duration(milliseconds: 500),
+          (_) => unawaited(_pollAndroid(session)),
+        );
+      }
+      if (paused) {
+        _playbackTicker?.cancel();
+        _playbackTicker = null;
+      }
+      notifyListeners();
+    } catch (error) {
+      if (session == _session) {
+        _playbackError = error.toString();
+        notifyListeners();
+      }
+    }
+  }
 
-    final uri = Uri.tryParse(track.uri);
-    if (uri != null && uri.scheme == 'file') {
-      final file = File.fromUri(uri);
-      if (await file.exists()) {
-        try {
-          final isLinux = Platform.isLinux;
-          if (isLinux) {
-            // Constrói filtro de equalização real se AutoEQ estiver ativo
-            final args = <String>[
-              '--no-video',
-              '--no-terminal',
-              '--volume=${(_volume * 100).toInt()}',
-            ];
-
-            if (_dspSettings.autoEqEnabled) {
-              // Aplica ganho de graves e agudos real via lavfi equalizer
-              final bass = _dspSettings.bassGainDb;
-              final treble = _dspSettings.trebleGainDb;
-              args.add('--af=lavfi=[equalizer=f=100:t=q:w=1:g=$bass,equalizer=f=10000:t=q:w=1:g=$treble]');
-            }
-
-            args.add(file.path);
-            _activeAudioProcess = await Process.start('mpv', args);
-          }
-        } catch (_) {}
+  Future<void> _seekAndroid(Duration position) async {
+    final session = _session;
+    try {
+      await _androidAudio.invokeMethod<void>('seek', {
+        'positionMs': position.inMilliseconds,
+      });
+      if (session == _session) await _pollAndroid(session);
+    } catch (error) {
+      if (session == _session) {
+        _playbackError = error.toString();
+        notifyListeners();
       }
     }
   }
 
   void _applyDspToActivePlayback() {
-    // Recarrega filtros no processo ativo
-    _spawnNativePlayback();
+    if (_isPlaying && (Platform.isLinux || Platform.isWindows)) _startPlayback();
   }
 
   void _stopNativeProcess() {
@@ -285,7 +428,9 @@ class NixMusicPlayerController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _session++;
     _playbackTicker?.cancel();
+    if (Platform.isAndroid) unawaited(_androidAudio.invokeMethod<void>('stop').catchError((Object _) {}));
     _stopNativeProcess();
     super.dispose();
   }
