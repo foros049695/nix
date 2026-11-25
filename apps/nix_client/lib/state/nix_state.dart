@@ -23,6 +23,7 @@ import '../core/models/user_profile.dart';
 import '../core/models/direct_message.dart';
 import '../core/models/user_settings.dart';
 import '../core/network/transport_profile.dart';
+import '../core/network/hybrid_network_coordinator.dart';
 import '../core/models/crypto_market_item.dart';
 import '../core/models/monero_order.dart';
 import '../core/models/github_repo.dart';
@@ -958,6 +959,11 @@ class NixState extends ChangeNotifier {
 
   BluetoothMeshManager get bluetoothMesh => _bluetoothMesh;
   NixHardwareRadioBridge get hardwareRadioBridge => _hardwareRadioBridge;
+  late final HybridNetworkCoordinator _networkCoordinator = HybridNetworkCoordinator(
+    primaryRelayClient: _activeRelayClient,
+    radioBridge: _hardwareRadioBridge,
+  );
+  HybridNetworkCoordinator get networkCoordinator => _networkCoordinator;
   bool get isBluetoothMeshEnabled => _bluetoothMesh.isMeshEnabled;
   BleHardwareStatus? get bleHardwareStatus => _bleHardwareStatus;
   List<RNodeHardwareDevice> get detectedRNodeDevices =>

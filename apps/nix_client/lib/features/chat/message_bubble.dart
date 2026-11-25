@@ -519,7 +519,8 @@ class MessageBubble extends StatelessWidget {
   Widget _buildDeliveryStateIcon(Color accentText) {
     final (icon, label, keyState, color) = switch (message.deliveryState) {
       'failed' => (Icons.error_outline_rounded, 'Falhou', 'failed', Colors.redAccent),
-      'queued' => (Icons.schedule_rounded, 'Na fila', 'queued', NixColors.textMuted),
+      'waiting_route' => (Icons.schedule_rounded, 'Aguardando conexão com o destinatário', 'waiting_route', Colors.amber.shade300),
+      'queued' => (Icons.schedule_rounded, 'Aguardando conexão com o destinatário', 'queued', NixColors.textMuted),
       'draft' => (Icons.edit_outlined, 'Rascunho', 'draft', NixColors.textMuted),
       'sending' => (Icons.schedule_rounded, 'Enviando', 'sending', NixColors.textMuted),
       'accepted' => (Icons.done_rounded, 'Aceita pelo relay', 'accepted', accentText),

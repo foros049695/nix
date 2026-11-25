@@ -12,6 +12,7 @@ import '../members/members_panel.dart';
 import '../media/passport_dex_sheet.dart';
 import '../profile/nix_user_avatar.dart';
 import '../notifications/notification_center_dialog.dart';
+import '../network/connectivity_center_dialog.dart';
 import 'channels_sidebar.dart';
 import 'panel_resize_divider.dart';
 import 'resizable_window_frame.dart';
@@ -222,6 +223,12 @@ class _WorkspaceBar extends StatelessWidget {
                     ),
                 ],
               ),
+            ),
+            IconButton(
+              key: const Key('connectivity_center_trigger'),
+              tooltip: 'Central de Conectividade (Rede Híbrida A–G)',
+              onPressed: () => ConnectivityCenterDialog.show(context),
+              icon: Icon(Icons.hub_outlined, size: 19, color: NixColors.accentCyan),
             ),
             IconButton(
               tooltip: 'Aparência do Nix',
