@@ -417,6 +417,7 @@ class _PagerProfileState extends State<PagerProfile> {
                         _page > 0 ? () => _selectPage(_page - 1, state) : null,
                     onNext:
                         _page < _pages.length - 1 ? () => _selectPage(_page + 1, state) : null,
+                    onPlayPause: () => state.musicPlayer.togglePlayPause(),
                     onMenu: () => _showPagerMenu(state),
                     minDisplayHeight: housing.maxWidth < 576 ? 442 : 386,
                     screen: LayoutBuilder(
@@ -439,6 +440,7 @@ class _PagerProfileState extends State<PagerProfile> {
                             children: [
                               _PagerPanel(
                                 title: _pages[0],
+                                fixedFooter: true,
                                 japanese: '身分証',
                                 page: 1,
                                 footer: const PagerShortcuts(),

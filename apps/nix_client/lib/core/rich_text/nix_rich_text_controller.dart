@@ -425,14 +425,70 @@ class NixRichTextController extends TextEditingController {
 
   void toggleBlockquote() => setBlockType(RichBlockType.blockquote);
   void toggleCodeBlock() => setBlockType(RichBlockType.codeBlock);
-  void toggleBulletList() => setBlockType(RichBlockType.bulletList);
-  void toggleNumberedList() => setBlockType(RichBlockType.numberedList);
-  void toggleChecklist() => setBlockType(RichBlockType.checklist);
+  void toggleBulletList() => _toggleLinePrefix('• ');
+  void toggleNumberedList() => _toggleLinePrefix('1. ');
+  void toggleChecklist() => _toggleLinePrefix('☐ ');
+
+  void _toggleLinePrefix(String prefix) {
+    final sel = selection;
+    final pos = sel.isValid ? sel.start : text.length;
+    final before = text.substring(0, pos);
+    final lineStart = before.lastIndexOf('\n') + 1;
+    final afterLineStart = text.substring(lineStart);
+    final lineEndOffset = afterLineStart.indexOf('\n');
+    final lineEnd = lineEndOffset == -1 ? text.length : lineStart + lineEndOffset;
+    final line = text.substring(lineStart, lineEnd);
+
+    String newLine;
+    int shift;
+    if (line.startsWith(prefix)) {
+      newLine = line.substring(prefix.length);
+      shift = -prefix.length;
+    } else if (prefix == '☐ ' && line.startsWith('☑ ')) {
+      newLine = line.substring(2);
+      shift = -2;
+    } else {
+      var clean = line;
+      var cleanShift = 0;
+      for (final p in ['• ', '☐ ', '☑ ', '- ', '* ']) {
+        if (clean.startsWith(p)) {
+          clean = clean.substring(p.length);
+          cleanShift = -p.length;
+          break;
+        }
+      }
+      newLine = '$prefix$clean';
+      shift = prefix.length + cleanShift;
+    }
+
+    final newText = text.replaceRange(lineStart, lineEnd, newLine);
+    _lastText = newText;
+    text = newText;
+    final newCursor = (pos + shift).clamp(0, newText.length);
+    selection = TextSelection.collapsed(offset: newCursor);
+    _recalculateLineBlocks();
+    notifyListeners();
+  }
 
   void toggleChecklistState([int? lineIdx]) {
-    final idx = lineIdx ?? currentLineIndex;
-    if (idx < _lineBlocks.length && _lineBlocks[idx].type == RichBlockType.checklist) {
-      _lineBlocks[idx].isChecked = !_lineBlocks[idx].isChecked;
+    final sel = selection;
+    final pos = sel.isValid ? sel.start : 0;
+    final before = text.substring(0, pos);
+    final lineStart = before.lastIndexOf('\n') + 1;
+    final afterLineStart = text.substring(lineStart);
+    final lineEndOffset = afterLineStart.indexOf('\n');
+    final lineEnd = lineEndOffset == -1 ? text.length : lineStart + lineEndOffset;
+    final line = text.substring(lineStart, lineEnd);
+
+    if (line.startsWith('☐ ')) {
+      final newLine = '☑ ${line.substring(2)}';
+      text = text.replaceRange(lineStart, lineEnd, newLine);
+      _lastText = text;
+      notifyListeners();
+    } else if (line.startsWith('☑ ')) {
+      final newLine = '☐ ${line.substring(2)}';
+      text = text.replaceRange(lineStart, lineEnd, newLine);
+      _lastText = text;
       notifyListeners();
     }
   }
@@ -513,7 +569,6 @@ class NixRichTextController extends TextEditingController {
 
       // Determina estilo do bloco de linha
       TextStyle lineStyle = baseStyle;
-      String linePrefix = '';
 
       switch (lineBlock.type) {
         case RichBlockType.h1:
@@ -550,9 +605,9 @@ class NixRichTextController extends TextEditingController {
         case RichBlockType.blockquote:
           lineStyle = baseStyle.copyWith(
             fontStyle: FontStyle.italic,
-            color: const Color(0xFFCBD5E1),
+            color: const Color(0xFF38BDF8),
+            backgroundColor: const Color(0x2238BDF8),
           );
-          linePrefix = '❝ ';
           break;
         case RichBlockType.codeBlock:
           lineStyle = baseStyle.copyWith(
@@ -562,40 +617,14 @@ class NixRichTextController extends TextEditingController {
           );
           break;
         case RichBlockType.bulletList:
-          linePrefix = '• ';
-          break;
         case RichBlockType.numberedList:
-          linePrefix = '${lineIdx + 1}. ';
-          break;
         case RichBlockType.checklist:
-          linePrefix = lineBlock.isChecked ? '☑ ' : '☐ ';
-          if (lineBlock.isChecked) {
-            lineStyle = baseStyle.copyWith(
-              decoration: TextDecoration.lineThrough,
-              color: const Color(0xFF64748B),
-            );
-          }
-          break;
         case RichBlockType.divider:
-          lineStyle = baseStyle.copyWith(
-            color: const Color(0xFF475569),
-            fontWeight: FontWeight.bold,
-          );
-          break;
         case RichBlockType.paragraph:
           break;
       }
 
       final lineChildren = <InlineSpan>[];
-      if (linePrefix.isNotEmpty) {
-        lineChildren.add(TextSpan(
-          text: linePrefix,
-          style: lineStyle.copyWith(
-            fontWeight: FontWeight.bold,
-            color: const Color(0xFF7C3AED), // Nix Purple Accent
-          ),
-        ));
-      }
 
       // Segmenta a linha conforme os spans inline
       if (lineLength > 0) {
@@ -710,9 +739,9 @@ class NixRichTextController extends TextEditingController {
         case RichBlockType.h6: prefix = '###### '; break;
         case RichBlockType.blockquote: prefix = '> '; break;
         case RichBlockType.codeBlock: prefix = '```\n'; suffix = '\n```'; break;
-        case RichBlockType.bulletList: prefix = '- '; break;
-        case RichBlockType.numberedList: prefix = '${lineIdx + 1}. '; break;
-        case RichBlockType.checklist: prefix = lineBlock.isChecked ? '- [x] ' : '- [ ] '; break;
+        case RichBlockType.bulletList:
+        case RichBlockType.numberedList:
+        case RichBlockType.checklist: break;
         case RichBlockType.divider: prefix = '---\n'; break;
         case RichBlockType.paragraph: break;
       }
@@ -750,6 +779,16 @@ class NixRichTextController extends TextEditingController {
 
           final segmentLength = nextBoundary - currentPos;
           var seg = text.substring(currentPos, currentPos + segmentLength);
+
+          if (currentPos == globalOffset) {
+            if (seg.startsWith('• ')) {
+              seg = '- ${seg.substring(2)}';
+            } else if (seg.startsWith('☐ ')) {
+              seg = '- [ ] ${seg.substring(2)}';
+            } else if (seg.startsWith('☑ ')) {
+              seg = '- [x] ${seg.substring(2)}';
+            }
+          }
 
           if (isBold) seg = '**$seg**';
           if (isItalic) seg = '*$seg*';
@@ -817,20 +856,20 @@ class NixRichTextController extends TextEditingController {
       } else if (raw.startsWith('# ')) {
         blockType = RichBlockType.h1;
         raw = raw.substring(2);
-      } else if (raw.startsWith('> ')) {
+      } else if (raw.startsWith('>')) {
         blockType = RichBlockType.blockquote;
-        raw = raw.substring(2);
+        raw = raw.replaceFirst(RegExp(r'^>\s*'), '');
       } else if (raw.startsWith('- [x] ') || raw.startsWith('- [X] ')) {
         blockType = RichBlockType.checklist;
         isChecked = true;
-        raw = raw.substring(6);
+        raw = '☑ ${raw.substring(6)}';
       } else if (raw.startsWith('- [ ] ')) {
         blockType = RichBlockType.checklist;
         isChecked = false;
-        raw = raw.substring(6);
+        raw = '☐ ${raw.substring(6)}';
       } else if (raw.startsWith('- ') || raw.startsWith('* ')) {
         blockType = RichBlockType.bulletList;
-        raw = raw.substring(2);
+        raw = '• ${raw.substring(2)}';
       } else if (RegExp(r'^\d+\.\s').hasMatch(raw)) {
         blockType = RichBlockType.numberedList;
         final match = RegExp(r'^\d+\.\s').firstMatch(raw)!;
@@ -882,18 +921,22 @@ class NixRichTextController extends TextEditingController {
         }
       }
 
-      // Sublinhado: <u>texto</u>
-      if (input.startsWith('<u>', idx)) {
-        final closeIdx = input.indexOf('</u>', idx + 3);
+      // Sublinhado: <u>texto</u> ou <ins>texto</ins> (case-insensitive)
+      final lowerTail = input.substring(idx).toLowerCase();
+      if (lowerTail.startsWith('<u>') || lowerTail.startsWith('<ins>')) {
+        final tag = lowerTail.startsWith('<u>') ? 'u' : 'ins';
+        final openLen = tag == 'u' ? 3 : 5;
+        final closeTag = '</$tag>';
+        final closeIdx = lowerTail.indexOf(closeTag, openLen);
         if (closeIdx != -1) {
-          final content = input.substring(idx + 3, closeIdx);
+          final content = input.substring(idx + openLen, idx + closeIdx);
           final s = startOffset + buffer.length;
           final sub = _parseInlineMarkdown(content, s);
           buffer.write(sub.plainText);
           final e = startOffset + buffer.length;
           spans.add(RichInlineSpan(start: s, end: e, underline: true));
           spans.addAll(sub.spans);
-          idx = closeIdx + 4;
+          idx += closeIdx + closeTag.length;
           continue;
         }
       }

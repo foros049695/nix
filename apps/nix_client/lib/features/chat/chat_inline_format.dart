@@ -37,6 +37,17 @@ enum ChatInlineFormat {
     if (delimiter.isNotEmpty && body.contains(delimiter)) {
       return null;
     }
+    if (this == ChatInlineFormat.quote) {
+      final lineStart = value.text.lastIndexOf('\n', start - 1) + 1;
+      return value.copyWith(
+        text: value.text.replaceRange(lineStart, lineStart, '> '),
+        selection: TextSelection(
+          baseOffset: selection.baseOffset + 2,
+          extentOffset: selection.extentOffset + 2,
+        ),
+        composing: TextRange.empty,
+      );
+    }
     final closeTag = delimiter == '<u>' ? '</u>' : (delimiter == '> ' ? '' : delimiter);
     return value.copyWith(
       text: value.text.replaceRange(start, end, '$delimiter$body$closeTag'),
@@ -204,6 +215,19 @@ class _ChatSpoilerTextState extends State<ChatSpoilerText> {
   }
 }
 
+class UnderlineSyntax extends md.InlineSyntax {
+  UnderlineSyntax() : super(r'<(?:u|ins)>(.*?)</(?:u|ins)>', caseSensitive: false);
+
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final inner = match.group(1)!;
+    final children = md.Document(extensionSet: md.ExtensionSet.gitHubFlavored, inlineSyntaxes: [UnderlineSyntax()])
+        .parseInline(inner);
+    parser.addNode(md.Element('u', children));
+    return true;
+  }
+}
+
 class ChatInlineText extends StatelessWidget {
   const ChatInlineText(this.source, {required this.style, super.key});
 
@@ -352,7 +376,7 @@ class ChatInlineText extends StatelessWidget {
 
       final children = _spans(context, node.children ?? const [], mergedStyle);
       if (children != null) {
-        spans.add(TextSpan(style: elemStyle, children: children));
+        spans.add(TextSpan(style: mergedStyle, children: children));
       } else {
         spans.addAll(_parseTextWithUrls(context, node.textContent, mergedStyle));
       }
@@ -361,7 +385,11 @@ class ChatInlineText extends StatelessWidget {
   }
 
   static List<InlineSpan> _parseInlineContent(BuildContext context, String content, TextStyle baseStyle) {
-    final doc = md.Document(extensionSet: md.ExtensionSet.gitHubFlavored, encodeHtml: false);
+    final doc = md.Document(
+      extensionSet: md.ExtensionSet.gitHubFlavored,
+      inlineSyntaxes: [UnderlineSyntax()],
+      encodeHtml: false,
+    );
     final nodes = doc.parseInline(content);
     return _spans(context, nodes, baseStyle) ?? [TextSpan(text: content, style: baseStyle)];
   }
@@ -372,7 +400,11 @@ class ChatInlineText extends StatelessWidget {
       return Text(source, style: style);
     }
 
-    final doc = md.Document(extensionSet: md.ExtensionSet.gitHubFlavored, encodeHtml: false);
+    final doc = md.Document(
+      extensionSet: md.ExtensionSet.gitHubFlavored,
+      inlineSyntaxes: [UnderlineSyntax()],
+      encodeHtml: false,
+    );
     final probeNodes = doc.parseInline(source);
     if (probeNodes.any((node) => node is md.Element && node.tag == 'img')) {
       return Text(source, style: style);

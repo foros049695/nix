@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -1523,21 +1524,14 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Placeholder Seguro de Capa clicável
+                // Capa Cultural Distinta (Vinil, Pôster ou Livro 2.5D)
                 InkWell(
                   onTap: () => _showWorkDetails(context, work),
                   borderRadius: NixTokens.borderSm,
-                  child: Container(
-                    width: 54,
-                    height: 74,
-                    decoration: BoxDecoration(
-                      color: kindColor.withValues(alpha: 0.12),
-                      borderRadius: NixTokens.borderSm,
-                      border: Border.all(color: kindColor.withValues(alpha: 0.3)),
-                    ),
-                    child: Center(
-                      child: Icon(kindIcon, size: 28, color: kindColor),
-                    ),
+                  child: _CatalogThumbnail(
+                    work: work,
+                    kindColor: kindColor,
+                    kindIcon: kindIcon,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1602,7 +1596,9 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                           style: TextStyle(color: NixColors.textSecondary, fontSize: 11.5),
                         ),
                       ],
-                      if (work.summary != null && work.summary!.isNotEmpty) ...[
+                      if (work.summary != null &&
+                          work.summary!.isNotEmpty &&
+                          !work.summary!.contains('Metadado obtido sob consentimento')) ...[
                         const SizedBox(height: 6),
                         Text(
                           work.summary!,
@@ -1911,7 +1907,9 @@ class _CatalogWorkDetailDialogState extends State<_CatalogWorkDetailDialog> {
                   ],
 
                   // Sinopse
-                  if (work.summary != null && work.summary!.isNotEmpty) ...[
+                  if (work.summary != null &&
+                      work.summary!.isNotEmpty &&
+                      !work.summary!.contains('Metadado obtido sob consentimento')) ...[
                     const SizedBox(height: 16),
                     Text('SINOPSE & DETALHES', style: NixTokens.labelUppercase()),
                     const SizedBox(height: 6),
@@ -2213,4 +2211,177 @@ class _CatalogWorkDetailDialogState extends State<_CatalogWorkDetailDialog> {
       },
     );
   }
+}
+
+class _CatalogThumbnail extends StatelessWidget {
+  final CatalogWork work;
+  final Color kindColor;
+  final IconData kindIcon;
+
+  const _CatalogThumbnail({
+    required this.work,
+    required this.kindColor,
+    required this.kindIcon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isMusic = work.kind == 'track' || work.kind == 'album';
+    final isBook = work.kind == 'book';
+    final isManga = work.kind == 'manga';
+    final coverPath = work.coverThumb;
+    final file = (coverPath != null && coverPath.isNotEmpty) ? File(coverPath) : null;
+    final fileExists = file != null && file.existsSync();
+
+    if (isMusic) {
+      // Disco de vinil 1:1 circular completo estilo PassportDex
+      return Container(
+        width: 58,
+        height: 58,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 6,
+              offset: const Offset(0, 3),
+            ),
+          ],
+          border: Border.all(color: Colors.white70, width: 1.5),
+        ),
+        child: ClipOval(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (fileExists)
+                Image.file(file, fit: BoxFit.cover)
+              else
+                Container(
+                  color: const Color(0xFF16151F),
+                  child: Center(
+                    child: Text(
+                      work.title.isNotEmpty ? work.title.substring(0, math.min(2, work.title.length)).toUpperCase() : '♪',
+                      style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                  ),
+                ),
+              const CustomPaint(painter: _MiniVinylPainter()),
+              Center(
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF0F0E17),
+                    border: Border.all(color: Colors.white60, width: 1.0),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (isBook || isManga) {
+      // 2.5D Livro / Volume Tankobon com lombada física e bloco de folhas
+      return SizedBox(
+        width: 54,
+        height: 76,
+        child: Stack(
+          children: [
+            Positioned(
+              right: 0,
+              top: 2,
+              bottom: 2,
+              width: 5,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5DDD0),
+                  borderRadius: const BorderRadius.horizontal(right: Radius.circular(2)),
+                  border: Border.all(color: const Color(0xFFB5A998), width: 0.5),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 4,
+              top: 0,
+              bottom: 0,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: kindColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(2),
+                    bottomLeft: const Radius.circular(2),
+                    topRight: Radius.circular(isManga ? 2 : 3),
+                    bottomRight: Radius.circular(isManga ? 2 : 3),
+                  ),
+                  border: Border.all(color: kindColor.withValues(alpha: 0.4)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      blurRadius: 4,
+                      offset: const Offset(1, 2),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: fileExists
+                      ? Image.file(file, fit: BoxFit.cover)
+                      : Center(child: Icon(kindIcon, size: 24, color: kindColor)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Pôster cinematográfico 2:3 vertical com cantos arredondados (9px) e sombra
+    return Container(
+      width: 54,
+      height: 78,
+      decoration: BoxDecoration(
+        color: kindColor.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: kindColor.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: 6,
+            offset: const Offset(1, 3),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: fileExists
+            ? Image.file(file, fit: BoxFit.cover)
+            : Center(child: Icon(kindIcon, size: 26, color: kindColor)),
+      ),
+    );
+  }
+}
+
+class _MiniVinylPainter extends CustomPainter {
+  const _MiniVinylPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final paint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.14)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+
+    final maxR = size.width / 2;
+    for (double r = maxR * 0.4; r < maxR * 0.92; r += 5.0) {
+      canvas.drawCircle(center, r, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

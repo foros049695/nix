@@ -45,6 +45,7 @@ class PagerHousing extends StatefulWidget {
   final Widget? wallpaper;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
+  final VoidCallback? onPlayPause;
   final VoidCallback? onMenu;
   final String nextLabel;
   final double minDisplayHeight;
@@ -58,6 +59,7 @@ class PagerHousing extends StatefulWidget {
     this.wallpaper,
     this.onPrevious,
     this.onNext,
+    this.onPlayPause,
     this.onMenu,
     this.nextLabel = 'Próxima tela',
     this.minDisplayHeight = 224,
@@ -182,15 +184,23 @@ class _PagerHousingState extends State<PagerHousing> {
                   scale,
                   extension,
                   398,
-                  204,
+                  195,
                   widget.nextLabel,
                   widget.onNext,
                 ),
                 _positionKey(
                   scale,
                   extension,
-                  611,
-                  128,
+                  602,
+                  125,
+                  'Reproduzir / Pausar',
+                  widget.onPlayPause,
+                ),
+                _positionKey(
+                  scale,
+                  extension,
+                  755,
+                  90,
                   'Menu do Pager',
                   widget.onMenu,
                 ),

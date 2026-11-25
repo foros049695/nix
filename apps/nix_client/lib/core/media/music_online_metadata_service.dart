@@ -112,6 +112,7 @@ class MusicOnlineMetadataService {
 
         String album = '';
         int? releaseYear;
+        String? coverUrl;
         final releases = rec['releases'];
         if (releases is List && releases.isNotEmpty) {
           final rel = releases.first;
@@ -121,12 +122,16 @@ class MusicOnlineMetadataService {
             if (date.length >= 4) {
               releaseYear = int.tryParse(date.substring(0, 4));
             }
+            final rg = rel['release-group'] as Map<String, dynamic>?;
+            final rgId = rg?['id'] as String?;
+            final relId = rel['id'] as String?;
+            if (rgId != null && rgId.isNotEmpty) {
+              coverUrl = 'https://coverartarchive.org/release-group/$rgId/front-250';
+            } else if (relId != null && relId.isNotEmpty) {
+              coverUrl = 'https://coverartarchive.org/release/$relId/front-250';
+            }
           }
         }
-
-        final rg = rec['release-group'] as Map<String, dynamic>?;
-        final rgId = rg?['id'] as String?;
-        final coverUrl = rgId != null ? 'https://coverartarchive.org/release-group/$rgId/front-250' : null;
 
         results.add(CatalogWork(
           id: 'mb_rec_$id',
