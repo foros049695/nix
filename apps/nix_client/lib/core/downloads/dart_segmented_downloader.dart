@@ -226,18 +226,21 @@ class DartSegmentedDownloader {
       }
 
       // Validação de integridade SHA-256 quando fornecida
-      if (current.status == DownloadStatus.completed && task.sha256Expected != null) {
+      if (current.status == DownloadStatus.completed &&
+          task.sha256Expected != null &&
+          task.sha256Expected!.trim().isNotEmpty) {
+        final expectedSha = task.sha256Expected!.trim();
         current = current.copyWith(status: DownloadStatus.finalizing);
         if (_activeGenerations[task.id] == gen) {
           onProgress?.call(current);
         }
         final actualHash = await computeFileSha256(targetFile);
-        final matches = actualHash.toLowerCase() == task.sha256Expected!.toLowerCase();
+        final matches = actualHash.toLowerCase() == expectedSha.toLowerCase();
         if (!matches) {
           current = current.copyWith(
             status: DownloadStatus.failed,
             sha256Actual: actualHash,
-            errorMessage: 'Falha de integridade: SHA-256 esperado ($task.sha256Expected) difere do obtido ($actualHash).',
+            errorMessage: 'Falha de integridade: SHA-256 esperado ($expectedSha) difere do obtido ($actualHash).',
           );
         } else {
           current = current.copyWith(
