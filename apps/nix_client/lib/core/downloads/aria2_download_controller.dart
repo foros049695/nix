@@ -63,6 +63,9 @@ class Aria2DownloadController extends ChangeNotifier {
   DownloadPerformanceProfile _performanceProfile = DownloadPerformanceProfile.balanced;
   DownloadPerformanceProfile get performanceProfile => _performanceProfile;
 
+  static const String defaultUserAgent =
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
   final List<String> _recentLogs = [];
   List<String> get recentLogs => List.unmodifiable(_recentLogs);
 
@@ -77,6 +80,16 @@ class Aria2DownloadController extends ChangeNotifier {
   void setPerformanceProfile(DownloadPerformanceProfile profile) {
     _performanceProfile = profile;
     _log('Perfil de desempenho alterado para ${profile.label} (${profile.split} fatias)');
+    if (_process != null && _rpcSecret.isNotEmpty) {
+      unawaited(_rpcCall('aria2.changeGlobalOption', [
+        'token:$_rpcSecret',
+        {
+          'max-connection-per-server': '${profile.maxConnections}',
+          'split': '${profile.split}',
+          'min-split-size': profile.minSplitSize,
+        }
+      ]));
+    }
     notifyListeners();
   }
 
@@ -209,6 +222,10 @@ class Aria2DownloadController extends ChangeNotifier {
           '--enable-peer-exchange=false',
           '--follow-torrent=false',
           '--follow-metalink=false',
+          // EVITA TIMEOUTS EM ROTAS IPV6 INALCANÇÁVEIS (EX: VPN / WIREGUARD) E ASYNC DNS
+          '--disable-ipv6=true',
+          '--async-dns=false',
+          '--user-agent=$defaultUserAgent',
           // ACELERAÇÃO MÁXIMA SUSTENTADA DE MULTI-CONEXÕES E I/O DIRETO
           '--max-connection-per-server=${_performanceProfile.maxConnections}',
           '--split=${_performanceProfile.split}',
@@ -433,6 +450,7 @@ class Aria2DownloadController extends ChangeNotifier {
         'file-allocation': Platform.isLinux ? 'falloc' : 'none',
         'max-tries': '10',
         'continue': 'true',
+        'user-agent': defaultUserAgent,
       };
       if (task.allowClearnet || resolvedProfile == 'direct_https') {
         downloadOptions['all-proxy'] = '';
@@ -505,8 +523,10 @@ class Aria2DownloadController extends ChangeNotifier {
           'out': updated.fileName,
           'split': '${_performanceProfile.split}',
           'max-connection-per-server': '${_performanceProfile.maxConnections}',
+          'min-split-size': _performanceProfile.minSplitSize,
           'continue': 'true',
           'all-proxy': '',
+          'user-agent': defaultUserAgent,
         };
         final rpcRes = await _rpcCall('aria2.addUri', [
           'token:$_rpcSecret',
@@ -633,6 +653,19 @@ class Aria2DownloadController extends ChangeNotifier {
 
       // Se já era um GID nativo do aria2c, tenta retomar via RPC
       if (!taskId.startsWith('dl_')) {
+        try {
+          await _rpcCall('aria2.changeOption', [
+            'token:$_rpcSecret',
+            taskId,
+            {
+              'user-agent': defaultUserAgent,
+              'max-connection-per-server': '${_performanceProfile.maxConnections}',
+              'split': '${_performanceProfile.split}',
+              'min-split-size': _performanceProfile.minSplitSize,
+            }
+          ]);
+        } catch (_) {}
+
         final res = await _rpcCall('aria2.unpause', ['token:$_rpcSecret', taskId]);
         if (res != null && res['result'] != null) {
           _tasks[taskId] = task.copyWith(
@@ -660,6 +693,7 @@ class Aria2DownloadController extends ChangeNotifier {
           'enable-mmap': 'true',
           'file-allocation': Platform.isLinux ? 'falloc' : 'none',
           'max-tries': '10',
+          'user-agent': defaultUserAgent,
         };
         if (task.fileName.isNotEmpty) {
           downloadOptions['out'] = task.fileName;
