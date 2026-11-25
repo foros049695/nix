@@ -682,27 +682,10 @@ class NixState extends ChangeNotifier {
       return;
     }
     try {
-      if (await db.getEntryCount() == 0) {
-        final seed = await rootBundle.load('assets/catalog/seed_catalog.db');
-        final bytes = seed.buffer.asUint8List(seed.offsetInBytes, seed.lengthInBytes);
-        const bundledSeedSha256 =
-            'f14e9d230bbbcdcd1542771a8bc9d87ff4045a61058afc3c4dba6dd97e846c6c';
-        if (std_crypto.sha256.convert(bytes).toString() != bundledSeedSha256) {
-          throw const FormatException('O catálogo incluído no aplicativo falhou na verificação de integridade.');
-        }
-        final file = File(db.path);
-        final temporary = File('${db.path}.seed.tmp');
-        try {
-          await temporary.writeAsBytes(bytes, flush: true);
-          await db.close();
-          await temporary.rename(file.path);
-        } finally {
-          if (await temporary.exists()) await temporary.delete();
-        }
-        if (_disposed || _panicWipe != null) return;
-        db = await CatalogDatabase.open(path: file.path);
+      final hasDemoSeed = await db.getMeta('bundled_musicbrainz_version') != null;
+      if (hasDemoSeed) {
+        await db.purgeDemoWorks();
       }
-      await db.installBundledMusic();
       setCatalogDatabase(db);
     } catch (_) {
       try {
@@ -735,11 +718,20 @@ class NixState extends ChangeNotifier {
     );
   }
 
-  String _catalogManifestUrl = CatalogPublisherKeyring.defaultOfficialManifestUrl;
+  String _catalogManifestUrl = '';
   String get catalogManifestUrl => _catalogManifestUrl;
 
   Future<void> setCatalogManifestUrl(String url) async {
     final clean = url.trim();
+    if (clean.isEmpty) {
+      _catalogManifestUrl = '';
+      final repo = _preferencesRepo;
+      if (repo != null && !_isMockMode) {
+        await repo.setOption('catalog_manifest_url', '');
+      }
+      notifyListeners();
+      return;
+    }
     final uri = Uri.tryParse(clean);
     if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
       throw ArgumentError('URL inválida. Protocolo HTTP ou HTTPS obrigatório.');

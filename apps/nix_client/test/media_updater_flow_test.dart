@@ -290,14 +290,11 @@ void main() {
       expect(mgr.currentProgress.stage, equals(CatalogUpdateStage.cancelled));
     });
 
-    test('7. Chaveiro oficial do publicador e URL default .onion v3 são válidos', () {
+    test('7. Chaveiro oficial do publicador e ausência de publicador demo padrão', () {
       final keyring = CatalogPublisherKeyring();
       expect(keyring.trustedKeysHex.contains(CatalogPublisherKeyring.officialPublisherKeyHex), isTrue);
 
-      final uri = Uri.parse(CatalogPublisherKeyring.defaultOfficialManifestUrl);
-      expect(uri.scheme, equals('http'));
-      expect(TransportPolicy.isValidOnionV3Host(uri.host), isTrue);
-      expect(uri.path, endsWith('manifest.json'));
+      expect(CatalogPublisherKeyring.defaultOfficialManifestUrl, isEmpty);
     });
 
     test('8. Reinstalação e reparo de mesma versão com allowReinstall vs rejeição quando allowReinstall é falso', () async {

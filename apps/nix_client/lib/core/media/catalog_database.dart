@@ -165,22 +165,19 @@ class CatalogDatabase {
     await db.execute('DROP TABLE catalog_works_v1');
   }
 
-  Future<void> installBundledMusic() async {
-    const version = '1';
-    const versionKey = 'bundled_musicbrainz_version';
-    if (await getMeta(versionKey) == version) return;
-    final raw = await rootBundle.loadString('assets/catalog/musicbrainz_seed.json');
-    final works = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
-    await _db.transaction((txn) async {
-      final batch = txn.batch();
-      for (final work in works) {
-        batch.insert('catalog_works', CatalogWork.fromRow(work).toMap(),
-          conflictAlgorithm: ConflictAlgorithm.ignore);
-      }
-      batch.insert('catalog_meta', {'key': versionKey, 'value': version},
-        conflictAlgorithm: ConflictAlgorithm.replace);
-      await batch.commit(noResult: true);
+  Future<int> purgeDemoWorks() async {
+    return await _db.transaction((txn) async {
+      final count = await txn.delete('catalog_works');
+      await txn.delete('catalog_meta');
+      try {
+        await txn.delete('catalog_search');
+      } catch (_) {}
+      return count;
     });
+  }
+
+  Future<void> installBundledMusic() async {
+    // Expurgo de músicas demonstrativas: não injeta nada automaticamente.
   }
 
   static Future<void> _createSchema(DatabaseExecutor db) async {
@@ -299,6 +296,8 @@ class CatalogDatabase {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
+
+  Future<void> insertWork(CatalogWork work) => upsertWork(work);
 
   Future<void> batchUpsertWorks(List<CatalogWork> works) async {
     final batch = _db.batch();

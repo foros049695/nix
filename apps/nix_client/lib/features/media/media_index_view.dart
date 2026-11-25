@@ -9,6 +9,9 @@ import '../../core/media/catalog_database.dart';
 import '../../core/media/catalog_diagnostics.dart';
 import '../../core/media/media_index_updater.dart';
 import '../../core/media/pager_playlist.dart';
+import '../../core/media/universal_metadata_service.dart';
+import 'universal_metadata_search_dialog.dart';
+import '../profile/collection_import_dialog.dart';
 import '../../core/models/cultural_item.dart';
 import '../../core/security/file_picker_adapter.dart';
 import '../../core/theme.dart';
@@ -97,7 +100,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
       setState(() {
         _catalogError = error is FormatException
             ? error.message
-            : 'Falha ao abrir ou consultar o banco local do catálogo.';
+            : 'Falha ao abrir ou consultar o banco local do catálogo: $error';
         _isLoading = false;
       });
     }
@@ -416,10 +419,10 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                   runSpacing: 4,
                   children: [
                     TextButton.icon(
-                      icon: const Icon(Icons.vpn_lock_rounded, size: 14),
-                      label: const Text('Publicador Tor (.onion)', style: TextStyle(fontSize: 11)),
+                      icon: const Icon(Icons.clear_rounded, size: 14),
+                      label: const Text('Remover / Não configurado', style: TextStyle(fontSize: 11)),
                       onPressed: () {
-                        textController.text = CatalogPublisherKeyring.defaultOfficialManifestUrl;
+                        textController.clear();
                       },
                     ),
                     TextButton.icon(
@@ -595,7 +598,7 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                 final accent = context.accentTextColor;
                 final errorColor = NixPalette.crimson.readableAccentOn(context.nixScheme);
                 final sourceStatus = !configured
-                    ? 'URL do publicador inválida ou não configurada.'
+                    ? 'Nenhum publicador de atualizações configurado.'
                     : !hasTrustedKey
                         ? 'A chave pública do publicador não foi configurada.'
                         : available
@@ -1129,32 +1132,47 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
           color: NixColors.surfaceCard,
           child: Column(
             children: [
-              TextField(
-                controller: _searchCtrl,
-                style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: 'Buscar por título, autor, diretor, gênero ou palavra-chave...',
-                  prefixIcon: const Icon(Icons.search_rounded, color: Colors.amber, size: 20),
-                  suffixIcon: _searchCtrl.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear_rounded, size: 18),
-                          onPressed: () {
-                            _searchCtrl.clear();
-                            _executeSearch();
-                          },
-                        )
-                      : null,
-                  filled: true,
-                  fillColor: NixColors.surfaceSidebar,
-                  border: OutlineInputBorder(
-                    borderRadius: NixTokens.borderSm,
-                    borderSide: BorderSide.none,
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchCtrl,
+                      style: TextStyle(color: NixColors.textPrimary, fontSize: 13),
+                      decoration: InputDecoration(
+                        hintText: 'Buscar por título, autor, diretor, gênero ou palavra-chave...',
+                        prefixIcon: const Icon(Icons.search_rounded, color: Colors.amber, size: 20),
+                        suffixIcon: _searchCtrl.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded, size: 18),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  _executeSearch();
+                                },
+                              )
+                            : null,
+                        filled: true,
+                        fillColor: NixColors.surfaceSidebar,
+                        border: OutlineInputBorder(
+                          borderRadius: NixTokens.borderSm,
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        isDense: true,
+                      ),
+                      onSubmitted: (_) => _executeSearch(),
+                      onChanged: (_) => _executeSearch(),
+                    ),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  isDense: true,
-                ),
-                onSubmitted: (_) => _executeSearch(),
-                onChanged: (_) => _executeSearch(),
+                  const SizedBox(width: 8),
+                  FilledButton.tonalIcon(
+                    onPressed: () => UniversalMetadataSearchDialog.show(
+                      context,
+                      initialQuery: _searchCtrl.text.trim().isNotEmpty ? _searchCtrl.text.trim() : null,
+                    ),
+                    icon: const Icon(Icons.travel_explore_rounded, size: 17),
+                    label: const Text('Buscar online', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               // Chips de Categoria
@@ -1226,29 +1244,210 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
     );
   }
 
+  Future<void> _openManualAddWorkDialog() async {
+    final titleCtrl = TextEditingController();
+    final creatorCtrl = TextEditingController();
+    final yearCtrl = TextEditingController();
+    final genresCtrl = TextEditingController();
+    final summaryCtrl = TextEditingController();
+    String selectedKind = 'book';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dlgCtx) => StatefulBuilder(
+        builder: (dlgCtx, setDlgState) => AlertDialog(
+          backgroundColor: NixColors.surfaceCard,
+          shape: RoundedRectangleBorder(borderRadius: NixTokens.borderMd),
+          title: Text(
+            'Adicionar Obra Manualmente',
+            style: TextStyle(color: NixColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleCtrl,
+                  decoration: const InputDecoration(labelText: 'Título da Obra *'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: creatorCtrl,
+                  decoration: const InputDecoration(labelText: 'Autor, Diretor ou Artista'),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  value: selectedKind,
+                  dropdownColor: NixColors.surfaceCard,
+                  decoration: const InputDecoration(labelText: 'Tipo / Categoria'),
+                  items: const [
+                    DropdownMenuItem(value: 'book', child: Text('Livro')),
+                    DropdownMenuItem(value: 'movie', child: Text('Filme')),
+                    DropdownMenuItem(value: 'series', child: Text('Série')),
+                    DropdownMenuItem(value: 'anime', child: Text('Anime')),
+                    DropdownMenuItem(value: 'manga', child: Text('Mangá')),
+                    DropdownMenuItem(value: 'album', child: Text('Álbum Musical')),
+                    DropdownMenuItem(value: 'track', child: Text('Faixa Musical')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setDlgState(() => selectedKind = v);
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: yearCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Ano de Lançamento'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: genresCtrl,
+                  decoration: const InputDecoration(labelText: 'Gêneros (separados por vírgula)'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: summaryCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Sinopse ou Descrição'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dlgCtx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (titleCtrl.text.trim().isNotEmpty) Navigator.pop(dlgCtx, true);
+              },
+              child: const Text('Salvar no Catálogo'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true && titleCtrl.text.trim().isNotEmpty) {
+      final work = CatalogWork(
+        id: 'nix:work:manual:${DateTime.now().microsecondsSinceEpoch}',
+        kind: selectedKind,
+        title: titleCtrl.text.trim(),
+        creators: creatorCtrl.text.trim().isNotEmpty ? creatorCtrl.text.trim() : null,
+        releaseYear: int.tryParse(yearCtrl.text.trim()),
+        genres: genresCtrl.text.trim().isNotEmpty ? genresCtrl.text.trim() : null,
+        summary: summaryCtrl.text.trim().isNotEmpty ? summaryCtrl.text.trim() : null,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      final db = _nixState.catalogDatabase;
+      if (db != null) {
+        await db.insertWork(work);
+        await _executeSearch();
+      }
+    }
+  }
+
   Widget _buildEmptyState() {
+    final query = _searchCtrl.text.trim();
+    if (query.isNotEmpty) {
+      return Center(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.search_off_rounded, size: 48, color: NixColors.textSecondary),
+                const SizedBox(height: 12),
+                Text(
+                  'Nenhuma obra encontrada para "$query"',
+                  style: TextStyle(
+                    color: NixColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Não foram encontrados registros no catálogo local FTS5.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () => UniversalMetadataSearchDialog.show(context, initialQuery: query),
+                  icon: const Icon(Icons.travel_explore_rounded, size: 18),
+                  label: Text('Pesquisar "$query" online nas fontes abertas'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Center(
       child: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.search_off_rounded, size: 48, color: NixColors.textSecondary),
-              const SizedBox(height: 12),
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.auto_stories_rounded, size: 36, color: Colors.amber),
+              ),
+              const SizedBox(height: 16),
               Text(
-                'Nenhuma obra encontrada no catálogo local',
+                'Seu catálogo está vazio',
                 style: TextStyle(
                   color: NixColors.textPrimary,
-                  fontSize: 15,
+                  fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                'Tente termos mais amplos ou altere o filtro de categoria. A busca é 100% offline via FTS5.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: NixColors.textSecondary, fontSize: 12),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: Text(
+                  'Nenhuma obra cadastrada. Pesquise metadados online sem chaves de API, importe arquivos locais ou adicione obras ao seu acervo.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: NixColors.textSecondary, fontSize: 13, height: 1.4),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Wrap(
+                spacing: 12,
+                runSpacing: 10,
+                alignment: WrapAlignment.center,
+                children: [
+                  FilledButton.icon(
+                    onPressed: () => UniversalMetadataSearchDialog.show(context),
+                    icon: const Icon(Icons.travel_explore_rounded, size: 18),
+                    label: const Text('Pesquisar online'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => CollectionImportDialog.show(context),
+                    icon: const Icon(Icons.file_upload_outlined, size: 18),
+                    label: const Text('Importar arquivo'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _openManualAddWorkDialog,
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: const Text('Adicionar manualmente'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _tabController.animateTo(1),
+                    icon: const Icon(Icons.bookmarks_rounded, size: 18),
+                    label: const Text('Abrir meu Acervo'),
+                  ),
+                ],
               ),
             ],
           ),

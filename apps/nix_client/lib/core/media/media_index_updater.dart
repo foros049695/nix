@@ -51,8 +51,7 @@ class CatalogPublisherKeyring {
       'a805baa55178d7c0220a9d586a56db6359521455e3b66d9abf914b829a47f045';
   static const String officialPublisherKeyHex =
       'e2b5c179834d8fa209f87234bb4817a5690d9841804f5619ca2e8310c85b190f';
-  static const String defaultOfficialManifestUrl =
-      'http://nixcatalog234567abcdefghijklmnopqrstuvwxyz234567abcdefaa.onion/manifest.json';
+  static const String defaultOfficialManifestUrl = '';
   static const String officialHttpsManifestUrl =
       'https://raw.githubusercontent.com/foros049695/nix/main/apps/nix_client/assets/catalog/seed_catalog_manifest.json';
 
@@ -705,6 +704,9 @@ class CatalogUpdateManager {
     required Uri manifestUri,
     bool allowClearnet = false,
   }) async {
+    if (manifestUri.toString().trim().isEmpty || manifestUri.host.isEmpty) {
+      throw const FormatException('Nenhum publicador de atualizações configurado.');
+    }
     if (isBusy) throw StateError('Já existe uma operação de catálogo em andamento.');
     _isCancelled = false;
     _emitProgress(const CatalogUpdateProgress(
