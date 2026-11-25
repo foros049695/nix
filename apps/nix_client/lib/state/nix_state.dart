@@ -19,6 +19,8 @@ import '../core/models/forum_post.dart';
 import '../core/models/cultural_item.dart';
 import '../core/models/cultural_tracking.dart';
 import '../core/media/catalog_cultural_item.dart';
+import '../core/media/local_audio_library_service.dart';
+import '../core/media/pager_playlist.dart';
 import '../core/models/user_profile.dart';
 import '../core/models/direct_message.dart';
 import '../core/models/user_settings.dart';
@@ -52,7 +54,6 @@ import '../core/archive/archive_image.dart';
 import '../core/archive/nix_archive_service.dart';
 import '../core/replication/replication_coordinator.dart';
 import '../core/media/media_catalog_service.dart';
-import '../core/media/pager_playlist.dart';
 import '../core/media/nix_music_player_controller.dart';
 import '../core/media/voice_note.dart';
 import '../core/media/catalog_database.dart';
@@ -1888,6 +1889,7 @@ class NixState extends ChangeNotifier {
     await _restoreForum();
     await _restoreLocalGroupPolls();
     await _migrateLegacyAcervo();
+    await loadUserAudioLibrary();
     final restoredAvatarStyle = await _restorePersonalPreferences();
     if (_localDatabase == null || _identityRepo == null) return;
 
@@ -4944,6 +4946,42 @@ class NixState extends ChangeNotifier {
 
   late final NixMusicPlayerController _musicPlayer = NixMusicPlayerController();
   NixMusicPlayerController get musicPlayer => _musicPlayer;
+
+  final LocalAudioLibraryService _audioLibraryService = LocalAudioLibraryService();
+  LocalAudioLibraryService get audioLibraryService => _audioLibraryService;
+
+  List<PagerTrack> _userAudioLibrary = [];
+  List<PagerTrack> get userAudioLibrary => List.unmodifiable(_userAudioLibrary);
+
+  Future<void> loadUserAudioLibrary() async {
+    final loaded = await _audioLibraryService.loadLibrary();
+    _userAudioLibrary = loaded;
+    if (loaded.isNotEmpty) {
+      _musicPlayer.setPlaylist(loaded, startIndex: 0);
+    }
+    notifyListeners();
+  }
+
+  Future<void> addTracksToAudioLibrary(List<PagerTrack> tracks) async {
+    final existingUris = _userAudioLibrary.map((t) => t.uri).toSet();
+    final toAdd = tracks.where((t) => !existingUris.contains(t.uri)).toList();
+    if (toAdd.isNotEmpty) {
+      _userAudioLibrary.addAll(toAdd);
+      await _audioLibraryService.saveLibrary(_userAudioLibrary);
+      _musicPlayer.setPlaylist(
+        _userAudioLibrary,
+        startIndex: _musicPlayer.currentIndex >= 0 ? _musicPlayer.currentIndex : 0,
+      );
+      notifyListeners();
+    }
+  }
+
+  Future<void> removeTrackFromAudioLibrary(String uri) async {
+    _userAudioLibrary.removeWhere((t) => t.uri == uri);
+    await _audioLibraryService.saveLibrary(_userAudioLibrary);
+    _musicPlayer.setPlaylist(_userAudioLibrary);
+    notifyListeners();
+  }
 
   PagerPlaylist? _injectedPagerPlaylist;
 

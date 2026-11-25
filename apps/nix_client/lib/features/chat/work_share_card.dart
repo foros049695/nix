@@ -1,10 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/models/cultural_item.dart';
 import '../../core/models/cultural_tracking.dart';
+import '../../core/security/platform_runtime.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
 import '../media/cultural_work_sheet.dart';
@@ -130,6 +133,19 @@ class WorkShareData {
             s.name.toLowerCase() == status!.toLowerCase()).firstOrNull
         : null;
 
+    String? resolvedCover = coverPath;
+    if (resolvedCover == null || resolvedCover.isEmpty || resolvedCover.startsWith('placeholder:')) {
+      final safeId = id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final coversDir = NixPlatformPaths.coversDirectory;
+      for (final ext in ['jpg', 'png', 'webp', 'jpeg']) {
+        final f = File('$coversDir/$safeId.$ext');
+        if (f.existsSync() && f.lengthSync() > 0) {
+          resolvedCover = f.path;
+          break;
+        }
+      }
+    }
+
     return CulturalItem(
       id: id,
       title: title,
@@ -145,8 +161,8 @@ class WorkShareData {
       category: cat,
       rating: rating != null ? rating!.toStringAsFixed(1) : '',
       monogram: title.isNotEmpty ? String.fromCharCodes(title.runes.take(2)).toUpperCase() : 'NX',
-      coverMotif: coverPath != null && coverPath!.startsWith('placeholder:') ? coverPath : null,
-      localImagePath: coverPath != null && !coverPath!.startsWith('placeholder:') ? coverPath : null,
+      coverMotif: resolvedCover != null && resolvedCover.startsWith('placeholder:') ? resolvedCover : null,
+      localImagePath: resolvedCover != null && !resolvedCover.startsWith('placeholder:') ? resolvedCover : null,
       source: source ?? 'shared_message',
       provenanceConfidence: 'strong_attributes',
       tracking: CulturalTracking(
@@ -163,6 +179,22 @@ class WorkShareCard extends StatelessWidget {
 
   const WorkShareCard({super.key, required this.data});
 
+  String? _resolveCover() {
+    if (data.coverPath != null && data.coverPath!.isNotEmpty && !data.coverPath!.startsWith('placeholder:')) {
+      if (data.coverPath!.startsWith('http://') || data.coverPath!.startsWith('https://')) {
+        return data.coverPath;
+      }
+      if (File(data.coverPath!).existsSync()) return data.coverPath;
+    }
+    final safeId = data.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    final coversDir = NixPlatformPaths.coversDirectory;
+    for (final ext in ['jpg', 'png', 'webp', 'jpeg']) {
+      final f = File('$coversDir/$safeId.$ext');
+      if (f.existsSync() && f.lengthSync() > 0) return f.path;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDesktop = defaultTargetPlatform == TargetPlatform.linux ||
@@ -178,6 +210,8 @@ class WorkShareCard extends StatelessWidget {
       'music' || 'música' || 'track' || 'album' => Icons.music_note_rounded,
       _ => Icons.animation_rounded,
     };
+
+    final coverRef = _resolveCover();
 
     return Container(
       constraints: const BoxConstraints(maxWidth: 340),
@@ -197,42 +231,67 @@ class WorkShareCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Banner estilizado de cabeçalho
+          // Banner com Capa Real da Obra
           Container(
-            height: 110,
+            height: 140,
             decoration: const BoxDecoration(
               borderRadius: BorderRadius.vertical(top: Radius.circular(13)),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF28183E), Color(0xFF0F2236)],
-              ),
+              color: Color(0xFF16152B),
             ),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Positioned.fill(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
-                      gradient: RadialGradient(
-                        center: const Alignment(0.4, -0.2),
-                        radius: 0.9,
-                        colors: [
-                          Colors.cyanAccent.withValues(alpha: 0.22),
-                          Colors.transparent,
-                        ],
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (coverRef != null) ...[
+                    // Fundo com blur atmosférico
+                    if (coverRef.startsWith('http://') || coverRef.startsWith('https://'))
+                      Image.network(coverRef, fit: BoxFit.cover)
+                    else
+                      Image.file(File(coverRef), fit: BoxFit.cover),
+                    BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                      child: Container(color: Colors.black.withOpacity(0.45)),
+                    ),
+                    // Capa nítida centralizada em destaque
+                    Center(
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 4)),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: (coverRef.startsWith('http://') || coverRef.startsWith('https://'))
+                              ? Image.network(coverRef, fit: BoxFit.contain)
+                              : Image.file(File(coverRef), fit: BoxFit.contain),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                Center(
-                  child: Icon(
-                    kindIcon,
-                    size: 52,
-                    color: Colors.white.withValues(alpha: 0.22),
-                  ),
-                ),
+                  ] else ...[
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF28183E), Color(0xFF0F2236)],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Center(
+                      child: Icon(
+                        kindIcon,
+                        size: 52,
+                        color: Colors.white.withValues(alpha: 0.22),
+                      ),
+                    ),
+                  ],
                 // Badge de status real (se informado pelo remetente)
                 if (data.status != null && data.status!.isNotEmpty)
                   Positioned(
@@ -257,7 +316,8 @@ class WorkShareCard extends StatelessWidget {
               ],
             ),
           ),
-          Padding(
+        ),
+        Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

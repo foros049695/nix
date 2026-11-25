@@ -234,7 +234,7 @@ class _PagerPlaylistDialogState extends State<PagerPlaylistDialog>
     }
     final track = name == null || selected == null
         ? selected
-        : PagerTrack(uri: selected.uri, name: name);
+        : selected.copyWith(name: name);
     if (track == null) return;
     if (_tracks.any((value) => value.uri == track.uri)) {
       _error = 'Esta faixa já está na playlist.';

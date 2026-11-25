@@ -136,6 +136,9 @@ class NixPlatformPaths {
     return '$home/.local/share/nix/$filename';
   }
 
+  /// Diretório persistente para capas locais e em cache
+  static String get coversDirectory => resolveDataFile('covers');
+
   static String _windowsDataDirectory() {
     final local = Platform.environment['LOCALAPPDATA'];
     if (local != null && Directory(local).isAbsolute) return '$local/Projeto Nix';

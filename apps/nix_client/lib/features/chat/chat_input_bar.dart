@@ -402,6 +402,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
               completedPercent: userPercent,
               genres: parsedGenres,
               synopsis: work.summary ?? '',
+              coverPath: userItem?.localImagePath ?? work.coverThumb,
               source: 'catalog',
               externalId: work.externalIds['wikidata'] as String? ??
                   work.externalIds['openlibrary'] as String?,

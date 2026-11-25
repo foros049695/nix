@@ -7,7 +7,6 @@ import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
 import '../calls/active_call_bar.dart';
-import '../dialogs/create_channel_dialog.dart';
 import '../profile/nix_user_avatar.dart';
 import 'workspace_drag_source.dart';
 import 'workspace_image.dart';
@@ -225,17 +224,7 @@ class ChannelsSidebar extends StatelessWidget {
                       nixState.joinCall(ch);
                     }
                   },
-                  onAddChannel: (nixState.currentSpace.isSingleChat ||
-                          nixState.currentSpace.isAnnouncementOnly ||
-                          nixState.currentSpace.channels.any((c) => c.type == ChannelType.announcement))
-                      ? null
-                      : () {
-                          showDialog(
-                            context: context,
-                            builder: (_) =>
-                                CreateChannelDialog(defaultCategory: entry.key),
-                          );
-                        },
+                  onAddChannel: null,
                 );
               }).toList(),
             ),
@@ -376,20 +365,6 @@ class _SpaceHeader extends StatelessWidget {
                   size: 18, color: NixColors.textSecondary),
               tooltip: 'Editar imagem do grupo',
               onPressed: () => _showImageEditor(context, state),
-            ),
-          if (!space.isSingleChat &&
-              !space.isAnnouncementOnly &&
-              !space.channels.any((c) => c.type == ChannelType.announcement))
-            IconButton(
-              icon: Icon(Icons.add_rounded,
-                  size: 20, color: NixColors.textSecondary),
-              tooltip: 'Adicionar Sala / Tópico',
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (_) => const CreateChannelDialog(),
-                );
-              },
             ),
         ],
       ),

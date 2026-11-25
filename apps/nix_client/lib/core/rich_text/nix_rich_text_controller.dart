@@ -145,6 +145,15 @@ class NixRichTextController extends TextEditingController {
     while (_lineBlocks.length > lines.length) {
       _lineBlocks.removeLast();
     }
+    for (var i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      if (line.startsWith('☐ ') || line.startsWith('☑ ')) {
+        _lineBlocks[i].type = RichBlockType.checklist;
+        _lineBlocks[i].isChecked = line.startsWith('☑ ');
+      } else if (line.startsWith('• ') || line.startsWith('- ')) {
+        _lineBlocks[i].type = RichBlockType.bulletList;
+      }
+    }
   }
 
   void _handleTextChanges() {
@@ -181,19 +190,33 @@ class NixRichTextController extends TextEditingController {
       }
 
       // Se há estilos ativos aplicáveis, cria ou estende span para os novos caracteres
+      // apenas se o span existente já não cobrir com o mesmo estilo
       if (_hasActiveStyles()) {
-        _spans.add(RichInlineSpan(
-          start: changePos,
-          end: changePos + diff,
-          bold: activeBold,
-          italic: activeItalic,
-          underline: activeUnderline,
-          strikethrough: activeStrikethrough,
-          monospace: activeMonospace,
-          spoiler: activeSpoiler,
-          quote: activeQuote,
-          linkUrl: activeLinkUrl,
-        ));
+        final alreadyCovered = _spans.any((s) =>
+            s.start <= changePos &&
+            s.end >= changePos + diff &&
+            s.bold == activeBold &&
+            s.italic == activeItalic &&
+            s.underline == activeUnderline &&
+            s.strikethrough == activeStrikethrough &&
+            s.monospace == activeMonospace &&
+            s.spoiler == activeSpoiler &&
+            s.quote == activeQuote &&
+            s.linkUrl == activeLinkUrl);
+        if (!alreadyCovered) {
+          _spans.add(RichInlineSpan(
+            start: changePos,
+            end: changePos + diff,
+            bold: activeBold,
+            italic: activeItalic,
+            underline: activeUnderline,
+            strikethrough: activeStrikethrough,
+            monospace: activeMonospace,
+            spoiler: activeSpoiler,
+            quote: activeQuote,
+            linkUrl: activeLinkUrl,
+          ));
+        }
       }
     } else if (newText.length < oldText.length) {
       // Remoção de caracteres
@@ -278,8 +301,37 @@ class NixRichTextController extends TextEditingController {
   }
 
   void _normalizeSpans() {
-    // Remove spans inválidos ou vazios
+    // 1. Remove spans inválidos ou vazios
     _spans.removeWhere((s) => s.start >= s.end || s.start < 0 || s.end > text.length || !s.hasAnyStyle);
+
+    // 2. Ordena por início e término
+    _spans.sort((a, b) {
+      final c = a.start.compareTo(b.start);
+      if (c != 0) return c;
+      return a.end.compareTo(b.end);
+    });
+
+    // 3. Mescla spans contíguos ou sobrepostos com estilos idênticos
+    var i = 0;
+    while (i < _spans.length - 1) {
+      final cur = _spans[i];
+      final next = _spans[i + 1];
+
+      if (cur.bold == next.bold &&
+          cur.italic == next.italic &&
+          cur.underline == next.underline &&
+          cur.strikethrough == next.strikethrough &&
+          cur.monospace == next.monospace &&
+          cur.spoiler == next.spoiler &&
+          cur.quote == next.quote &&
+          cur.linkUrl == next.linkUrl &&
+          cur.end >= next.start) {
+        cur.end = max(cur.end, next.end);
+        _spans.removeAt(i + 1);
+      } else {
+        i++;
+      }
+    }
   }
 
   // ==========================================

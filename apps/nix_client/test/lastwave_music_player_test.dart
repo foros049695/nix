@@ -7,7 +7,7 @@ import 'package:nix_client/features/media/lastwave_music_player_screen.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('Nix LastWave Music Player — Controlador & DSP Settings', () {
+  group('Nix LastWave Music Player — Controlador & DSP Settings Soberanos', () {
     late NixMusicPlayerController controller;
 
     setUp(() {
@@ -18,16 +18,14 @@ void main() {
       controller.dispose();
     });
 
-    test('Inicialização contém playlist padrão de alta fidelidade e índice válido', () {
-      expect(controller.playlist, isNotEmpty);
-      expect(controller.currentIndex, 0);
-      expect(controller.currentTrack, isNotNull);
-      expect(controller.currentTrack!.name, 'Espresso');
-      expect(controller.currentTrack!.artist, 'Sabrina Carpenter');
+    test('Inicialização limpa sem músicas artificiais e estado vazio', () {
+      expect(controller.playlist, isEmpty);
+      expect(controller.currentIndex, -1);
+      expect(controller.currentTrack, isNull);
       expect(controller.isPlaying, isFalse);
     });
 
-    test('PagerTrack calcula corretamente badges técnicas de qualidade de áudio', () {
+    test('PagerTrack calcula corretamente badges técnicas de qualidade de áudio real', () {
       const hiResTrack = PagerTrack(
         uri: 'file:///sample.flac',
         name: 'Hi-Res Sample',
@@ -35,8 +33,10 @@ void main() {
         sampleRate: '96 kHz',
         bitDepth: '24-bit',
       );
-      expect(hiResTrack.audioQualityBadge, contains('Hi-Res Lossless'));
-      expect(hiResTrack.audioQualityBadge, contains('24-bit/96 kHz'));
+      expect(hiResTrack.audioQualityBadge, contains('Hi-Res'));
+      expect(hiResTrack.audioQualityBadge, contains('FLAC'));
+      expect(hiResTrack.audioQualityBadge, contains('24-bit'));
+      expect(hiResTrack.audioQualityBadge, contains('96 kHz'));
 
       const standardFlac = PagerTrack(
         uri: 'file:///standard.flac',
@@ -45,7 +45,8 @@ void main() {
         sampleRate: '44.1 kHz',
         bitDepth: '16-bit',
       );
-      expect(standardFlac.audioQualityBadge, contains('Lossless'));
+      expect(standardFlac.audioQualityBadge, contains('FLAC'));
+      expect(standardFlac.audioQualityBadge, contains('16-bit'));
 
       const mp3Track = PagerTrack(
         uri: 'file:///track.mp3',
@@ -56,20 +57,26 @@ void main() {
       expect(mp3Track.audioQualityBadge, 'MP3 · 320 kbps');
     });
 
-    test('Controles de transporte: play, pause, next, previous, shuffle e repeat', () {
+    test('Controles de transporte com faixas reais: play, pause, next, previous, shuffle e repeat', () {
+      const trackA = PagerTrack(uri: 'file:///trackA.flac', name: 'Faixa A', durationSeconds: 120);
+      const trackB = PagerTrack(uri: 'file:///trackB.flac', name: 'Faixa B', durationSeconds: 180);
+      controller.setPlaylist([trackA, trackB]);
+
+      expect(controller.playlist.length, 2);
+      expect(controller.currentTrack?.name, 'Faixa A');
       expect(controller.isPlaying, isFalse);
+
       controller.resume();
       expect(controller.isPlaying, isTrue);
 
       controller.pause();
       expect(controller.isPlaying, isFalse);
 
-      final initialIdx = controller.currentIndex;
       controller.next();
-      expect(controller.currentIndex, (initialIdx + 1) % controller.playlist.length);
+      expect(controller.currentTrack?.name, 'Faixa B');
 
       controller.previous();
-      expect(controller.currentIndex, initialIdx);
+      expect(controller.currentTrack?.name, 'Faixa A');
 
       controller.toggleShuffle();
       expect(controller.isShuffle, isTrue);
@@ -117,7 +124,7 @@ void main() {
     });
   });
 
-  group('Nix LastWave Music Player — Telas Visuais (Now Playing, Biblioteca, AutoEQ)', () {
+  group('Nix LastWave Music Player — Telas Visuais Sem Dados Falsos', () {
     late NixMusicPlayerController controller;
 
     setUp(() {
@@ -128,7 +135,7 @@ void main() {
       controller.dispose();
     });
 
-    testWidgets('Renderiza as 3 abas e a visualização Now Playing por padrão', (tester) async {
+    testWidgets('Now Playing exibe mensagem de biblioteca vazia quando não há faixas', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: LastWaveMusicPlayerScreen(controller: controller, initialTabIndex: 0),
@@ -140,20 +147,15 @@ void main() {
       expect(find.text('Biblioteca'), findsOneWidget);
       expect(find.text('AutoEQ DSP'), findsOneWidget);
 
-      // Metadados da faixa ativa
-      expect(find.text('Espresso'), findsOneWidget);
-      expect(find.textContaining('Sabrina Carpenter'), findsOneWidget);
-      expect(find.textContaining('Hi-Res Lossless'), findsOneWidget);
+      // Não exibe faixas falsas como Sabrina Carpenter
+      expect(find.text('Espresso'), findsNothing);
+      expect(find.textContaining('Sabrina Carpenter'), findsNothing);
 
-      // Ícones dos controles
-      expect(find.byIcon(Icons.skip_previous_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.skip_next_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.shuffle_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.repeat_rounded), findsOneWidget);
+      // Exibe estado vazio real
+      expect(find.textContaining('Nenhuma música adicionada'), findsOneWidget);
     });
 
-    testWidgets('Navega para a aba Biblioteca e exibe lista de faixas e botão play cápsula', (tester) async {
+    testWidgets('Biblioteca exibe botões reais de importar e escanear quando vazia', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: LastWaveMusicPlayerScreen(controller: controller, initialTabIndex: 1),
@@ -161,17 +163,18 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Acervo Nix Soberano'), findsOneWidget);
-      expect(find.text('Play'), findsOneWidget);
-      expect(find.text('Faixas da Fila'), findsOneWidget);
+      expect(find.text('Biblioteca Musical Local'), findsOneWidget);
+      expect(find.textContaining('0 faixas disponíveis'), findsOneWidget);
+      expect(find.text('Importar Áudio'), findsOneWidget);
+      expect(find.text('Escanear Pasta'), findsOneWidget);
 
-      // Faixas na biblioteca
-      expect(find.text('A Found Memory'), findsOneWidget);
-      expect(find.text('Liminal0y1bg554'), findsOneWidget);
-      expect(find.text('In the Clouds'), findsOneWidget);
+      // Não exibe músicas fictícias na fila
+      expect(find.text('A Found Memory'), findsNothing);
+      expect(find.text('Liminal0y1bg554'), findsNothing);
+      expect(find.text('In the Clouds'), findsNothing);
     });
 
-    testWidgets('Navega para a aba AutoEQ DSP e exibe curvas e equalizador', (tester) async {
+    testWidgets('Aba AutoEQ DSP exibe Saída Padrão sem fones de ouvido artificiais', (tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -189,7 +192,11 @@ void main() {
       expect(find.text('Motor AutoEQ / DSP'), findsOneWidget);
       expect(find.text('AutoEQ / PEQ'), findsOneWidget);
       expect(find.text('15-Band Graphic'), findsOneWidget);
-      expect(find.textContaining('CMF by Nothing Buds Pro 2'), findsOneWidget);
+
+      // Não exibe fones inexistentes como CMF Nothing Buds
+      expect(find.textContaining('CMF by Nothing Buds Pro 2'), findsNothing);
+      expect(find.text('Saída Padrão do Sistema'), findsOneWidget);
+
       expect(find.textContaining('Resposta de Frequência'), findsOneWidget);
       expect(find.text('Curva Alvo (Target Curve)'), findsOneWidget);
       expect(find.text('Graves (Bass Gain)'), findsOneWidget);

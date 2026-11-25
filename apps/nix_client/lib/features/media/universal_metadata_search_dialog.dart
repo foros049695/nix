@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/media/universal_metadata_service.dart';
 import '../../core/models/cultural_item.dart';
 import '../../core/network/transport_profile.dart';
+import '../../core/security/platform_runtime.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';
@@ -77,7 +78,8 @@ class _UniversalMetadataSearchDialogState
     final nixState = context.read<NixState>();
     final profile = GlobalTransportRegistry.current.getProfile(TransportModule.music);
     final isClearnet = profile == TransportProfileType.directHttps;
-    final isTorReady = nixState.embeddedTor.isReady ||
+    final isTorReady = nixState.isTorRunning ||
+        nixState.embeddedTor.isReady ||
         nixState.securityGate.torOnionV3Ready ||
         nixState.embeddedTor.socksPort > 0;
 
@@ -117,7 +119,8 @@ class _UniversalMetadataSearchDialogState
     final nixState = context.read<NixState>();
     final profile = GlobalTransportRegistry.current.getProfile(TransportModule.music);
     final isClearnet = profile == TransportProfileType.directHttps;
-    final isTorReady = nixState.embeddedTor.isReady ||
+    final isTorReady = nixState.isTorRunning ||
+        nixState.embeddedTor.isReady ||
         nixState.securityGate.torOnionV3Ready ||
         nixState.embeddedTor.socksPort > 0;
     final socksPort = nixState.embeddedTor.socksPort > 0 ? nixState.embeddedTor.socksPort : 9050;
@@ -130,8 +133,7 @@ class _UniversalMetadataSearchDialogState
         socksPort: socksPort,
       );
       if (bytes != null && bytes.isNotEmpty) {
-        final home = Platform.environment['HOME'] ?? Directory.systemTemp.path;
-        final coversDir = Directory('$home/.local/share/nix/covers');
+        final coversDir = Directory(NixPlatformPaths.coversDirectory);
         if (!coversDir.existsSync()) {
           coversDir.createSync(recursive: true);
         }
@@ -213,7 +215,8 @@ class _UniversalMetadataSearchDialogState
     final profile = GlobalTransportRegistry.current.getProfile(TransportModule.music);
     final isClearnet = profile == TransportProfileType.directHttps;
     final nixState = context.watch<NixState>();
-    final isTorReady = nixState.embeddedTor.isReady ||
+    final isTorReady = nixState.isTorRunning ||
+        nixState.embeddedTor.isReady ||
         nixState.securityGate.torOnionV3Ready ||
         nixState.embeddedTor.socksPort > 0;
 
@@ -608,6 +611,22 @@ class _SearchResultCoverState extends State<_SearchResultCover> {
   }
 
   Future<void> _loadThumb() async {
+    final safeId = widget.item.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    final coversDir = NixPlatformPaths.coversDirectory;
+    for (final ext in ['jpg', 'png', 'webp', 'jpeg']) {
+      final f = File('$coversDir/$safeId.$ext');
+      if (f.existsSync() && f.lengthSync() > 0) {
+        final b = await f.readAsBytes();
+        if (mounted) {
+          setState(() {
+            _bytes = b;
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+    }
+
     final url = widget.item.coverUrl;
     if (url == null || url.isEmpty) return;
     if (_thumbCache.containsKey(url)) {
@@ -629,6 +648,13 @@ class _SearchResultCoverState extends State<_SearchResultCover> {
         _bytes = b;
         _isLoading = false;
       });
+      // Salva no cache local de capas automaticamente
+      try {
+        final dir = Directory(coversDir);
+        if (!dir.existsSync()) dir.createSync(recursive: true);
+        final f = File('$coversDir/$safeId.jpg');
+        await f.writeAsBytes(b);
+      } catch (_) {}
     } else {
       setState(() => _isLoading = false);
     }

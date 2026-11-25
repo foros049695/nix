@@ -79,68 +79,8 @@ class NixMusicPlayerController extends ChangeNotifier {
   Process? _activeAudioProcess;
 
   NixMusicPlayerController() {
-    _initDefaultPlaylist();
-  }
-
-  void _initDefaultPlaylist() {
-    _playlist = [
-      const PagerTrack(
-        uri: 'file:///assets/music/espresso.flac',
-        name: 'Espresso',
-        artist: 'Sabrina Carpenter',
-        album: 'Short n\' Sweet',
-        durationSeconds: 175,
-        audioFormat: 'FLAC',
-        sampleRate: '96 kHz',
-        bitDepth: '24-bit',
-        bitRateKbps: 1850,
-      ),
-      const PagerTrack(
-        uri: 'file:///assets/music/a_found_memory.flac',
-        name: 'A Found Memory',
-        artist: 'Marshall Watson Music',
-        album: 'Soft Murmurs',
-        durationSeconds: 218,
-        audioFormat: 'FLAC',
-        sampleRate: '44.1 kHz',
-        bitDepth: '16-bit',
-        bitRateKbps: 920,
-      ),
-      const PagerTrack(
-        uri: 'file:///assets/music/liminal.flac',
-        name: 'Liminal0y1bg554',
-        artist: 'Windows 96',
-        album: 'Awkward Dance Music',
-        durationSeconds: 194,
-        audioFormat: 'FLAC',
-        sampleRate: '48 kHz',
-        bitDepth: '24-bit',
-        bitRateKbps: 1200,
-      ),
-      const PagerTrack(
-        uri: 'file:///assets/music/in_the_clouds.mp3',
-        name: 'In the Clouds',
-        artist: 'FM Skyline',
-        album: 'Images',
-        durationSeconds: 165,
-        audioFormat: 'MP3',
-        sampleRate: '44.1 kHz',
-        bitDepth: '16-bit',
-        bitRateKbps: 320,
-      ),
-      const PagerTrack(
-        uri: 'file:///assets/music/sensuality.flac',
-        name: 'Sensuality',
-        artist: 'Mars Lasar',
-        album: 'Escape',
-        durationSeconds: 250,
-        audioFormat: 'FLAC',
-        sampleRate: '44.1 kHz',
-        bitDepth: '16-bit',
-        bitRateKbps: 880,
-      ),
-    ];
-    _currentIndex = 0;
+    _playlist = [];
+    _currentIndex = -1;
   }
 
   List<PagerTrack> get playlist => List.unmodifiable(_playlist);

@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../../core/models/cultural_item.dart';
+import '../../core/security/platform_runtime.dart';
 
 enum CulturalFrameType {
   auto,
@@ -21,14 +23,17 @@ class CulturalCoverArt extends StatelessWidget {
     required this.width,
     this.frameType = CulturalFrameType.auto,
     this.fit,
+    this.forceFlat = false,
   });
 
   final CulturalItem item;
   final double width;
   final CulturalFrameType frameType;
   final BoxFit? fit;
+  final bool forceFlat;
 
   CulturalFrameType get effectiveFrame {
+    if (forceFlat) return CulturalFrameType.cinemaPoster;
     if (frameType != CulturalFrameType.auto) return frameType;
     if (item.isVinyl) return CulturalFrameType.vinyl;
     if (item.category == CulturalCategory.manga) return CulturalFrameType.mangaVolume;
@@ -54,10 +59,10 @@ class CulturalCoverArt extends StatelessWidget {
             (frame == CulturalFrameType.vinyl
                 ? 1.0
                 : frame == CulturalFrameType.mangaVolume
-                    ? 1.48
+                    ? 1.45
                     : frame == CulturalFrameType.closedBook
-                        ? 1.54
-                        : 1.40),
+                        ? 1.50
+                        : 1.50),
         child: switch (frame) {
           CulturalFrameType.vinyl => _vinyl(),
           CulturalFrameType.closedBook => _closedBook(isManga: false),
@@ -69,26 +74,143 @@ class CulturalCoverArt extends StatelessWidget {
     );
   }
 
+  String? _resolveCoverReference() {
+    // 1. localImagePath direto
+    final p = item.localImagePath;
+    if (p != null && p.isNotEmpty) {
+      if (p.startsWith('http://') || p.startsWith('https://') || p.startsWith('data:image/')) {
+        return p;
+      }
+      if (File(p).existsSync()) return p;
+    }
+
+    // 2. Arquivo em cache local no diretório persistente de capas
+    final safeId = item.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    final coversDir = NixPlatformPaths.coversDirectory;
+    for (final ext in ['jpg', 'png', 'webp', 'jpeg']) {
+      final f = File('$coversDir/$safeId.$ext');
+      if (f.existsSync() && f.lengthSync() > 0) {
+        return f.path;
+      }
+    }
+
+    // 3. URLs externas persistidas em externalIds ou storeLinks
+    final extUrl = item.externalIds['cover_url'] as String? ??
+        item.externalIds['cover'] as String? ??
+        item.storeLinks?['cover'];
+    if (extUrl != null && extUrl.isNotEmpty) {
+      return extUrl;
+    }
+
+    // 4. coverMotif se for URL
+    if (item.coverMotif != null &&
+        (item.coverMotif!.startsWith('http://') || item.coverMotif!.startsWith('https://'))) {
+      return item.coverMotif;
+    }
+
+    return null;
+  }
+
   Widget _art() {
     final fallback = CustomPaint(
       painter: _DesignedCoverPainter(item.coverMotif ?? item.title, item.category),
       child: Center(
-        child: Text(
-          item.monogram,
-          maxLines: 1,
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: width * .21,
-            fontWeight: FontWeight.w700,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                item.monogram,
+                maxLines: 1,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: width * .20,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                item.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: (width * .09).clamp(8.0, 12.0),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
-    final path = item.localImagePath;
-    if (path == null || path.isEmpty) return fallback;
-    final file = File(path);
-    if (!file.existsSync()) return fallback;
+
+    final ref = _resolveCoverReference();
+    if (ref == null || ref.isEmpty) return fallback;
+
     final effectiveFit = fit ?? (item.coverMotif == 'contain' ? BoxFit.contain : BoxFit.cover);
+
+    // Caso 1: Data URI base64
+    if (ref.startsWith('data:image/')) {
+      final comma = ref.indexOf(',');
+      if (comma != -1) {
+        try {
+          final bytes = base64Decode(ref.substring(comma + 1));
+          return ClipRect(
+            child: Transform.scale(
+              scale: item.cropScale.clamp(1, 2.2),
+              child: Image.memory(
+                bytes,
+                fit: effectiveFit,
+                cacheWidth: 600,
+                errorBuilder: (_, __, ___) => fallback,
+              ),
+            ),
+          );
+        } catch (_) {}
+      }
+    }
+
+    // Caso 2: URL HTTP/HTTPS
+    if (ref.startsWith('http://') || ref.startsWith('https://')) {
+      return ClipRect(
+        child: Transform.scale(
+          scale: item.cropScale.clamp(1, 2.2),
+          child: Image.network(
+            ref,
+            fit: effectiveFit,
+            cacheWidth: 600,
+            errorBuilder: (_, __, ___) => fallback,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return Container(
+                color: const Color(0xFF1E1B2E),
+                child: Center(
+                  child: SizedBox(
+                    width: width * 0.2,
+                    height: width * 0.2,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      value: loadingProgress.expectedTotalBytes != null
+                          ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                          : null,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    // Caso 3: Arquivo Local verificado
+    final file = File(ref);
+    if (!file.existsSync()) return fallback;
+
     return ClipRect(
       child: Transform.scale(
         scale: item.cropScale.clamp(1, 2.2),
@@ -272,17 +394,23 @@ class CulturalCoverArt extends StatelessWidget {
 
   Widget _cinemaPoster() => DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: const [
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withOpacity(0.08), width: 1.0),
+          boxShadow: [
             BoxShadow(
-              color: Color(0x540A0711),
-              offset: Offset(1, 5),
-              blurRadius: 10,
+              color: Colors.black.withOpacity(0.55),
+              offset: const Offset(0, 6),
+              blurRadius: 14,
+            ),
+            BoxShadow(
+              color: Colors.black.withOpacity(0.25),
+              offset: const Offset(0, 2),
+              blurRadius: 4,
             ),
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -293,11 +421,11 @@ class CulturalCoverArt extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Color(0x27FFFFFF),
+                      Color(0x22FFFFFF),
                       Colors.transparent,
-                      Color(0x40000000),
+                      Color(0x35000000),
                     ],
-                    stops: [0, .41, 1],
+                    stops: [0, .45, 1],
                   ),
                 ),
               ),

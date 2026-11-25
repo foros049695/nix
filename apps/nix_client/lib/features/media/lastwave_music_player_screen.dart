@@ -1,8 +1,13 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../core/media/local_audio_library_service.dart';
 import '../../core/media/nix_music_player_controller.dart';
 import '../../core/media/pager_playlist.dart';
+import '../../core/security/file_picker_adapter.dart';
+import '../../state/nix_state.dart';
 
 /// Tela principal do Player Musical Avançado inspirado no LastWave e AutoEQ (Seção 15).
 /// Comporta 3 visualizações sincronizadas:
@@ -64,8 +69,8 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
     },
   ];
 
-  String _selectedHeadphone = 'CMF by Nothing Buds Pro 2';
-  String _selectedHeadphoneSource = 'Rtings · Bruel & Kjaer 5128';
+  String? _selectedHeadphone;
+  String _selectedHeadphoneSource = 'Saída Padrão do Sistema (Automático)';
 
   @override
   void initState() {
@@ -192,15 +197,66 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
   // ===========================================================================
   Widget _buildNowPlayingScreen(PagerTrack? track) {
     if (track == null) {
-      return const Center(
-        child: Text(
-          'Nenhuma faixa carregada no player',
-          style: TextStyle(color: Colors.white54, fontSize: 16),
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 96,
+                height: 96,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(0.04),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: const Icon(Icons.music_off_rounded, size: 46, color: Colors.white38),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Nenhuma música em reprodução',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Nenhuma música adicionada. Selecione uma pasta ou importe arquivos de áudio.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white60, fontSize: 13),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF38BDF8),
+                      foregroundColor: const Color(0xFF0F172A),
+                    ),
+                    onPressed: _pickAudioFiles,
+                    icon: const Icon(Icons.audio_file_rounded, size: 18),
+                    label: const Text('Importar Áudio', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white24),
+                    ),
+                    onPressed: _scanMusicFolder,
+                    icon: const Icon(Icons.folder_open_rounded, size: 18),
+                    label: const Text('Escanear Pasta'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       );
     }
 
     final isFav = _favoriteUris.contains(track.uri);
+    final hasRealCover = track.coverPath != null && File(track.coverPath!).existsSync();
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -239,15 +295,40 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
                 borderRadius: BorderRadius.circular(28),
                 child: Stack(
                   alignment: Alignment.center,
+                  fit: StackFit.expand,
                   children: [
-                    const Icon(Icons.music_note_rounded, size: 100, color: Color(0xFF38BDF8)),
+                    if (hasRealCover)
+                      Image.file(File(track.coverPath!), fit: BoxFit.cover)
+                    else
+                      Container(
+                        color: const Color(0xFF1E293B),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.album_rounded, size: 90, color: Color(0xFF38BDF8)),
+                              const SizedBox(height: 8),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                child: Text(
+                                  track.name,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     Positioned(
                       bottom: 16,
                       left: 16,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
+                          color: Colors.black.withOpacity(0.65),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: Colors.white12),
                         ),
@@ -503,7 +584,7 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
         ListView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
           children: [
-            // Cabeçalho da Playlist com capa grande arredondada e botões de ação rápida
+            // Cabeçalho da Biblioteca Soberana
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -514,15 +595,15 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
               child: Row(
                 children: [
                   Container(
-                    width: 90,
-                    height: 90,
+                    width: 80,
+                    height: 80,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
                       gradient: const LinearGradient(
                         colors: [Color(0xFF0284C7), Color(0xFF38BDF8)],
                       ),
                     ),
-                    child: const Icon(Icons.queue_music_rounded, color: Colors.white, size: 44),
+                    child: const Icon(Icons.library_music_rounded, color: Colors.white, size: 38),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -530,7 +611,7 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Acervo Nix Soberano',
+                          'Biblioteca Musical Local',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 18,
@@ -539,7 +620,7 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
                         ),
                         const SizedBox(height: 4),
                         const Text(
-                          'YouTube Music & Cache Local',
+                          'Arquivos Locais e Armazenados',
                           style: TextStyle(color: Colors.white54, fontSize: 13),
                         ),
                         const SizedBox(height: 6),
@@ -559,46 +640,35 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
             ),
             const SizedBox(height: 16),
 
-            // Ações: Shuffle, Botão "▶ Play" em cápsula verde/amarela estilizada e Compartilhar
+            // Ações: Importar Arquivos, Escanear Pasta, Play All
             Row(
               children: [
-                IconButton(
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.white.withOpacity(0.08),
-                  ),
-                  icon: Icon(
-                    Icons.shuffle_rounded,
-                    color: widget.controller.isShuffle ? const Color(0xFF38BDF8) : Colors.white70,
-                  ),
-                  onPressed: () => widget.controller.toggleShuffle(),
-                ),
-                const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFA3E635), // Verde limão vibrante do LastWave
+                      backgroundColor: const Color(0xFF38BDF8),
                       foregroundColor: const Color(0xFF0F172A),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                     ),
-                    icon: Icon(
-                      widget.controller.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                      size: 24,
-                    ),
-                    label: Text(
-                      widget.controller.isPlaying ? 'Pausar' : 'Play',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                    onPressed: () => widget.controller.togglePlayPause(),
+                    icon: const Icon(Icons.audio_file_rounded, size: 18),
+                    label: const Text('Importar Áudio', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    onPressed: _pickAudioFiles,
                   ),
                 ),
-                const SizedBox(width: 12),
-                IconButton(
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.white.withOpacity(0.08),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white24),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    ),
+                    icon: const Icon(Icons.folder_open_rounded, size: 18),
+                    label: const Text('Escanear Pasta', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    onPressed: _scanMusicFolder,
                   ),
-                  icon: const Icon(Icons.share_rounded, color: Colors.white70),
-                  onPressed: () => _showSharePlaylistDialog(),
                 ),
               ],
             ),
@@ -624,10 +694,37 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
             ),
             const SizedBox(height: 12),
 
-            // Lista de faixas
-            for (int i = 0; i < playlist.length; i++) ...[
-              _buildTrackTile(playlist[i], i, isCurrent: i == widget.controller.currentIndex),
-              const SizedBox(height: 6),
+            if (playlist.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(28),
+                margin: const EdgeInsets.only(top: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.02),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.white.withOpacity(0.06)),
+                ),
+                child: Column(
+                  children: [
+                    const Icon(Icons.music_off_rounded, size: 48, color: Colors.white24),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Nenhuma música adicionada.',
+                      style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Selecione uma pasta ou importe arquivos de áudio (.flac, .mp3, .wav, .ogg, .opus, .m4a).',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white54, fontSize: 12.5),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              for (int i = 0; i < playlist.length; i++) ...[
+                _buildTrackTile(playlist[i], i, isCurrent: i == widget.controller.currentIndex),
+                const SizedBox(height: 6),
+              ],
             ],
           ],
         ),
@@ -645,6 +742,8 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
   }
 
   Widget _buildTrackTile(PagerTrack track, int index, {required bool isCurrent}) {
+    final hasRealCover = track.coverPath != null && File(track.coverPath!).existsSync();
+
     return Container(
       decoration: BoxDecoration(
         color: isCurrent ? const Color(0xFF38BDF8).withOpacity(0.12) : Colors.transparent,
@@ -661,11 +760,16 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
             color: isCurrent ? const Color(0xFF38BDF8) : const Color(0xFF1E293B),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(
-            isCurrent
-                ? (widget.controller.isPlaying ? Icons.equalizer_rounded : Icons.play_arrow_rounded)
-                : Icons.music_note_rounded,
-            color: isCurrent ? Colors.white : Colors.white60,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: hasRealCover
+                ? Image.file(File(track.coverPath!), fit: BoxFit.cover)
+                : Icon(
+                    isCurrent
+                        ? (widget.controller.isPlaying ? Icons.equalizer_rounded : Icons.play_arrow_rounded)
+                        : Icons.music_note_rounded,
+                    color: isCurrent ? Colors.white : Colors.white60,
+                  ),
           ),
         ),
         title: Text(
@@ -679,7 +783,7 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          '${track.artist} · ${track.audioFormat}',
+          '${track.artist} · ${track.audioFormat}${track.bitDepth.isNotEmpty ? " · ${track.bitDepth}" : ""}',
           style: const TextStyle(color: Colors.white54, fontSize: 12),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -702,6 +806,77 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
         },
       ),
     );
+  }
+
+  Future<void> _pickAudioFiles() async {
+    try {
+      final choices = await const CrossPlatformFilePickerAdapter().pickAttachments(
+        allowedExtensions: const ['mp3', 'flac', 'wav', 'ogg', 'opus', 'm4a', 'aac'],
+        allowMultiple: true,
+      );
+      if (choices.isEmpty) return;
+      final service = LocalAudioLibraryService();
+      final tracks = <PagerTrack>[];
+      for (final path in choices) {
+        final t = await service.extractMetadata(path);
+        if (t != null) tracks.add(t);
+      }
+      if (tracks.isNotEmpty && mounted) {
+        final state = context.read<NixState>();
+        await state.addTracksToAudioLibrary(tracks);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${tracks.length} música(s) importada(s) com metadados reais!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Falha ao importar áudio: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _scanMusicFolder() async {
+    final home = Platform.environment['HOME'] ?? '';
+    final candidates = [
+      if (home.isNotEmpty) '$home/Música',
+      if (home.isNotEmpty) '$home/Music',
+      if (home.isNotEmpty) '$home/Downloads/Nix',
+    ];
+    Directory? chosen;
+    for (final c in candidates) {
+      final d = Directory(c);
+      if (d.existsSync()) {
+        chosen = d;
+        break;
+      }
+    }
+    if (chosen == null) {
+      await _pickAudioFiles();
+      return;
+    }
+    try {
+      final service = LocalAudioLibraryService();
+      final tracks = await service.scanDirectory(chosen);
+      if (tracks.isNotEmpty && mounted) {
+        final state = context.read<NixState>();
+        await state.addTracksToAudioLibrary(tracks);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${tracks.length} música(s) catalogada(s) de ${chosen.path}!')),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Nenhum arquivo de áudio encontrado em ${chosen.path}.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao escanear pasta: $e')),
+        );
+      }
+    }
   }
 
   Widget _buildFloatingMiniPlayer(PagerTrack track) {
@@ -947,7 +1122,7 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _selectedHeadphone,
+                        _selectedHeadphone ?? 'Saída Padrão do Sistema',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 14,
@@ -1528,12 +1703,6 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
           ),
         ],
       ),
-    );
-  }
-
-  void _showSharePlaylistDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Playlist pronta para compartilhamento peer-to-peer cifrado.')),
     );
   }
 

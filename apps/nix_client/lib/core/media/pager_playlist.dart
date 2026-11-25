@@ -18,15 +18,15 @@ class PagerTrack {
     required this.uri,
     required this.name,
     this.artist = 'Artista desconhecido',
-    this.album = 'Álbum local',
+    this.album = 'Álbum desconhecido',
     this.durationSeconds = 0,
     this.coverPath,
     this.trackNumber,
     this.musicBrainzId,
     this.audioFormat = 'Áudio',
-    this.sampleRate = '44.1 kHz',
-    this.bitDepth = '16-bit',
-    this.bitRateKbps = 320,
+    this.sampleRate = '',
+    this.bitDepth = '',
+    this.bitRateKbps = 0,
   });
 
   String get formattedDuration {
@@ -37,13 +37,25 @@ class PagerTrack {
   }
 
   String get audioQualityBadge {
-    if (bitDepth == '24-bit' || sampleRate.contains('96') || sampleRate.contains('192')) {
-      return 'Hi-Res Lossless · $bitDepth/$sampleRate';
+    final parts = <String>[];
+    if (audioFormat.isNotEmpty && audioFormat != 'Áudio') {
+      parts.add(audioFormat);
     }
-    if (audioFormat == 'FLAC' || audioFormat == 'WAV') {
-      return 'Lossless · $bitDepth/$sampleRate';
+    if (bitDepth.isNotEmpty && bitDepth != 'Não identificada') {
+      parts.add(bitDepth);
     }
-    return '$audioFormat · $bitRateKbps kbps';
+    if (sampleRate.isNotEmpty && sampleRate != 'Não identificada') {
+      parts.add(sampleRate);
+    }
+    if (bitRateKbps > 0) {
+      parts.add('$bitRateKbps kbps');
+    }
+    if (parts.isEmpty) return 'Áudio local';
+    if ((bitDepth == '24-bit' || bitDepth == '32-bit') &&
+        (sampleRate.contains('96') || sampleRate.contains('192') || sampleRate.contains('88.2'))) {
+      return 'Hi-Res · ${parts.join(' · ')}';
+    }
+    return parts.join(' · ');
   }
 
   static PagerTrack fromMap(Map<Object?, Object?> data) {
@@ -61,19 +73,21 @@ class PagerTrack {
           'com.android.externalstorage.documents',
           'com.android.providers.media.documents',
         }.contains(uri?.authority);
+
+    final pathLower = uri?.path.toLowerCase() ?? '';
     final localDesktop = uri?.scheme == 'file' &&
         uri!.authority.isEmpty &&
         uri.path.startsWith('/') &&
         !uri.path.startsWith('//') &&
         !uri.hasQuery &&
         !uri.hasFragment &&
-        uri.path.toLowerCase().endsWith('.wav');
+        pathLower.endsWith('.wav');
+
     if (uri == null || (!localAndroid && !localDesktop)) {
-      throw const FormatException('Escolha uma faixa no armazenamento local.');
+      throw const FormatException('O seletor de áudio do Pager aceita apenas arquivos WAV locais.');
     }
 
-    final pathLower = uri.path.toLowerCase();
-    final ext = pathLower.contains('.') ? pathLower.split('.').last.toUpperCase() : 'WAV';
+    final ext = pathLower.contains('.') ? pathLower.split('.').last.toUpperCase() : 'ÁUDIO';
 
     return PagerTrack(
       uri: uri.toString(),
@@ -83,7 +97,7 @@ class PagerTrack {
           : 'Artista desconhecido',
       album: (data['album'] as String?)?.trim().isNotEmpty == true
           ? (data['album'] as String).trim()
-          : 'Álbum local',
+          : 'Álbum desconhecido',
       durationSeconds: (data['durationSeconds'] as num?)?.toInt() ?? 0,
       coverPath: data['coverPath'] as String?,
       trackNumber: (data['trackNumber'] as num?)?.toInt(),
@@ -93,11 +107,41 @@ class PagerTrack {
           : ext,
       sampleRate: (data['sampleRate'] as String?)?.isNotEmpty == true
           ? data['sampleRate'] as String
-          : '44.1 kHz',
+          : '',
       bitDepth: (data['bitDepth'] as String?)?.isNotEmpty == true
           ? data['bitDepth'] as String
-          : (ext == 'FLAC' || ext == 'WAV' ? '16-bit' : 'MP3'),
-      bitRateKbps: (data['bitRateKbps'] as num?)?.toInt() ?? 320,
+          : '',
+      bitRateKbps: (data['bitRateKbps'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  PagerTrack copyWith({
+    String? uri,
+    String? name,
+    String? artist,
+    String? album,
+    int? durationSeconds,
+    String? coverPath,
+    int? trackNumber,
+    String? musicBrainzId,
+    String? audioFormat,
+    String? sampleRate,
+    String? bitDepth,
+    int? bitRateKbps,
+  }) {
+    return PagerTrack(
+      uri: uri ?? this.uri,
+      name: name ?? this.name,
+      artist: artist ?? this.artist,
+      album: album ?? this.album,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      coverPath: coverPath ?? this.coverPath,
+      trackNumber: trackNumber ?? this.trackNumber,
+      musicBrainzId: musicBrainzId ?? this.musicBrainzId,
+      audioFormat: audioFormat ?? this.audioFormat,
+      sampleRate: sampleRate ?? this.sampleRate,
+      bitDepth: bitDepth ?? this.bitDepth,
+      bitRateKbps: bitRateKbps ?? this.bitRateKbps,
     );
   }
 

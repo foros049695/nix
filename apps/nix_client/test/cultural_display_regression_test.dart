@@ -108,7 +108,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 240));
     await tester.pumpAndSettle();
     expect(db.lastQuery, 'Duna');
-    await tester.tap(find.widgetWithText(ListTile, 'Duna'));
+    await tester.tap(find.widgetWithText(ListTile, 'Duna').first);
     await tester.pumpAndSettle();
     expect(find.text('Frank Herbert · 1965'), findsOneWidget);
     await tester.runAsync(() async {

@@ -102,12 +102,10 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Não deve ter ChatInputBar
-      expect(find.byType(ChatInputBar), findsNothing);
-      // Deve exibir aviso de canal de transmissão e botão de silenciar
-      expect(find.text('Canal de Transmissão'), findsOneWidget);
-      expect(find.text('Somente administradores podem publicar mensagens neste canal.'), findsOneWidget);
-      expect(find.text('Silenciar'), findsOneWidget);
+      // Interface não exibe aviso estilo telegram e mantém ChatInputBar limpo
+      expect(find.byType(ChatInputBar), findsOneWidget);
+      expect(find.text('Canal de Transmissão'), findsNothing);
+      expect(find.text('Somente administradores podem publicar mensagens neste canal.'), findsNothing);
     });
 
     testWidgets('Interface exibe barra de entrada normal para administrador do canal', (tester) async {

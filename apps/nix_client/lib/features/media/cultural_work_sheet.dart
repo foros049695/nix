@@ -265,7 +265,7 @@ class _CulturalWorkSheetState extends State<CulturalWorkSheet> {
 
                   const SizedBox(height: 16),
 
-                  // Botão de Adicionar ao Acervo (caso não esteja adicionado)
+                  // Botão de Adicionar ao Acervo (caso não esteja adicionado) ou Remover (caso esteja)
                   if (!isInAcervo) ...[
                     SizedBox(
                       width: double.infinity,
@@ -287,6 +287,48 @@ class _CulturalWorkSheetState extends State<CulturalWorkSheet> {
                         icon: const Icon(Icons.bookmark_add_outlined, size: 18),
                         label: const Text('Adicionar à Minha Biblioteca / Acervo',
                             style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ] else ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        key: const Key('remove_from_acervo_sheet_button'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.redAccent,
+                          side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.6)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Remover do Acervo?'),
+                              content: Text('Deseja remover "${widget.item.title}" do seu acervo pessoal?'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+                                FilledButton(
+                                  style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('Remover'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            state.removeCulturalItem(widget.item.id);
+                            if (widget.onClose != null) {
+                              widget.onClose!();
+                            } else {
+                              Navigator.pop(context);
+                            }
+                          }
+                        },
+                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                        label: const Text('Remover do Acervo Pessoal',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                       ),
                     ),
                     const SizedBox(height: 16),

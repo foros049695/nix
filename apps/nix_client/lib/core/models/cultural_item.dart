@@ -107,7 +107,7 @@ class CulturalItem {
     required this.title,
     required this.creatorOrYear,
     required this.category,
-    this.rating = '9.5',
+    this.rating = '',
     required this.monogram,
     this.toneShade = 42,
     this.isFeatured = false,

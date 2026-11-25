@@ -318,11 +318,20 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
               visualDensity: VisualDensity.compact,
               iconSize: 15,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 38),
+              constraints: const BoxConstraints(minWidth: 26, minHeight: 38),
               onPressed: () => state.toggleItemCardIdVisibility(item.id),
               icon: Icon(item.isPublicInCardId
                   ? Icons.visibility_outlined
                   : Icons.visibility_off_outlined),
+            ),
+            IconButton(
+              tooltip: 'Remover do Acervo',
+              visualDensity: VisualDensity.compact,
+              iconSize: 16,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 26, minHeight: 38),
+              onPressed: () => _confirmDelete(item),
+              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
             ),
           ],
         ),
