@@ -161,6 +161,40 @@ void main() {
       expect(find.text('Copiar Texto'), findsOneWidget);
       expect(find.text('Editar Mensagem'), findsOneWidget);
     });
+
+    testWidgets('Secondary tap outside message text triggers exactly ONE context menu', (tester) async {
+      final nixState = NixState();
+      final message = Message(
+        id: 'msg_sel_outside_text',
+        channelId: 'general',
+        senderName: 'Soberano',
+        senderFingerprint: 'F123456789',
+        isMe: true,
+        text: 'Curto',
+        timestamp: DateTime.now(),
+      );
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<NixState>.value(
+          value: nixState,
+          child: MaterialApp(
+            home: Scaffold(
+              body: MessageBubble(message: message),
+            ),
+          ),
+        ),
+      );
+
+      final containerFinder = find.byType(Container).first;
+      final topRight = tester.getTopRight(containerFinder) - const Offset(5, -5);
+      await tester.tapAt(topRight, buttons: kSecondaryMouseButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Reagir com emoji'), findsOneWidget);
+      expect(find.text('Responder'), findsOneWidget);
+      expect(find.text('Copiar Texto'), findsOneWidget);
+    });
   });
 
   group('Aria2 Performance Profiles and Daemon Launch', () {
