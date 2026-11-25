@@ -144,6 +144,7 @@ class DartSegmentedDownloader {
     _activeClients[task.id] = client;
 
     try {
+      final targetFile = _validateAndResolveTargetFile(task);
       final uri = Uri.parse(task.url);
 
       // 1. Consulta cabeçalhos para obter tamanho, ETag, Last-Modified e verificar suporte a Range Requests
@@ -163,11 +164,6 @@ class DartSegmentedDownloader {
 
       final acceptRanges = headRes.headers.value(HttpHeaders.acceptRangesHeader)?.toLowerCase() == 'bytes';
       var isRangeSupported = acceptRanges && (contentLength != null && contentLength > 1024 * 1024);
-
-      final targetFile = File(task.destinationPath);
-      if (!targetFile.parent.existsSync()) {
-        targetFile.parent.createSync(recursive: true);
-      }
 
       // Se o ETag do arquivo remoto mudou em relação à sessão anterior, reseta segmentos locais
       if (task.lastEtag != null && etag != null && task.lastEtag != etag) {
@@ -812,5 +808,81 @@ class DartSegmentedDownloader {
         'Transferências BitTorrent ou magnet links via Tor são terminantemente bloqueadas.',
       );
     }
+  }
+
+  /// Sanitiza um nome de arquivo candidato para um basename seguro (sem separadores,
+  /// sem `..`, sem nomes vazios ou ocultos iniciados por `.`).
+  static String sanitizeFileName(String raw, {String? fallback}) {
+    final name = raw
+        .replaceAll('\\', '/')
+        .split('/')
+        .last
+        .replaceAll(RegExp(r'[\x00-\x1f\x7f<>:"|?*]'), '_')
+        .replaceAll('..', '_')
+        .replaceFirst(RegExp(r'^[\s.]+'), '')
+        .replaceFirst(RegExp(r'[\s.]+$'), '');
+
+    final reservedWin = RegExp(
+      r'^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$',
+      caseSensitive: false,
+    );
+    if (name.isEmpty || reservedWin.hasMatch(name)) {
+      return fallback ?? 'download_${DateTime.now().millisecondsSinceEpoch}';
+    }
+    return name;
+  }
+
+  /// Resolve o destino dentro de [downloadDir] para um basename já sanitizado.
+  static String resolveConfinedDestination({
+    required String downloadDir,
+    required String sanitizedFileName,
+  }) {
+    if (sanitizedFileName.isEmpty ||
+        sanitizedFileName != sanitizeFileName(sanitizedFileName, fallback: '')) {
+      throw ArgumentError.value(
+        sanitizedFileName,
+        'sanitizedFileName',
+        'Nome de arquivo de download inválido ou não sanitizado.',
+      );
+    }
+
+    final dir = Directory(downloadDir);
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
+    final sep = Platform.pathSeparator;
+    var canonicalDir = dir.resolveSymbolicLinksSync();
+    if (canonicalDir.length > 1 && canonicalDir.endsWith(sep)) {
+      canonicalDir = canonicalDir.substring(0, canonicalDir.length - sep.length);
+    }
+    final candidatePath = '$canonicalDir$sep$sanitizedFileName';
+
+    final entityType = FileSystemEntity.typeSync(candidatePath, followLinks: false);
+    if (entityType == FileSystemEntityType.link ||
+        entityType == FileSystemEntityType.directory) {
+      throw FileSystemException(
+        'Destino de download colide com um link simbólico ou diretório existente.',
+        candidatePath,
+      );
+    }
+    return candidatePath;
+  }
+
+  static File _validateAndResolveTargetFile(DownloadTask task) {
+    final rawDest = task.destinationPath.trim();
+    final segments = rawDest.split(RegExp(r'[/\\]'));
+    final baseName = segments.last;
+    if (segments.contains('.') ||
+        segments.contains('..') ||
+        task.fileName != sanitizeFileName(task.fileName, fallback: '')) {
+      throw FileSystemException(
+        'Destino da tarefa não é um caminho de download seguro.',
+        rawDest,
+      );
+    }
+    return File(resolveConfinedDestination(
+      downloadDir: File(rawDest).parent.path,
+      sanitizedFileName: baseName,
+    ));
   }
 }
