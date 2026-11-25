@@ -32,4 +32,26 @@ void main() {
     expect(find.text(link), findsOneWidget);
     expect(find.byType(Image), findsNothing);
   });
+
+  testWidgets('ChatInlineText renderiza sublinhado e spoiler interativo tap-to-reveal estilo Telegram', (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(
+        body: ChatInlineText('Mensagem com <u>sublinhado</u> e ||segredo confidencial||', style: TextStyle()),
+      ),
+    ));
+
+    await tester.pumpAndSettle();
+
+    // Encontra o widget de spoiler
+    expect(find.byType(ChatSpoilerText), findsOneWidget);
+    // Antes do toque, texto do segredo está oculto em '•'
+    expect(find.text('segredo confidencial'), findsNothing);
+
+    // Toca no spoiler para revelar
+    await tester.tap(find.byType(ChatSpoilerText));
+    await tester.pumpAndSettle();
+
+    // Agora o texto revelado está visível
+    expect(find.text('segredo confidencial'), findsOneWidget);
+  });
 }

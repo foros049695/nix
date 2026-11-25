@@ -8,6 +8,7 @@ import 'desktop_voice_audio.dart';
 import 'voice_note_dialog.dart';
 import '../navigation/interface_wallpaper_layer.dart';
 import 'chat_inline_format.dart';
+import '../../core/rich_text/nix_rich_text_controller.dart';
 import 'direct_poll_widgets.dart';
 import 'emoji_catalog.dart';
 import 'chat_attachment_pickers.dart';
@@ -47,7 +48,7 @@ class ChatInputBar extends StatefulWidget {
 enum _AttachmentOption { media, documents, articles, location, music, acervo }
 
 class _ChatInputBarState extends State<ChatInputBar> {
-  final _controller = TextEditingController();
+  final _controller = NixRichTextController();
   final _focusNode = FocusNode();
   final _keyboardFocusNode = FocusNode(skipTraversal: true);
   final _emojiSearchController = TextEditingController();
@@ -432,8 +433,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   void _send(NixState nixState) {
-    final text = _controller.text;
-    if (text.trim().isNotEmpty || _pendingAttachments.isNotEmpty) {
+    final text = _controller.toMarkdown().trim();
+    if (text.isNotEmpty || _pendingAttachments.isNotEmpty) {
       final attachments = List<String>.from(_pendingAttachments);
       if (widget.onSendCustom != null) {
         widget.onSendCustom!(text, attachments);
@@ -450,8 +451,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   Future<void> _scheduleDraft(NixState state, String conversationId) async {
-    final text = _controller.text;
-    if (text.trim().isEmpty || _pendingAttachments.isNotEmpty ||
+    final text = _controller.toMarkdown().trim();
+    if (text.isEmpty || _pendingAttachments.isNotEmpty ||
         state.editingMessage != null || state.replyingToMessage != null ||
         state.selectedEphemeralTimer != 0) {
       _scheduleNotice('Para agendar, escreva uma mensagem de texto sem anexos, resposta, edição ou temporizador.');
@@ -551,9 +552,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
     if (editing != null && _lastLoadedEditId != editing.id) {
       _lastLoadedEditId = editing.id;
-      _controller.text = editing.text;
-      _controller.selection =
-          TextSelection.collapsed(offset: editing.text.length);
+      _controller.loadMarkdown(editing.text);
     } else if (editing == null && _lastLoadedEditId != null) {
       _lastLoadedEditId = null;
     }
@@ -862,12 +861,45 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   child: Focus(
                     focusNode: _keyboardFocusNode,
                     onKeyEvent: (_, event) {
-                      if (enterToSend &&
-                          event is KeyDownEvent &&
-                          event.logicalKey == LogicalKeyboardKey.enter &&
-                          !HardwareKeyboard.instance.isShiftPressed) {
-                        _send(nixState);
-                        return KeyEventResult.handled;
+                      if (event is KeyDownEvent) {
+                        final isCtrlOrCmd = HardwareKeyboard.instance.isControlPressed ||
+                            HardwareKeyboard.instance.isMetaPressed;
+                        if (isCtrlOrCmd) {
+                          if (event.logicalKey == LogicalKeyboardKey.keyB) {
+                            _controller.toggleBold();
+                            return KeyEventResult.handled;
+                          }
+                          if (event.logicalKey == LogicalKeyboardKey.keyI) {
+                            _controller.toggleItalic();
+                            return KeyEventResult.handled;
+                          }
+                          if (event.logicalKey == LogicalKeyboardKey.keyU) {
+                            _controller.toggleUnderline();
+                            return KeyEventResult.handled;
+                          }
+                          if (HardwareKeyboard.instance.isShiftPressed &&
+                              (event.logicalKey == LogicalKeyboardKey.keyX ||
+                                  event.logicalKey == LogicalKeyboardKey.keyS)) {
+                            _controller.toggleStrikethrough();
+                            return KeyEventResult.handled;
+                          }
+                          if (HardwareKeyboard.instance.isShiftPressed &&
+                              event.logicalKey == LogicalKeyboardKey.keyM) {
+                            _controller.toggleMonospace();
+                            return KeyEventResult.handled;
+                          }
+                          if (HardwareKeyboard.instance.isShiftPressed &&
+                              event.logicalKey == LogicalKeyboardKey.keyP) {
+                            _controller.toggleSpoiler();
+                            return KeyEventResult.handled;
+                          }
+                        }
+                        if (enterToSend &&
+                            event.logicalKey == LogicalKeyboardKey.enter &&
+                            !HardwareKeyboard.instance.isShiftPressed) {
+                          _send(nixState);
+                          return KeyEventResult.handled;
+                        }
                       }
                       return KeyEventResult.ignored;
                     },
