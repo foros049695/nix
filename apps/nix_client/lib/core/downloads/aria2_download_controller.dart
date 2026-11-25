@@ -11,10 +11,10 @@ typedef DownloadStatusChangeNotifier = void Function(List<DownloadTask> tasks);
 
 /// Perfis de desempenho para downloads diretos HTTP/HTTPS.
 enum DownloadPerformanceProfile {
-  conservative('conservative', 'Conservador', 2, 2, 35, '512K'),
-  balanced('balanced', 'Equilibrado (Recomendado)', 4, 4, 20, '256K'),
-  highPerformance('highPerformance', 'Alto Desempenho', 8, 8, 15, '256K'),
-  turbo('turbo', 'Turbo Sustentado', 16, 16, 10, '128K');
+  conservative('conservative', 'Conservador', 2, 2, 35, '4M'),
+  balanced('balanced', 'Equilibrado (Recomendado)', 4, 4, 20, '2M'),
+  highPerformance('highPerformance', 'Alto Desempenho', 8, 8, 15, '1M'),
+  turbo('turbo', 'Turbo Sustentado', 16, 16, 10, '1M');
 
   final String slug;
   final String label;
@@ -273,6 +273,8 @@ class Aria2DownloadController extends ChangeNotifier {
 
       final spawnedProcess = _process!;
       _spawnedDaemonPid = spawnedProcess.pid;
+      spawnedProcess.stdout.drain<void>().catchError((_) {});
+      spawnedProcess.stderr.drain<void>().catchError((_) {});
 
       // Registra PID do daemon isolado do Nix e credenciais RPC seguras (modo 0600)
       try {

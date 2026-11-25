@@ -42,7 +42,12 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  void _showContextMenu(BuildContext context, Offset position, NixState nixState) {
+  void _showContextMenu(
+    BuildContext context,
+    Offset position,
+    NixState nixState, {
+    VoidCallback? onCopySelection,
+  }) {
     final accent = context.accentColor;
     final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
 
@@ -58,6 +63,26 @@ class MessageBubble extends StatelessWidget {
         side: BorderSide(color: accent.withValues(alpha: 0.35)),
       ),
       items: [
+        if (onCopySelection != null) ...[
+          PopupMenuItem<String>(
+            value: 'copy_selection',
+            child: Row(
+              children: [
+                Icon(Icons.content_copy_rounded, size: 16, color: context.accentTextColor),
+                const SizedBox(width: 10),
+                Text(
+                  'Copiar Seleção',
+                  style: TextStyle(
+                    color: context.accentTextColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const PopupMenuDivider(height: 1),
+        ],
         const PopupMenuItem<String>(value: 'react', child: Text('Reagir com emoji')),
         const PopupMenuDivider(height: 1),
         PopupMenuItem<String>(
@@ -160,7 +185,9 @@ class MessageBubble extends StatelessWidget {
       ],
     ).then((value) {
       if (!context.mounted || value == null) return;
-      if (value == 'react') {
+      if (value == 'copy_selection') {
+        onCopySelection?.call();
+      } else if (value == 'react') {
         _react(context, nixState);
       } else if (value == 'reply') {
         nixState.startReplyTo(message);
@@ -376,12 +403,38 @@ class MessageBubble extends StatelessWidget {
                           else if (OfflineLocationData.tryParse(message.text) case final locData?)
                             OfflineLocationCard(data: locData)
                           else
-                            ChatInlineText(
-                              message.text,
-                              style: TextStyle(
-                                color: NixColors.textPrimary,
-                                fontSize: 13.8 * settings.fontScale,
-                                height: 1.38,
+                            SelectionArea(
+                              contextMenuBuilder: (context, selectableRegionState) {
+                                final hasSelection = selectableRegionState.contextMenuButtonItems
+                                    .any((i) => i.type == ContextMenuButtonType.copy);
+                                final copyItem = hasSelection
+                                    ? selectableRegionState.contextMenuButtonItems
+                                        .firstWhere((i) => i.type == ContextMenuButtonType.copy)
+                                    : null;
+                                final anchor = selectableRegionState.contextMenuAnchors.primaryAnchor;
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  if (!context.mounted) return;
+                                  _showContextMenu(
+                                    context,
+                                    anchor,
+                                    nixState,
+                                    onCopySelection: copyItem != null
+                                        ? () => copyItem.onPressed?.call()
+                                        : null,
+                                  );
+                                });
+                                return const SizedBox.shrink();
+                              },
+                              child: MouseRegion(
+                                cursor: SystemMouseCursors.text,
+                                child: ChatInlineText(
+                                  message.text,
+                                  style: TextStyle(
+                                    color: NixColors.textPrimary,
+                                    fontSize: 13.8 * settings.fontScale,
+                                    height: 1.38,
+                                  ),
+                                ),
                               ),
                             ),
                         ],

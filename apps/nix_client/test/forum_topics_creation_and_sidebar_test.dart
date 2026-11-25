@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:nix_client/core/models/channel.dart';
-import 'package:nix_client/core/models/space.dart';
 import 'package:nix_client/features/forum/forum_channel_view.dart';
 import 'package:nix_client/features/navigation/channels_sidebar.dart';
 import 'package:nix_client/state/nix_state.dart';

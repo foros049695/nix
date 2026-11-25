@@ -101,6 +101,11 @@ class NixTheme {
       splashColor: palette.glowColor,
       highlightColor: isLight ? const Color(0x0D17191E) : Colors.white10,
       hoverColor: scheme.surfaceCardHover,
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: palette.primaryAccent,
+        selectionColor: palette.primaryAccent.withValues(alpha: 0.35),
+        selectionHandleColor: palette.primaryAccent,
+      ),
       extensions: [
         NixThemeExtension(
           palette: palette,

@@ -1054,12 +1054,17 @@ class _SplitThreadPanel extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 10),
-                ChatInlineText(
-                  post.description,
-                  style: TextStyle(
-                    color: NixColors.textSecondary,
-                    fontSize: 13,
-                    height: 1.4,
+                SelectionArea(
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.text,
+                    child: ChatInlineText(
+                      post.description,
+                      style: TextStyle(
+                        color: NixColors.textSecondary,
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
