@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 
 import '../security/platform_runtime.dart';
 import 'pager_playlist.dart';
@@ -140,37 +141,44 @@ class LocalAudioLibraryService {
     return null;
   }
 
-  /// Extrai capa embutida em disco usando ffmpeg de forma atômica e estável.
+  /// Extrai JPEG real embutido no áudio; hash determinístico e gravação atômica.
   Future<String?> _extractCoverViaFfmpeg(String audioFilePath) async {
     try {
+      final audioFile = File(audioFilePath);
+      final stat = await audioFile.stat();
+      final key = audioFile.absolute.path + '|' +
+          stat.modified.millisecondsSinceEpoch.toString() + '|' +
+          stat.size.toString();
+      final safeHash = sha256.convert(utf8.encode(key)).toString();
       final coversDir = Directory(NixPlatformPaths.coversDirectory);
-      if (!await coversDir.exists()) {
-        await coversDir.create(recursive: true);
+      await coversDir.create(recursive: true);
+      final outFile = File(coversDir.path + '/music_embedded_' + safeHash + '.jpg');
+      Future<bool> isValidJpeg(File file) async {
+        if (!await file.exists() || await file.length() < 32) return false;
+        final header = await file.openRead(0, 3).expand((bytes) => bytes).toList();
+        return header.length == 3 &&
+            header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF;
       }
-      final safeHash = audioFilePath.hashCode.abs().toRadixString(16);
-      final outPath = '${coversDir.path}/music_embedded_$safeHash.jpg';
-      final outFile = File(outPath);
-      if (await outFile.exists() && await outFile.length() > 0) {
-        return outPath;
+      if (await isValidJpeg(outFile)) return outFile.path;
+      final tmpFile = File(outFile.path + '.part.jpg');
+      try {
+        if (await tmpFile.exists()) await tmpFile.delete();
+        final proc = await Process.run('ffmpeg', [
+          '-y', '-v', 'error', '-i', audioFilePath, '-an',
+          '-vcodec', 'mjpeg', '-frames:v', '1', tmpFile.path,
+        ]);
+        if (proc.exitCode != 0 || !await isValidJpeg(tmpFile)) {
+          return null;
+        }
+        if (await outFile.exists()) await outFile.delete();
+        await tmpFile.rename(outFile.path);
+        return outFile.path;
+      } finally {
+        if (await tmpFile.exists()) await tmpFile.delete();
       }
-
-      final proc = await Process.run('ffmpeg', [
-        '-y',
-        '-i',
-        audioFilePath,
-        '-an',
-        '-vcodec',
-        'mjpeg',
-        '-frames:v',
-        '1',
-        outPath,
-      ]);
-
-      if (proc.exitCode == 0 && await outFile.exists() && await outFile.length() > 0) {
-        return outPath;
-      }
-    } catch (_) {}
-    return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Leitura segura de fallback via Dart puro para sistemas sem ffprobe.
