@@ -475,8 +475,14 @@ class Aria2DownloadController extends ChangeNotifier {
     _assertValidHttpUrl(cleanUrl);
 
     final uri = Uri.parse(cleanUrl);
-    final fileName = customFileName ?? _extractFileName(uri);
-    final targetPath = '$downloadDir/$fileName';
+    final fileName = (customFileName != null && customFileName.trim().isNotEmpty)
+        ? DartSegmentedDownloader.sanitizeFileName(customFileName)
+        : _extractFileName(uri);
+    final targetPath = DartSegmentedDownloader.resolveConfinedDestination(
+      downloadDir: downloadDir,
+      sanitizedFileName: fileName,
+    );
+    final confinedDir = File(targetPath).parent.path;
     final taskId = 'dl_${DateTime.now().microsecondsSinceEpoch}';
 
     final resolvedProfile = (allowClearnet && transportProfile == 'tor_socks5')
@@ -517,7 +523,7 @@ class Aria2DownloadController extends ChangeNotifier {
 
     try {
       final downloadOptions = <String, String>{
-        'dir': downloadDir,
+        'dir': confinedDir,
         'out': fileName,
         'split': '${_performanceProfile.split}',
         'max-connection-per-server': '${_performanceProfile.maxConnections}',
@@ -583,8 +589,9 @@ class Aria2DownloadController extends ChangeNotifier {
 
   /// Retenta um download permitindo conexão fora da rede Tor (Clearnet).
   Future<void> retryDownloadWithClearnet(String taskId) async {
-    final task = _tasks[taskId];
-    if (task == null) return;
+    final stored = _tasks[taskId];
+    if (stored == null) return;
+    final task = _withSafeDestination(stored);
 
     _manuallyPausedTaskIds.remove(taskId);
     _integrityFailedTaskIds.remove(taskId);
@@ -605,7 +612,7 @@ class Aria2DownloadController extends ChangeNotifier {
     if (_process != null) {
       try {
         final downloadOptions = <String, String>{
-          'dir': downloadDir,
+          'dir': File(updated.destinationPath).parent.path,
           'out': updated.fileName,
           'split': '${_performanceProfile.split}',
           'max-connection-per-server': '${_performanceProfile.maxConnections}',
@@ -718,12 +725,16 @@ class Aria2DownloadController extends ChangeNotifier {
     }
     _log('Retomada solicitada para a tarefa: $taskId');
 
+    final sanitizedTask = _withSafeDestination(task);
+    final safeFileName = sanitizedTask.fileName;
+    final confinedDir = File(sanitizedTask.destinationPath).parent.path;
+
     // 1. Remove a flag de pausa manual
     _manuallyPausedTaskIds.remove(taskId);
     _integrityFailedTaskIds.remove(taskId);
 
     // 2. Transiciona para RESUMING
-    _tasks[taskId] = task.copyWith(
+    _tasks[taskId] = sanitizedTask.copyWith(
       status: DownloadStatus.resuming,
       isUserPaused: false,
       errorMessage: null,
@@ -757,7 +768,7 @@ class Aria2DownloadController extends ChangeNotifier {
 
         final res = await _rpcCall('aria2.unpause', ['token:$_rpcSecret', taskId]);
         if (res != null && res['result'] != null) {
-          _tasks[taskId] = task.copyWith(
+          _tasks[taskId] = sanitizedTask.copyWith(
             status: DownloadStatus.downloading,
             isUserPaused: false,
             downloadEngine: 'aria2',
@@ -772,7 +783,8 @@ class Aria2DownloadController extends ChangeNotifier {
       // MIGRA E RETOMA NO ARIA2C com continue: true aproveitando os dados em disco
       try {
         final downloadOptions = <String, dynamic>{
-          'dir': _downloadDir,
+          'dir': confinedDir,
+          'out': safeFileName,
           'continue': 'true',
           'max-connection-per-server': '${_performanceProfile.maxConnections}',
           'split': '${_performanceProfile.split}',
@@ -789,9 +801,6 @@ class Aria2DownloadController extends ChangeNotifier {
           'max-tries': '10',
           'user-agent': defaultUserAgent,
         };
-        if (task.fileName.isNotEmpty) {
-          downloadOptions['out'] = task.fileName;
-        }
         if (task.allowClearnet || task.transportProfile == 'direct_https') {
           downloadOptions['all-proxy'] = '';
         }
@@ -799,14 +808,14 @@ class Aria2DownloadController extends ChangeNotifier {
 
         final rpcRes = await _rpcCall('aria2.addUri', [
           'token:$_rpcSecret',
-          [task.url],
+          [sanitizedTask.url],
           downloadOptions,
         ]);
         if (rpcRes != null && rpcRes['result'] != null) {
           final newGid = rpcRes['result'].toString();
           _integrityFailedTaskIds.remove(newGid);
           _tasks.remove(taskId);
-          final updated = task.copyWith(
+          final updated = sanitizedTask.copyWith(
             id: newGid,
             status: DownloadStatus.downloading,
             isUserPaused: false,
@@ -828,14 +837,14 @@ class Aria2DownloadController extends ChangeNotifier {
     // 5. Fallback Dart SOMENTE se aria2c não estiver presente ou falhar
     if (enableFallback) {
       _fallbackTaskIds.add(taskId);
-      _tasks[taskId] = task.copyWith(
+      _tasks[taskId] = sanitizedTask.copyWith(
         status: DownloadStatus.downloading,
         isUserPaused: false,
         downloadEngine: 'dart_range',
       );
       _persistTasks();
       _notify();
-      unawaited(_runFallbackDownload(task));
+      unawaited(_runFallbackDownload(sanitizedTask));
     }
   }
 
@@ -1261,9 +1270,30 @@ class Aria2DownloadController extends ChangeNotifier {
     }
   }
 
+  /// Mantém o diretório já gravado na tarefa; só recalcula o destino no diretório
+  /// atual quando o nome ou o caminho persistido não forem seguros.
+  DownloadTask _withSafeDestination(DownloadTask task) {
+    final safeName = DartSegmentedDownloader.sanitizeFileName(task.fileName);
+    final segments = task.destinationPath.split(RegExp(r'[/\\]'));
+    if (safeName == task.fileName &&
+        segments.last == safeName &&
+        !segments.contains('.') &&
+        !segments.contains('..')) {
+      return task;
+    }
+    return task.copyWith(
+      fileName: safeName,
+      destinationPath: DartSegmentedDownloader.resolveConfinedDestination(
+        downloadDir: _downloadDir,
+        sanitizedFileName: safeName,
+      ),
+    );
+  }
+
   static String _extractFileName(Uri uri) {
     if (uri.pathSegments.isNotEmpty && uri.pathSegments.last.trim().isNotEmpty) {
-      return Uri.decodeComponent(uri.pathSegments.last.trim());
+      // uri.pathSegments já retorna segmentos decodificados; evita dupla decodificação.
+      return DartSegmentedDownloader.sanitizeFileName(uri.pathSegments.last);
     }
     return 'download_${DateTime.now().millisecondsSinceEpoch}';
   }
