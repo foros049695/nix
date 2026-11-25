@@ -374,29 +374,42 @@ class _PagerPortraitState extends State<_PagerPortrait> {
   }
 
   @override
-  Widget build(BuildContext context) => SizedBox.square(
-        dimension: widget.size,
-        child: Semantics(
-          label: 'Assistente Nix em pixel art',
-          image: true,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
+  Widget build(BuildContext context) {
+    final themeScope = PagerThemeScope.of(context);
+    final isDark = themeScope?.isDark ?? false;
+    final color = isDark ? const Color(0xFFF1F5F9) : null;
+    final blendMode = isDark ? BlendMode.srcIn : null;
+
+    return SizedBox.square(
+      dimension: widget.size,
+      child: Semantics(
+        label: 'Assistente Nix em pixel art',
+        image: true,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image(
+              image: _open,
+              color: color,
+              colorBlendMode: blendMode,
+              opacity: _blinking ? const AlwaysStoppedAnimation(0) : null,
+              filterQuality: FilterQuality.none,
+              excludeFromSemantics: true,
+            ),
+            if (widget.animate)
               Image(
-                  image: _open,
-                  opacity: _blinking ? const AlwaysStoppedAnimation(0) : null,
-                  filterQuality: FilterQuality.none,
-                  excludeFromSemantics: true),
-              if (widget.animate)
-                Image(
-                    image: _closed,
-                    opacity: AlwaysStoppedAnimation(_blinking ? 1.0 : 0.0),
-                    filterQuality: FilterQuality.none,
-                    excludeFromSemantics: true),
-            ],
-          ),
+                image: _closed,
+                color: color,
+                colorBlendMode: blendMode,
+                opacity: AlwaysStoppedAnimation(_blinking ? 1.0 : 0.0),
+                filterQuality: FilterQuality.none,
+                excludeFromSemantics: true,
+              ),
+          ],
         ),
-      );
+      ),
+    );
+  }
 }
 
 class PagerThemeScope extends InheritedWidget {
