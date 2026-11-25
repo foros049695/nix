@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart' as std_crypto;
 import '../security/fail_closed_http_overrides.dart';
@@ -34,10 +35,65 @@ class _RangeSlice {
     required this.endByte,
     required this.file,
     this.writtenBytes = 0,
+    this.completed = false,
   });
 
   int get totalExpected => endByte - startByte + 1;
   int get remainingBytes => totalExpected - writtenBytes;
+}
+
+class _TaskRunState {
+  final String taskId;
+  final int generation;
+  final HttpClient client;
+  final List<HttpClientRequest> activeRequests = [];
+  final Completer<void> _stopSignal = Completer<void>();
+  final Completer<void> _doneCompleter = Completer<void>();
+  bool isPaused = false;
+  bool isCancelled = false;
+
+  _TaskRunState({
+    required this.taskId,
+    required this.generation,
+    required this.client,
+  });
+
+  Future<void> get stopSignal => _stopSignal.future;
+  Future<void> get done => _doneCompleter.future;
+
+  bool isStopped(Map<String, int> activeGenerations) =>
+      isPaused || isCancelled || activeGenerations[taskId] != generation;
+
+  void registerRequest(HttpClientRequest request) {
+    activeRequests.add(request);
+  }
+
+  void unregisterRequest(HttpClientRequest request) {
+    activeRequests.remove(request);
+  }
+
+  void abort({bool paused = false, bool cancelled = false}) {
+    if (paused) isPaused = true;
+    if (cancelled) isCancelled = true;
+    if (!_stopSignal.isCompleted) {
+      _stopSignal.complete();
+    }
+    for (final req in List<HttpClientRequest>.of(activeRequests)) {
+      try {
+        req.abort();
+      } catch (_) {}
+    }
+    activeRequests.clear();
+    try {
+      client.close(force: true);
+    } catch (_) {}
+  }
+
+  void markDone() {
+    if (!_doneCompleter.isCompleted) {
+      _doneCompleter.complete();
+    }
+  }
 }
 
 /// Downloader nativo em puro Dart utilizando HTTP Range Requests (RFC 7233).
@@ -49,11 +105,8 @@ class _RangeSlice {
 /// - Bloqueia magnets e BitTorrent.
 /// - Suporta download paralelo por segmentos de bytes, pausa real imediata, retomada segura e conferência SHA-256.
 class DartSegmentedDownloader {
-  final Map<String, bool> _pausedTasks = {};
-  final Map<String, bool> _cancelledTasks = {};
   final Map<String, int> _activeGenerations = {};
-  final Map<String, List<HttpClientRequest>> _activeRequests = {};
-  final Map<String, HttpClient> _activeClients = {};
+  final Map<String, _TaskRunState> _activeRuns = {};
 
   /// Inicia ou retoma o download de um arquivo direto HTTP/HTTPS.
   Future<DownloadTask> download({
@@ -69,50 +122,14 @@ class DartSegmentedDownloader {
     return _executeDownload(task: task, splitCount: splitCount, onProgress: onProgress);
   }
 
-  void _registerRequest(String taskId, HttpClientRequest request) {
-    _activeRequests.putIfAbsent(taskId, () => []).add(request);
-  }
-
-  void _unregisterRequest(String taskId, HttpClientRequest request) {
-    _activeRequests[taskId]?.remove(request);
-  }
-
-  /// Pausa imediatamente a transferência, abortando os sockets de rede ativos.
+  /// Pausa imediatamente a transferência da geração ativa, abortando os sockets de rede.
   void pause(String taskId) {
-    _pausedTasks[taskId] = true;
-    final reqs = _activeRequests[taskId];
-    if (reqs != null && reqs.isNotEmpty) {
-      for (final req in List<HttpClientRequest>.of(reqs)) {
-        try {
-          req.abort();
-        } catch (_) {}
-      }
-    }
-    final client = _activeClients[taskId];
-    if (client != null) {
-      try {
-        client.close(force: true);
-      } catch (_) {}
-    }
+    _activeRuns[taskId]?.abort(paused: true);
   }
 
-  /// Cancela a transferência, abortando requisições e limpando buffers.
+  /// Cancela a transferência da geração ativa, abortando requisições e limpando buffers.
   void cancel(String taskId) {
-    _cancelledTasks[taskId] = true;
-    final reqs = _activeRequests[taskId];
-    if (reqs != null && reqs.isNotEmpty) {
-      for (final req in List<HttpClientRequest>.of(reqs)) {
-        try {
-          req.abort();
-        } catch (_) {}
-      }
-    }
-    final client = _activeClients[taskId];
-    if (client != null) {
-      try {
-        client.close(force: true);
-      } catch (_) {}
-    }
+    _activeRuns[taskId]?.abort(cancelled: true);
   }
 
   Future<DownloadTask> _executeDownload({
@@ -122,35 +139,73 @@ class DartSegmentedDownloader {
   }) async {
     _validateHttpUrl(task.url);
 
-    // Geração única desta execução da tarefa para descartar callbacks obsoletos
+    final previousRun = _activeRuns[task.id];
+
+    // Geração única desta execução da tarefa para encerrar workers antigos e descartar callbacks obsoletos
     final gen = (_activeGenerations[task.id] ?? 0) + 1;
     _activeGenerations[task.id] = gen;
 
-    // Reseta flags apenas se uma nova execução explícita foi solicitada
-    _pausedTasks[task.id] = false;
-    _cancelledTasks[task.id] = false;
+    final client = HttpClient()
+      ..maxConnectionsPerHost = 32
+      ..connectionTimeout = const Duration(seconds: 25);
+    final runState = _TaskRunState(
+      taskId: task.id,
+      generation: gen,
+      client: client,
+    );
+    _activeRuns[task.id] = runState;
 
     var current = task.copyWith(
       status: DownloadStatus.starting,
       downloadEngine: 'dart_range',
     );
-    if (_activeGenerations[task.id] == gen) {
-      onProgress?.call(current);
-    }
-
-    final client = HttpClient()
-      ..maxConnectionsPerHost = 32
-      ..connectionTimeout = const Duration(seconds: 25);
-    _activeClients[task.id] = client;
 
     try {
+      // Caso uma execução anterior da mesma tarefa ainda esteja fechando arquivos após pausa rápida,
+      // sinaliza parada imediata e aguarda seu encerramento antes de tocar nos segmentos em disco.
+      if (previousRun != null) {
+        previousRun.abort(paused: !previousRun.isCancelled);
+        await previousRun.done;
+      }
+
+      if (runState.isCancelled) {
+        current = current.copyWith(
+          status: DownloadStatus.cancelled,
+          speedBytesPerSec: 0,
+          clearEta: true,
+        );
+        if (_activeGenerations[task.id] == gen) {
+          onProgress?.call(current);
+        }
+        return current;
+      }
+      if (runState.isStopped(_activeGenerations)) {
+        current = current.copyWith(
+          status: DownloadStatus.paused,
+          speedBytesPerSec: 0,
+          clearEta: true,
+        );
+        if (_activeGenerations[task.id] == gen) {
+          onProgress?.call(current);
+        }
+        return current;
+      }
+
+      if (_activeGenerations[task.id] == gen) {
+        onProgress?.call(current);
+      }
+
       final uri = Uri.parse(task.url);
 
       // 1. Consulta cabeçalhos para obter tamanho, ETag, Last-Modified e verificar suporte a Range Requests
       final headReq = await client.headUrl(uri);
-      _registerRequest(task.id, headReq);
+      runState.registerRequest(headReq);
       final headRes = await headReq.close();
-      _unregisterRequest(task.id, headReq);
+      runState.unregisterRequest(headReq);
+
+      if (runState.isStopped(_activeGenerations)) {
+        return _buildStoppedResult(current, runState, onProgress);
+      }
 
       int? contentLength;
       final clHeader = headRes.headers.value(HttpHeaders.contentLengthHeader);
@@ -169,9 +224,10 @@ class DartSegmentedDownloader {
         targetFile.parent.createSync(recursive: true);
       }
 
-      // Se o ETag do arquivo remoto mudou em relação à sessão anterior, reseta segmentos locais
-      if (task.lastEtag != null && etag != null && task.lastEtag != etag) {
-        _wipeSegmentFiles(targetFile, 32);
+      // Se o ETag ou Last-Modified remoto mudou em relação à sessão anterior, descarta segmentos locais
+      if ((task.lastEtag != null && etag != null && task.lastEtag != etag) ||
+          (task.lastModified != null && lastModified != null && task.lastModified != lastModified)) {
+        _wipeSegmentFiles(targetFile);
       }
 
       current = current.copyWith(
@@ -196,31 +252,34 @@ class DartSegmentedDownloader {
             targetFile: targetFile,
             contentLength: contentLength,
             splitCount: splitCount,
+            etag: etag ?? task.lastEtag,
+            lastModified: lastModified ?? task.lastModified,
             task: current,
-            generation: gen,
+            runState: runState,
             onProgress: onProgress,
           );
         } on RangeNotSupportedException {
           // Servidor indicou suportar Range mas retornou HTTP 200 no segmento:
           // chaveia transparentemente para fluxo direto sequencial sem duplicar dados
           isRangeSupported = false;
-          _wipeSegmentFiles(targetFile, splitCount);
+          _wipeSegmentFiles(targetFile);
           current = await _downloadDirectStream(
             client: client,
             uri: uri,
             targetFile: targetFile,
             task: current.copyWith(isRangeSupported: false, splitCount: 1),
-            generation: gen,
+            runState: runState,
             onProgress: onProgress,
           );
         }
       } else {
+        _wipeSegmentFiles(targetFile);
         current = await _downloadDirectStream(
           client: client,
           uri: uri,
           targetFile: targetFile,
           task: current,
-          generation: gen,
+          runState: runState,
           onProgress: onProgress,
         );
       }
@@ -255,13 +314,14 @@ class DartSegmentedDownloader {
 
       return current;
     } catch (e) {
-      if (_cancelledTasks[task.id] == true) {
+      if (runState.isCancelled) {
+        _wipeSegmentFiles(File(task.destinationPath));
         current = current.copyWith(
           status: DownloadStatus.cancelled,
           speedBytesPerSec: 0,
           clearEta: true,
         );
-      } else if (_pausedTasks[task.id] == true) {
+      } else if (runState.isStopped(_activeGenerations)) {
         current = current.copyWith(
           status: DownloadStatus.paused,
           speedBytesPerSec: 0,
@@ -280,20 +340,182 @@ class DartSegmentedDownloader {
       }
       return current;
     } finally {
-      _activeClients.remove(task.id);
+      if (identical(_activeRuns[task.id], runState)) {
+        _activeRuns.remove(task.id);
+      }
       client.close(force: true);
+      runState.markDone();
     }
   }
 
-  void _wipeSegmentFiles(File targetFile, int count) {
-    for (var i = 0; i < count + 64; i++) {
-      final f = File('${targetFile.path}.part$i');
-      if (f.existsSync()) {
+  DownloadTask _buildStoppedResult(
+    DownloadTask current,
+    _TaskRunState runState,
+    DownloadProgressCallback? onProgress,
+  ) {
+    final stoppedStatus = runState.isCancelled
+        ? DownloadStatus.cancelled
+        : DownloadStatus.paused;
+    final updated = current.copyWith(
+      status: stoppedStatus,
+      speedBytesPerSec: 0,
+      clearEta: true,
+    );
+    if (_activeGenerations[runState.taskId] == runState.generation) {
+      onProgress?.call(updated);
+    }
+    return updated;
+  }
+
+  static File _manifestFileFor(File targetFile) =>
+      File('${targetFile.path}.parts.json');
+
+  void _writeSegmentManifest({
+    required File targetFile,
+    required int totalSize,
+    required int splitCount,
+    required String? etag,
+    required String? lastModified,
+    required List<_RangeSlice> slices,
+  }) {
+    final manifestFile = _manifestFileFor(targetFile);
+    final tmpFile = File('${manifestFile.path}.tmp');
+    final ordered = List<_RangeSlice>.of(slices)
+      ..sort((a, b) => a.startByte.compareTo(b.startByte));
+    final payload = <String, dynamic>{
+      'version': 1,
+      'totalSize': totalSize,
+      'splitCount': splitCount,
+      if (etag != null) 'etag': etag,
+      if (lastModified != null) 'lastModified': lastModified,
+      'segments': ordered
+          .map((s) => <String, int>{
+                'id': s.id,
+                'startByte': s.startByte,
+                'endByte': s.endByte,
+              })
+          .toList(),
+    };
+    tmpFile.writeAsStringSync(jsonEncode(payload), flush: true);
+    tmpFile.renameSync(manifestFile.path);
+  }
+
+  List<_RangeSlice>? _tryLoadCompatibleSlices({
+    required File targetFile,
+    required int contentLength,
+    required int splitCount,
+    required String? etag,
+    required String? lastModified,
+  }) {
+    final manifestFile = _manifestFileFor(targetFile);
+    if (!manifestFile.existsSync()) return null;
+
+    try {
+      final decoded = jsonDecode(manifestFile.readAsStringSync());
+      if (decoded is! Map<String, dynamic>) return null;
+      if (decoded['version'] != 1) return null;
+      if (decoded['totalSize'] != contentLength) return null;
+      if (decoded['splitCount'] != splitCount) return null;
+
+      final savedEtag = decoded['etag'] as String?;
+      if (savedEtag != null && etag != null && savedEtag != etag) {
+        return null;
+      }
+      final savedLastModified = decoded['lastModified'] as String?;
+      if (savedLastModified != null &&
+          lastModified != null &&
+          savedLastModified != lastModified) {
+        return null;
+      }
+
+      final rawSegments = decoded['segments'];
+      if (rawSegments is! List || rawSegments.isEmpty) return null;
+
+      final parsed = <_RangeSlice>[];
+      final usedIds = <int>{};
+      for (final entry in rawSegments) {
+        if (entry is! Map) return null;
+        final id = entry['id'];
+        final startByte = entry['startByte'];
+        final endByte = entry['endByte'];
+        if (id is! int || startByte is! int || endByte is! int) return null;
+        if (id < 0 || startByte < 0 || endByte < startByte || !usedIds.add(id)) {
+          return null;
+        }
+        final segFile = File('${targetFile.path}.part$id');
+        var existing = 0;
+        if (segFile.existsSync()) {
+          existing = segFile.lengthSync();
+          final maxExpected = endByte - startByte + 1;
+          if (existing > maxExpected) {
+            final raf = segFile.openSync(mode: FileMode.writeOnlyAppend);
+            raf.truncateSync(maxExpected);
+            raf.closeSync();
+            existing = maxExpected;
+          }
+        }
+        parsed.add(_RangeSlice(
+          id: id,
+          startByte: startByte,
+          endByte: endByte,
+          file: segFile,
+          writtenBytes: existing,
+          completed: existing == (endByte - startByte + 1),
+        ));
+      }
+
+      final sorted = List<_RangeSlice>.of(parsed)
+        ..sort((a, b) => a.startByte.compareTo(b.startByte));
+      if (sorted.first.startByte != 0 || sorted.last.endByte != contentLength - 1) {
+        return null;
+      }
+      for (var i = 1; i < sorted.length; i++) {
+        if (sorted[i].startByte != sorted[i - 1].endByte + 1) {
+          return null;
+        }
+      }
+
+      // Remove eventuais partes órfãs fora do manifesto validado
+      _deleteUnlistedPartFiles(targetFile, usedIds);
+      return sorted;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _deleteUnlistedPartFiles(File targetFile, Set<int> validIds) {
+    final parent = targetFile.parent;
+    if (!parent.existsSync()) return;
+    final baseName = targetFile.uri.pathSegments.isNotEmpty
+        ? targetFile.uri.pathSegments.last
+        : targetFile.path.split(Platform.pathSeparator).last;
+    final partPattern = RegExp('^${RegExp.escape(baseName)}\\.part(\\d+)\$');
+    try {
+      for (final entity in parent.listSync(followLinks: false)) {
+        final name = entity.path.split(Platform.pathSeparator).last;
+        final match = partPattern.firstMatch(name);
+        if (match != null) {
+          final id = int.tryParse(match.group(1)!);
+          if (id == null || !validIds.contains(id)) {
+            try {
+              entity.deleteSync();
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _wipeSegmentFiles(File targetFile) {
+    final manifestFile = _manifestFileFor(targetFile);
+    for (final aux in [manifestFile, File('${manifestFile.path}.tmp')]) {
+      if (aux.existsSync()) {
         try {
-          f.deleteSync();
+          aux.deleteSync();
         } catch (_) {}
       }
     }
+    _deleteUnlistedPartFiles(targetFile, const <int>{});
   }
 
   Future<DownloadTask> _downloadSegmented({
@@ -302,38 +524,53 @@ class DartSegmentedDownloader {
     required File targetFile,
     required int contentLength,
     required int splitCount,
+    required String? etag,
+    required String? lastModified,
     required DownloadTask task,
-    required int generation,
+    required _TaskRunState runState,
     DownloadProgressCallback? onProgress,
   }) async {
-    final chunkSize = (contentLength / splitCount).ceil();
-    final slices = <_RangeSlice>[];
-    final activeSliceIds = <int>{};
+    final generation = runState.generation;
+    var restoredSlices = _tryLoadCompatibleSlices(
+      targetFile: targetFile,
+      contentLength: contentLength,
+      splitCount: splitCount,
+      etag: etag,
+      lastModified: lastModified,
+    );
 
-    for (var i = 0; i < splitCount; i++) {
-      final start = i * chunkSize;
-      final end = (i == splitCount - 1) ? contentLength - 1 : (start + chunkSize - 1);
-      final segFile = File('${targetFile.path}.part$i');
-      var existing = 0;
-      if (segFile.existsSync()) {
-        existing = segFile.lengthSync();
-        final maxExpected = end - start + 1;
-        if (existing > maxExpected) {
-          final raf = segFile.openSync(mode: FileMode.writeOnlyAppend);
-          raf.truncateSync(maxExpected);
-          raf.closeSync();
-          existing = maxExpected;
-        }
+    final List<_RangeSlice> slices;
+    if (restoredSlices != null) {
+      slices = restoredSlices;
+    } else {
+      // Descarta partes incompatíveis (sem manifesto, outro splitCount, tamanho/ETag divergente)
+      _wipeSegmentFiles(targetFile);
+      final chunkSize = (contentLength / splitCount).ceil();
+      slices = <_RangeSlice>[];
+      for (var i = 0; i < splitCount; i++) {
+        final start = i * chunkSize;
+        final end = (i == splitCount - 1) ? contentLength - 1 : (start + chunkSize - 1);
+        final segFile = File('${targetFile.path}.part$i');
+        slices.add(_RangeSlice(
+          id: i,
+          startByte: start,
+          endByte: end,
+          file: segFile,
+          writtenBytes: 0,
+        ));
       }
-      slices.add(_RangeSlice(
-        id: i,
-        startByte: start,
-        endByte: end,
-        file: segFile,
-        writtenBytes: existing,
-      ));
     }
 
+    _writeSegmentManifest(
+      targetFile: targetFile,
+      totalSize: contentLength,
+      splitCount: splitCount,
+      etag: etag,
+      lastModified: lastModified,
+      slices: slices,
+    );
+
+    final activeSliceIds = <int>{};
     var current = task;
     var lastRecordedBytes = slices.fold<int>(0, (sum, s) => sum + s.writtenBytes);
     var smoothedSpeed = 0.0;
@@ -343,7 +580,7 @@ class DartSegmentedDownloader {
     // Timer suave para notificações da UI (a cada 350ms) usando média móvel exponencial (EMA)
     Timer? progressTimer;
     progressTimer = Timer.periodic(const Duration(milliseconds: 350), (_) {
-      if (_activeGenerations[task.id] != generation) return;
+      if (runState.isStopped(_activeGenerations)) return;
 
       final totalDown = slices.fold<int>(0, (sum, s) => sum + s.writtenBytes);
       final deltaBytes = totalDown - lastRecordedBytes;
@@ -383,7 +620,9 @@ class DartSegmentedDownloader {
         downloadEngine: 'dart_range',
       );
 
-      onProgress?.call(current);
+      if (_activeGenerations[task.id] == generation) {
+        onProgress?.call(current);
+      }
     });
 
     Future<void> downloadSliceWorker(_RangeSlice slice) async {
@@ -391,7 +630,7 @@ class DartSegmentedDownloader {
       const maxRetries = 3;
 
       while (true) {
-        if (_pausedTasks[task.id] == true || _cancelledTasks[task.id] == true) {
+        if (runState.isStopped(_activeGenerations)) {
           return;
         }
 
@@ -405,9 +644,17 @@ class DartSegmentedDownloader {
         RandomAccessFile? raf;
         try {
           req = await client.getUrl(uri);
-          _registerRequest(task.id, req);
+          runState.registerRequest(req);
+          if (runState.isStopped(_activeGenerations)) {
+            req.abort();
+            return;
+          }
           req.headers.set('Range', 'bytes=$actualStart-${slice.endByte}');
           final res = await req.close();
+
+          if (runState.isStopped(_activeGenerations)) {
+            return;
+          }
 
           if (res.statusCode == HttpStatus.ok) {
             throw const RangeNotSupportedException(
@@ -456,7 +703,7 @@ class DartSegmentedDownloader {
           int bytesSinceFlush = 0;
 
           await for (final chunk in res.timeout(const Duration(seconds: 40))) {
-            if (_cancelledTasks[task.id] == true || _pausedTasks[task.id] == true) {
+            if (runState.isStopped(_activeGenerations)) {
               break;
             }
 
@@ -489,7 +736,7 @@ class DartSegmentedDownloader {
             slice.completed = true;
             return;
           } else {
-            if (_pausedTasks[task.id] == true || _cancelledTasks[task.id] == true) {
+            if (runState.isStopped(_activeGenerations)) {
               return;
             }
             throw HttpException('Segmento ${slice.id} incompleto: ${slice.writtenBytes} de ${slice.totalExpected} bytes');
@@ -498,16 +745,19 @@ class DartSegmentedDownloader {
           if (e is RangeNotSupportedException) {
             rethrow;
           }
-          if (_cancelledTasks[task.id] == true || _pausedTasks[task.id] == true) {
+          if (runState.isStopped(_activeGenerations)) {
             return;
           }
           retries++;
           if (retries >= maxRetries) {
             rethrow;
           }
-          await Future.delayed(const Duration(milliseconds: 250));
+          await Future.any([
+            Future<void>.delayed(const Duration(milliseconds: 250)),
+            runState.stopSignal,
+          ]);
         } finally {
-          if (req != null) _unregisterRequest(task.id, req);
+          if (req != null) runState.unregisterRequest(req);
           if (raf != null) {
             try {
               await raf.flush();
@@ -520,7 +770,7 @@ class DartSegmentedDownloader {
 
     Future<void> runWorker(int workerIndex) async {
       while (true) {
-        if (_pausedTasks[task.id] == true || _cancelledTasks[task.id] == true) {
+        if (runState.isStopped(_activeGenerations)) {
           return;
         }
 
@@ -562,8 +812,8 @@ class DartSegmentedDownloader {
 
               slowestTarget.endByte = newTargetEnd;
 
-              final stolenId = slices.length;
-              final stolenFile = File('${targetFile.path}.part$stolenId');
+              final nextId = slices.fold<int>(-1, (m, s) => s.id > m ? s.id : m) + 1;
+              final stolenFile = File('${targetFile.path}.part$nextId');
               if (stolenFile.existsSync()) {
                 try {
                   stolenFile.deleteSync();
@@ -571,7 +821,7 @@ class DartSegmentedDownloader {
               }
 
               final stolenSlice = _RangeSlice(
-                id: stolenId,
+                id: nextId,
                 startByte: stolenStart,
                 endByte: originalEnd,
                 file: stolenFile,
@@ -579,7 +829,15 @@ class DartSegmentedDownloader {
               );
 
               slices.add(stolenSlice);
-              activeSliceIds.add(stolenId);
+              _writeSegmentManifest(
+                targetFile: targetFile,
+                totalSize: contentLength,
+                splitCount: splitCount,
+                etag: etag,
+                lastModified: lastModified,
+                slices: slices,
+              );
+              activeSliceIds.add(nextId);
               assigned = stolenSlice;
             }
           }
@@ -607,15 +865,15 @@ class DartSegmentedDownloader {
       if (e is RangeNotSupportedException) {
         rethrow;
       }
-      if (_cancelledTasks[task.id] == true) {
-        _wipeSegmentFiles(targetFile, splitCount);
+      if (runState.isCancelled) {
+        _wipeSegmentFiles(targetFile);
         return current.copyWith(
           status: DownloadStatus.cancelled,
           speedBytesPerSec: 0,
           clearEta: true,
         );
       }
-      if (_pausedTasks[task.id] == true) {
+      if (runState.isStopped(_activeGenerations)) {
         return current.copyWith(
           status: DownloadStatus.paused,
           speedBytesPerSec: 0,
@@ -627,17 +885,17 @@ class DartSegmentedDownloader {
       progressTimer.cancel();
     }
 
-    if (_pausedTasks[task.id] == true) {
+    if (runState.isCancelled) {
+      _wipeSegmentFiles(targetFile);
       return current.copyWith(
-        status: DownloadStatus.paused,
+        status: DownloadStatus.cancelled,
         speedBytesPerSec: 0,
         clearEta: true,
       );
     }
-    if (_cancelledTasks[task.id] == true) {
-      _wipeSegmentFiles(targetFile, splitCount);
+    if (runState.isStopped(_activeGenerations)) {
       return current.copyWith(
-        status: DownloadStatus.cancelled,
+        status: DownloadStatus.paused,
         speedBytesPerSec: 0,
         clearEta: true,
       );
@@ -654,8 +912,27 @@ class DartSegmentedDownloader {
       onProgress?.call(current);
     }
 
-    // Ordena fatias pelo byte de início para garantir integridade sequencial
+    // Ordena fatias pelo byte de início e valida cobertura contígua antes da costura
     slices.sort((a, b) => a.startByte.compareTo(b.startByte));
+    for (var i = 0; i < slices.length; i++) {
+      final s = slices[i];
+      if (!s.file.existsSync() || s.file.lengthSync() != s.totalExpected) {
+        throw SegmentValidationException(
+          'Segmento ${s.id} inválido na costura final.',
+        );
+      }
+      if (i == 0 && s.startByte != 0) {
+        throw const SegmentValidationException('Início do primeiro segmento diverge de zero.');
+      }
+      if (i > 0 && s.startByte != slices[i - 1].endByte + 1) {
+        throw SegmentValidationException(
+          'Lacuna ou sobreposição detectada entre segmentos ${slices[i - 1].id} e ${s.id}.',
+        );
+      }
+    }
+    if (slices.isEmpty || slices.last.endByte != contentLength - 1) {
+      throw const SegmentValidationException('Fim do último segmento diverge do tamanho total.');
+    }
 
     // Costura todas as fatias no arquivo final usando RandomAccessFile para máxima eficiência
     final outRaf = await targetFile.open(mode: FileMode.writeOnly);
@@ -681,6 +958,7 @@ class DartSegmentedDownloader {
     } finally {
       await outRaf.close();
     }
+    _wipeSegmentFiles(targetFile);
 
     current = current.copyWith(
       downloadedBytes: contentLength,
@@ -700,14 +978,22 @@ class DartSegmentedDownloader {
     required Uri uri,
     required File targetFile,
     required DownloadTask task,
-    required int generation,
+    required _TaskRunState runState,
     DownloadProgressCallback? onProgress,
   }) async {
+    final generation = runState.generation;
     HttpClientRequest? req;
     try {
       req = await client.getUrl(uri);
-      _registerRequest(task.id, req);
+      runState.registerRequest(req);
+      if (runState.isStopped(_activeGenerations)) {
+        req.abort();
+        return _buildStoppedResult(task, runState, onProgress);
+      }
       final res = await req.close();
+      if (runState.isStopped(_activeGenerations)) {
+        return _buildStoppedResult(task, runState, onProgress);
+      }
 
       if (res.statusCode != HttpStatus.ok && res.statusCode != HttpStatus.partialContent) {
         throw HttpException('Status HTTP inválido para download direto: ${res.statusCode}');
@@ -721,7 +1007,7 @@ class DartSegmentedDownloader {
 
       Timer? progressTimer;
       progressTimer = Timer.periodic(const Duration(milliseconds: 300), (_) {
-        if (_activeGenerations[task.id] != generation) return;
+        if (runState.isStopped(_activeGenerations)) return;
 
         final elapsedSec = speedStopwatch.elapsedMilliseconds / 1000.0;
         if (elapsedSec >= 0.3) {
@@ -752,19 +1038,21 @@ class DartSegmentedDownloader {
           etaSeconds: eta,
           downloadEngine: 'dart_stream',
         );
-        onProgress?.call(current);
+        if (_activeGenerations[task.id] == generation) {
+          onProgress?.call(current);
+        }
       });
 
       final raf = await targetFile.open(mode: FileMode.writeOnly);
       int bytesSinceFlush = 0;
       try {
         await for (final chunk in res.timeout(const Duration(seconds: 40))) {
-          if (_cancelledTasks[task.id] == true) {
+          if (runState.isCancelled) {
             await raf.close();
             if (targetFile.existsSync()) targetFile.deleteSync();
             return current.copyWith(status: DownloadStatus.cancelled, speedBytesPerSec: 0, clearEta: true);
           }
-          if (_pausedTasks[task.id] == true) {
+          if (runState.isStopped(_activeGenerations)) {
             await raf.flush();
             await raf.close();
             return current.copyWith(status: DownloadStatus.paused, speedBytesPerSec: 0, clearEta: true);
@@ -798,7 +1086,7 @@ class DartSegmentedDownloader {
       }
       return current;
     } finally {
-      if (req != null) _unregisterRequest(task.id, req);
+      if (req != null) runState.unregisterRequest(req);
     }
   }
 
