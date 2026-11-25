@@ -13,7 +13,7 @@ import 'package:nix_client/features/chat/article_share_card.dart';
 import 'package:nix_client/features/chat/offline_location_card.dart';
 import 'package:nix_client/features/chat/offline_location_picker_dialog.dart';
 import 'package:nix_client/features/chat/work_share_card.dart';
-import 'package:nix_client/features/media/passport_dex_sheet.dart';
+import 'package:nix_client/features/media/cultural_work_sheet.dart';
 import 'package:nix_client/features/profile/nix_user_avatar.dart';
 import 'package:nix_client/state/nix_state.dart';
 
@@ -218,8 +218,8 @@ void main() {
     });
   });
 
-  group('5. PassportDexSheet & Cultural Tracking Test', () {
-    testWidgets('PassportDexSheet opens and toggles status chips', (tester) async {
+  group('5. CulturalWorkSheet & Cultural Tracking Test', () {
+    testWidgets('CulturalWorkSheet opens and toggles status chips', (tester) async {
       final state = NixState(loadMockData: false);
       addTearDown(state.dispose);
 
@@ -239,7 +239,7 @@ void main() {
           value: state,
           child: const MaterialApp(
             home: Scaffold(
-              body: PassportDexSheet(item: item),
+              body: CulturalWorkSheet(item: item),
             ),
           ),
         ),

@@ -7,7 +7,7 @@ import '../../core/models/cultural_item.dart';
 import '../../core/models/cultural_tracking.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
-import '../media/passport_dex_sheet.dart';
+import '../media/cultural_work_sheet.dart';
 
 class WorkShareData {
   final String id;
@@ -391,7 +391,7 @@ class WorkShareCard extends StatelessWidget {
                           if (isDesktop) {
                             state.openWorkDetail(item);
                           } else {
-                            PassportDexSheet.showModal(context, item: item);
+                            CulturalWorkSheet.showModal(context, item: item);
                           }
                         },
                         child: const Text('Ver obra ↗', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
@@ -400,7 +400,7 @@ class WorkShareCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: FilledButton(
-                        key: Key('add_to_dex_button_${data.id}'),
+                        key: Key('add_to_collection_button_${data.id}'),
                         style: FilledButton.styleFrom(
                           backgroundColor: Colors.cyanAccent.shade700,
                           foregroundColor: Colors.black,

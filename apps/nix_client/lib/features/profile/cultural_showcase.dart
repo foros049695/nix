@@ -19,7 +19,7 @@ import 'cultural_cover_art.dart';
 import 'collection_import_dialog.dart';
 import 'cover_enrichment_dialog.dart';
 import 'cultural_filters_and_pagination.dart';
-import '../media/passport_dex_sheet.dart';
+import '../media/cultural_work_sheet.dart';
 
 class CulturalShowcase extends StatefulWidget {
   const CulturalShowcase({super.key});
@@ -268,7 +268,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
               if (MediaQuery.sizeOf(context).width >= 900) {
                 state.openWorkDetail(item);
               } else {
-                PassportDexSheet.showModal(context, item: item);
+                CulturalWorkSheet.showModal(context, item: item);
               }
             },
             onLongPress: () => _confirmDelete(item),

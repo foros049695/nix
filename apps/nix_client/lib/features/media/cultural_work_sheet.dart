@@ -9,12 +9,12 @@ import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
 import '../profile/cultural_cover_art.dart';
 
-class PassportDexSheet extends StatefulWidget {
+class CulturalWorkSheet extends StatefulWidget {
   final CulturalItem item;
   final VoidCallback? onClose;
   final bool isSidebar;
 
-  const PassportDexSheet({
+  const CulturalWorkSheet({
     super.key,
     required this.item,
     this.onClose,
@@ -28,16 +28,16 @@ class PassportDexSheet extends StatefulWidget {
       backgroundColor: Colors.transparent,
       builder: (_) => FractionallySizedBox(
         heightFactor: 0.92,
-        child: PassportDexSheet(item: item),
+        child: CulturalWorkSheet(item: item),
       ),
     );
   }
 
   @override
-  State<PassportDexSheet> createState() => _PassportDexSheetState();
+  State<CulturalWorkSheet> createState() => _CulturalWorkSheetState();
 }
 
-class _PassportDexSheetState extends State<PassportDexSheet> {
+class _CulturalWorkSheetState extends State<CulturalWorkSheet> {
   CulturalStage? _status;
   double? _rating;
 
@@ -92,7 +92,7 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
         ),
         child: Stack(
           children: [
-            // Fundo derivado da capa com desfoque profundo (PassportDex & Fireside Folio)
+            // Fundo derivado da capa com desfoque profundo (Acervo Soberano & Fireside Folio)
             if (hasImage)
               Positioned.fill(
                 child: Opacity(
@@ -142,7 +142,7 @@ class _PassportDexSheetState extends State<PassportDexSheet> {
                       ),
                       const Spacer(),
                       IconButton(
-                        key: const Key('close_passport_dex_button'),
+                        key: const Key('close_cultural_work_sheet_button'),
                         icon: const Icon(Icons.close_rounded, size: 20),
                         onPressed: () {
                           if (widget.onClose != null) {

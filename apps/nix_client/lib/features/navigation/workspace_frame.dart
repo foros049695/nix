@@ -9,7 +9,7 @@ import '../design/nix_surfaces.dart';
 import '../design/nix_glass.dart';
 import '../home/home_sidebar.dart';
 import '../members/members_panel.dart';
-import '../media/passport_dex_sheet.dart';
+import '../media/cultural_work_sheet.dart';
 import '../profile/nix_user_avatar.dart';
 import '../notifications/notification_center_dialog.dart';
 import '../network/connectivity_center_dialog.dart';
@@ -89,7 +89,7 @@ class NixDesktopWorkspace extends StatelessWidget {
     final panel = activeWork != null
         ? SizedBox(
             width: 360,
-            child: PassportDexSheet(
+            child: CulturalWorkSheet(
               item: activeWork,
               isSidebar: true,
               onClose: state.closeWorkDetail,

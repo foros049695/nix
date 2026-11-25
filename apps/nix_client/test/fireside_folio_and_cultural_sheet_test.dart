@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_client/core/models/cultural_item.dart';
-import 'package:nix_client/features/media/passport_dex_sheet.dart';
+import 'package:nix_client/features/media/cultural_work_sheet.dart';
 import 'package:nix_client/state/nix_state.dart';
 import 'package:provider/provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('Fichas Técnicas Fireside Folio e Capas 3D PassportDex (Seções 13 e 14)', () {
+  group('Fichas Técnicas Fireside Folio e Fichas Culturais Soberanas (Seções 13 e 14)', () {
     testWidgets('Livros exibem cabeçalho e seção editorial Fireside Folio completa', (tester) async {
       final state = NixState(loadMockData: false);
 
@@ -32,7 +32,7 @@ void main() {
           home: ChangeNotifierProvider<NixState>.value(
             value: state,
             child: const Scaffold(
-              body: PassportDexSheet(item: book),
+              body: CulturalWorkSheet(item: book),
             ),
           ),
         ),
@@ -76,7 +76,7 @@ void main() {
           home: ChangeNotifierProvider<NixState>.value(
             value: state,
             child: const Scaffold(
-              body: PassportDexSheet(item: movie),
+              body: CulturalWorkSheet(item: movie),
             ),
           ),
         ),
