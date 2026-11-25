@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/media/local_audio_library_service.dart';
 import '../../core/media/nix_music_player_controller.dart';
@@ -45,30 +46,7 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
   final Set<String> _favoriteUris = {};
   bool _isAutoEqTab = true; // Alterna entre AutoEQ/PEQ e 15-Band Graphic
 
-  // Lista de calibrações de fones populares para demonstração do AutoEQ
-  static const List<Map<String, String>> _headphoneProfiles = [
-    {
-      'name': 'CMF by Nothing Buds Pro 2',
-      'source': 'Rtings · Bruel & Kjaer 5128',
-    },
-    {
-      'name': 'Sony WH-1000XM5',
-      'source': 'Oratory1990 · GRAS 45CA',
-    },
-    {
-      'name': 'Sennheiser HD 600',
-      'source': 'Crinacle · 711 Coupler',
-    },
-    {
-      'name': 'Apple AirPods Pro 2 (USB-C)',
-      'source': 'Rtings · Bruel & Kjaer 5128',
-    },
-    {
-      'name': 'Moondrop Chu II',
-      'source': 'Super* Review · IEC60318-4',
-    },
-  ];
-
+  // Sem perfis de fones inventados ou detecções não verificadas.
   String? _selectedHeadphone;
   String _selectedHeadphoneSource = 'Saída Padrão do Sistema (Automático)';
 
@@ -810,34 +788,53 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
 
   Future<void> _pickAudioFiles() async {
     try {
-      final choices = await const CrossPlatformFilePickerAdapter().pickAttachments(
-        allowedExtensions: const ['mp3', 'flac', 'wav', 'ogg', 'opus', 'm4a', 'aac'],
-        allowMultiple: true,
-      );
-      if (choices.isEmpty) return;
-      final service = LocalAudioLibraryService();
       final tracks = <PagerTrack>[];
-      for (final path in choices) {
-        final t = await service.extractMetadata(path);
-        if (t != null) tracks.add(t);
-      }
-      if (tracks.isNotEmpty && mounted) {
-        final state = context.read<NixState>();
-        await state.addTracksToAudioLibrary(tracks);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${tracks.length} música(s) importada(s) com metadados reais!')),
+      if (Platform.isAndroid) {
+        // O Android devolve uma URI content:// com permissão de leitura persistida.
+        // Não interpretar a URI como um caminho File do sistema.
+        final selected = await const MethodChannel('com.projetonix.nix/pager_audio')
+            .invokeMapMethod<Object?, Object?>('pick');
+        if (selected == null) return;
+        tracks.add(PagerTrack.fromMap(selected));
+      } else {
+        final choices = await const CrossPlatformFilePickerAdapter().pickAttachments(
+          allowedExtensions: const ['mp3', 'flac', 'wav', 'ogg', 'opus', 'm4a', 'aac'],
+          allowMultiple: true,
         );
+        if (choices.isEmpty) return;
+        final service = LocalAudioLibraryService();
+        for (final path in choices) {
+          final track = await service.extractMetadata(path);
+          if (track != null) tracks.add(track);
+        }
       }
-    } catch (e) {
+      if (!mounted) return;
+      if (tracks.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nenhum arquivo de áudio válido selecionado.')),
+        );
+        return;
+      }
+      await context.read<NixState>().addTracksToAudioLibrary(tracks);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Falha ao importar áudio: $e')),
+          SnackBar(content: Text('Áudio local adicionado: ' + tracks.length.toString() + ' faixa(s).')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Não foi possível importar áudio: ' + error.toString())),
         );
       }
     }
   }
 
   Future<void> _scanMusicFolder() async {
+    if (Platform.isAndroid) {
+      await _pickAudioFiles();
+      return;
+    }
     final home = Platform.environment['HOME'] ?? '';
     final candidates = [
       if (home.isNotEmpty) '$home/Música',
@@ -1166,7 +1163,7 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
-                      'Resposta de Frequência (Frequency Response)',
+                      'Prévia teórica dos ajustes (não é medição)',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 13,
@@ -1204,9 +1201,6 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
                   runSpacing: 6,
                   children: const [
                     _CurveLegendItem(label: 'EQ', color: Color(0xFFEAB308)),
-                    _CurveLegendItem(label: 'Medido', color: Color(0xFF94A3B8)),
-                    _CurveLegendItem(label: 'Target Harman', color: Color(0xFF10B981)),
-                    _CurveLegendItem(label: 'Corrigido', color: Color(0xFFF97316)),
                   ],
                 ),
               ],
@@ -1554,69 +1548,50 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
   void _showOutputDeviceModal() {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF1E293B),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) {
-        return Padding(
+      builder: (ctx) => SafeArea(
+        child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Dispositivo de Saída de Áudio',
-                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              const ListTile(
+                leading: Icon(Icons.speaker_outlined),
+                title: Text('Saída de áudio do sistema'),
+                subtitle: Text(
+                  'O Nix usa a saída padrão do sistema operacional. '
+                  'Seleção de dispositivos pelo aplicativo ainda não está disponível.',
+                ),
               ),
-              const SizedBox(height: 12),
-              ListTile(
-                leading: const Icon(Icons.laptop_rounded, color: Color(0xFF38BDF8)),
-                title: const Text('Padrão do Sistema (PipeWire / ALSA)', style: TextStyle(color: Colors.white)),
-                trailing: const Icon(Icons.check_rounded, color: Color(0xFF38BDF8)),
-                onTap: () => Navigator.pop(ctx),
-              ),
-              ListTile(
-                leading: const Icon(Icons.headphones_rounded, color: Colors.white70),
-                title: const Text('Fones Conectados / Saída Analógica', style: TextStyle(color: Colors.white)),
-                onTap: () => Navigator.pop(ctx),
-              ),
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fechar')),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
   void _showHeadphonePickerModal() {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF1E293B),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) {
-        return ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.all(16),
-          children: [
-            const Text(
-              'Selecionar Perfil Calibrado (AutoEQ Database)',
-              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            for (final hp in _headphoneProfiles)
-              ListTile(
-                leading: const Icon(Icons.headphones_rounded, color: Color(0xFF38BDF8)),
-                title: Text(hp['name']!, style: const TextStyle(color: Colors.white)),
-                subtitle: Text(hp['source']!, style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                onTap: () {
-                  setState(() {
-                    _selectedHeadphone = hp['name']!;
-                    _selectedHeadphoneSource = hp['source']!;
-                  });
-                  Navigator.pop(ctx);
-                },
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                leading: Icon(Icons.headphones_outlined),
+                title: Text('Fone não calibrado'),
+                subtitle: Text(
+                  'Nenhum fone foi detectado nem a resposta em frequência foi medida. '
+                  'Perfis de referência não representam uma detecção real.',
+                ),
               ),
-          ],
-        );
-      },
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fechar')),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1741,38 +1716,7 @@ class _FrequencyResponseCurvePainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
 
-    // 1. Curva Medida (Cinza)
-    final measuredPaint = Paint()
-      ..color = const Color(0xFF94A3B8).withOpacity(0.6)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-
-    final measuredPath = Path();
-    measuredPath.moveTo(0, size.height * 0.7);
-    for (double x = 0; x <= size.width; x += 5) {
-      final normX = x / size.width;
-      final y = size.height * 0.65 -
-          math.sin(normX * math.pi * 3) * 12 +
-          math.cos(normX * math.pi * 5) * 8;
-      measuredPath.lineTo(x, y);
-    }
-    canvas.drawPath(measuredPath, measuredPaint);
-
-    // 2. Curva Target Harman (Verde)
-    final targetPaint = Paint()
-      ..color = const Color(0xFF10B981).withOpacity(0.8)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8;
-
-    final targetPath = Path();
-    targetPath.moveTo(0, size.height * 0.5);
-    for (double x = 0; x <= size.width; x += 5) {
-      final normX = x / size.width;
-      final y = size.height * 0.5 + (normX * 25) - math.sin(normX * math.pi * 2) * 6;
-      targetPath.lineTo(x, y);
-    }
-    canvas.drawPath(targetPath, targetPaint);
-
+    // Curva exclusivamente teórica dos ganhos configurados; nenhuma medição inventada.
     // 3. Curva EQ (Dourado/Amarelo)
     final eqPaint = Paint()
       ..color = enabled ? const Color(0xFFEAB308) : Colors.white24
@@ -1792,20 +1736,7 @@ class _FrequencyResponseCurvePainter extends CustomPainter {
     }
     canvas.drawPath(eqPath, eqPaint);
 
-    // 4. Curva Corrigida Final (Laranja)
-    final correctedPaint = Paint()
-      ..color = enabled ? const Color(0xFFF97316) : Colors.white38
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2;
 
-    final correctedPath = Path();
-    correctedPath.moveTo(0, size.height * 0.5);
-    for (double x = 0; x <= size.width; x += 5) {
-      final normX = x / size.width;
-      final y = size.height * 0.52 + math.sin(normX * math.pi * 4) * 4;
-      correctedPath.lineTo(x, y);
-    }
-    canvas.drawPath(correctedPath, correctedPaint);
   }
 
   @override
