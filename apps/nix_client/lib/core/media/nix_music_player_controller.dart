@@ -253,7 +253,9 @@ class NixMusicPlayerController extends ChangeNotifier {
   void _startPlayback() {
     final session = ++_session;
     _playbackTicker?.cancel();
+    _playbackTicker = null;
     _stopNativeProcess();
+    _backendDuration = null;
     _androidPrepared = false;
     _playbackError = null;
     _isPlaying = false;
@@ -349,7 +351,7 @@ class NixMusicPlayerController extends ChangeNotifier {
       final isActuallyPlaying = status['isPlaying'] == true;
       final positionMs = (status['positionMs'] as num?)?.toInt() ?? 0;
       final durationMs = (status['durationMs'] as num?)?.toInt() ?? 0;
-      _position = Duration(milliseconds: positionMs.clamp(0, 2147483647));
+      _position = Duration(milliseconds: positionMs.clamp(0, 2147483647).toInt());
       if (durationMs > 0) _backendDuration = Duration(milliseconds: durationMs);
       final completed = _isPlaying && !isActuallyPlaying;
       _isPlaying = isActuallyPlaying;
