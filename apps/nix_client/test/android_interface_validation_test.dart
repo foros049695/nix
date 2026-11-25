@@ -80,6 +80,7 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(393, 852));
       final catalog = await tester.runAsync(() => CatalogDatabase.open(inMemory: true));
       nixState.setCatalogDatabase(catalog!);
+      await nixState.setCatalogManifestUrl('http://nixcatalog234567abcdefghijklmnopqrstuvwxyz234567abcdefaa.onion/manifest.json');
       addTearDown(catalog.close);
 
       await tester.pumpWidget(

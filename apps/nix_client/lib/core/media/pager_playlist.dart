@@ -61,21 +61,18 @@ class PagerTrack {
           'com.android.externalstorage.documents',
           'com.android.providers.media.documents',
         }.contains(uri?.authority);
-    final pathLower = uri?.path.toLowerCase() ?? '';
-    final hasAudioExtension = const {
-      '.wav', '.mp3', '.flac', '.ogg', '.m4a', '.aac', '.opus'
-    }.any((ext) => pathLower.endsWith(ext));
     final localDesktop = uri?.scheme == 'file' &&
         uri!.authority.isEmpty &&
         uri.path.startsWith('/') &&
         !uri.path.startsWith('//') &&
         !uri.hasQuery &&
         !uri.hasFragment &&
-        hasAudioExtension;
+        uri.path.toLowerCase().endsWith('.wav');
     if (uri == null || (!localAndroid && !localDesktop)) {
-      throw const FormatException('Escolha uma faixa de áudio válida no armazenamento local.');
+      throw const FormatException('Escolha uma faixa no armazenamento local.');
     }
 
+    final pathLower = uri.path.toLowerCase();
     final ext = pathLower.contains('.') ? pathLower.split('.').last.toUpperCase() : 'WAV';
 
     return PagerTrack(

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../database/local_database.dart';
 import '../security/platform_runtime.dart';
@@ -176,7 +177,30 @@ class CatalogDatabase {
   }
 
   Future<void> installBundledMusic() async {
-    // Expurgo de músicas demonstrativas: não injeta nada automaticamente.
+    const version = '1';
+    const versionKey = 'bundled_musicbrainz_version';
+    if (await getMeta(versionKey) == version) return;
+    String raw = '';
+    try {
+      raw = await rootBundle.loadString('assets/catalog/musicbrainz_seed.json');
+    } catch (_) {
+      final file = File('assets/catalog/musicbrainz_seed.json');
+      if (await file.exists()) {
+        raw = await file.readAsString();
+      }
+    }
+    if (raw.isEmpty) return;
+    final works = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+    await _db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final work in works) {
+        batch.insert('catalog_works', CatalogWork.fromRow(work).toMap(),
+            conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+      batch.insert('catalog_meta', {'key': versionKey, 'value': version},
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      await batch.commit(noResult: true);
+    });
   }
 
   static Future<void> _createSchema(DatabaseExecutor db) async {
