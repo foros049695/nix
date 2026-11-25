@@ -4,8 +4,11 @@ import android.app.Activity
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
+import java.io.File
+import java.security.MessageDigest
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
@@ -128,7 +131,54 @@ internal class NixPagerAudio(private val activity: Activity) {
                 uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null,
             )?.use { if (it.moveToFirst()) it.getString(0) else null }
             resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            result.success(mapOf("uri" to uri.toString(), "name" to (name ?: "Faixa").take(160)))
+            val metadata = mutableMapOf<String, Any>(
+                "uri" to uri.toString(),
+                "name" to (name ?: "Faixa").take(160),
+                "audioFormat" to (name?.substringAfterLast('.', "")?.uppercase() ?: "Áudio"),
+            )
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(activity, uri)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                    ?.takeIf { it.isNotBlank() }?.let { metadata["name"] = it.take(160) }
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                    ?.takeIf { it.isNotBlank() }?.let { metadata["artist"] = it.take(200) }
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                    ?.takeIf { it.isNotBlank() }?.let { metadata["album"] = it.take(200) }
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull()?.takeIf { it > 0L }?.let {
+                        metadata["durationSeconds"] = (it / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    }
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
+                    ?.toIntOrNull()?.takeIf { it > 0 }?.let {
+                        metadata["bitRateKbps"] = (it / 1000).coerceAtLeast(1)
+                    }
+                retriever.embeddedPicture?.let { image ->
+                    if (image.size in 16..(6 * 1024 * 1024)) {
+                        val digest = MessageDigest.getInstance("SHA-256")
+                            .digest(uri.toString().toByteArray(Charsets.UTF_8))
+                            .joinToString("") { b -> "%02x".format(b.toInt() and 0xff) }
+                        val coverDirectory = File(activity.filesDir, "music_covers")
+                        coverDirectory.mkdirs()
+                        val cover = File(coverDirectory, "cover_" + digest + ".img")
+                        if (!cover.exists() || cover.length() != image.size.toLong()) {
+                            val partial = File(coverDirectory, "cover_" + digest + ".part")
+                            partial.writeBytes(image)
+                            if (!partial.renameTo(cover)) {
+                                partial.delete()
+                            }
+                        }
+                        if (cover.exists() && cover.length() > 16L) {
+                            metadata["coverPath"] = cover.absolutePath
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // O usuário ainda poderá reproduzir o áudio; nunca inventar tags.
+            } finally {
+                retriever.release()
+            }
+            result.success(metadata)
         } catch (_: Exception) {
             result.error(
                 "PAGER_AUDIO_SOURCE", "Escolha um arquivo de áudio no armazenamento local.", null,
