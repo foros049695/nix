@@ -2342,7 +2342,10 @@ class NixState extends ChangeNotifier {
     int? expiresAt,
     SecretKeyData? sessionKey,
   }) async {
-    if (_findChannel(mailboxId) != null) return false;
+    final targetChannel = _findChannel(mailboxId);
+    if (targetChannel != null && targetChannel.type != ChannelType.announcement) {
+      return false;
+    }
 
     final now = DateTime.now().toUtc();
     final exp = expiresAt ?? now.add(const Duration(days: 7)).millisecondsSinceEpoch;
@@ -2357,7 +2360,7 @@ class NixState extends ChangeNotifier {
 
     // 2. Decifra e autentica o payload antes de persistir ou emitir deduplicação/ACK
     String plaintext = '';
-    String senderId = 'desconhecido';
+    String senderId = '';
     final String conversationId = mailboxId;
     List<String> attachments = [];
 
@@ -2370,21 +2373,29 @@ class NixState extends ChangeNotifier {
       final clear = await SealedEnvelope.open(key: sessionKey, payload: sealed);
       final map = jsonDecode(utf8.decode(clear)) as Map<String, dynamic>;
       plaintext = map['text'] as String? ?? '';
-      senderId = map['sender'] as String? ?? 'desconhecido';
+      senderId = (map['sender'] as String? ?? '').trim();
       attachments = (map['attachments'] as List?)?.cast<String>() ?? [];
     } catch (e) {
       debugPrint('[NixState] Fail-Closed: falha ao autenticar/decifrar envelope de entrada: $e');
       return false;
     }
 
-    final targetChannel = _spaces.expand((s) => s.channels).where((c) => c.id == conversationId).firstOrNull;
     if (targetChannel != null && targetChannel.type == ChannelType.announcement) {
-      final isAdmin = targetChannel.ownerFingerprint == senderId ||
-          targetChannel.admins.contains(senderId);
+      if (!targetChannel.permissions.allowMessages ||
+          (attachments.isNotEmpty && !targetChannel.permissions.allowFiles)) {
+        return false;
+      }
+      final isAdmin = senderId.isNotEmpty &&
+          (targetChannel.ownerFingerprint == senderId ||
+              targetChannel.admins.contains(senderId));
       if (!isAdmin) {
         debugPrint('[NixState] Fail-Closed: mensagem rejeitada em canal de transmissão (remetente $senderId não é admin).');
         return false;
       }
+    }
+
+    if (senderId.isEmpty) {
+      senderId = 'desconhecido';
     }
 
     // 3. Commit-before-ACK: persiste mensagem e registra dedup atomicamente no banco local
@@ -5838,28 +5849,33 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool sendMessage(String text, {List<String> attachments = const []}) {
-    if (_panicWipe != null || (text.trim().isEmpty && attachments.isEmpty)) return false;
-    if (!_currentChannel.permissions.allowMessages) return false;
-    if (attachments.isNotEmpty && !_currentChannel.permissions.allowFiles) return false;
+  bool _canPostToChannel(Channel channel, {List<String> attachments = const []}) {
+    if (!channel.permissions.allowMessages) return false;
+    if (attachments.isNotEmpty && !channel.permissions.allowFiles) return false;
     final myFp = _securityContext.myFingerprint;
     final myId = _userProfile.publicId;
-    if (_currentChannel.bannedMembers.contains(myFp) ||
-        (myId.isNotEmpty && _currentChannel.bannedMembers.contains(myId)) ||
-        _currentChannel.mutedMembers.contains(myFp) ||
-        (myId.isNotEmpty && _currentChannel.mutedMembers.contains(myId))) {
+    if ((myFp.isNotEmpty && channel.bannedMembers.contains(myFp)) ||
+        (myId.isNotEmpty && channel.bannedMembers.contains(myId)) ||
+        (myFp.isNotEmpty && channel.mutedMembers.contains(myFp)) ||
+        (myId.isNotEmpty && channel.mutedMembers.contains(myId))) {
       return false;
     }
 
-    if (_currentChannel.type == ChannelType.announcement) {
-      final isAdmin = _currentChannel.ownerFingerprint == myFp ||
-          (myId.isNotEmpty && _currentChannel.ownerFingerprint == myId) ||
-          _currentChannel.admins.contains(myFp) ||
-          (myId.isNotEmpty && _currentChannel.admins.contains(myId));
+    if (channel.type == ChannelType.announcement) {
+      final isAdmin = (myFp.isNotEmpty && channel.ownerFingerprint == myFp) ||
+          (myId.isNotEmpty && channel.ownerFingerprint == myId) ||
+          (myFp.isNotEmpty && channel.admins.contains(myFp)) ||
+          (myId.isNotEmpty && channel.admins.contains(myId));
       if (!isAdmin) {
         return false;
       }
     }
+    return true;
+  }
+
+  bool sendMessage(String text, {List<String> attachments = const []}) {
+    if (_panicWipe != null || (text.trim().isEmpty && attachments.isEmpty)) return false;
+    if (!_canPostToChannel(_currentChannel, attachments: attachments)) return false;
 
     if (_editingMessage != null) {
       editMessage(_editingMessage!.id, text);
@@ -5991,9 +6007,22 @@ class NixState extends ChangeNotifier {
   }
 
   bool forwardMessage(Message original, {required String targetId, required bool isChannel}) {
+    if (_panicWipe != null) return false;
     if (_activeArea == NixActiveArea.spaces &&
         (!_currentChannel.permissions.allowForwarding || _currentChannel.permissions.restrictExport)) {
       return false;
+    }
+    final sourceChannel = _findChannel(original.channelId);
+    if (sourceChannel != null &&
+        (!sourceChannel.permissions.allowForwarding || sourceChannel.permissions.restrictExport)) {
+      return false;
+    }
+    if (isChannel) {
+      final targetChannel = _findChannel(targetId);
+      if (targetChannel == null ||
+          !_canPostToChannel(targetChannel, attachments: original.attachments)) {
+        return false;
+      }
     }
 
     final fwdMsg = Message(
