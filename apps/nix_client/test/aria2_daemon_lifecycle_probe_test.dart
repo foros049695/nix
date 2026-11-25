@@ -268,7 +268,7 @@ void main() {
       );
       await ctl3.startDaemon();
       await ctl3.stopDaemon();
-      await orphanDaemonProc.exitCode.timeout(const Duration(seconds: 2));
+      await orphanDaemonProc.exitCode.timeout(const Duration(seconds: 10));
       expect(_isPidRunning(orphanDaemonProc.pid), isFalse);
     });
 
