@@ -10,8 +10,8 @@ typedef DownloadStatusChangeNotifier = void Function(List<DownloadTask> tasks);
 
 /// Perfis de desempenho para downloads diretos HTTP/HTTPS.
 enum DownloadPerformanceProfile {
-  conservative('conservative', 'Conservador', 2, 2, 35, '4M'),
-  balanced('balanced', 'Equilibrado (Recomendado)', 4, 4, 20, '2M'),
+  conservative('conservative', 'Conservador', 2, 2, 35, '2M'),
+  balanced('balanced', 'Equilibrado (Recomendado)', 4, 4, 20, '1M'),
   highPerformance('highPerformance', 'Alto Desempenho', 6, 6, 15, '1M'),
   turbo('turbo', 'Turbo Sustentado', 8, 8, 10, '1M');
 
@@ -235,6 +235,9 @@ class Aria2DownloadController extends ChangeNotifier {
           '--enable-mmap=true',
           '--file-allocation=${Platform.isLinux ? "falloc" : "none"}',
           '--stream-piece-selector=default',
+          '--uri-selector=adaptive',
+          '--lowest-speed-limit=10K',
+          '--max-resume-failure-tries=5',
           '--connect-timeout=15',
           '--timeout=20',
           '--max-tries=10',
