@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../core/archive/archive_verification_status.dart';
 import '../../core/archive/archive_markdown.dart';
 import '../../core/archive/archive_image.dart';
+import '../../core/rich_text/nix_rich_text_controller.dart';
 import 'archive_image_picker.dart';
 import '../../core/archive/nix_archive_service.dart';
 import '../../core/theme.dart';
@@ -38,7 +39,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
   // Controlador do editor de novo artigo
   final TextEditingController _titleCtrl = TextEditingController();
   final TextEditingController _categoryCtrl = TextEditingController(text: 'Tecnologia');
-  final TextEditingController _contentCtrl = TextEditingController();
+  final NixRichTextController _contentCtrl = NixRichTextController();
   final TextEditingController _claimsCtrl = TextEditingController();
   final UndoHistoryController _undo = UndoHistoryController();
   final FocusNode _editorFocus = FocusNode();
@@ -156,7 +157,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
     _autoSaveDebouncer?.cancel();
     final service = _nixState.archiveService;
     final title = _titleCtrl.text.trim();
-    final content = _contentCtrl.text;
+    final content = _contentCtrl.toMarkdown();
     if (service == null || (_activeDraftId == null && title.isEmpty && content.trim().isEmpty && _images.isEmpty && _video == null)) {
       return;
     }
@@ -191,68 +192,192 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
   }
 
   void _applyFormatting(String prefix, [String suffix = '', String fallback = '']) {
-    final value = _contentCtrl.value;
-    final selection = value.selection.isValid
-        ? value.selection
-        : TextSelection.collapsed(offset: value.text.length);
-    final selected = selection.isCollapsed
-        ? fallback
-        : value.text.substring(selection.start, selection.end);
-    _contentCtrl.value = value.copyWith(
-      text: value.text.replaceRange(
-        selection.start, selection.end, '$prefix$selected$suffix',
-      ),
-      selection: TextSelection(
-        baseOffset: selection.start + prefix.length,
-        extentOffset: selection.start + prefix.length + selected.length,
-      ),
-      composing: TextRange.empty,
-    );
+    // Modo de compatibilidade WYSIWYG
+    final sel = _contentCtrl.selection;
+    if (prefix == '**') {
+      _contentCtrl.toggleBold();
+    } else if (prefix == '*') {
+      _contentCtrl.toggleItalic();
+    } else if (prefix == '<u>') {
+      _contentCtrl.toggleUnderline();
+    } else if (prefix == '~~') {
+      _contentCtrl.toggleStrikethrough();
+    } else if (prefix == '`') {
+      _contentCtrl.toggleMonospace();
+    } else if (prefix.contains('```')) {
+      _contentCtrl.toggleCodeBlock();
+    } else if (prefix == '> ') {
+      _contentCtrl.toggleBlockquote();
+    } else if (prefix == '- ') {
+      _contentCtrl.toggleBulletList();
+    } else if (prefix.contains('- [ ]')) {
+      _contentCtrl.toggleChecklist();
+    } else if (prefix.startsWith('#')) {
+      final level = prefix.trim().length;
+      _contentCtrl.toggleHeading(level);
+    } else if (prefix.contains('|')) {
+      _contentCtrl.insertTable();
+    } else {
+      // Inserção textual direta
+      final val = _contentCtrl.value;
+      final start = sel.isValid ? sel.start : val.text.length;
+      final end = sel.isValid ? sel.end : val.text.length;
+      final selected = sel.isCollapsed ? fallback : val.text.substring(start, end);
+      _contentCtrl.value = val.copyWith(
+        text: val.text.replaceRange(start, end, '$prefix$selected$suffix'),
+        selection: TextSelection(
+          baseOffset: start + prefix.length,
+          extentOffset: start + prefix.length + selected.length,
+        ),
+      );
+    }
     _editorFocus.requestFocus();
     _scheduleAutoSave();
   }
 
-  Widget _formatAction(String label, IconData icon, VoidCallback action) =>
-      IconButton(tooltip: label, icon: Icon(icon, size: 19), onPressed: action);
+  Future<void> _insertOrEditLink() async {
+    final sel = _contentCtrl.selection;
+    final selectedText = (sel.isValid && !sel.isCollapsed)
+        ? _contentCtrl.text.substring(sel.start, sel.end)
+        : '';
+    final urlCtrl = TextEditingController(text: 'https://');
+    final textCtrl = TextEditingController(text: selectedText);
 
-  Widget _buildFormattingToolbar() => Wrap(
-    spacing: 2,
-    children: [
-      ValueListenableBuilder<UndoHistoryValue>(
-        valueListenable: _undo,
-        builder: (_, history, __) => Row(
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Inserir Link'),
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(tooltip: 'Desfazer', icon: const Icon(Icons.undo),
-              onPressed: history.canUndo ? () { _undo.undo(); _scheduleAutoSave(); } : null),
-            IconButton(tooltip: 'Refazer', icon: const Icon(Icons.redo),
-              onPressed: history.canRedo ? () { _undo.redo(); _scheduleAutoSave(); } : null),
+            if (selectedText.isEmpty)
+              TextField(
+                controller: textCtrl,
+                decoration: const InputDecoration(labelText: 'Texto do link'),
+              ),
+            TextField(
+              controller: urlCtrl,
+              decoration: const InputDecoration(labelText: 'URL (https:// ou onion://)'),
+            ),
           ],
         ),
-      ),
-      PopupMenuButton<int>(
-        tooltip: 'Nível do título',
-        icon: const Icon(Icons.title_rounded, size: 19),
-        itemBuilder: (_) => [
-          for (final level in [1, 2, 3])
-            PopupMenuItem(value: level, child: Text('Título H$level')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Inserir')),
         ],
-        onSelected: (level) => _applyFormatting('${'#' * level} ', '', 'Título'),
       ),
-      _formatAction('Negrito', Icons.format_bold, () => _applyFormatting('**', '**', 'texto')),
-      _formatAction('Itálico', Icons.format_italic, () => _applyFormatting('*', '*', 'texto')),
-      _formatAction('Sublinhado', Icons.format_underline, () => _applyFormatting('<u>', '</u>', 'texto')),
-      _formatAction('Tachado', Icons.format_strikethrough, () => _applyFormatting('~~', '~~', 'texto')),
-      _formatAction('Código inline', Icons.code, () => _applyFormatting('`', '`', 'código')),
-      _formatAction('Bloco de código', Icons.data_object,
-          () => _applyFormatting('\n```\n', '\n```\n', 'código')),
-      _formatAction('Citação', Icons.format_quote, () => _applyFormatting('> ', '', 'citação')),
-      _formatAction('Lista', Icons.format_list_bulleted, () => _applyFormatting('- ', '', 'item')),
-      _formatAction('Lista de tarefas', Icons.checklist, () => _applyFormatting('- [ ] ', '', 'tarefa')),
-      _formatAction('Link', Icons.link, () => _applyFormatting('[', '](https://)', 'rótulo')),
-      _formatAction('Tabela', Icons.table_chart_outlined,
-          () => _applyFormatting('\n| Coluna | Coluna |\n| --- | --- |\n| ', ' | Valor |\n', 'Valor')),
-    ],
+    );
+
+    if (result == true && urlCtrl.text.isNotEmpty) {
+      if (selectedText.isEmpty && textCtrl.text.isNotEmpty) {
+        final insertText = textCtrl.text;
+        final start = sel.isValid ? sel.start : _contentCtrl.text.length;
+        _contentCtrl.text = _contentCtrl.text.replaceRange(start, start, insertText);
+        _contentCtrl.selection = TextSelection(baseOffset: start, extentOffset: start + insertText.length);
+      }
+      _contentCtrl.setLink(urlCtrl.text.trim());
+      _scheduleAutoSave();
+    }
+  }
+
+  Widget _formatAction(String label, IconData icon, VoidCallback action, {bool isActive = false}) =>
+      IconButton(
+        tooltip: label,
+        icon: Icon(icon, size: 19),
+        color: isActive ? NixColors.accentPrimary : null,
+        style: isActive ? IconButton.styleFrom(backgroundColor: NixColors.accentPrimary.withOpacity(0.2)) : null,
+        onPressed: action,
+      );
+
+  Widget _buildFormattingToolbar() => ListenableBuilder(
+    listenable: _contentCtrl,
+    builder: (context, _) => Wrap(
+      spacing: 2,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        ValueListenableBuilder<UndoHistoryValue>(
+          valueListenable: _undo,
+          builder: (_, history, __) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(tooltip: 'Desfazer', icon: const Icon(Icons.undo),
+                onPressed: history.canUndo ? () { _undo.undo(); _scheduleAutoSave(); } : null),
+              IconButton(tooltip: 'Refazer', icon: const Icon(Icons.redo),
+                onPressed: history.canRedo ? () { _undo.redo(); _scheduleAutoSave(); } : null),
+            ],
+          ),
+        ),
+        PopupMenuButton<int>(
+          tooltip: 'Nível do título (H1-H6)',
+          icon: const Icon(Icons.title_rounded, size: 19),
+          itemBuilder: (_) => [
+            for (final level in [1, 2, 3, 4, 5, 6])
+              PopupMenuItem(value: level, child: Text('Título H$level')),
+          ],
+          onSelected: (level) {
+            _contentCtrl.toggleHeading(level);
+            _editorFocus.requestFocus();
+            _scheduleAutoSave();
+          },
+        ),
+        _formatAction('Negrito', Icons.format_bold, () {
+          _contentCtrl.toggleBold();
+          _editorFocus.requestFocus();
+          _scheduleAutoSave();
+        }, isActive: _contentCtrl.activeBold),
+        _formatAction('Itálico', Icons.format_italic, () {
+          _contentCtrl.toggleItalic();
+          _editorFocus.requestFocus();
+          _scheduleAutoSave();
+        }, isActive: _contentCtrl.activeItalic),
+        _formatAction('Sublinhado', Icons.format_underline, () {
+          _contentCtrl.toggleUnderline();
+          _editorFocus.requestFocus();
+          _scheduleAutoSave();
+        }, isActive: _contentCtrl.activeUnderline),
+        _formatAction('Tachado', Icons.format_strikethrough, () {
+          _contentCtrl.toggleStrikethrough();
+          _editorFocus.requestFocus();
+          _scheduleAutoSave();
+        }, isActive: _contentCtrl.activeStrikethrough),
+        _formatAction('Código inline', Icons.code, () {
+          _contentCtrl.toggleMonospace();
+          _editorFocus.requestFocus();
+          _scheduleAutoSave();
+        }, isActive: _contentCtrl.activeMonospace),
+        _formatAction('Bloco de código', Icons.data_object, () {
+          _contentCtrl.toggleCodeBlock();
+          _editorFocus.requestFocus();
+          _scheduleAutoSave();
+        }),
+        _formatAction('Citação', Icons.format_quote, () {
+          _contentCtrl.toggleBlockquote();
+          _editorFocus.requestFocus();
+          _scheduleAutoSave();
+        }),
+        _formatAction('Lista', Icons.format_list_bulleted, () {
+          _contentCtrl.toggleBulletList();
+          _editorFocus.requestFocus();
+          _scheduleAutoSave();
+        }),
+        _formatAction('Lista de tarefas', Icons.checklist, () {
+          _contentCtrl.toggleChecklist();
+          _editorFocus.requestFocus();
+          _scheduleAutoSave();
+        }),
+        _formatAction('Link', Icons.link, _insertOrEditLink, isActive: _contentCtrl.activeLinkUrl != null),
+        _formatAction('Tabela', Icons.table_chart_outlined, () {
+          _contentCtrl.insertTable();
+          _editorFocus.requestFocus();
+          _scheduleAutoSave();
+        }),
+        _formatAction('Separador', Icons.horizontal_rule, () {
+          _contentCtrl.insertDivider();
+          _editorFocus.requestFocus();
+          _scheduleAutoSave();
+        }),
+      ],
+    ),
   );
 
   Future<void> _attachImage() async {
@@ -352,7 +477,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
   Future<void> _publishArticle() async {
     if (_isPickingImage || _isPublishing) return;
     final title = _titleCtrl.text.trim();
-    final body = _contentCtrl.text.trim();
+    final body = _contentCtrl.toMarkdown().trim();
     final images = _images;
     final video = _video;
     if (title.isEmpty || body.isEmpty) {
@@ -468,7 +593,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
         _activeDraftId = id;
         _titleCtrl.text = latest['title'] as String? ?? '';
         _categoryCtrl.text = latest['category'] as String? ?? 'Tecnologia';
-        _contentCtrl.text = latest['markdown_content'] as String? ?? '';
+        _contentCtrl.loadMarkdown(latest['markdown_content'] as String? ?? '');
         _tabController.animateTo(2);
       });
     } catch (_) {
@@ -949,7 +1074,7 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
                   if (_contentCtrl.text.trim().isEmpty)
                     const Text('Escreva um texto para ver a prévia.')
                   else
-                    ArchiveDocument(source: compileArchiveMarkdown(_contentCtrl.text)),
+                    ArchiveDocument(source: compileArchiveMarkdown(_contentCtrl.toMarkdown())),
                 ],
               ),
             ),

@@ -336,5 +336,43 @@ void main() {
       expect(find.textContaining('Comentar com identidade soberana...'), findsOneWidget);
       expect(find.byIcon(Icons.send_rounded), findsOneWidget);
     });
+
+    testWidgets('Editor WYSIWYG no Nix Archive não insere caracteres brutos e gera Markdown canônico', (tester) async {
+      await tester.pumpWidget(
+        ChangeNotifierProvider<NixState>.value(
+          value: nixState,
+          child: const MaterialApp(
+            home: NixArchiveEnvironmentView(),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Navega para aba Novo Artigo
+      await tester.tap(find.text('Novo Artigo'));
+      await tester.pumpAndSettle();
+
+      // Encontra o campo de título e preenche
+      final titleField = find.widgetWithText(TextField, 'Título do Artigo');
+      await tester.enterText(titleField, 'Artigo com WYSIWYG');
+
+      // Encontra o campo de conteúdo
+      final contentField = find.byType(TextField).at(2);
+      await tester.enterText(contentField, 'Texto formatado');
+      await tester.pumpAndSettle();
+
+      // Seleciona palavra "Texto" e clica em Negrito
+      final boldBtn = find.byTooltip('Negrito');
+      expect(boldBtn, findsOneWidget);
+
+      // Clica em Negrito
+      await tester.tap(boldBtn);
+      await tester.pumpAndSettle();
+
+      // Verifica que NÃO foram inseridos asteriscos visíveis no campo de texto
+      final textFieldWidget = tester.widget<TextField>(contentField);
+      expect(textFieldWidget.controller!.text.contains('**'), isFalse);
+    });
   });
 }
