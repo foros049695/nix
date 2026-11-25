@@ -11,6 +11,7 @@ import 'conversation_surface.dart';
 import 'message_timeline.dart';
 import 'message_header.dart';
 import 'local_group_poll_sheet.dart';
+import '../navigation/workspace_image.dart';
 
 class ChatView extends StatefulWidget {
   final Channel channel;
@@ -25,7 +26,13 @@ class _ChatViewState extends State<ChatView> {
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
-    final messages = nixState.currentMessages;
+    final allMessages = nixState.messagesFor(widget.channel.id);
+    final isAnnouncement = widget.channel.type == ChannelType.announcement;
+    // Em canais de transmissão estilo Telegram, a timeline principal foca nas postagens oficiais;
+    // comentários ficam agrupados na discussão de cada postagem.
+    final messages = isAnnouncement
+        ? allMessages.where((m) => m.replyToMessageId == null).toList()
+        : allMessages;
     final pinnedMsgs = messages.where((m) => m.isPinned).toList();
     final selectedIds = nixState.selectedMessageIds;
 
@@ -171,24 +178,73 @@ class _ChatViewState extends State<ChatView> {
   }
 
   Widget _buildEmptyChat() {
+    final nixState = context.read<NixState>();
+    final currentSpace = nixState.currentSpace;
+    final isAnnouncement = widget.channel.type == ChannelType.announcement;
+    String displayName = widget.channel.name;
+    if (isAnnouncement && (displayName == 'comunicados' || displayName == 'geral') && currentSpace.name.isNotEmpty) {
+      displayName = currentSpace.name;
+    }
+    final imagePath = widget.channel.customImagePath ?? currentSpace.customImagePath;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(widget.channel.icon, size: 48, color: NixColors.textMuted),
-          const SizedBox(height: 12),
+          if (imagePath != null && imagePath.isNotEmpty)
+            ClipOval(
+              child: SizedBox(
+                width: 64,
+                height: 64,
+                child: WorkspaceImage(
+                  path: imagePath,
+                  size: 64,
+                  fallback: Icon(widget.channel.icon, size: 48, color: NixColors.textMuted),
+                ),
+              ),
+            )
+          else
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: context.accentColor.withValues(alpha: 0.16),
+                border: Border.all(color: context.accentColor.withValues(alpha: 0.35), width: 1.5),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                displayName.isNotEmpty ? displayName[0].toUpperCase() : 'NX',
+                style: TextStyle(
+                  color: context.accentTextColor,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          const SizedBox(height: 16),
           Text(
-            'Início de #${widget.channel.name}',
+            isAnnouncement ? displayName : 'Início de #${widget.channel.name}',
             style: TextStyle(
               color: NixColors.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            'Este tópico utiliza envelopes XChaCha20-Poly1305 e roteamento Tor Onion v3.',
-            style: TextStyle(color: NixColors.textMuted, fontSize: 12),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              isAnnouncement
+                  ? (widget.channel.topic.isNotEmpty
+                      ? widget.channel.topic
+                      : (currentSpace.description.isNotEmpty
+                          ? currentSpace.description
+                          : 'Canal de transmissão seguro com criptografia de ponta a ponta.'))
+                  : 'Este canal utiliza envelopes XChaCha20-Poly1305 e roteamento Tor Onion v3.',
+              style: TextStyle(color: NixColors.textMuted, fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
           ),
         ],
       ),

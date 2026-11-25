@@ -551,6 +551,13 @@ class _ChannelSettingsDialogState extends State<ChannelSettingsDialog> {
           (v) => setState(() => _perms = _perms.copyWith(allowDeletion: v)),
           accent,
         ),
+        _buildSwitchTile(
+          'Permitir Comentários nas Postagens',
+          'Membros podem comentar e interagir nas postagens publicadas neste canal.',
+          _perms.allowComments,
+          (v) => setState(() => _perms = _perms.copyWith(allowComments: v)),
+          accent,
+        ),
       ],
     );
   }

@@ -2363,6 +2363,7 @@ class NixState extends ChangeNotifier {
     String senderId = '';
     final String conversationId = mailboxId;
     List<String> attachments = [];
+    String? replyToId;
 
     try {
       if (sessionKey == null) {
@@ -2375,6 +2376,7 @@ class NixState extends ChangeNotifier {
       plaintext = map['text'] as String? ?? '';
       senderId = (map['sender'] as String? ?? '').trim();
       attachments = (map['attachments'] as List?)?.cast<String>() ?? [];
+      replyToId = map['replyToMessageId'] as String? ?? map['replyTo'] as String?;
     } catch (e) {
       debugPrint('[NixState] Fail-Closed: falha ao autenticar/decifrar envelope de entrada: $e');
       return false;
@@ -2389,8 +2391,11 @@ class NixState extends ChangeNotifier {
           (targetChannel.ownerFingerprint == senderId ||
               targetChannel.admins.contains(senderId));
       if (!isAdmin) {
-        debugPrint('[NixState] Fail-Closed: mensagem rejeitada em canal de transmissão (remetente $senderId não é admin).');
-        return false;
+        final isComment = replyToId != null && replyToId.isNotEmpty && targetChannel.permissions.allowComments;
+        if (!isComment) {
+          debugPrint('[NixState] Fail-Closed: mensagem rejeitada em canal de transmissão (remetente $senderId não é admin).');
+          return false;
+        }
       }
     }
 
@@ -3035,6 +3040,7 @@ class NixState extends ChangeNotifier {
   }
 
   List<Message> get currentMessages => _messages[_currentChannel.id] ?? [];
+  List<Message> messagesFor(String channelId) => _messages[channelId] ?? const [];
   List<Publication> get currentPublications => _publications[_currentChannel.id] ?? [];
   List<ForumPost> get currentForumPosts {
     if (_currentChannel.type != ChannelType.forum ||
@@ -5849,7 +5855,7 @@ class NixState extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool _canPostToChannel(Channel channel, {List<String> attachments = const []}) {
+  bool _canPostToChannel(Channel channel, {List<String> attachments = const [], bool isComment = false}) {
     if (!channel.permissions.allowMessages) return false;
     if (attachments.isNotEmpty && !channel.permissions.allowFiles) return false;
     final myFp = _securityContext.myFingerprint;
@@ -5862,6 +5868,9 @@ class NixState extends ChangeNotifier {
     }
 
     if (channel.type == ChannelType.announcement) {
+      if (isComment) {
+        return channel.permissions.allowComments;
+      }
       final isAdmin = (myFp.isNotEmpty && channel.ownerFingerprint == myFp) ||
           (myId.isNotEmpty && channel.ownerFingerprint == myId) ||
           (myFp.isNotEmpty && channel.admins.contains(myFp)) ||
@@ -5873,16 +5882,17 @@ class NixState extends ChangeNotifier {
     return true;
   }
 
-  bool sendMessage(String text, {List<String> attachments = const []}) {
+  bool sendMessage(String text, {List<String> attachments = const [], Message? replyTo}) {
     if (_panicWipe != null || (text.trim().isEmpty && attachments.isEmpty)) return false;
-    if (!_canPostToChannel(_currentChannel, attachments: attachments)) return false;
+    final reply = replyTo ?? _replyingToMessage;
+    final isComment = _currentChannel.type == ChannelType.announcement && reply != null;
+    if (!_canPostToChannel(_currentChannel, attachments: attachments, isComment: isComment)) return false;
 
     if (_editingMessage != null) {
       editMessage(_editingMessage!.id, text);
       return true;
     }
 
-    final reply = _replyingToMessage;
     final newMessage = Message(
       id: 'msg_${DateTime.now().microsecondsSinceEpoch}',
       channelId: _currentChannel.id,
@@ -6863,14 +6873,17 @@ class NixState extends ChangeNotifier {
         Channel(
           id: 'ch_geral_${DateTime.now().millisecondsSinceEpoch}',
           spaceId: spaceId,
-          name: isAnnouncementChannel ? 'comunicados' : 'geral',
+          name: isAnnouncementChannel
+              ? (name.trim().isNotEmpty ? name.trim() : 'Canal')
+              : 'geral',
           topic: isAnnouncementChannel
-              ? 'Canal oficial de transmissão e comunicados.'
+              ? (description.trim().isNotEmpty ? description.trim() : 'Canal de transmissão.')
               : 'Tópico principal deste espaço.',
           type: isAnnouncementChannel
               ? ChannelType.announcement
               : (withTopics == true ? ChannelType.forum : ChannelType.text),
           category: isAnnouncementChannel ? 'TRANSMISSÃO' : 'COMUNIDADE',
+          customImagePath: customImagePath,
           ownerFingerprint: _ownWorkspaceIdentity,
           admins: isAnnouncementChannel ? [_ownWorkspaceIdentity] : const [],
         ),

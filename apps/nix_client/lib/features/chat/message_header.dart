@@ -15,11 +15,87 @@ class MessageHeader extends StatelessWidget {
 
   const MessageHeader({super.key, required this.channel});
 
+  Widget _buildInitialAvatar(String name, Color accent, Color accentText) {
+    final clean = name.trim();
+    final words = clean
+        .replaceAll(RegExp(r'[^a-zA-Z0-9\s]'), ' ')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    final initials = words.isEmpty
+        ? 'NX'
+        : (words.length == 1
+            ? (words[0].length >= 2 ? words[0].substring(0, 2).toUpperCase() : words[0].toUpperCase())
+            : '${words[0][0]}${words[1][0]}'.toUpperCase());
+
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            accent.withValues(alpha: 0.28),
+            accent.withValues(alpha: 0.12),
+          ],
+        ),
+        border: Border.all(color: accent.withValues(alpha: 0.4), width: 1.2),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        initials,
+        style: TextStyle(
+          color: accentText,
+          fontWeight: FontWeight.bold,
+          fontSize: 12.5,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final nixState = context.watch<NixState>();
+    final currentSpace = nixState.currentSpace;
     final accent = context.accentColor;
     final accentText = context.accentTextColor;
+    final isAnnouncement = channel.type == ChannelType.announcement;
+
+    // Nome real do canal (com fallback gracioso para espaços legados que vieram com comunicados)
+    String displayName = channel.name;
+    if (isAnnouncement && (displayName == 'comunicados' || displayName == 'geral') && currentSpace.name.isNotEmpty) {
+      displayName = currentSpace.name;
+    }
+
+    // Descrição real do canal
+    String? displaySubtitle = channel.topic.isNotEmpty ? channel.topic : null;
+    if (isAnnouncement && (displaySubtitle == null || displaySubtitle.isEmpty || displaySubtitle == 'Canal oficial de transmissão e comunicados.')) {
+      if (currentSpace.description.isNotEmpty) {
+        displaySubtitle = currentSpace.description;
+      }
+    }
+
+    // Avatar do canal (imagem circular ou iniciais no lugar de ícones genéricos de megafone)
+    final imagePath = channel.customImagePath ?? currentSpace.customImagePath;
+    final Widget leadingAvatar;
+    if (imagePath != null && imagePath.isNotEmpty) {
+      leadingAvatar = ClipOval(
+        child: SizedBox(
+          width: 36,
+          height: 36,
+          child: WorkspaceImage(
+            path: imagePath,
+            size: 36,
+            fallback: _buildInitialAvatar(displayName, accent, accentText),
+          ),
+        ),
+      );
+    } else {
+      leadingAvatar = _buildInitialAvatar(displayName, accent, accentText);
+    }
 
     void openInfo() => ConversationInfoPanel.open(context, channel: channel);
 
@@ -49,12 +125,9 @@ class MessageHeader extends StatelessWidget {
                 Expanded(
                   child: NixPanelTitle(
                     icon: channel.icon,
-                    leading: channel.customImagePath == null ? null : WorkspaceImage(
-                      path: channel.customImagePath, size: 36,
-                      fallback: Icon(channel.icon, color: accentText),
-                    ),
-                    title: channel.name,
-                    subtitle: compact || channel.topic.isEmpty ? null : channel.topic,
+                    leading: leadingAvatar,
+                    title: displayName,
+                    subtitle: compact || (displaySubtitle == null || displaySubtitle.isEmpty) ? null : displaySubtitle,
                   ),
                 ),
                 const SizedBox(width: 8),

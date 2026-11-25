@@ -15,11 +15,16 @@ import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
 
 class MessageAttachmentTile extends StatefulWidget {
-  const MessageAttachmentTile(
-      {super.key, required this.message, required this.index});
+  const MessageAttachmentTile({
+    super.key,
+    required this.message,
+    required this.index,
+    this.wide = false,
+  });
 
   final Message message;
   final int index;
+  final bool wide;
 
   @override
   State<MessageAttachmentTile> createState() => _MessageAttachmentTileState();
@@ -420,20 +425,23 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
               ),
             );
           }
+          final maxWidth = widget.wide ? 540.0 : 320.0;
+          final maxHeight = widget.wide ? 420.0 : 280.0;
           return ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: InkWell(
               key: ValueKey('message_image_${widget.message.id}_${widget.index}'),
               onTap: () => _openPhotoViewer(context, bytes),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: 320,
-                  maxHeight: 280,
+                constraints: BoxConstraints(
+                  maxWidth: maxWidth,
+                  maxHeight: maxHeight,
                 ),
                 child: Image.memory(
                   bytes,
-                  fit: BoxFit.contain,
-                  cacheWidth: Platform.environment.containsKey('FLUTTER_TEST') ? null : 640,
+                  fit: widget.wide ? BoxFit.cover : BoxFit.contain,
+                  width: widget.wide ? double.infinity : null,
+                  cacheWidth: Platform.environment.containsKey('FLUTTER_TEST') ? null : 800,
                   errorBuilder: (_, __, ___) => Container(
                     padding: const EdgeInsets.all(16),
                     color: scheme.surfaceElevated,
@@ -454,8 +462,8 @@ class _MessageAttachmentTileState extends State<MessageAttachmentTile> {
         onTap: () => _openVideoViewer(context),
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          width: 260,
-          height: 160,
+          width: widget.wide ? 540 : 260,
+          height: widget.wide ? 320 : 160,
           decoration: BoxDecoration(
             color: NixColors.surfaceCard,
             borderRadius: BorderRadius.circular(10),

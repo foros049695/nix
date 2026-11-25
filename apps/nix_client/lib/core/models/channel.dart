@@ -21,6 +21,7 @@ class ChannelPermissions {
   final bool allowReactions;
   final bool allowEditing;
   final bool allowDeletion;
+  final bool allowComments;
 
   // Proteção de Conteúdo
   final bool restrictExport;
@@ -50,6 +51,7 @@ class ChannelPermissions {
     this.allowReactions = true,
     this.allowEditing = true,
     this.allowDeletion = true,
+    this.allowComments = true,
     this.restrictExport = false,
     this.restrictMediaSaving = false,
     this.protectPreviews = false,
@@ -74,6 +76,7 @@ class ChannelPermissions {
         'allowReactions': allowReactions,
         'allowEditing': allowEditing,
         'allowDeletion': allowDeletion,
+        'allowComments': allowComments,
         'restrictExport': restrictExport,
         'restrictMediaSaving': restrictMediaSaving,
         'protectPreviews': protectPreviews,
@@ -120,6 +123,9 @@ class ChannelPermissions {
       allowDeletion: data['allowDeletion'] is bool
           ? data['allowDeletion'] as bool
           : defaults.allowDeletion,
+      allowComments: data['allowComments'] is bool
+          ? data['allowComments'] as bool
+          : defaults.allowComments,
       restrictExport: data['restrictExport'] is bool
           ? data['restrictExport'] as bool
           : defaults.restrictExport,
@@ -167,6 +173,7 @@ class ChannelPermissions {
     bool? allowReactions,
     bool? allowEditing,
     bool? allowDeletion,
+    bool? allowComments,
     bool? restrictExport,
     bool? restrictMediaSaving,
     bool? protectPreviews,
@@ -190,6 +197,7 @@ class ChannelPermissions {
       allowReactions: allowReactions ?? this.allowReactions,
       allowEditing: allowEditing ?? this.allowEditing,
       allowDeletion: allowDeletion ?? this.allowDeletion,
+      allowComments: allowComments ?? this.allowComments,
       restrictExport: restrictExport ?? this.restrictExport,
       restrictMediaSaving: restrictMediaSaving ?? this.restrictMediaSaving,
       protectPreviews: protectPreviews ?? this.protectPreviews,

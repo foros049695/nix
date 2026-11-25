@@ -43,9 +43,9 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
                 value: _format,
                 decoration: const InputDecoration(labelText: 'Formato do espaço'),
                 items: const [
-                  DropdownMenuItem(value: 'conventional', child: Text('Grupo soberano')),
-                  DropdownMenuItem(value: 'topics', child: Text('Grupo soberano com tópicos')),
-                  DropdownMenuItem(value: 'announcement', child: Text('Canal de transmissão')),
+                  DropdownMenuItem(value: 'conventional', child: Text('Grupo sem tópicos')),
+                  DropdownMenuItem(value: 'topics', child: Text('Grupo com tópicos')),
+                  DropdownMenuItem(value: 'announcement', child: Text('Canal')),
                 ],
                 onChanged: (value) => setState(() => _format = value ?? 'conventional'),
               ),
@@ -99,7 +99,7 @@ class _CreateSpaceDialogState extends State<CreateSpaceDialog> {
                 controller: _descController,
                 maxLines: 2,
                 decoration: const InputDecoration(
-                  hintText: 'Descreva os objetivos deste espaço soberano...',
+                  hintText: 'Descreva os objetivos deste espaço...',
                 ),
               ),
             ],

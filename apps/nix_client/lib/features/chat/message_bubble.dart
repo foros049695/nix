@@ -16,6 +16,8 @@ import 'article_share_card.dart';
 import 'offline_location_card.dart';
 import 'offline_location_picker_dialog.dart';
 import 'work_share_card.dart';
+import '../../core/models/channel.dart';
+import 'channel_comments_sheet.dart';
 
 class MessageBubble extends StatefulWidget {
   final Message message;
@@ -90,6 +92,11 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget build(BuildContext context) {
     final message = widget.message;
     final nixState = context.watch<NixState>();
+    final currentChannel = nixState.currentChannel;
+    final isAnnouncement = currentChannel.type == ChannelType.announcement;
+    final commentCount = isAnnouncement
+        ? nixState.messagesFor(currentChannel.id).where((m) => m.replyToMessageId == message.id).length
+        : 0;
     final settings = nixState.settings;
     final accent = context.accentColor;
     final accentText = context.accentTextColor;
@@ -107,7 +114,9 @@ class _MessageBubbleState extends State<MessageBubble> {
         horizontal: 16,
       ),
       child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isAnnouncement
+            ? MainAxisAlignment.start
+            : (isMe ? MainAxisAlignment.end : MainAxisAlignment.start),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (nixState.selectedMessageIds.isNotEmpty)
@@ -115,7 +124,7 @@ class _MessageBubbleState extends State<MessageBubble> {
               value: isSelected,
               onChanged: (_) => nixState.toggleMessageSelection(message.id),
             ),
-          if (!isMe)
+          if (!isMe && !isAnnouncement)
             InkWell(
               onTap: () => PeerCardIdDialog.showForMember(context, _resolveMember(nixState)),
               borderRadius: BorderRadius.circular(16),
@@ -351,7 +360,23 @@ class _MessageBubbleState extends State<MessageBubble> {
                               ],
                             ),
                           ),
-                        if (!isMe)
+                        if (isAnnouncement)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              currentChannel.name.isNotEmpty && currentChannel.name != 'comunicados'
+                                  ? currentChannel.name
+                                  : (nixState.currentSpace.name.isNotEmpty
+                                      ? nixState.currentSpace.name
+                                      : message.senderName),
+                              style: TextStyle(
+                                color: accentText,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          )
+                        else if (!isMe)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 4),
                             child: InkWell(
@@ -396,6 +421,24 @@ class _MessageBubbleState extends State<MessageBubble> {
                               ),
                             ),
                           ),
+                        // 1. Mídia / Imagens ACIMA do texto (Telegram Style)
+                        if (message.attachments.isNotEmpty) ...[
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (var i = 0; i < message.attachments.length; i++)
+                                MessageAttachmentTile(
+                                  key: ValueKey('${message.id}:$i'),
+                                  message: message,
+                                  index: i,
+                                  wide: isAnnouncement,
+                                ),
+                            ],
+                          ),
+                          if (message.text.isNotEmpty) const SizedBox(height: 8),
+                        ],
+                        // 2. Texto / Legenda da Postagem ABAIXO da imagem
                         if (message.text.isNotEmpty) ...[
                           if (WorkShareData.tryParse(message.text) case final workData?)
                             WorkShareCard(data: workData)
@@ -415,17 +458,6 @@ class _MessageBubbleState extends State<MessageBubble> {
                                 ),
                               ),
                             ),
-                        ],
-                        if (message.attachments.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            children: [
-                              for (var i = 0; i < message.attachments.length; i++)
-                                MessageAttachmentTile(key: ValueKey('${message.id}:$i'), message: message, index: i),
-                            ],
-                          ),
                         ],
                         if (message.deliveryError != null &&
                             message.deliveryError!.isNotEmpty) ...[
@@ -491,6 +523,47 @@ class _MessageBubbleState extends State<MessageBubble> {
                             ),
                           ],
                         ),
+                        // 3. Aba / Botão de Comentários no Canal de Transmissão (Telegram Style)
+                        if (isAnnouncement && currentChannel.permissions.allowComments) ...[
+                          const SizedBox(height: 8),
+                          InkWell(
+                            key: Key('channel_comments_btn_${message.id}'),
+                            onTap: () => ChannelCommentsSheet.show(
+                              context,
+                              channel: currentChannel,
+                              message: message,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: NixColors.background.withValues(alpha: 0.55),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: NixColors.surfaceBorderStrong.withValues(alpha: 0.6),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.chat_bubble_outline_rounded, size: 15, color: accentText),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    commentCount > 0
+                                        ? '$commentCount ${commentCount == 1 ? 'comentário' : 'comentários'}'
+                                        : 'Deixar um comentário',
+                                    style: TextStyle(
+                                      color: accentText,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Icon(Icons.chevron_right_rounded, size: 17, color: accentText.withValues(alpha: 0.7)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
