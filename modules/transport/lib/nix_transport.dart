@@ -625,7 +625,7 @@ class Socks5Connector {
           redirectLocation.isNotEmpty &&
           (statusCode == 301 || statusCode == 302 || statusCode == 303 || statusCode == 307 || statusCode == 308)) {
         final redirectUri = uri.resolve(redirectLocation);
-        return httpRequest(
+        return await httpRequest(
           (statusCode == 303) ? 'GET' : method,
           redirectUri,
           headers: headers,
