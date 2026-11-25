@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_client/core/models/channel.dart';
 import 'package:nix_client/core/models/space.dart';
-import 'package:nix_client/core/models/user_profile.dart';
 import 'package:nix_client/features/chat/chat_input_bar.dart';
 import 'package:nix_client/features/chat/chat_view.dart';
 import 'package:nix_client/state/nix_state.dart';

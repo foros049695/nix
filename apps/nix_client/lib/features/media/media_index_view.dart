@@ -9,7 +9,7 @@ import '../../core/media/catalog_database.dart';
 import '../../core/media/catalog_diagnostics.dart';
 import '../../core/media/media_index_updater.dart';
 import '../../core/media/pager_playlist.dart';
-import '../../core/media/universal_metadata_service.dart';
+import 'lastwave_music_player_screen.dart';
 import 'universal_metadata_search_dialog.dart';
 import '../profile/collection_import_dialog.dart';
 import '../../core/models/cultural_item.dart';
@@ -1074,6 +1074,13 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
             : NixColors.surfaceCard,
         elevation: 0,
         actions: [
+          IconButton(
+            tooltip: 'Player Musical Avançado (LastWave & AutoEQ DSP)',
+            icon: const Icon(Icons.music_note_rounded, color: Color(0xFF38BDF8)),
+            onPressed: () {
+              LastWaveMusicPlayerScreen.open(context, context.read<NixState>().musicPlayer);
+            },
+          ),
           if (Platform.isAndroid || Platform.isLinux)
             IconButton(
               tooltip: 'Abrir mídia local no player do sistema',

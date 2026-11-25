@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as std_crypto;
 import 'package:flutter/foundation.dart';
 import 'package:nix_transport/nix_transport.dart';

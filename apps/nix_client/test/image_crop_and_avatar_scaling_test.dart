@@ -1,8 +1,6 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_client/core/models/cultural_item.dart';
-import 'package:nix_client/core/models/user_profile.dart';
 import 'package:nix_client/core/models/user_settings.dart';
 import 'package:nix_client/features/profile/cultural_cover_art.dart';
 import 'package:nix_client/features/profile/nix_user_avatar.dart';

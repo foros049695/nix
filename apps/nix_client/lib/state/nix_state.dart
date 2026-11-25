@@ -53,6 +53,7 @@ import '../core/archive/nix_archive_service.dart';
 import '../core/replication/replication_coordinator.dart';
 import '../core/media/media_catalog_service.dart';
 import '../core/media/pager_playlist.dart';
+import '../core/media/nix_music_player_controller.dart';
 import '../core/media/voice_note.dart';
 import '../core/media/catalog_database.dart';
 import '../core/media/music_online_metadata_service.dart';
@@ -4956,6 +4957,9 @@ class NixState extends ChangeNotifier {
 
   // ================= ATUALIZAÇÃO DO PERFIL & PASSAPORTE CULTURAL =================
 
+  late final NixMusicPlayerController _musicPlayer = NixMusicPlayerController();
+  NixMusicPlayerController get musicPlayer => _musicPlayer;
+
   PagerPlaylist? _injectedPagerPlaylist;
 
   PagerPlaylist? get pagerPlaylist {
@@ -6869,6 +6873,7 @@ class NixState extends ChangeNotifier {
     _identityVm.dispose();
     _mediaVm.dispose();
     _archiveVm.dispose();
+    _musicPlayer.dispose();
     _torWatchdogTimer?.cancel();
     _torBootstrapSub?.cancel();
     _blePeerSub?.cancel();

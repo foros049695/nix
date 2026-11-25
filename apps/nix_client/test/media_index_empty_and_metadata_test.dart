@@ -5,7 +5,6 @@ import 'package:nix_client/core/media/catalog_database.dart';
 import 'package:nix_client/features/media/media_index_view.dart';
 import 'package:nix_client/features/media/universal_metadata_search_dialog.dart';
 import 'package:nix_client/state/nix_state.dart';
-import 'package:nix_core_crypto/nix_core_crypto.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -15,7 +14,6 @@ void main() {
   group('Nix Media Index — Catálogo Inicial Vazio e Busca de Metadados', () {
     late LocalDatabase localDb;
     late CatalogDatabase catalogDb;
-    late NixIdentity alice;
     late NixState nixState;
 
     setUp(() async {
@@ -27,7 +25,6 @@ void main() {
         requireEncryption: false,
       );
       catalogDb = await CatalogDatabase.open(path: inMemoryDatabasePath);
-      alice = await NixIdentity.generate();
 
       nixState = NixState();
       nixState.setCatalogDatabase(catalogDb);

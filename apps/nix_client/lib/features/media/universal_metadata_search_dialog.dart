@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../core/media/catalog_database.dart';
 import '../../core/media/universal_metadata_service.dart';
 import '../../core/models/cultural_item.dart';
 import '../../core/network/transport_profile.dart';
-import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../core/theme/nix_tokens.dart';
 import '../../state/nix_state.dart';

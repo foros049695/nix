@@ -191,50 +191,6 @@ class _NixArchiveEnvironmentViewState extends State<NixArchiveEnvironmentView>
     });
   }
 
-  void _applyFormatting(String prefix, [String suffix = '', String fallback = '']) {
-    // Modo de compatibilidade WYSIWYG
-    final sel = _contentCtrl.selection;
-    if (prefix == '**') {
-      _contentCtrl.toggleBold();
-    } else if (prefix == '*') {
-      _contentCtrl.toggleItalic();
-    } else if (prefix == '<u>') {
-      _contentCtrl.toggleUnderline();
-    } else if (prefix == '~~') {
-      _contentCtrl.toggleStrikethrough();
-    } else if (prefix == '`') {
-      _contentCtrl.toggleMonospace();
-    } else if (prefix.contains('```')) {
-      _contentCtrl.toggleCodeBlock();
-    } else if (prefix == '> ') {
-      _contentCtrl.toggleBlockquote();
-    } else if (prefix == '- ') {
-      _contentCtrl.toggleBulletList();
-    } else if (prefix.contains('- [ ]')) {
-      _contentCtrl.toggleChecklist();
-    } else if (prefix.startsWith('#')) {
-      final level = prefix.trim().length;
-      _contentCtrl.toggleHeading(level);
-    } else if (prefix.contains('|')) {
-      _contentCtrl.insertTable();
-    } else {
-      // Inserção textual direta
-      final val = _contentCtrl.value;
-      final start = sel.isValid ? sel.start : val.text.length;
-      final end = sel.isValid ? sel.end : val.text.length;
-      final selected = sel.isCollapsed ? fallback : val.text.substring(start, end);
-      _contentCtrl.value = val.copyWith(
-        text: val.text.replaceRange(start, end, '$prefix$selected$suffix'),
-        selection: TextSelection(
-          baseOffset: start + prefix.length,
-          extentOffset: start + prefix.length + selected.length,
-        ),
-      );
-    }
-    _editorFocus.requestFocus();
-    _scheduleAutoSave();
-  }
-
   Future<void> _insertOrEditLink() async {
     final sel = _contentCtrl.selection;
     final selectedText = (sel.isValid && !sel.isCollapsed)
