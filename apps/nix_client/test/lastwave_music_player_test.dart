@@ -67,7 +67,12 @@ void main() {
       expect(controller.isPlaying, isFalse);
 
       controller.resume();
-      expect(controller.isPlaying, isTrue);
+      // O estado deve permanecer parado até o backend confirmar reprodução.
+      // Um URI ausente não pode produzir um "tocando" fictício.
+      expect(controller.isPlaying, isFalse);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(controller.isPlaying, isFalse);
+      expect(controller.playbackError, isNotNull);
 
       controller.pause();
       expect(controller.isPlaying, isFalse);
@@ -86,6 +91,16 @@ void main() {
 
       controller.setVolume(0.5);
       expect(controller.volume, 0.5);
+    });
+
+    test('Seek não cria duração falsa quando metadados não possuem duração', () {
+      const track = PagerTrack(
+        uri: 'file:///nix-file-does-not-exist-test.mp3',
+        name: 'Faixa sem duração',
+      );
+      controller.setPlaylist([track]);
+      expect(controller.duration, Duration.zero);
+      expect(controller.isPlaying, isFalse);
     });
 
     test('Configurações de DSP e AutoEQ atualizam reativamente', () {
