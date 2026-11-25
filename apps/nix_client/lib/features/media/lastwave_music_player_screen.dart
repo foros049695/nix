@@ -242,6 +242,20 @@ class _LastWaveMusicPlayerScreenState extends State<LastWaveMusicPlayerScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          if (widget.controller.playbackError != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                'Falha de reprodução: ' + widget.controller.playbackError!,
+                style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           const SizedBox(height: 12),
           // Arte da capa em grande formato com cantos suaves e sombra profunda
           Center(
