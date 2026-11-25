@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import '../security/platform_runtime.dart';
 import 'dart_segmented_downloader.dart';
 import 'models/download_task.dart';
 
@@ -48,7 +49,11 @@ class Aria2DownloadController extends ChangeNotifier {
   final bool enableFallback;
   final String? storageFilePath;
 
+  /// Diretório de dados do daemon (pid, sessão, tarefas); padrão: dados do aplicativo.
+  final String? dataDirectory;
+
   Process? _process;
+  int? _spawnedDaemonPid;
   String _rpcSecret = '';
   bool _isDaemonRunning = false;
   Timer? _pollingTimer;
@@ -104,6 +109,7 @@ class Aria2DownloadController extends ChangeNotifier {
     this.customBinaryPath,
     this.enableFallback = true,
     this.storageFilePath,
+    this.dataDirectory,
     this.onTasksUpdated,
   }) : _downloadDir = downloadDir ?? defaultDownloadDirectory(),
        _actualRpcPort = rpcPort {
@@ -143,7 +149,7 @@ class Aria2DownloadController extends ChangeNotifier {
     }
   }
 
-  bool get isDaemonRunning => _isDaemonRunning;
+  bool get isDaemonRunning => _isDaemonRunning && _process != null;
   String get rpcSecret => _rpcSecret;
   int get actualRpcPort => _actualRpcPort;
   List<DownloadTask> get tasks => _tasks.values.toList();
@@ -183,9 +189,11 @@ class Aria2DownloadController extends ChangeNotifier {
     // Localiza o binário aria2c
     final binary = _resolveAria2cBinary();
     if (binary == null) {
-      // Binário não encontrado: ativa modo nativo via fallback Dart
-      _isDaemonRunning = true;
-      return true;
+      // Binário não encontrado: opera via fallback Dart sem daemon aria2 ativo
+      _process = null;
+      _spawnedDaemonPid = null;
+      _isDaemonRunning = false;
+      return false;
     }
 
     _actualRpcPort = await _findAvailablePort(rpcPort);
@@ -253,6 +261,7 @@ class Aria2DownloadController extends ChangeNotifier {
           '--summary-interval=1',
           '--max-overall-download-limit=0',
           '--max-download-limit=0',
+          '--stop-with-process=$pid',
           '--save-session=$sessionPath',
           '--save-session-interval=30',
           if (hasSession) '--input-file=$sessionPath',
@@ -260,15 +269,18 @@ class Aria2DownloadController extends ChangeNotifier {
         environment: env,
       );
 
+      final spawnedProcess = _process!;
+      _spawnedDaemonPid = spawnedProcess.pid;
+
       // Registra PID do daemon isolado do Nix e credenciais RPC seguras (modo 0600)
       try {
         final pidFile = File(_resolveNixDataPath('aria2.pid'));
-        pidFile.writeAsStringSync('${_process!.pid}\n');
+        pidFile.writeAsStringSync('${spawnedProcess.pid}\n');
 
         final rpcFile = File(_resolveNixDataPath('aria2_rpc.json'));
         rpcFile.writeAsStringSync(jsonEncode({
           'port': _actualRpcPort,
-          'pid': _process!.pid,
+          'pid': spawnedProcess.pid,
           'token': _rpcSecret,
           'updatedAt': DateTime.now().toUtc().toIso8601String(),
         }));
@@ -279,8 +291,8 @@ class Aria2DownloadController extends ChangeNotifier {
         }
       } catch (_) {}
 
-      _process!.exitCode.then((code) {
-        if (_process != null) {
+      spawnedProcess.exitCode.then((_) {
+        if (identical(_process, spawnedProcess)) {
           _isDaemonRunning = false;
           _process = null;
         }
@@ -290,7 +302,7 @@ class Aria2DownloadController extends ChangeNotifier {
       bool isReady = false;
       for (var i = 0; i < 60; i++) {
         await Future.delayed(const Duration(milliseconds: 100));
-        if (_process == null) break;
+        if (!identical(_process, spawnedProcess)) break;
         final res = await _rpcCall('aria2.getVersion', ['token:$_rpcSecret']);
         if (res != null && res['result'] != null) {
           isReady = true;
@@ -298,16 +310,19 @@ class Aria2DownloadController extends ChangeNotifier {
         }
       }
 
-      if (!isReady && _process != null) {
+      if (!isReady || !identical(_process, spawnedProcess)) {
         _log('Daemon aria2c não respondeu ao RPC em 6s. Ativando fallback Dart nativo.');
         try {
-          _process!.kill(ProcessSignal.sigterm);
+          spawnedProcess.kill(ProcessSignal.sigterm);
         } catch (_) {}
-        _process = null;
-        if (enableFallback) {
-          _isDaemonRunning = true;
-          return true;
+        if (identical(_process, spawnedProcess)) {
+          _process = null;
         }
+        _cleanupDaemonStateFilesForPid(spawnedProcess.pid);
+        if (_spawnedDaemonPid == spawnedProcess.pid) {
+          _spawnedDaemonPid = null;
+        }
+        _isDaemonRunning = false;
         return false;
       }
 
@@ -316,10 +331,9 @@ class Aria2DownloadController extends ChangeNotifier {
       _startPolling();
       return true;
     } catch (_) {
-      if (enableFallback) {
-        _isDaemonRunning = true;
-        return true;
-      }
+      _process = null;
+      _spawnedDaemonPid = null;
+      _isDaemonRunning = false;
       return false;
     }
   }
@@ -328,69 +342,123 @@ class Aria2DownloadController extends ChangeNotifier {
   Future<void> stopDaemon() async {
     _pollingTimer?.cancel();
     _pollingTimer = null;
+    final ownedPid = _process?.pid ?? _spawnedDaemonPid;
     if (_process != null) {
-      _process!.kill(ProcessSignal.sigterm);
+      try {
+        _process!.kill(ProcessSignal.sigterm);
+      } catch (_) {}
       _process = null;
     }
-    try {
-      final pidFile = File(_resolveNixDataPath('aria2.pid'));
-      if (pidFile.existsSync()) pidFile.deleteSync();
-    } catch (_) {}
-    try {
-      final rpcFile = File(_resolveNixDataPath('aria2_rpc.json'));
-      if (rpcFile.existsSync()) rpcFile.deleteSync();
-    } catch (_) {}
+    _cleanupDaemonStateFilesForPid(ownedPid);
+    _spawnedDaemonPid = null;
     _isDaemonRunning = false;
   }
 
-  static String _resolveNixDataPath(String fileName) {
-    String basePath;
-    if (Platform.isLinux || Platform.isMacOS) {
-      final home = Platform.environment['HOME'] ?? '';
-      basePath = home.isNotEmpty ? '$home/.local/share/nix' : Directory.systemTemp.path;
-    } else if (Platform.isWindows) {
-      final appData = Platform.environment['APPDATA'] ?? '';
-      basePath = appData.isNotEmpty ? '$appData\\nix' : Directory.systemTemp.path;
-    } else {
-      basePath = Directory.systemTemp.path;
-    }
-    final dir = Directory(basePath);
-    if (!dir.existsSync()) {
-      try {
-        dir.createSync(recursive: true);
-      } catch (_) {}
-    }
-    return '$basePath${Platform.pathSeparator}$fileName';
-  }
-
-  static void _terminatePreviousNixDaemon() {
+  void _cleanupDaemonStateFilesForPid(int? expectedPid) {
+    if (expectedPid == null) return;
     try {
       final pidFile = File(_resolveNixDataPath('aria2.pid'));
       if (pidFile.existsSync()) {
-        final content = pidFile.readAsStringSync().trim();
-        final pid = int.tryParse(content);
-        if (pid != null && pid > 0) {
-          if (Platform.isLinux) {
-            final cmdlineFile = File('/proc/$pid/cmdline');
-            if (cmdlineFile.existsSync()) {
-              final cmdline = cmdlineFile.readAsStringSync();
-              if (cmdline.contains('aria2') && cmdline.contains('rpc-secret')) {
-                Process.killPid(pid, ProcessSignal.sigterm);
-                sleep(const Duration(milliseconds: 100));
-                if (cmdlineFile.existsSync()) {
-                  Process.killPid(pid, ProcessSignal.sigkill);
-                }
-              }
-            }
-          } else {
-            Process.killPid(pid, ProcessSignal.sigterm);
-          }
+        final recorded = int.tryParse(pidFile.readAsStringSync().trim());
+        if (recorded == expectedPid) {
+          pidFile.deleteSync();
         }
+      }
+    } catch (_) {}
+    try {
+      final rpcFile = File(_resolveNixDataPath('aria2_rpc.json'));
+      if (rpcFile.existsSync()) {
+        final decoded = jsonDecode(rpcFile.readAsStringSync());
+        if (decoded is Map && decoded['pid'] == expectedPid) {
+          rpcFile.deleteSync();
+        }
+      }
+    } catch (_) {}
+  }
+
+  String _resolveNixDataPath(String fileName) {
+    final sep = Platform.pathSeparator;
+    String filePath;
+    if (dataDirectory != null && dataDirectory!.isNotEmpty) {
+      filePath = '$dataDirectory$sep$fileName';
+    } else {
+      final fallback = '${Directory.systemTemp.path}${sep}nix$sep$fileName';
+      try {
+        final resolved = NixPlatformPaths.resolveDataFile(fileName);
+        filePath = resolved.startsWith('.') ? fallback : resolved;
+      } catch (_) {
+        filePath = fallback;
+      }
+    }
+    final file = File(filePath);
+    if (!file.parent.existsSync()) {
+      try {
+        file.parent.createSync(recursive: true);
+      } catch (_) {}
+    }
+    return file.path;
+  }
+
+  void _terminatePreviousNixDaemon() {
+    try {
+      final pidFile = File(_resolveNixDataPath('aria2.pid'));
+      if (!pidFile.existsSync()) return;
+
+      void removeStalePidFile() {
         try {
           pidFile.deleteSync();
         } catch (_) {}
       }
+
+      final targetPid = int.tryParse(pidFile.readAsStringSync().trim());
+      if (targetPid == null || targetPid <= 0 || targetPid == pid) {
+        removeStalePidFile();
+        return;
+      }
+
+      // Sem confirmação da linha de comando (processo encerrado ou plataforma sem /proc),
+      // jamais mata o PID às cegas: apenas descarta o registro obsoleto.
+      final sessionPath = _resolveNixDataPath('aria2.session');
+      final cmdline = _readProcessCommandLine(targetPid);
+      if (cmdline == null) {
+        removeStalePidFile();
+        return;
+      }
+      if (!_isNixManagedAria2CommandLine(cmdline, sessionPath)) return;
+
+      // Se o daemon pertence a outra instância viva do Nix (--stop-with-process=<ownerPid>), preserva-o
+      final ownerMatch = RegExp(r'--stop-with-process=(\d+)').firstMatch(cmdline);
+      final ownerPid = ownerMatch == null ? null : int.tryParse(ownerMatch.group(1)!);
+      if (ownerPid != null && ownerPid != pid && _readProcessCommandLine(ownerPid) != null) {
+        return;
+      }
+
+      Process.killPid(targetPid, ProcessSignal.sigterm);
+      sleep(const Duration(milliseconds: 100));
+      final rechecked = _readProcessCommandLine(targetPid);
+      if (rechecked != null && _isNixManagedAria2CommandLine(rechecked, sessionPath)) {
+        Process.killPid(targetPid, ProcessSignal.sigkill);
+      }
+      removeStalePidFile();
     } catch (_) {}
+  }
+
+  static bool _isNixManagedAria2CommandLine(String cmdline, String expectedSessionPath) =>
+      cmdline.toLowerCase().contains('aria2') &&
+      cmdline.contains('--enable-rpc=true') &&
+      cmdline.contains('--save-session=$expectedSessionPath');
+
+  /// Linha de comando de um processo vivo via `/proc` (Linux/Android); `null` quando o
+  /// processo não existe, já encerrou (zumbi) ou a plataforma não permite confirmar.
+  static String? _readProcessCommandLine(int targetPid) {
+    if (targetPid <= 0 || !(Platform.isLinux || Platform.isAndroid)) return null;
+    try {
+      final bytes = File('/proc/$targetPid/cmdline').readAsBytesSync();
+      final cmdline = utf8.decode(bytes, allowMalformed: true).replaceAll('\u0000', ' ').trim();
+      return cmdline.isEmpty ? null : cmdline;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Adiciona uma nova tarefa de download direto HTTP/HTTPS.
@@ -869,11 +937,7 @@ class Aria2DownloadController extends ChangeNotifier {
     if (storageFilePath != null && storageFilePath!.isNotEmpty) {
       return File(storageFilePath!);
     }
-    final home = Platform.environment['HOME'];
-    if (home != null && home.isNotEmpty) {
-      return File('$home/.local/share/nix/downloads_tasks.json');
-    }
-    return null;
+    return File(_resolveNixDataPath('downloads_tasks.json'));
   }
 
   Future<void> _runFallbackDownload(DownloadTask task) async {
@@ -1092,8 +1156,8 @@ class Aria2DownloadController extends ChangeNotifier {
   }
 
   String? _resolveAria2cBinary() {
-    if (customBinaryPath != null && File(customBinaryPath!).existsSync()) {
-      return customBinaryPath;
+    if (customBinaryPath != null) {
+      return File(customBinaryPath!).existsSync() ? customBinaryPath : null;
     }
     final home = Platform.environment['HOME'];
     final candidates = [
