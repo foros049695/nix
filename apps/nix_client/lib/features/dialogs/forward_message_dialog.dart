@@ -213,7 +213,7 @@ class _ForwardMessageDialogState extends State<ForwardMessageDialog> {
                       onPressed: _selectedTargetId == null
                           ? null
                           : () {
-                              nixState.forwardMessage(
+                              final forwarded = nixState.forwardMessage(
                                 widget.message,
                                 targetId: _selectedTargetId!,
                                 isChannel: _isChannelTarget,
@@ -228,7 +228,9 @@ class _ForwardMessageDialogState extends State<ForwardMessageDialog> {
                                     side: BorderSide(color: accent.withValues(alpha: 0.5)),
                                   ),
                                   content: Text(
-                                    'Mensagem encaminhada para $_targetName!',
+                                    forwarded
+                                        ? 'Mensagem encaminhada para $_targetName!'
+                                        : 'Sem permissão para encaminhar para $_targetName.',
                                     style: TextStyle(color: NixColors.textPrimary),
                                   ),
                                 ),
