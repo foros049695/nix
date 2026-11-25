@@ -27,6 +27,40 @@ internal class NixPagerAudio(private val activity: Activity) {
                 "pick" -> pick(result)
                 "play" -> play(localAudioUri(call.argument<String>("uri")), result)
                 "playing" -> result.success(playingUri?.toString())
+                "position" -> result.success(playbackSnapshot())
+                "pause" -> {
+                    val current = player
+                    if (current == null || playingUri == null) {
+                        result.error("PAGER_AUDIO_IDLE", "Nenhum áudio em reprodução.", null)
+                    } else {
+                        if (current.isPlaying) current.pause()
+                        result.success(playbackSnapshot())
+                    }
+                }
+                "resume" -> {
+                    val current = player
+                    if (current == null || playingUri == null) {
+                        result.error("PAGER_AUDIO_IDLE", "Nenhum áudio preparado.", null)
+                    } else {
+                        current.start()
+                        result.success(playbackSnapshot())
+                    }
+                }
+                "seek" -> {
+                    val current = player
+                    if (current == null || playingUri == null) {
+                        result.error("PAGER_AUDIO_IDLE", "Nenhum áudio preparado.", null)
+                    } else {
+                        val requested = call.argument<Int>("positionMs") ?: 0
+                        current.seekTo(requested.coerceIn(0, current.duration.coerceAtLeast(0)))
+                        result.success(playbackSnapshot())
+                    }
+                }
+                "volume" -> {
+                    val level = (call.argument<Double>("value") ?: 1.0).toFloat().coerceIn(0f, 1f)
+                    player?.setVolume(level, level)
+                    result.success(null)
+                }
                 "stop" -> {
                     stop()
                     result.success(null)
@@ -144,6 +178,18 @@ internal class NixPagerAudio(private val activity: Activity) {
             stop()
             result.error("PAGER_AUDIO_PLAY", "O arquivo está ausente ou é incompatível.", null)
         }
+    }
+
+    private fun playbackSnapshot(): Map<String, Any> {
+        val current = player
+        if (current == null || playingUri == null) {
+            return mapOf("isPlaying" to false, "positionMs" to 0, "durationMs" to 0)
+        }
+        return mapOf(
+            "isPlaying" to runCatching { current.isPlaying }.getOrDefault(false),
+            "positionMs" to runCatching { current.currentPosition }.getOrDefault(0),
+            "durationMs" to runCatching { current.duration }.getOrDefault(0),
+        )
     }
 
     fun stop(message: String = "Reprodução interrompida.") {
