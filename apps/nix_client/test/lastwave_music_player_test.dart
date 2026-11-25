@@ -57,7 +57,7 @@ void main() {
       expect(mp3Track.audioQualityBadge, 'MP3 · 320 kbps');
     });
 
-    test('Controles de transporte com faixas reais: play, pause, next, previous, shuffle e repeat', () {
+    test('Controles de transporte com faixas reais: play, pause, next, previous, shuffle e repeat', () async {
       const trackA = PagerTrack(uri: 'file:///trackA.flac', name: 'Faixa A', durationSeconds: 120);
       const trackB = PagerTrack(uri: 'file:///trackB.flac', name: 'Faixa B', durationSeconds: 180);
       controller.setPlaylist([trackA, trackB]);
