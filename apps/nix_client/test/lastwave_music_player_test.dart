@@ -212,7 +212,7 @@ void main() {
       expect(find.textContaining('CMF by Nothing Buds Pro 2'), findsNothing);
       expect(find.text('Saída Padrão do Sistema'), findsOneWidget);
 
-      expect(find.textContaining('Resposta de Frequência'), findsOneWidget);
+      expect(find.textContaining('Prévia teórica dos ajustes'), findsOneWidget);
       expect(find.text('Curva Alvo (Target Curve)'), findsOneWidget);
       expect(find.text('Graves (Bass Gain)'), findsOneWidget);
       expect(find.text('Inclinação Tonal (Tilt)'), findsOneWidget);

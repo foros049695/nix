@@ -14,6 +14,7 @@ import 'package:nix_client/features/chat/offline_location_card.dart';
 import 'package:nix_client/features/chat/offline_location_picker_dialog.dart';
 import 'package:nix_client/features/chat/work_share_card.dart';
 import 'package:nix_client/features/media/cultural_work_sheet.dart';
+import 'package:nix_client/features/profile/cultural_cover_art.dart';
 import 'package:nix_client/features/profile/nix_user_avatar.dart';
 import 'package:nix_client/state/nix_state.dart';
 
@@ -245,7 +246,20 @@ void main() {
         ),
       );
 
-      expect(find.text('Cyberpunk: Edgerunners'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(CulturalCoverArt),
+          matching: find.text('Cyberpunk: Edgerunners'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Text && w.data == 'Cyberpunk: Edgerunners' && w.style?.fontSize == 20,
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Cyberpunk: Edgerunners'), findsNWidgets(2));
       expect(find.text('assistindo'), findsOneWidget);
 
       // Clica para marcar como concluído

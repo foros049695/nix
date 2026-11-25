@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nix_client/core/models/cultural_item.dart';
 import 'package:nix_client/features/media/cultural_work_sheet.dart';
+import 'package:nix_client/features/profile/cultural_cover_art.dart';
 import 'package:nix_client/state/nix_state.dart';
 import 'package:provider/provider.dart';
 
@@ -40,9 +41,22 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Cabeçalho editorial
+      // Cabeçalho editorial e fallback de capa sem imagem local
       expect(find.text('FICHA EDITORIAL · FIRESIDE FOLIO'), findsOneWidget);
-      expect(find.text('Short Science Fiction Stories'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(CulturalCoverArt),
+          matching: find.text('Short Science Fiction Stories'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Text && w.data == 'Short Science Fiction Stories' && w.style?.fontSize == 20,
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Short Science Fiction Stories'), findsNWidgets(2));
       expect(find.text('Isaac Asimov, 1952'), findsOneWidget);
 
       // Seção editorial
@@ -85,7 +99,20 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('FICHA DA OBRA · ACERVO CULTURAL'), findsOneWidget);
-      expect(find.text('Interstellar'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(CulturalCoverArt),
+          matching: find.text('Interstellar'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Text && w.data == 'Interstellar' && w.style?.fontSize == 20,
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Interstellar'), findsNWidgets(2));
       expect(find.text('Ficha Editorial · Fireside Folio'), findsNothing);
     });
   });

@@ -154,7 +154,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('ÁUDIO & FAIXAS LOCAIS'), findsOneWidget);
-      expect(find.textContaining('Apenas metadados indexados'), findsOneWidget);
+      expect(
+        find.text('Metadados indexados. Para reproduzir no Player do Pager, vincule ou abra o player.'),
+        findsOneWidget,
+      );
+      expect(find.text('Abrir Player de Música do Pager'), findsOneWidget);
     });
   });
 }
