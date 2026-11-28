@@ -85,4 +85,40 @@ func TestLoadYAMLConfigBaseDirHomeExpansion(t *testing.T) {
 			t.Fatal("esperado erro quando HOME está vazio para caminho com ~/, mas obteve nil")
 		}
 	})
+
+	t.Run("strict_validation_rejects_unknown_section", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), "bad_sec.yaml")
+		_ = os.WriteFile(p, []byte("unknown_sec:\n  port: 8080\n"), 0600)
+		_, err := LoadYAMLConfig(p)
+		if err == nil {
+			t.Fatal("esperado erro para seção desconhecida, obteve nil")
+		}
+	})
+
+	t.Run("strict_validation_rejects_unknown_key", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), "bad_key.yaml")
+		_ = os.WriteFile(p, []byte("server:\n  typo_key: 8080\n"), 0600)
+		_, err := LoadYAMLConfig(p)
+		if err == nil {
+			t.Fatal("esperado erro para chave desconhecida, obteve nil")
+		}
+	})
+
+	t.Run("strict_validation_rejects_non_numeric_port", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), "bad_port.yaml")
+		_ = os.WriteFile(p, []byte("server:\n  port: abc\n"), 0600)
+		_, err := LoadYAMLConfig(p)
+		if err == nil {
+			t.Fatal("esperado erro para porta não numérica, obteve nil")
+		}
+	})
+
+	t.Run("strict_validation_rejects_broken_hysteresis", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), "bad_hyst.yaml")
+		_ = os.WriteFile(p, []byte("pruning:\n  light_threshold_percent: 90\n  severe_threshold_percent: 80\n  critical_threshold_percent: 95\n"), 0600)
+		_, err := LoadYAMLConfig(p)
+		if err == nil {
+			t.Fatal("esperado erro para histerese invertida, obteve nil")
+		}
+	})
 }

@@ -265,31 +265,95 @@ class CulturalCoverArt extends StatelessWidget {
     );
   }
 
-  /// Modelo limpo e autêntico de livro ou mangá com proporções preservadas e sem páginas falsas.
+  /// Modelo físico 2.5D autêntico de livro ou mangá com lombada, vinco e brilho (inspirado no HomeGus / PassportDex).
   Widget _closedBook({required bool isManga}) {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: Colors.white.withOpacity(0.08),
+          color: Colors.white.withOpacity(0.10),
           width: 1.0,
         ),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x55000000),
-            offset: Offset(0, 5),
-            blurRadius: 12,
+            color: Color(0x66000000),
+            offset: Offset(2, 6),
+            blurRadius: 14,
           ),
           BoxShadow(
-            color: Color(0x22000000),
-            offset: Offset(0, 1),
+            color: Color(0x33000000),
+            offset: Offset(-1, 1),
             blurRadius: 3,
           ),
         ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(6),
-        child: _art(),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _art(),
+            // Lombada 2.5D no canto esquerdo (spine crease relief do HomeGus passport.css)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: width * 0.14,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    stops: [0.0, 0.20, 0.45, 0.75, 1.0],
+                    colors: [
+                      Color(0x88000000), // Sombra da dobra da capa
+                      Color(0x35FFFFFF), // Brilho de relevo da lombada
+                      Color(0x55000000), // Sulco de vinco
+                      Color(0x18000000), // Transição
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // Relevo de corte das páginas no canto direito
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: 2.0,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      Colors.transparent,
+                      Color(0x35FFFFFF),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // Brilho sutil de superfície (specular sheen)
+            const Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    stops: [0.0, 0.45, 1.0],
+                    colors: [
+                      Color(0x18FFFFFF),
+                      Colors.transparent,
+                      Color(0x28000000),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -19,6 +19,8 @@ import 'cultural_cover_art.dart';
 import 'collection_import_dialog.dart';
 import 'cover_enrichment_dialog.dart';
 import 'cultural_filters_and_pagination.dart';
+import 'book_manga_manager_sheet.dart';
+import 'cultural_motion_cover_card.dart';
 import '../media/cultural_work_sheet.dart';
 
 class CulturalShowcase extends StatefulWidget {
@@ -261,19 +263,18 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        NixMotionCard(
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () {
-              if (MediaQuery.sizeOf(context).width >= 900) {
-                state.openWorkDetail(item);
-              } else {
-                CulturalWorkSheet.showModal(context, item: item);
-              }
-            },
-            onLongPress: () => _confirmDelete(item),
-            child: CulturalCoverArt(item: item, width: width),
-          ),
+        CulturalMotionCoverCard(
+          item: item,
+          width: width,
+          index: index,
+          onTap: () {
+            if (MediaQuery.sizeOf(context).width >= 900) {
+              state.openWorkDetail(item);
+            } else {
+              CulturalWorkSheet.showModal(context, item: item);
+            }
+          },
+          onLongPress: () => _confirmDelete(item),
         ),
         const SizedBox(height: 5),
         Text(
@@ -289,6 +290,20 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                   color: Colors.cyanAccent.shade200,
                   fontSize: 10,
                 ),
+          ),
+        if (item.missingVolumesSummary.isNotEmpty && item.missingVolumes.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              item.missingVolumesSummary,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFFFBBF24),
+                fontSize: 9.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         if (item.tracking.fraction case final fraction?)
           Padding(
@@ -311,6 +326,16 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                 ),
               ),
             ),
+            if (item.isBookOrManga)
+              IconButton(
+                tooltip: 'Gerenciar volumes e ComicInfo (BookManager)',
+                visualDensity: VisualDensity.compact,
+                iconSize: 15,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 26, minHeight: 38),
+                onPressed: () => BookMangaManagerSheet.showModal(context, item: item),
+                icon: const Icon(Icons.auto_stories_outlined, color: Color(0xFFC084FC)),
+              ),
             IconButton(
               tooltip: item.isPublicInCardId
                   ? 'Ocultar do perfil'

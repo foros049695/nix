@@ -101,11 +101,34 @@ class SecureFileDownloadHelper {
     return name;
   }
 
-  /// Salva arquivo com validação SHA-256 pré e pós gravação em pasta segura, sem auto-execução.
+  /// Resolve um nome de arquivo não conflitante no diretório de destino.
+  static String resolveUniqueFileName(Directory dir, String cleanName) {
+    var candidate = cleanName;
+    var file = File('${dir.path}/$candidate');
+    if (!file.existsSync()) return candidate;
+
+    final dotIndex = cleanName.lastIndexOf('.');
+    final baseName = dotIndex > 0 ? cleanName.substring(0, dotIndex) : cleanName;
+    final extension = dotIndex > 0 ? cleanName.substring(dotIndex) : '';
+
+    int counter = 1;
+    while (file.existsSync()) {
+      candidate = '$baseName ($counter)$extension';
+      file = File('${dir.path}/$candidate');
+      counter++;
+    }
+    return candidate;
+  }
+
+  /// Salva arquivo com validação SHA-256 pré e pós gravação em pasta segura, sem auto-execução,
+  /// utilizando escrita atômica em estágio temporário e resolução anti-colisão de nomes para evitar
+  /// substituição silenciosa de arquivos preexistentes.
   static Future<File> saveFileSafely({
     required Uint8List bytes,
     required String rawFileName,
     String? expectedSha256Hex,
+    bool allowOverwrite = false,
+    Directory? customTargetDirectory,
   }) async {
     // 1. Verificação de integridade local inicial
     final preHash = sha256.convert(bytes).toString();
@@ -116,27 +139,46 @@ class SecureFileDownloadHelper {
     }
 
     // 2. Diretório seguro de downloads
-    final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '';
-    final downloadsDir = Directory(
-      home.isNotEmpty ? '$home/Downloads' : NixPlatformPaths.resolveDataFile('downloads'),
-    );
+    Directory downloadsDir;
+    if (customTargetDirectory != null) {
+      downloadsDir = customTargetDirectory;
+    } else {
+      final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '';
+      downloadsDir = Directory(
+        home.isNotEmpty ? '$home/Downloads' : NixPlatformPaths.resolveDataFile('downloads'),
+      );
+    }
     await downloadsDir.create(recursive: true);
 
-    // 3. Sanitização do nome do arquivo
+    // 3. Sanitização do nome do arquivo e resolução anti-colisão
     final cleanName = sanitizeFileName(rawFileName);
-    final targetFile = File('${downloadsDir.path}/$cleanName');
+    final finalFileName = allowOverwrite ? cleanName : resolveUniqueFileName(downloadsDir, cleanName);
+    final targetFile = File('${downloadsDir.path}/$finalFileName');
 
-    // 4. Gravação segura
-    await targetFile.writeAsBytes(bytes, flush: true);
+    // 4. Gravação segura via estágio temporário no mesmo diretório
+    final tempFile = File('${downloadsDir.path}/.$cleanName.tmp_${DateTime.now().microsecondsSinceEpoch}');
+    try {
+      await tempFile.writeAsBytes(bytes, flush: true);
 
-    // 5. Verificação pós-gravação
-    final savedBytes = await targetFile.readAsBytes();
-    final postHash = sha256.convert(savedBytes).toString();
-    if (postHash != preHash) {
-      await targetFile.delete();
-      throw StateError('Corrupção detectada durante a gravação em disco.');
+      // 5. Verificação pós-gravação no arquivo temporário
+      final savedBytes = await tempFile.readAsBytes();
+      final postHash = sha256.convert(savedBytes).toString();
+      if (postHash != preHash) {
+        throw StateError('Corrupção detectada durante a gravação em disco.');
+      }
+
+      // 6. Movimentação atômica para o destino final
+      if (allowOverwrite && await targetFile.exists()) {
+        await targetFile.delete();
+      }
+      return await tempFile.rename(targetFile.path);
+    } catch (e) {
+      if (await tempFile.exists()) {
+        try {
+          await tempFile.delete();
+        } catch (_) {}
+      }
+      rethrow;
     }
-
-    return targetFile;
   }
 }

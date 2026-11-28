@@ -79,7 +79,11 @@ class _ChannelCommentsSheetState extends State<ChannelCommentsSheet> {
     if (text.isEmpty || _isSending) return;
 
     setState(() => _isSending = true);
-    final ok = state.sendMessage(text, replyTo: widget.message);
+    final ok = state.sendChannelComment(
+      channel: widget.channel,
+      parentMessage: widget.message,
+      text: text,
+    );
     if (ok) {
       _controller.clear();
       Future.delayed(const Duration(milliseconds: 150), () {
@@ -102,12 +106,21 @@ class _ChannelCommentsSheetState extends State<ChannelCommentsSheet> {
     final accentText = context.accentTextColor;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
+    Channel currentChan = widget.channel;
+    for (final s in nixState.spaces) {
+      for (final c in s.channels) {
+        if (c.id == widget.channel.id) {
+          currentChan = c;
+          break;
+        }
+      }
+    }
     final allChannelMsgs = nixState.messagesFor(widget.channel.id);
     final comments = allChannelMsgs
         .where((m) => m.replyToMessageId == widget.message.id)
         .toList();
 
-    final allowComments = widget.channel.permissions.allowComments;
+    final allowComments = currentChan.permissions.allowComments;
 
     return Container(
       decoration: BoxDecoration(

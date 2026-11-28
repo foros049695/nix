@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"sync"
 	"time"
 )
@@ -219,9 +220,30 @@ func (s *BlindMailboxStore) Fetch(mailboxID string, now time.Time) ([]Envelope, 
 		}
 		s.totalPruned += int64(len(removed))
 	}
-	out := make([]Envelope, len(active))
-	copy(out, active)
-	return out, nil
+
+	// Ordenação determinística e limite por lote/orçamento de bytes (idêntico ao PostgresMailboxStore)
+	sort.Slice(active, func(i, j int) bool {
+		if active[i].CreatedAt == active[j].CreatedAt {
+			return active[i].ID < active[j].ID
+		}
+		return active[i].CreatedAt < active[j].CreatedAt
+	})
+
+	const maxFetchCount = 500
+	const maxFetchBytes = 16 * 1024 * 1024 // 16 MB
+	result := make([]Envelope, 0, len(active))
+	var accumulatedBytes int64
+	for _, env := range active {
+		if len(result) >= maxFetchCount {
+			break
+		}
+		if len(result) > 0 && accumulatedBytes+env.ByteSize > maxFetchBytes {
+			break
+		}
+		result = append(result, env)
+		accumulatedBytes += env.ByteSize
+	}
+	return result, nil
 }
 
 func (s *BlindMailboxStore) Ack(mailboxID string, ids []string) (int, error) {

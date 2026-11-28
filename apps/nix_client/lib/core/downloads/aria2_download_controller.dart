@@ -214,8 +214,13 @@ class Aria2DownloadController extends ChangeNotifier {
     final hasSession = sessionFile.existsSync() && sessionFile.lengthSync() > 0;
 
     try {
+      final home = Platform.environment['HOME'] ?? '';
+      final userLocalLib = home.isNotEmpty ? '$home/.local/lib' : '';
       final env = <String, String>{
-        'LD_LIBRARY_PATH': '/home/gus/.local/lib:${Platform.environment['LD_LIBRARY_PATH'] ?? ''}',
+        'LD_LIBRARY_PATH': [
+          if (userLocalLib.isNotEmpty) userLocalLib,
+          Platform.environment['LD_LIBRARY_PATH'] ?? '',
+        ].where((s) => s.isNotEmpty).join(':'),
         ...Platform.environment,
       };
 
@@ -1242,13 +1247,19 @@ class Aria2DownloadController extends ChangeNotifier {
       return File(customBinaryPath!).existsSync() ? customBinaryPath : null;
     }
     final home = Platform.environment['HOME'];
+    final pathDirs = (Platform.environment['PATH'] ?? '')
+        .split(Platform.isWindows ? ';' : ':')
+        .where((d) => d.trim().isNotEmpty);
+
     final candidates = [
       if (home != null) '$home/.local/bin/aria2c-wrapper',
       if (home != null) '$home/.local/bin/aria2c-bin',
       if (home != null) '$home/.local/bin/aria2c',
-      '/home/gus/.local/bin/aria2c-wrapper',
-      '/home/gus/.local/bin/aria2c-bin',
-      '/home/gus/.local/bin/aria2c',
+      for (final p in pathDirs) ...[
+        '$p/aria2c-wrapper',
+        '$p/aria2c-bin',
+        '$p/aria2c',
+      ],
       '/usr/bin/aria2c',
       '/usr/local/bin/aria2c',
     ];

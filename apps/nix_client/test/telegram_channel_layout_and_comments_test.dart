@@ -290,5 +290,60 @@ void main() {
       );
       expect(switchFinder, findsOneWidget);
     });
+
+    test('sendChannelComment preserva replyToMessageId, excerpt e autor sem sobrescrever mensagem em edição', () {
+      final state = NixState(loadMockData: false);
+      state.createSpace(
+        name: 'Canal de Notícias',
+        description: 'Transmissões oficiais',
+        emoji: 'i:newspaper',
+        isAnnouncementChannel: true,
+      );
+
+      final channel = state.currentChannel;
+      final post = Message(
+        id: 'post_original_123',
+        channelId: channel.id,
+        senderName: 'Editor Chefe',
+        senderFingerprint: 'ed_11223344',
+        isMe: false,
+        text: 'Postagem principal do canal com novidades importantes.',
+        timestamp: DateTime.now(),
+      );
+
+      // Simula uma mensagem em edição no chat geral
+      final draftToEdit = Message(
+        id: 'msg_to_edit_456',
+        channelId: channel.id,
+        senderName: 'Eu',
+        senderFingerprint: state.securityContext.myFingerprint,
+        isMe: true,
+        text: 'Texto original do rascunho',
+        timestamp: DateTime.now(),
+      );
+      state.startEditMessage(draftToEdit);
+      expect(state.editingMessage?.id, equals('msg_to_edit_456'));
+
+      // Envia comentário vinculado à postagem via sendChannelComment
+      final ok = state.sendChannelComment(
+        channel: channel,
+        parentMessage: post,
+        text: 'Meu comentário sobre a postagem principal',
+      );
+
+      expect(ok, isTrue);
+
+      // Garante que o rascunho em edição NÃO foi alterado nem sobrescrito
+      expect(state.editingMessage?.id, equals('msg_to_edit_456'));
+      expect(draftToEdit.text, equals('Texto original do rascunho'));
+
+      // Valida que o comentário gravou a identidade e a referência do pai
+      final comments = state.messagesFor(channel.id).where((m) => m.replyToMessageId == post.id).toList();
+      expect(comments.length, equals(1));
+      expect(comments.first.text, equals('Meu comentário sobre a postagem principal'));
+      expect(comments.first.replyToMessageId, equals('post_original_123'));
+      expect(comments.first.replyToSenderName, equals('Editor Chefe'));
+      expect(comments.first.replyToExcerpt, equals('Postagem principal do canal com novidades importantes.'));
+    });
   });
 }

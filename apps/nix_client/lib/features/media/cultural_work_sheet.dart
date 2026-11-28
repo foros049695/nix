@@ -8,6 +8,7 @@ import '../../core/models/cultural_item.dart';
 import '../../core/models/cultural_tracking.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
+import '../profile/book_manga_manager_sheet.dart';
 import '../profile/cultural_cover_art.dart';
 import 'details/nix_media_hero.dart';
 import 'details/nix_media_synopsis.dart';
@@ -535,6 +536,75 @@ class _CulturalWorkSheetState extends State<CulturalWorkSheet> {
                         if (isBook) ...[
                           const SizedBox(height: 16),
                           _buildFiresideFolioEditorialSection(context, state),
+                        ],
+
+                        // 13.1 GERENCIADOR DE VOLUMES E METADADOS (BookManager / Kavita / Komga)
+                        if (isBook || isManga) ...[
+                          const SizedBox(height: 14),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF7C3AED).withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFF7C3AED).withValues(alpha: 0.35)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.menu_book_rounded, size: 16, color: Color(0xFFC084FC)),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      isManga
+                                          ? 'Organização de Volumes & Mangá (BookManager)'
+                                          : 'Organização de Volumes & E-book (BookManager)',
+                                      style: const TextStyle(
+                                        color: Color(0xFFC084FC),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (widget.item.missingVolumesSummary.isNotEmpty) ...[
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    widget.item.missingVolumesSummary,
+                                    style: TextStyle(
+                                      color: widget.item.missingVolumes.isNotEmpty
+                                          ? const Color(0xFFFBBF24)
+                                          : const Color(0xFF34D399),
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 10),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    key: const Key('open_book_manager_button'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: const Color(0xFFC084FC),
+                                      side: const BorderSide(color: Color(0xFF7C3AED)),
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                    ),
+                                    onPressed: () => BookMangaManagerSheet.showModal(
+                                      context,
+                                      item: widget.item,
+                                    ),
+                                    icon: const Icon(Icons.auto_stories_rounded, size: 16),
+                                    label: const Text(
+                                      'Gerenciar Volumes e Metadados (Kavita / Komga)',
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ],
 
                         // 14. OBRAS SEMELHANTES COM ROLAGEM HORIZONTAL

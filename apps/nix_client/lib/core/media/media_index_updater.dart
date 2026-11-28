@@ -45,6 +45,10 @@ class CatalogTestKeyRejectedException implements Exception {
   String toString() => 'CatalogTestKeyRejectedException: $message';
 }
 
+/// Limite máximo aceito para pacotes/manifestos do catálogo (50 MB)
+/// para proteção estrita contra exaustão de memória (OOM).
+const int maxCatalogDownloadSizeBytes = 50 * 1024 * 1024;
+
 /// Anel de chaves públicas confiáveis para publicação do catálogo cultural.
 class CatalogPublisherKeyring {
   static const String fixtureTestPublisherKeyHex =
@@ -985,8 +989,13 @@ class CatalogUpdateManager {
         if (_isCancelled) {
           throw const CatalogUpdateCancelledException();
         }
-        builder.add(chunk);
         received += chunk.length;
+        if (received > maxCatalogDownloadSizeBytes) {
+          throw const CatalogIntegrityVerificationException(
+            'Limite máximo de download do catálogo excedido (teto: 50 MB).',
+          );
+        }
+        builder.add(chunk);
         onProgress?.call(received, total);
       }
 
@@ -1075,8 +1084,13 @@ class CatalogUpdateManager {
         if (_isCancelled) {
           throw const CatalogUpdateCancelledException();
         }
-        builder.add(chunk);
         received += chunk.length;
+        if (received > maxCatalogDownloadSizeBytes) {
+          throw const CatalogIntegrityVerificationException(
+            'Limite máximo de download do catálogo excedido (teto: 50 MB).',
+          );
+        }
+        builder.add(chunk);
         onProgress?.call(received, total);
       }
 
@@ -1164,8 +1178,17 @@ class CatalogUpdateManager {
                 headerBuffer.clear();
               }
             } else {
-              builder.add(chunk);
               received += chunk.length;
+              if (received > maxCatalogDownloadSizeBytes) {
+                activeSocket.close();
+                if (!completer.isCompleted) {
+                  completer.completeError(const CatalogIntegrityVerificationException(
+                    'Limite máximo de download do catálogo excedido (teto: 50 MB).',
+                  ));
+                }
+                return;
+              }
+              builder.add(chunk);
               onProgress?.call(received, total);
             }
           }

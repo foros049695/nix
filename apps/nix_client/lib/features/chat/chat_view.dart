@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/channel.dart';
+import '../../core/models/message.dart';
 import '../../core/theme.dart';
 import '../../core/theme/nix_colors.dart';
 import '../../state/nix_state.dart';
@@ -63,11 +64,26 @@ class _ChatViewState extends State<ChatView> {
                 const Spacer(),
                 TextButton.icon(
                   onPressed: () {
-                    final firstSelected = messages.firstWhere(
-                      (m) => selectedIds.contains(m.id),
-                      orElse: () => messages.first,
-                    );
-                    ForwardMessageDialog.show(context, firstSelected);
+                    if (selectedIds.isEmpty) return;
+                    Message? target;
+                    for (final m in messages) {
+                      if (selectedIds.contains(m.id)) {
+                        target = m;
+                        break;
+                      }
+                    }
+                    if (target == null) {
+                      final allMsgs = nixState.messagesFor(widget.channel.id);
+                      for (final m in allMsgs) {
+                        if (selectedIds.contains(m.id)) {
+                          target = m;
+                          break;
+                        }
+                      }
+                    }
+                    if (target != null) {
+                      ForwardMessageDialog.show(context, target);
+                    }
                   },
                   icon: const Icon(Icons.forward_rounded, size: 16),
                   label: const Text('Encaminhar', style: TextStyle(fontSize: 12)),

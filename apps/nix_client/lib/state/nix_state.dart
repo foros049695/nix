@@ -2417,6 +2417,7 @@ class NixState extends ChangeNotifier {
           'received_at': now.millisecondsSinceEpoch,
           'revision': 1,
           'delivery_state': 'received',
+          'reply_to_id': replyToId,
         });
         await txn.insert('inbox_dedup', {
           'mailbox_id': mailboxId,
@@ -2426,6 +2427,22 @@ class NixState extends ChangeNotifier {
           'expires_at': exp,
         });
       });
+    }
+
+    // Busca metadados da mensagem pai para enriquecer contexto do comentário/resposta
+    String? replySender;
+    String? replyExcerpt;
+    if (replyToId != null && replyToId.isNotEmpty) {
+      final existingMsgs = _messages[conversationId];
+      if (existingMsgs != null) {
+        for (final m in existingMsgs) {
+          if (m.id == replyToId) {
+            replySender = m.senderName;
+            replyExcerpt = m.text;
+            break;
+          }
+        }
+      }
     }
 
     // 4. Atualiza a lista em memória para refletir na UI
@@ -2439,6 +2456,9 @@ class NixState extends ChangeNotifier {
       timestamp: now,
       isVerified: true,
       attachments: attachments,
+      replyToMessageId: replyToId,
+      replyToSenderName: replySender,
+      replyToExcerpt: replyExcerpt,
     );
 
     if (!_messages.containsKey(conversationId)) {
@@ -5916,6 +5936,77 @@ class NixState extends ChangeNotifier {
     }
     _messages[_currentChannel.id]!.add(newMessage);
     _replyingToMessage = null;
+
+    if (_localDatabase != null && _messageRepo != null) {
+      unawaited(_messageRepo!.insertMessage(
+        id: newMessage.id,
+        conversationId: _currentChannel.id,
+        authorKey: _userProfile.publicId,
+        deviceId: _localDeviceId,
+        body: newMessage.text,
+        deliveryState: newMessage.deliveryState,
+        replyToId: newMessage.replyToMessageId,
+        createdAt: newMessage.timestamp.millisecondsSinceEpoch,
+      ));
+    }
+
+    notifyListeners();
+    return true;
+  }
+
+  /// Envia um comentário contextual vinculado a uma postagem de canal de transmissão,
+  /// persistindo a relação e respeitando permissões dinâmicas sem interferir em edições correntes.
+  bool sendChannelComment({
+    required Channel channel,
+    required Message parentMessage,
+    required String text,
+    List<String> attachments = const [],
+  }) {
+    if (_panicWipe != null || (text.trim().isEmpty && attachments.isEmpty)) return false;
+    if (channel.type != ChannelType.announcement) return false;
+    if (!channel.permissions.allowComments) return false;
+
+    final isAdmin = _userProfile.publicId.isNotEmpty &&
+        (channel.ownerFingerprint == _userProfile.publicId ||
+            channel.admins.contains(_userProfile.publicId));
+    if (!isAdmin && !channel.permissions.allowMessages) return false;
+
+    final newComment = Message(
+      id: 'comment_${DateTime.now().microsecondsSinceEpoch}',
+      channelId: channel.id,
+      senderName: _userProfile.effectiveDisplayName,
+      senderFingerprint: _securityContext.myFingerprint,
+      isMe: true,
+      text: text.trim(),
+      timestamp: DateTime.now(),
+      ephemeralSeconds: _selectedEphemeralTimer,
+      remainingSeconds: _selectedEphemeralTimer,
+      isVerified: true,
+      deliveryState: 'queued',
+      attachments: attachments,
+      replyToMessageId: parentMessage.id,
+      replyToSenderName: parentMessage.senderName,
+      replyToExcerpt: parentMessage.text,
+    );
+
+    if (!_messages.containsKey(channel.id)) {
+      _messages[channel.id] = [];
+    }
+    _messages[channel.id]!.add(newComment);
+
+    if (_localDatabase != null && _messageRepo != null) {
+      unawaited(_messageRepo!.insertMessage(
+        id: newComment.id,
+        conversationId: channel.id,
+        authorKey: _userProfile.publicId,
+        deviceId: _localDeviceId,
+        body: newComment.text,
+        deliveryState: newComment.deliveryState,
+        replyToId: newComment.replyToMessageId,
+        createdAt: newComment.timestamp.millisecondsSinceEpoch,
+      ));
+    }
+
     notifyListeners();
     return true;
   }

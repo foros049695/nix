@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,7 +16,9 @@ import 'package:nix_client/features/chat/offline_location_card.dart';
 import 'package:nix_client/features/chat/offline_location_picker_dialog.dart';
 import 'package:nix_client/features/chat/work_share_card.dart';
 import 'package:nix_client/features/media/cultural_work_sheet.dart';
+import 'package:nix_client/features/profile/book_manga_manager_sheet.dart';
 import 'package:nix_client/features/profile/cultural_cover_art.dart';
+import 'package:nix_client/features/profile/cultural_motion_cover_card.dart';
 import 'package:nix_client/features/profile/nix_user_avatar.dart';
 import 'package:nix_client/state/nix_state.dart';
 
@@ -171,6 +175,42 @@ void main() {
         throwsA(isA<StateError>()),
       );
     });
+
+    test('saveFileSafely prevents silent overwrite of homonymous file and resolves unique names', () async {
+      final tempDir = Directory.systemTemp.createTempSync('nix_save_test_');
+      try {
+        final content1 = utf8.encode('Original Document Content 1');
+        final content2 = utf8.encode('Distinct Document Content 2');
+
+        final file1 = await SecureFileDownloadHelper.saveFileSafely(
+          bytes: Uint8List.fromList(content1),
+          rawFileName: 'relatorio.pdf',
+          customTargetDirectory: tempDir,
+        );
+
+        expect(file1.existsSync(), isTrue);
+        expect(file1.path.endsWith('relatorio.pdf'), isTrue);
+        expect(await file1.readAsString(), 'Original Document Content 1');
+
+        // Segundo salvamento com o mesmo nome não deve sobrescrever o primeiro
+        final file2 = await SecureFileDownloadHelper.saveFileSafely(
+          bytes: Uint8List.fromList(content2),
+          rawFileName: 'relatorio.pdf',
+          customTargetDirectory: tempDir,
+        );
+
+        expect(file2.existsSync(), isTrue);
+        expect(file2.path.endsWith('relatorio (1).pdf'), isTrue);
+        expect(await file2.readAsString(), 'Distinct Document Content 2');
+
+        // Confirma que o original permaneceu 100% íntegro
+        expect(await file1.readAsString(), 'Original Document Content 1');
+      } finally {
+        if (tempDir.existsSync()) {
+          tempDir.deleteSync(recursive: true);
+        }
+      }
+    });
   });
 
   group('4. Avatar Frames & Profile Customization Test', () {
@@ -293,6 +333,126 @@ void main() {
       expect(deleted, isTrue);
       expect(state.isMyMoneroOrder(order.id), isFalse);
       expect(state.moneroOrders.any((o) => o.id == order.id), isFalse);
+    });
+  });
+
+  group('7. BookManager & Kavita / Komga Integration Tests', () {
+    test('CulturalItem BookManager missing volumes and metadata readiness', () {
+      const item = CulturalItem(
+        id: 'manga_chainsaw_man',
+        title: 'Chainsaw Man',
+        creatorOrYear: 'Tatsuki Fujimoto · 2018',
+        category: CulturalCategory.manga,
+        monogram: 'CSM',
+        format: 'cbz',
+        totalVolumes: 12,
+        currentVolume: 4,
+        ownedVolumes: [1, 2, 3, 4, 7, 8],
+        readingDirection: 'rtl',
+        comicInfo: {
+          'series': 'Chainsaw Man',
+          'writer': 'Tatsuki Fujimoto',
+          'publisher': 'Shueisha',
+        },
+      );
+
+      expect(item.missingVolumes, [5, 6, 9, 10, 11, 12]);
+      expect(item.missingVolumesSummary, 'Faltam 6 volumes');
+      expect(item.formatBadge, 'CBZ');
+      expect(item.isKavitaKomgaReady, isTrue);
+
+      final json = item.toJson();
+      expect(json['format'], 'cbz');
+      expect(json['totalVolumes'], 12);
+      expect(json['ownedVolumes'], [1, 2, 3, 4, 7, 8]);
+      expect(json['readingDirection'], 'rtl');
+
+      final deserialized = CulturalItem.fromJson(json);
+      expect(deserialized.id, item.id);
+      expect(deserialized.format, 'cbz');
+      expect(deserialized.missingVolumes, [5, 6, 9, 10, 11, 12]);
+      expect(deserialized.comicInfo['writer'], 'Tatsuki Fujimoto');
+    });
+
+    testWidgets('BookMangaManagerSheet renders volume matrix and manages collection', (tester) async {
+      final state = NixState(loadMockData: false);
+      addTearDown(state.dispose);
+
+      const mangaItem = CulturalItem(
+        id: 'manga_berserk',
+        title: 'Berserk',
+        creatorOrYear: 'Kentaro Miura · 1989',
+        category: CulturalCategory.manga,
+        monogram: 'BSK',
+        format: 'cbz',
+        totalVolumes: 5,
+        currentVolume: 2,
+        ownedVolumes: [1, 2, 4],
+      );
+      state.addCulturalItem(mangaItem);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<NixState>.value(
+          value: state,
+          child: const MaterialApp(
+            home: Scaffold(
+              body: BookMangaManagerSheet(item: mangaItem),
+            ),
+          ),
+        ),
+      );
+
+      // Verifica cabeçalho e títulos
+      expect(find.text('GERENCIADOR DE MANGÁS & HQS'), findsOneWidget);
+      expect(find.text('Berserk'), findsWidgets);
+      expect(find.text('CBZ'), findsOneWidget);
+      expect(find.text('Kavita / Komga Ready'), findsOneWidget);
+
+      // Verifica resumo de volumes
+      expect(find.text('Volumes da Coleção'), findsOneWidget);
+      expect(find.text('3 de 5 adquiridos'), findsOneWidget);
+      expect(find.text('Faltam: Vol. 3, 5'), findsOneWidget);
+
+      // Clica no volume 3 (que estava ausente) para marcá-lo como possuído
+      await tester.tap(find.text('3'));
+      await tester.pumpAndSettle();
+
+      final updated = state.userProfile.culturalItems.firstWhere((i) => i.id == 'manga_berserk');
+      expect(updated.ownedVolumes.contains(3), isTrue);
+    });
+
+    testWidgets('CulturalMotionCoverCard renders 2.5D physical cover with format and missing badge', (tester) async {
+      const bookItem = CulturalItem(
+        id: 'book_dune',
+        title: 'Duna',
+        creatorOrYear: 'Frank Herbert · 1965',
+        category: CulturalCategory.books,
+        monogram: 'DN',
+        format: 'epub',
+        totalVolumes: 6,
+        currentVolume: 2,
+        ownedVolumes: [1, 2, 3],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: CulturalMotionCoverCard(
+                item: bookItem,
+                width: 140,
+                onTap: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('EPUB'), findsOneWidget);
+      expect(find.text('-3 vol'), findsOneWidget);
+      expect(find.byType(CulturalCoverArt), findsOneWidget);
     });
   });
 }

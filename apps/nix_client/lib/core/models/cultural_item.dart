@@ -102,6 +102,18 @@ class CulturalItem {
   final String? bannerPath;
   final Map<String, String>? storeLinks;
 
+  // BookManager & Kavita/Komga integration fields
+  final String? format; // 'cbz', 'cbr', 'epub', 'pdf', 'mobi', 'azw3'
+  final int? totalVolumes;
+  final int? currentVolume;
+  final List<int> ownedVolumes;
+  final int? totalChapters;
+  final int? currentChapter;
+  final Map<String, dynamic> comicInfo;
+  final String? kavitaSeriesId;
+  final String? komgaSeriesId;
+  final String? readingDirection; // 'ltr', 'rtl', 'vertical'
+
   const CulturalItem({
     required this.id,
     required this.title,
@@ -131,10 +143,66 @@ class CulturalItem {
     this.provenanceConfidence,
     this.bannerPath,
     this.storeLinks,
+    this.format,
+    this.totalVolumes,
+    this.currentVolume,
+    this.ownedVolumes = const [],
+    this.totalChapters,
+    this.currentChapter,
+    this.comicInfo = const {},
+    this.kavitaSeriesId,
+    this.komgaSeriesId,
+    this.readingDirection,
   });
 
   bool get isVinyl => category == CulturalCategory.music;
   bool get isGithubRepo => category == CulturalCategory.github;
+  bool get isBookOrManga => category == CulturalCategory.books || category == CulturalCategory.manga;
+
+  /// Lista de volumes faltantes para completar a coleção (estilo BookManager / Kavita / Komga)
+  List<int> get missingVolumes {
+    if (totalVolumes == null || totalVolumes! <= 0) return const [];
+    final maxV = totalVolumes!;
+    final owned = ownedVolumes.isNotEmpty
+        ? ownedVolumes.toSet()
+        : (currentVolume != null && currentVolume! > 0
+            ? List.generate(currentVolume!, (i) => i + 1).toSet()
+            : <int>{});
+    final missing = <int>[];
+    for (int v = 1; v <= maxV; v++) {
+      if (!owned.contains(v)) {
+        missing.add(v);
+      }
+    }
+    return missing;
+  }
+
+  /// Resumo textual de volumes ausentes (ex: 'Faltam: Vol. 3, 5' ou 'Coleção completa')
+  String get missingVolumesSummary {
+    if (totalVolumes == null || totalVolumes! <= 0) return '';
+    final missing = missingVolumes;
+    if (missing.isEmpty) return 'Coleção completa';
+    if (missing.length <= 4) {
+      return 'Faltam: Vol. ${missing.join(', ')}';
+    }
+    return 'Faltam ${missing.length} volumes';
+  }
+
+  /// Indica se a obra possui metadados suficientes para exportação / biblioteca Kavita ou Komga
+  bool get isKavitaKomgaReady =>
+      (format != null && format!.isNotEmpty) ||
+      comicInfo.isNotEmpty ||
+      (kavitaSeriesId != null || komgaSeriesId != null);
+
+  /// Distintivo de formato do arquivo ou mídia (ex: CBZ, CBR, EPUB, PDF)
+  String get formatBadge {
+    if (format != null && format!.trim().isNotEmpty) {
+      return format!.trim().toUpperCase();
+    }
+    if (category == CulturalCategory.manga) return 'MANGÁ';
+    if (category == CulturalCategory.books) return 'LIVRO';
+    return category.label.toUpperCase();
+  }
 
   /// Formata os termos otimizados de busca para o Torrent Index conforme a Seção 6.1:
   /// - Filme: <Título> <Ano>
@@ -205,6 +273,16 @@ class CulturalItem {
     String? provenanceConfidence,
     String? bannerPath,
     Map<String, String>? storeLinks,
+    String? format,
+    int? totalVolumes,
+    int? currentVolume,
+    List<int>? ownedVolumes,
+    int? totalChapters,
+    int? currentChapter,
+    Map<String, dynamic>? comicInfo,
+    String? kavitaSeriesId,
+    String? komgaSeriesId,
+    String? readingDirection,
   }) {
     return CulturalItem(
       id: id ?? this.id,
@@ -235,6 +313,16 @@ class CulturalItem {
       provenanceConfidence: provenanceConfidence ?? this.provenanceConfidence,
       bannerPath: bannerPath ?? this.bannerPath,
       storeLinks: storeLinks ?? this.storeLinks,
+      format: format ?? this.format,
+      totalVolumes: totalVolumes ?? this.totalVolumes,
+      currentVolume: currentVolume ?? this.currentVolume,
+      ownedVolumes: ownedVolumes ?? this.ownedVolumes,
+      totalChapters: totalChapters ?? this.totalChapters,
+      currentChapter: currentChapter ?? this.currentChapter,
+      comicInfo: comicInfo ?? this.comicInfo,
+      kavitaSeriesId: kavitaSeriesId ?? this.kavitaSeriesId,
+      komgaSeriesId: komgaSeriesId ?? this.komgaSeriesId,
+      readingDirection: readingDirection ?? this.readingDirection,
     );
   }
 
@@ -268,6 +356,16 @@ class CulturalItem {
       if (provenanceConfidence != null) 'provenanceConfidence': provenanceConfidence,
       if (bannerPath != null) 'bannerPath': bannerPath,
       if (storeLinks != null) 'storeLinks': storeLinks,
+      if (format != null) 'format': format,
+      if (totalVolumes != null) 'totalVolumes': totalVolumes,
+      if (currentVolume != null) 'currentVolume': currentVolume,
+      if (ownedVolumes.isNotEmpty) 'ownedVolumes': ownedVolumes,
+      if (totalChapters != null) 'totalChapters': totalChapters,
+      if (currentChapter != null) 'currentChapter': currentChapter,
+      if (comicInfo.isNotEmpty) 'comicInfo': comicInfo,
+      if (kavitaSeriesId != null) 'kavitaSeriesId': kavitaSeriesId,
+      if (komgaSeriesId != null) 'komgaSeriesId': komgaSeriesId,
+      if (readingDirection != null) 'readingDirection': readingDirection,
     };
   }
 
@@ -310,6 +408,16 @@ class CulturalItem {
       provenanceConfidence: json['provenanceConfidence'] as String?,
       bannerPath: json['bannerPath'] as String?,
       storeLinks: json['storeLinks'] is Map ? (json['storeLinks'] as Map).cast<String, String>() : null,
+      format: json['format'] as String?,
+      totalVolumes: (json['totalVolumes'] as num?)?.toInt(),
+      currentVolume: (json['currentVolume'] as num?)?.toInt(),
+      ownedVolumes: (json['ownedVolumes'] as List<dynamic>?)?.map((e) => (e as num).toInt()).toList() ?? const [],
+      totalChapters: (json['totalChapters'] as num?)?.toInt(),
+      currentChapter: (json['currentChapter'] as num?)?.toInt(),
+      comicInfo: json['comicInfo'] is Map<String, dynamic> ? json['comicInfo'] as Map<String, dynamic> : const {},
+      kavitaSeriesId: json['kavitaSeriesId'] as String?,
+      komgaSeriesId: json['komgaSeriesId'] as String?,
+      readingDirection: json['readingDirection'] as String?,
     );
   }
 }
