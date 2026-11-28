@@ -24,8 +24,11 @@ import '../../state/nix_state.dart';
 import '../design/nix_surfaces.dart';
 import '../profile/cultural_showcase.dart';
 import '../profile/cultural_cover_art.dart';
+import '../profile/cultural_motion_cover_card.dart';
+import '../profile/book_manga_manager_sheet.dart';
 import '../profile/desktop_pager_audio.dart';
 import '../navigation/interface_wallpaper_layer.dart';
+import 'cultural_work_sheet.dart';
 
 /// Visão principal do Nix Media Index — Offline-First e Acervo Cultural.
 class NixMediaIndexView extends StatefulWidget {
@@ -1528,7 +1531,18 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
               children: [
                 // Capa Cultural Distinta (Vinil, Pôster ou Livro 2.5D)
                 InkWell(
-                  onTap: () => _showWorkDetails(context, work),
+                  onTap: () {
+                    final item = inAcervo
+                        ? nixState.userProfile.culturalItems.firstWhere(
+                            (i) =>
+                                i.id == work.id ||
+                                i.id == 'catalog:${work.id}' ||
+                                i.title.trim().toLowerCase() == work.title.trim().toLowerCase(),
+                            orElse: () => culturalItemFromCatalog(work),
+                          )
+                        : culturalItemFromCatalog(work);
+                    CulturalWorkSheet.showModal(context, item: item);
+                  },
                   borderRadius: NixTokens.borderSm,
                   child: _CatalogThumbnail(
                     work: work,
@@ -1613,20 +1627,42 @@ class _NixMediaIndexViewState extends State<NixMediaIndexView>
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Botão Adicionar ou Ver no Acervo
-                IconButton(
-                  icon: Icon(
-                    inAcervo ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined,
-                    color: inAcervo ? Colors.amber : Colors.amber.withValues(alpha: 0.7),
-                  ),
-                  tooltip: inAcervo ? 'No meu Acervo (Ver detalhes)' : 'Adicionar ao Acervo',
-                  onPressed: () {
-                    if (inAcervo) {
-                      _showWorkDetails(context, work);
-                    } else {
-                      _openAddToAcervoDialog(work);
-                    }
-                  },
+                // Botões de Ação
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (work.kind == 'book' || work.kind == 'manga')
+                      IconButton(
+                        icon: const Icon(Icons.collections_bookmark_rounded, color: Colors.orangeAccent, size: 20),
+                        tooltip: 'Organizar Volumes & Capítulos (BookManager)',
+                        onPressed: () {
+                          final item = inAcervo
+                              ? nixState.userProfile.culturalItems.firstWhere(
+                                  (i) =>
+                                      i.id == work.id ||
+                                      i.id == 'catalog:${work.id}' ||
+                                      i.title.trim().toLowerCase() == work.title.trim().toLowerCase(),
+                                  orElse: () => culturalItemFromCatalog(work),
+                                )
+                              : culturalItemFromCatalog(work);
+                          BookMangaManagerSheet.showModal(context, item: item);
+                        },
+                      ),
+                    IconButton(
+                      icon: Icon(
+                        inAcervo ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined,
+                        color: inAcervo ? Colors.amber : Colors.amber.withValues(alpha: 0.7),
+                      ),
+                      tooltip: inAcervo ? 'No meu Acervo (Ver detalhes)' : 'Adicionar ao Acervo',
+                      onPressed: () {
+                        if (inAcervo) {
+                          _showWorkDetails(context, work);
+                        } else {
+                          _openAddToAcervoDialog(work);
+                        }
+                      },
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1837,20 +1873,29 @@ class _CatalogWorkDetailDialogState extends State<_CatalogWorkDetailDialog> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: 80,
-                        height: 110,
-                        decoration: BoxDecoration(
-                          color: kindColor.withValues(alpha: 0.12),
-                          borderRadius: NixTokens.borderSm,
-                          border: Border.all(color: kindColor.withValues(alpha: 0.3)),
-                        ),
-                        child: hasVerifiedCover
-                            ? Center(child: CulturalCoverArt(item: displayItem, width: 70))
-                            : Center(
-                                child: Icon(kindIcon, size: 40, color: kindColor),
+                      (work.kind == 'book' || work.kind == 'manga')
+                          ? CulturalMotionCoverCard(
+                              item: displayItem,
+                              width: 80,
+                              onTap: () {
+                                Navigator.pop(dialogCtx);
+                                CulturalWorkSheet.showModal(context, item: displayItem);
+                              },
+                            )
+                          : Container(
+                              width: 80,
+                              height: 110,
+                              decoration: BoxDecoration(
+                                color: kindColor.withValues(alpha: 0.12),
+                                borderRadius: NixTokens.borderSm,
+                                border: Border.all(color: kindColor.withValues(alpha: 0.3)),
                               ),
-                      ),
+                              child: hasVerifiedCover
+                                  ? Center(child: CulturalCoverArt(item: displayItem, width: 70))
+                                  : Center(
+                                      child: Icon(kindIcon, size: 40, color: kindColor),
+                                    ),
+                            ),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Column(
@@ -1889,6 +1934,58 @@ class _CatalogWorkDetailDialogState extends State<_CatalogWorkDetailDialog> {
                                     ),
                                   ),
                                 ],
+                              ),
+                            ],
+                            if (work.kind == 'book' || work.kind == 'manga') ...[
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.orangeAccent.shade700,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      minimumSize: const Size(0, 32),
+                                    ),
+                                    icon: const Icon(Icons.collections_bookmark_rounded, size: 15),
+                                    label: const Text('Organizar Volumes (BookManager)', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                    onPressed: () {
+                                      BookMangaManagerSheet.showModal(context, item: displayItem);
+                                    },
+                                  ),
+                                  OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.cyanAccent,
+                                      side: const BorderSide(color: Colors.cyanAccent),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      minimumSize: const Size(0, 32),
+                                    ),
+                                    icon: const Icon(Icons.style_rounded, size: 15),
+                                    label: const Text('Ficha Técnica 2.5D (PassportDex)', style: TextStyle(fontSize: 11.5)),
+                                    onPressed: () {
+                                      Navigator.pop(dialogCtx);
+                                      CulturalWorkSheet.showModal(context, item: displayItem);
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ] else ...[
+                              const SizedBox(height: 10),
+                              OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.cyanAccent,
+                                  side: const BorderSide(color: Colors.cyanAccent),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  minimumSize: const Size(0, 32),
+                                ),
+                                icon: const Icon(Icons.style_rounded, size: 15),
+                                label: const Text('Ficha Técnica 2.5D (PassportDex)', style: TextStyle(fontSize: 11.5)),
+                                onPressed: () {
+                                  Navigator.pop(dialogCtx);
+                                  CulturalWorkSheet.showModal(context, item: displayItem);
+                                },
                               ),
                             ],
                           ],

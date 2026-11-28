@@ -2669,14 +2669,14 @@ class NixState extends ChangeNotifier {
   }
 
   void _initializeProductionCleanState() {
-    _userProfile = const UserProfile(
+    _userProfile = UserProfile(
       publicId: '',
       displayName: '',
       bio: '',
       currentActivity: '',
       memberSinceYear: '26',
       avatarStyle: 'nyx_emblem',
-      culturalItems: [],
+      culturalItems: MockData.getInitialUserProfile().culturalItems,
     );
     const defaultChannel = Channel(
       id: 'general_saved',

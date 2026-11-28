@@ -5,6 +5,7 @@ import '../core/models/member.dart';
 import '../core/models/publication.dart';
 import '../core/models/forum_post.dart';
 import '../core/models/cultural_item.dart';
+import '../core/models/cultural_tracking.dart';
 import '../core/models/user_profile.dart';
 import '../core/models/direct_message.dart';
 import '../core/models/monero_order.dart';
@@ -155,6 +156,15 @@ class MockData {
           toneShade: 70,
           isFeatured: true,
           isPublicInCardId: true,
+          tracking: CulturalTracking(
+            stage: CulturalStage.active,
+            collection: 'Mangás Principais',
+            current: 11,
+            total: 13,
+            seasonOrVolume: 13,
+            tags: ['fantasia', 'shounen', 'aventura'],
+            privateNotes: 'Acompanhando lançamento físico dos volumes pela Panini.',
+          ),
         ),
         const CulturalItem(
           id: 'cult_b2',
@@ -165,6 +175,15 @@ class MockData {
           monogram: 'AA',
           toneShade: 50,
           isPublicInCardId: true,
+          tracking: CulturalTracking(
+            stage: CulturalStage.active,
+            collection: 'História Militar',
+            current: 5,
+            total: 13,
+            seasonOrVolume: 8,
+            tags: ['história', 'roma', 'cartago'],
+            privateNotes: 'Edição importada Shueisha / Young Jump.',
+          ),
         ),
         const CulturalItem(
           id: 'cult_b3',
@@ -175,6 +194,13 @@ class MockData {
           monogram: 'FR',
           toneShade: 46,
           isPublicInCardId: true,
+          tracking: CulturalTracking(
+            stage: CulturalStage.finished,
+            collection: 'História & Filosofia',
+            current: 1,
+            total: 1,
+            tags: ['ficção', 'história', 'clássicos'],
+          ),
         ),
         const CulturalItem(
           id: 'cult_b4',
@@ -185,6 +211,14 @@ class MockData {
           monogram: 'CE',
           toneShade: 60,
           isPublicInCardId: true,
+          tracking: CulturalTracking(
+            stage: CulturalStage.active,
+            collection: 'Tecnologia & Cripto',
+            current: 14,
+            total: 25,
+            tags: ['segurança', 'ciphers', 'zero-knowledge'],
+            privateNotes: 'Referência fundamental para o design criptográfico do Nix.',
+          ),
         ),
         // Repositórios GitHub Salvos no Acervo
         CulturalItem(
