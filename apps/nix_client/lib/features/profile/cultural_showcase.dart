@@ -326,7 +326,7 @@ class _CulturalShowcaseState extends State<CulturalShowcase> {
                 ),
               ),
             ),
-            if (item.isBookOrManga)
+            if (item.isBookOrManga && width >= 135)
               IconButton(
                 tooltip: 'Gerenciar volumes e ComicInfo (BookManager)',
                 visualDensity: VisualDensity.compact,
